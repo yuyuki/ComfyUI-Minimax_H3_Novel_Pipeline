@@ -297,16 +297,16 @@ class ExtractChapterReferencesNode:
                 "saved_chapter": (_saved_chapter_choices(), {
                     "tooltip": "Previously uploaded chapter. Selecting it fills the chapter paths field.",
                 }),
-                "out_dir": ("STRING", {
-                    "default": _default_output_dir(),
-                    "tooltip": "Folder for per-chapter reference JSON files.",
-                }),
                 "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
                 "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}),
                 "temperature": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 2.0, "step": 0.05}),
                 # The schema contains several per-entity descriptions.  A
                 # dense chunk can exceed 4096 tokens before its JSON closes.
                 "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
+                "out_dir": ("STRING", {
+                    "default": _default_output_dir(),
+                    "tooltip": "Folder for per-chapter reference JSON files.",
+                }),
             },
             "optional": {
                 "seed": ("INT", {

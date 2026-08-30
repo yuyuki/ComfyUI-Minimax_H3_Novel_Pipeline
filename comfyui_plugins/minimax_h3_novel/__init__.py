@@ -5,6 +5,7 @@ node implementations live in `nodes.py`.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Dict
@@ -103,6 +104,27 @@ def _register_upload_route() -> None:
             return web.json_response({
                 "files": [f"minimax_h3_novel/{path.name}" for path in files]
             })
+
+        @PromptServer.instance.routes.delete("/minimax_h3_novel/chapters")
+        async def delete_chapter(request):
+            """Delete one file previously uploaded through the chapter picker."""
+            try:
+                data = await request.json()
+                saved_path = str(data.get("file", ""))
+                prefix = "minimax_h3_novel/"
+                if not saved_path.startswith(prefix):
+                    raise ValueError("Invalid saved chapter path")
+                filename = Path(saved_path[len(prefix):]).name
+                if filename != saved_path[len(prefix):] or Path(filename).suffix.lower() not in allowed:
+                    raise ValueError("Invalid saved chapter path")
+                target = input_root / filename
+                # Resolving prevents a crafted filename from escaping the upload folder.
+                if target.resolve().parent != input_root.resolve() or not target.is_file():
+                    return web.json_response({"error": "Saved chapter not found"}, status=404)
+                target.unlink()
+                return web.json_response({"deleted": f"minimax_h3_novel/{filename}"})
+            except (ValueError, json.JSONDecodeError) as exc:
+                return web.json_response({"error": str(exc)}, status=400)
 
         print("[minimax_h3_novel] chapter upload route registered")
     except Exception as exc:

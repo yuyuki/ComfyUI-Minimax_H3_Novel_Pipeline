@@ -21,9 +21,9 @@ def _default_output_dir() -> str:
 class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"consolidated_references": ("MINIMAX_REGISTRY",), "clip": ("CLIP",), "chapter_paths": ("STRING", {"multiline": True, "default": ""}), "saved_chapter": (_saved_chapter_choices(),), "out_dir": ("STRING", {"default": _default_output_dir()}), "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0}), "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100})}}
+        return {"required": {"consolidated_references": ("MINIMAX_REGISTRY",), "clip": ("CLIP",), "chapter_paths": ("STRING", {"multiline": True, "default": ""}), "saved_chapter": (_saved_chapter_choices(),), "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0}), "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100}), "out_dir": ("STRING", {"default": _default_output_dir()})}}
     RETURN_TYPES = ("MINIMAX_PROMPTS",); RETURN_NAMES = ("prompts",); FUNCTION = "run"; CATEGORY = "MiniMax H3 Novel"
-    def run(self, consolidated_references: dict[str, Any], clip: Any, chapter_paths: str, saved_chapter: str, out_dir: str, duration: float, max_pictures: int, max_audio: int) -> tuple[dict[str, Any]]:
+    def run(self, consolidated_references: dict[str, Any], clip: Any, chapter_paths: str, saved_chapter: str, duration: float, max_pictures: int, max_audio: int, out_dir: str) -> tuple[dict[str, Any]]:
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not out_dir.strip(): raise ValueError("out_dir must not be empty.")
         paths = util.discover_inputs([Path(p.strip()) for p in (chapter_paths or saved_chapter).splitlines() if p.strip()])

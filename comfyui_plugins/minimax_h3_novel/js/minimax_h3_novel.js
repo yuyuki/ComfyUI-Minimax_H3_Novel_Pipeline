@@ -89,6 +89,35 @@ async function refreshSavedChapters(node) {
     app.graph?.setDirtyCanvas(true, true);
 }
 
+async function deleteSavedChapter(node) {
+    const saved = widget(node, "saved_chapter");
+    const file = saved?.value;
+    if (!file) {
+        alert("Select a saved chapter to delete first.");
+        return;
+    }
+    if (!confirm(`Delete the saved chapter \"${file}\"? This cannot be undone.`)) return;
+    try {
+        const response = await fetch("/minimax_h3_novel/chapters", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ file }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Delete failed");
+        const paths = widget(node, "chapter_paths");
+        if (paths?.value === file) {
+            paths.value = "";
+            paths.callback?.(paths.value);
+        }
+        saved.value = "";
+        await refreshSavedChapters(node);
+        app.graph?.setDirtyCanvas(true, true);
+    } catch (error) {
+        alert(`MiniMax H3 chapter deletion failed: ${error.message}`);
+    }
+}
+
 function chooseFiles(node, directory) {
     const input = document.createElement("input");
     input.type = "file";
@@ -131,6 +160,7 @@ app.registerExtension({
         migrateLegacyExtractDefaults(node);
         node.addWidget("button", "Select chapter files", null, () => chooseFiles(node, false));
         node.addWidget("button", "Select chapter folder", null, () => chooseFiles(node, true));
+        node.addWidget("button", "Delete saved chapter", null, () => deleteSavedChapter(node));
         const saved = node.widgets?.find((item) => item.name === "saved_chapter");
         if (saved) {
             const originalCallback = saved.callback;
