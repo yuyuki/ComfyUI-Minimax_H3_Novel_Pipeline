@@ -78,14 +78,21 @@ function migrateLegacyConsolidationDefaults(node) {
     outDir.value = outDir.options?.default ?? "output/minimax_h3_novel/references";
 }
 
-async function refreshSavedChapters(node) {
+async function refreshSavedChapters(node, selectedFile = null) {
     const response = await fetch("/minimax_h3_novel/chapters");
     if (!response.ok) return;
     const result = await response.json();
     const widget = node.widgets?.find((item) => item.name === "saved_chapter");
     if (!widget) return;
     widget.options.values = result.files?.length ? result.files : [""];
-    if (widget.value && !widget.options.values.includes(widget.value)) widget.value = "";
+    if (selectedFile && widget.options.values.includes(selectedFile)) {
+        // A browser-picked file has just been saved by the upload endpoint.
+        // Select it immediately so the workflow persists it as saved_chapter.
+        widget.value = selectedFile;
+        widget.callback?.(widget.value);
+    } else if (widget.value && !widget.options.values.includes(widget.value)) {
+        widget.value = "";
+    }
     app.graph?.setDirtyCanvas(true, true);
 }
 
@@ -138,7 +145,10 @@ function chooseFiles(node, directory) {
             if (!widget) throw new Error("chapter_paths widget was not found");
             widget.value = (result.files || []).join("\n");
             widget.callback?.(widget.value);
-            await refreshSavedChapters(node);
+            // ``saved_chapter`` is the reusable ComfyUI input-folder path.
+            // Keep it in sync with the first just-selected file; for a folder
+            // or multi-file selection, chapter_paths continues to hold all files.
+            await refreshSavedChapters(node, result.files?.[0] || null);
             app.graph?.setDirtyCanvas(true, true);
         } catch (error) {
             alert(`MiniMax H3 chapter upload failed: ${error.message}`);
