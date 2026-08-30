@@ -68,3 +68,16 @@ def load_json(path: Path) -> Any:
 def save_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def catalog_summary(catalogs: Iterable[dict[str, Any]]) -> str:
+    """Return a compact inspection string without duplicating full JSON on a port."""
+    rows: list[str] = []
+    for catalog in catalogs:
+        rows.append(
+            f"{catalog.get('chapter_id', '<unknown>')}: "
+            f"{len(catalog.get('characters', []))} characters, "
+            f"{len(catalog.get('locations', []))} locations, "
+            f"{len(catalog.get('objects', []))} objects"
+        )
+    return "\n".join(rows) or "No chapter catalogs."

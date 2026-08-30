@@ -1,7 +1,6 @@
 """ComfyUI node for reusing chapter catalogs saved by Step 1."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +28,7 @@ class LoadChapterCatalogsNode:
         }
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
-    RETURN_NAMES = ("chapter_catalogs", "catalogs_json")
+    RETURN_NAMES = ("chapter_catalogs", "catalog_summary")
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
@@ -68,4 +67,4 @@ class LoadChapterCatalogsNode:
             catalogs.append(data)
 
         print(f"[minimax_h3_novel] Loaded {len(catalogs)} chapter catalog(s) from {path}", flush=True)
-        return catalogs, json.dumps(catalogs, ensure_ascii=False, indent=2)
+        return catalogs, util.catalog_summary(catalogs)

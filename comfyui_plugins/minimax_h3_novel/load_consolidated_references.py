@@ -8,13 +8,7 @@ from . import util
 
 
 class LoadConsolidatedReferencesNode:
-    """Load ``consolidated_references.json`` and expose its asset briefs.
-
-    The picture and audio briefs are embedded in the registry JSON.  The
-    companion ``reference_asset_prompts.txt`` file is intentionally not parsed:
-    it is a display/export file and cannot preserve the structured data Step 3
-    needs.
-    """
+    """Load a saved consolidated registry for prompt generation."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -33,14 +27,14 @@ class LoadConsolidatedReferencesNode:
             },
         }
 
-    RETURN_TYPES = ("MINIMAX_REGISTRY", "MINIMAX_PICTURE_BRIEFS", "MINIMAX_AUDIO_BRIEFS")
-    RETURN_NAMES = ("consolidated_references", "picture_asset_briefs", "audio_asset_briefs")
+    RETURN_TYPES = ("MINIMAX_REGISTRY",)
+    RETURN_NAMES = ("consolidated_references",)
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
     def run(
         self, consolidated_path: str
-    ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    ) -> tuple[dict[str, Any]]:
         if not isinstance(consolidated_path, str) or not consolidated_path.strip():
             raise ValueError(
                 "consolidated_path must name a consolidation output folder or "
@@ -84,4 +78,4 @@ class LoadConsolidatedReferencesNode:
             f"{json_path} ({len(pictures)} picture and {len(audio)} audio brief(s))",
             flush=True,
         )
-        return registry, pictures, audio
+        return (registry,)

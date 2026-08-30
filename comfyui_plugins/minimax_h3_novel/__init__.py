@@ -29,9 +29,19 @@ def _build_mappings() -> None:
                 "LoadConsolidatedReferencesNode": _nodes.LoadConsolidatedReferencesNode,
                 "ConsolidateReferencesNode": _nodes.ConsolidateReferencesNode,
                 "GenerateH3PromptsNode": _nodes.GenerateH3PromptsNode,
+                "SelectH3SceneNode": _nodes.SelectH3SceneNode,
             }
         )
-        NODE_DISPLAY_NAME_MAPPINGS.update({k: k for k in NODE_CLASS_MAPPINGS.keys()})
+        NODE_DISPLAY_NAME_MAPPINGS.update(
+            {
+                "ExtractChapterReferencesNode": "Extract Chapter References",
+                "LoadChapterCatalogsNode": "Load Chapter Catalogs",
+                "LoadConsolidatedReferencesNode": "Load Consolidated References",
+                "ConsolidateReferencesNode": "Consolidate References",
+                "GenerateH3PromptsNode": "Generate H3 Prompts",
+                "SelectH3SceneNode": "Select H3 Scene",
+            }
+        )
     except Exception as e:
         print(f"[minimax_h3_novel] ERROR building NODE_CLASS_MAPPINGS: {e}")
 

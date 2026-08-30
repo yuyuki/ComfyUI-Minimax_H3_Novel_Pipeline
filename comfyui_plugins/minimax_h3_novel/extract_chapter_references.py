@@ -1,13 +1,11 @@
-"""ComfyUI node equivalent of ``01_extract_chapter_references.py``."""
+"""Standalone ComfyUI node for chapter-reference extraction."""
 from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import re
 import secrets
-import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -40,6 +38,15 @@ def _saved_chapter_choices() -> list[str]:
     except Exception:
         # Keep the node importable outside ComfyUI (for tests and tooling).
         return [""]
+
+
+def _default_output_dir() -> str:
+    """Return a ComfyUI-managed location for saved chapter catalogs."""
+    try:
+        import folder_paths
+        return str(Path(folder_paths.get_output_directory()) / "minimax_h3_novel" / "chapter_catalogs")
+    except Exception:
+        return "output/minimax_h3_novel/chapter_catalogs"
 
 
 def _log(message: str) -> None:
@@ -152,32 +159,9 @@ def _split_chapter_chunks(text: str, max_chars: int, overlap_paragraphs: int) ->
 
 
 def _load_pipeline_script():
-    """Load the canonical script so schemas and catalog logic stay in sync."""
-    package_dir = Path(__file__).resolve().parent
-    # The repository layout has the script two directory levels above this
-    # package, but a
-    # ComfyUI custom node is normally copied without the repository root.
-    # Check both layouts and then use the bundled compatibility implementation.
-    candidates = [
-        package_dir.parents[1] / "01_extract_chapter_references.py",
-        package_dir.parents[0] / "01_extract_chapter_references.py",
-        package_dir / "01_extract_chapter_references.py",
-    ]
-    script_path = next((path for path in candidates if path.is_file()), None)
-    if script_path is None:
-        from . import pipeline_compat
-        return pipeline_compat
-    spec = importlib.util.spec_from_file_location("_minimax_h3_reference_script", script_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Cannot load extraction implementation: {script_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    try:
-        spec.loader.exec_module(module)
-    except Exception:
-        sys.modules.pop(spec.name, None)
-        raise
-    return module
+    """Return the bundled extraction implementation; never import CLI scripts."""
+    from . import pipeline_compat
+    return pipeline_compat
 
 
 def _decode_json_with_clip(
@@ -314,12 +298,12 @@ class ExtractChapterReferencesNode:
                     "tooltip": "Previously uploaded chapter. Selecting it fills the chapter paths field.",
                 }),
                 "out_dir": ("STRING", {
-                    "default": "",
-                    "tooltip": "Optional folder for per-chapter reference JSON files. Leave empty to return catalogs in memory only.",
+                    "default": _default_output_dir(),
+                    "tooltip": "Folder for per-chapter reference JSON files.",
                 }),
                 "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
                 "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}),
-                "temperature": ("FLOAT", {"default": 1.8, "min": 0.0, "max": 2.0, "step": 0.05}),
+                "temperature": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 2.0, "step": 0.05}),
                 # The schema contains several per-entity descriptions.  A
                 # dense chunk can exceed 4096 tokens before its JSON closes.
                 "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
@@ -334,11 +318,10 @@ class ExtractChapterReferencesNode:
             },
         }
 
-    # ``MINIMAX_CHAPTERS`` is the pipeline-only object port consumed by
-    # ConsolidateReferencesNode.  The separate STRING port is deliberately
-    # provided for generic ComfyUI text viewers such as Preview as Text.
+    # Keep the large structured result on the pipeline-only port.  The STRING
+    # port is a compact status view rather than a second full JSON copy.
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
-    RETURN_NAMES = ("chapter_catalogs", "catalogs_json")
+    RETURN_NAMES = ("chapter_catalogs", "catalog_summary")
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
@@ -368,7 +351,7 @@ class ExtractChapterReferencesNode:
             raise ValueError("No supported chapter files found")
         args = argparse.Namespace(
             chunk_chars=int(params.get("chunk_chars", 5500)), overlap_paragraphs=int(params.get("overlap_paragraphs", 2)),
-            temperature=float(params.get("temperature", 1.8)), max_tokens=int(params.get("max_tokens", 8192)),
+            temperature=float(params.get("temperature", 0.35)), max_tokens=int(params.get("max_tokens", 8192)),
             seed=int(params.get("seed", _DEFAULT_SEED)),
         )
         results: List[dict] = []
@@ -435,6 +418,4 @@ Passage chunk: {index}/{len(chunks)}
                 _log(f"Chapter '{chapter_id}': saved {output_dir / f'{chapter_id}_references.json'}")
             _log(f"Chapter {chapter_number}/{len(paths)} '{chapter_id}' complete")
         _log(f"Extraction complete: {len(results)} chapter(s) in {time.perf_counter() - started:.1f}s")
-        # JSON text is not used by the pipeline.  It exists so users can
-        # inspect the full result through ComfyUI's Preview as Text node.
-        return (results, json.dumps(results, ensure_ascii=False, indent=2))
+        return (results, util.catalog_summary(results))

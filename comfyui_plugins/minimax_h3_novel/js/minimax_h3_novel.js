@@ -28,7 +28,7 @@ function migrateLegacyExtractDefaults(node) {
     outDir.value = "";
     chunkChars.value = 5500;
     overlap.value = 2;
-    temperature.value = 1.8;
+    temperature.value = 0.35;
     maxTokens.value = 8192;
     // Do not force a fixed seed: ComfyUI's randomize control will supply one.
     seed.value = Math.floor(Math.random() * 0x100000000);
@@ -51,7 +51,6 @@ function migrateLegacyConsolidationDefaults(node) {
     const auditMaxEntities = widget(node, "audit_max_entities");
     const temperature = widget(node, "temperature");
     const maxTokens = widget(node, "max_tokens");
-    const delay = widget(node, "delay");
     const outDir = widget(node, "out_dir");
 
     // A URL/API-key pair shifted into integer inputs is clamped to 1, while
@@ -76,8 +75,7 @@ function migrateLegacyConsolidationDefaults(node) {
     auditMaxEntities.value = 120;
     temperature.value = 0.12;
     maxTokens.value = 8500;
-    delay.value = 0;
-    outDir.value = "";
+    outDir.value = outDir.options?.default ?? "output/minimax_h3_novel/references";
 }
 
 async function refreshSavedChapters(node) {

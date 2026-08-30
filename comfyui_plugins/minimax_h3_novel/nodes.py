@@ -6,6 +6,7 @@ from .extract_chapter_references import ExtractChapterReferencesNode
 from .generate_h3_prompts import GenerateH3PromptsNode
 from .load_chapter_catalogs import LoadChapterCatalogsNode
 from .load_consolidated_references import LoadConsolidatedReferencesNode
+from .select_h3_scene import SelectH3SceneNode
 
 
 NODE_CLASS_MAPPINGS = {
@@ -14,6 +15,7 @@ NODE_CLASS_MAPPINGS = {
     "LoadConsolidatedReferencesNode": LoadConsolidatedReferencesNode,
     "ConsolidateReferencesNode": ConsolidateReferencesNode,
     "GenerateH3PromptsNode": GenerateH3PromptsNode,
+    "SelectH3SceneNode": SelectH3SceneNode,
 }
 
 __all__ = [
@@ -22,5 +24,6 @@ __all__ = [
     "LoadConsolidatedReferencesNode",
     "ConsolidateReferencesNode",
     "GenerateH3PromptsNode",
+    "SelectH3SceneNode",
     "NODE_CLASS_MAPPINGS",
 ]
