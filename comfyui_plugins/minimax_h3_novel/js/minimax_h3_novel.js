@@ -2,6 +2,8 @@ import { app } from "../../scripts/app.js";
 
 const EXTENSION_NAME = "minimax_h3_novel.chapter_picker";
 const ACCEPTED = ".txt,.md,.markdown,.pdf";
+const CHAPTER_EXTENSIONS = new Set(ACCEPTED.split(","));
+const PICKER_BUTTON_NAME = "saved_chapter_picker";
 
 function widget(node, name) {
     return node.widgets?.find((item) => item.name === name);
@@ -30,14 +32,10 @@ function migrateLegacyExtractDefaults(node) {
     overlap.value = 2;
     temperature.value = 0.35;
     maxTokens.value = 8192;
-    // Do not force a fixed seed: ComfyUI's randomize control will supply one.
     seed.value = Math.floor(Math.random() * 0x100000000);
 }
 
 function migrateLegacyConsolidationDefaults(node) {
-    // Older workflows included ``base_url`` and ``api_key`` before these
-    // widgets. ComfyUI persists widget values by position, so removing those
-    // inputs causes every saved value to be assigned to the following field.
     const candidateCount = widget(node, "candidate_count");
     const includeAllBelow = widget(node, "include_all_below");
     const pictureThreshold = widget(node, "picture_threshold");
@@ -52,10 +50,6 @@ function migrateLegacyConsolidationDefaults(node) {
     const temperature = widget(node, "temperature");
     const maxTokens = widget(node, "max_tokens");
     const outDir = widget(node, "out_dir");
-
-    // A URL/API-key pair shifted into integer inputs is clamped to 1, while
-    // the old candidate count then appears as an invalid threshold value.
-    // This signature distinguishes a legacy saved node from user settings.
     const thresholds = ["optional", "recommended", "required"];
     const isShiftedLegacyNode = Number(candidateCount?.value) === 1
         && Number(includeAllBelow?.value) === 1
@@ -78,32 +72,62 @@ function migrateLegacyConsolidationDefaults(node) {
     outDir.value = outDir.options?.default ?? "output/minimax_h3_novel/references";
 }
 
-async function refreshSavedChapters(node, selectedFile = null) {
-    const response = await fetch("/minimax_h3_novel/chapters");
-    if (!response.ok) return;
-    const result = await response.json();
-    const widget = node.widgets?.find((item) => item.name === "saved_chapter");
-    if (!widget) return;
-    widget.options.values = result.files?.length ? result.files : [""];
-    if (selectedFile && widget.options.values.includes(selectedFile)) {
-        // A browser-picked file has just been saved by the upload endpoint.
-        // Select it immediately so the workflow persists it as saved_chapter.
-        widget.value = selectedFile;
-        widget.callback?.(widget.value);
-    } else if (widget.value && !widget.options.values.includes(widget.value)) {
-        widget.value = "";
-    }
+function pickerButton(node) {
+    return widget(node, PICKER_BUTTON_NAME);
+}
+
+function updatePickerButton(node) {
+    const button = pickerButton(node);
+    const saved = widget(node, "saved_chapter");
+    if (!button || !saved) return;
+    button.label = saved.value || "Select chapters";
     app.graph?.setDirtyCanvas(true, true);
 }
 
-async function deleteSavedChapter(node) {
+function setChapterPaths(node, value) {
+    if (!value) return;
+    const paths = widget(node, "chapter_paths");
+    if (!paths) return;
+    paths.value = value;
+    paths.callback?.(paths.value);
+}
+
+function setSavedChapter(node, file) {
     const saved = widget(node, "saved_chapter");
-    const file = saved?.value;
-    if (!file) {
-        alert("Select a saved chapter to delete first.");
-        return;
+    if (!saved) return;
+    saved.value = file || "";
+    saved.callback?.(saved.value);
+    updatePickerButton(node);
+}
+
+async function fetchSavedChapters() {
+    const response = await fetch("/minimax_h3_novel/chapters");
+    if (!response.ok) throw new Error("Could not load saved chapters");
+    const result = await response.json();
+    return result.files || [];
+}
+
+async function refreshSavedChapters(node, selectedFile = null) {
+    try {
+        const files = await fetchSavedChapters();
+        const saved = widget(node, "saved_chapter");
+        if (!saved) return files;
+        saved.options.values = files.length ? files : [""];
+        if (selectedFile && files.includes(selectedFile)) {
+            setSavedChapter(node, selectedFile);
+        } else if (saved.value && !files.includes(saved.value)) {
+            setSavedChapter(node, "");
+        } else {
+            updatePickerButton(node);
+        }
+        return files;
+    } catch (error) {
+        console.warn("[minimax_h3_novel] could not refresh saved chapters", error);
+        return [];
     }
-    if (!confirm(`Delete the saved chapter \"${file}\"? This cannot be undone.`)) return;
+}
+
+async function deleteSavedChapter(node, file, closeDialog) {
     try {
         const response = await fetch("/minimax_h3_novel/chapters", {
             method: "DELETE",
@@ -117,15 +141,15 @@ async function deleteSavedChapter(node) {
             paths.value = "";
             paths.callback?.(paths.value);
         }
-        saved.value = "";
+        if (widget(node, "saved_chapter")?.value === file) setSavedChapter(node, "");
+        closeDialog?.();
         await refreshSavedChapters(node);
-        app.graph?.setDirtyCanvas(true, true);
     } catch (error) {
         alert(`MiniMax H3 chapter deletion failed: ${error.message}`);
     }
 }
 
-function chooseFiles(node, directory) {
+function chooseFiles(node, directory, onComplete = null) {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
@@ -134,56 +158,179 @@ function chooseFiles(node, directory) {
     input.style.display = "none";
     document.body.appendChild(input);
     input.addEventListener("change", async () => {
+        let uploadedFiles = [];
         try {
             if (!input.files?.length) return;
+            // Native directory pickers deliberately ignore ``accept``: they
+            // select a directory, then expose every file below it.  Filter the
+            // resulting FileList before upload so only supported chapters are
+            // ever sent to the server.
+            const chapterFiles = Array.from(input.files).filter((file) => {
+                const dot = file.name.lastIndexOf(".");
+                return dot >= 0 && CHAPTER_EXTENSIONS.has(file.name.slice(dot).toLowerCase());
+            });
+            if (!chapterFiles.length) {
+                alert("The selected folder contains no supported chapter files (.txt, .md, .markdown, or .pdf).");
+                return;
+            }
             const form = new FormData();
-            for (const file of input.files) form.append("chapters", file, file.name);
+            for (const file of chapterFiles) form.append("chapters", file, file.name);
             const response = await fetch("/minimax_h3_novel/upload", { method: "POST", body: form });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || "Upload failed");
-            const widget = node.widgets?.find((item) => item.name === "chapter_paths");
-            if (!widget) throw new Error("chapter_paths widget was not found");
-            widget.value = (result.files || []).join("\n");
-            widget.callback?.(widget.value);
-            // ``saved_chapter`` is the reusable ComfyUI input-folder path.
-            // Keep it in sync with the first just-selected file; for a folder
-            // or multi-file selection, chapter_paths continues to hold all files.
-            await refreshSavedChapters(node, result.files?.[0] || null);
-            app.graph?.setDirtyCanvas(true, true);
+            uploadedFiles = result.files || [];
+            const paths = widget(node, "chapter_paths");
+            if (paths) {
+                paths.value = uploadedFiles.join("\n");
+                paths.callback?.(paths.value);
+            }
         } catch (error) {
             alert(`MiniMax H3 chapter upload failed: ${error.message}`);
         } finally {
+            // The server may have accepted files before reporting an error (for
+            // example, when a later file in a selected folder is unsupported).
+            const files = await refreshSavedChapters(node, uploadedFiles[0] || null);
+            await onComplete?.(files);
             input.remove();
         }
     }, { once: true });
     input.click();
 }
 
+function dialogButton(text, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    button.style.cssText = "padding:7px 10px; border:1px solid #555; border-radius:4px; background:#333; color:#eee; cursor:pointer;";
+    button.addEventListener("click", onClick);
+    return button;
+}
+
+async function openSavedChapterDialog(node) {
+    node._minimaxH3ChapterDialog?.close();
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55);";
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.style.cssText = "width:min(560px, calc(100vw - 32px)); max-height:calc(100vh - 32px); display:flex; flex-direction:column; background:#222; color:#eee; border:1px solid #666; border-radius:6px; box-shadow:0 12px 36px #000; font:14px sans-serif;";
+    const title = document.createElement("div");
+    title.textContent = "Saved chapters";
+    title.style.cssText = "padding:14px 16px 10px; font-weight:bold;";
+    const list = document.createElement("div");
+    list.style.cssText = "overflow:auto; min-height:72px; max-height:360px; border-top:1px solid #444; border-bottom:1px solid #444;";
+    const footer = document.createElement("div");
+    footer.style.cssText = "display:flex; gap:8px; justify-content:flex-end; padding:12px; flex-wrap:wrap;";
+    dialog.append(title, list, footer);
+    overlay.appendChild(dialog);
+
+    let closed = false;
+    const onKeyDown = (event) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            close();
+        }
+    };
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener("keydown", onKeyDown, true);
+        overlay.remove();
+        if (node._minimaxH3ChapterDialog?.close === close) delete node._minimaxH3ChapterDialog;
+    };
+    overlay.addEventListener("pointerdown", (event) => {
+        if (event.target === overlay) close();
+    });
+    document.addEventListener("keydown", onKeyDown, true);
+    node._minimaxH3ChapterDialog = { close };
+
+    const renderFiles = (files) => {
+        list.replaceChildren();
+        if (!files.length) {
+            const empty = document.createElement("div");
+            empty.textContent = "No saved chapters yet.";
+            empty.style.cssText = "padding:18px 16px; color:#bbb;";
+            list.appendChild(empty);
+            return;
+        }
+        for (const file of files) {
+            const row = document.createElement("div");
+            row.tabIndex = 0;
+            row.style.cssText = "display:flex; align-items:center; gap:10px; padding:9px 10px 9px 16px; cursor:pointer; border-bottom:1px solid #333;";
+            const name = document.createElement("span");
+            name.textContent = file;
+            name.style.cssText = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;";
+            const trash = dialogButton("🗑", (event) => {
+                event.stopPropagation();
+                deleteSavedChapter(node, file, close);
+            });
+            trash.title = `Delete ${file}`;
+            trash.setAttribute("aria-label", trash.title);
+            trash.style.cssText += "padding:4px 7px;";
+            const select = () => {
+                setSavedChapter(node, file);
+                close();
+            };
+            row.addEventListener("click", select);
+            row.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    select();
+                }
+            });
+            row.append(name, trash);
+            list.appendChild(row);
+        }
+    };
+    const uploadAndRefresh = (directory) => chooseFiles(node, directory, (files) => {
+        if (!closed) renderFiles(files);
+    });
+    footer.append(
+        dialogButton("Select chapter files", () => uploadAndRefresh(false)),
+        dialogButton("Select chapter folder", () => uploadAndRefresh(true)),
+    );
+    document.body.appendChild(overlay);
+
+    try {
+        const files = await fetchSavedChapters();
+        const saved = widget(node, "saved_chapter");
+        if (saved) saved.options.values = files.length ? files : [""];
+        if (closed) return;
+        renderFiles(files);
+    } catch (error) {
+        if (!closed) {
+            const message = document.createElement("div");
+            message.textContent = `Could not load saved chapters: ${error.message}`;
+            message.style.cssText = "padding:18px 16px; color:#f99;";
+            list.appendChild(message);
+        }
+    }
+}
+
+function installSavedChapterPicker(node) {
+    const saved = widget(node, "saved_chapter");
+    if (!saved || pickerButton(node)) return;
+    // Keep this hidden enum value so existing workflows and the Python nodes
+    // still receive saved_chapter, while the visible control is a dialog button.
+    saved.type = "hidden";
+    saved.computeSize = () => [0, -4];
+    const originalCallback = saved.callback;
+    saved.callback = (value) => {
+        originalCallback?.(value);
+        setChapterPaths(node, value);
+        updatePickerButton(node);
+    };
+    const button = node.addWidget("button", PICKER_BUTTON_NAME, null, () => openSavedChapterDialog(node));
+    button.serialize = false;
+    updatePickerButton(node);
+    refreshSavedChapters(node);
+}
+
 app.registerExtension({
     name: EXTENSION_NAME,
     async nodeCreated(node) {
-        if (node.comfyClass === "ConsolidateReferencesNode") {
-            migrateLegacyConsolidationDefaults(node);
-            return;
-        }
-        if (node.comfyClass !== "ExtractChapterReferencesNode") return;
-        migrateLegacyExtractDefaults(node);
-        node.addWidget("button", "Select chapter files", null, () => chooseFiles(node, false));
-        node.addWidget("button", "Select chapter folder", null, () => chooseFiles(node, true));
-        node.addWidget("button", "Delete saved chapter", null, () => deleteSavedChapter(node));
-        const saved = node.widgets?.find((item) => item.name === "saved_chapter");
-        if (saved) {
-            const originalCallback = saved.callback;
-            saved.callback = (value) => {
-                originalCallback?.(value);
-                if (!value) return;
-                const paths = node.widgets?.find((item) => item.name === "chapter_paths");
-                if (!paths) return;
-                paths.value = value;
-                paths.callback?.(paths.value);
-                app.graph?.setDirtyCanvas(true, true);
-            };
-            refreshSavedChapters(node);
-        }
+        if (node.comfyClass === "ConsolidateReferencesNode") migrateLegacyConsolidationDefaults(node);
+        if (node.comfyClass === "ExtractChapterReferencesNode") migrateLegacyExtractDefaults(node);
+        installSavedChapterPicker(node);
     },
 });
