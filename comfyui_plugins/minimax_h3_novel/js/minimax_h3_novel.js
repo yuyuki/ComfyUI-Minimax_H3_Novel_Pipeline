@@ -127,7 +127,7 @@ async function refreshSavedChapters(node, selectedFile = null) {
     }
 }
 
-async function deleteSavedChapter(node, file, closeDialog) {
+async function deleteSavedChapter(node, file, onComplete = null) {
     try {
         const response = await fetch("/minimax_h3_novel/chapters", {
             method: "DELETE",
@@ -142,8 +142,8 @@ async function deleteSavedChapter(node, file, closeDialog) {
             paths.callback?.(paths.value);
         }
         if (widget(node, "saved_chapter")?.value === file) setSavedChapter(node, "");
-        closeDialog?.();
-        await refreshSavedChapters(node);
+        const files = await refreshSavedChapters(node);
+        await onComplete?.(files);
     } catch (error) {
         alert(`MiniMax H3 chapter deletion failed: ${error.message}`);
     }
@@ -262,7 +262,9 @@ async function openSavedChapterDialog(node) {
             name.style.cssText = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;";
             const trash = dialogButton("🗑", (event) => {
                 event.stopPropagation();
-                deleteSavedChapter(node, file, close);
+                deleteSavedChapter(node, file, (files) => {
+                    if (!closed) renderFiles(files);
+                });
             });
             trash.title = `Delete ${file}`;
             trash.setAttribute("aria-label", trash.title);
