@@ -70,10 +70,12 @@ class ExtractChapterReferencesNode:
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config["api_key"]), str(lmstudio_config.get("model", "")))
         client = lmstudio_pipeline.make_interruptible_client(client)
         args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), delay=0.0, base_url=lmstudio_config["api_url"])
-        output = Path(out_dir.strip()); output.mkdir(parents=True, exist_ok=True)
+        output = Path(out_dir.strip())
+        output.mkdir(parents=True, exist_ok=True)
         backend = "qwen35-chatml" if pipeline._use_qwen35_chatml(resolved_model) else "openai-chat"
         _log(f"LM Studio extraction: model={resolved_model}, backend={backend}, chapters={len(paths)}")
-        started = time.perf_counter(); results = []
+        started = time.perf_counter()
+        results = []
         for path in paths:
             lmstudio_pipeline.comfy_interrupt_check()
             saved = pipeline.process_chapter(path, output, client, resolved_model, args)

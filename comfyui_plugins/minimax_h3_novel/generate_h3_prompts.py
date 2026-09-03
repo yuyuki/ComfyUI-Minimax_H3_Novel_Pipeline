@@ -36,7 +36,10 @@ class GenerateH3PromptsNode:
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir()}),
         }}
 
-    RETURN_TYPES = ("MINIMAX_PROMPTS",); RETURN_NAMES = ("prompts",); FUNCTION = "run"; CATEGORY = "MiniMax H3 Novel"
+    RETURN_TYPES = ("MINIMAX_PROMPTS",)
+    RETURN_NAMES = ("prompts",)
+    FUNCTION = "run"
+    CATEGORY = "MiniMax H3 Novel"
 
     def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_paths: str, saved_chapter: str, out_dir: str, **params: Any) -> tuple[dict[str, Any]]:
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
@@ -61,7 +64,8 @@ class GenerateH3PromptsNode:
                 if not scene.get("prompt_file"):
                     continue
                 scene["prompt_text"] = (target / scene["prompt_file"]).read_text(encoding="utf-8").rstrip()
-                bindings = util.load_json(target / scene["assets_file"]); scene["bindings"] = bindings
+                bindings = util.load_json(target / scene["assets_file"])
+                scene["bindings"] = bindings
                 scene["picture_asset_ids"] = [x["asset_id"] for x in bindings["picture_input_order"]]
                 scene["audio_asset_ids"] = [x["asset_id"] for x in bindings["audio_input_order"]]
         return ({"schema_version": "minimax-h3-novel-prompts.v3", "model": resolved_model, "chapters": manifests},)

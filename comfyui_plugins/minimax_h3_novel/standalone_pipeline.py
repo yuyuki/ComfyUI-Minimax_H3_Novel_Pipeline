@@ -61,18 +61,21 @@ def consolidate(chapters: list[dict[str, Any]], args: Any) -> tuple[list[dict[st
                 existing["distinguishing_features"] = list(dict.fromkeys(existing["distinguishing_features"] + item.get("distinguishing_features", [])))[:12]
                 existing["reference_view_hints"] = list(dict.fromkeys(existing["reference_view_hints"] + item.get("reference_view_hints", [])))
                 if _priority(item.get("reference_priority", "recommended")) > _priority(existing["reference_priority"]): existing["reference_priority"] = item["reference_priority"]
-                existing["chapter_appearances"].append(chapter_id); existing["source_local_ids"].append({"chapter_id": chapter_id, "local_id": item.get("local_id", "")})
+                existing["chapter_appearances"].append(chapter_id)
+                existing["source_local_ids"].append({"chapter_id": chapter_id, "local_id": item.get("local_id", "")})
                 for name in names:
                     if name: by_key[(kind, _key(name))] = existing
     registry.sort(key=lambda e: ({"character": 0, "location": 1, "object": 2}[e["entity_type"]], natural_key(e["global_id"])))
-    pictures: list[dict[str, Any]] = []; audio: list[dict[str, Any]] = []
+    pictures: list[dict[str, Any]] = []
+    audio: list[dict[str, Any]] = []
     for entity in registry:
         if _priority(entity["reference_priority"]) >= _priority(args.picture_threshold):
             for view in _views(entity, args):
                 asset_id = f"PIC_{entity['global_id']}_{view.upper()}"
                 pictures.append({"asset_id": asset_id, "linked_global_id": entity["global_id"], "canonical_name": entity["canonical_name"], "view_type": view, "variant": "base", "suggested_filename": asset_id.lower()+".png", "description": entity["stable_visual_description"], "generation_prompt": f"Reference image of {entity['canonical_name']}, {view.replace('_', ' ')}. {entity['stable_visual_description']}"})
         if entity["entity_type"] == "character" and entity.get("speaks") and _priority(entity["reference_priority"]) >= _priority(args.audio_threshold):
-            asset_id = f"AUD_{entity['global_id']}_VOICE"; audio.append({"asset_id": asset_id, "linked_global_id": entity["global_id"], "canonical_name": entity["canonical_name"], "suggested_filename": asset_id.lower()+".wav", "description": entity.get("voice_description", ""), "generation_prompt": f"Voice reference for {entity['canonical_name']}. {entity.get('voice_description', '')}"})
+            asset_id = f"AUD_{entity['global_id']}_VOICE"
+            audio.append({"asset_id": asset_id, "linked_global_id": entity["global_id"], "canonical_name": entity["canonical_name"], "suggested_filename": asset_id.lower()+".wav", "description": entity.get("voice_description", ""), "generation_prompt": f"Voice reference for {entity['canonical_name']}. {entity.get('voice_description', '')}"})
     return registry, pictures, audio
 
 
@@ -94,9 +97,14 @@ def write_asset_prompts(path: Path, pictures: list[dict[str, Any]], audio: list[
 
 def process_chapter(path: Path, refs: dict[str, Any], _client: Any, _model: str, args: Any) -> dict[str, Any]:
     """Write a portable baseline H3 scene and its explicit reference order."""
-    chapter_id = path.stem; text = util.read_chapter(path); target = args.out_dir / chapter_id; target.mkdir(parents=True, exist_ok=True)
-    pictures = refs.get("picture_assets", [])[:args.max_pictures]; audio = refs.get("audio_assets", [])[:args.max_audio]
-    subjects = []; picture_order = []
+    chapter_id = path.stem
+    text = util.read_chapter(path)
+    target = args.out_dir / chapter_id
+    target.mkdir(parents=True, exist_ok=True)
+    pictures = refs.get("picture_assets", [])[:args.max_pictures]
+    audio = refs.get("audio_assets", [])[:args.max_audio]
+    subjects = []
+    picture_order = []
     for number, asset in enumerate(pictures, 1):
         subject, picture = f"<Subject {number}>", f"<Picture {number}>"
         subjects.append({"h3_subject_label": subject, "global_id": asset["linked_global_id"], "canonical_name": asset.get("canonical_name", ""), "pictures": [{"h3_picture_label": picture, "asset_id": asset["asset_id"], "view_type": asset.get("view_type", "")} ]})
@@ -105,5 +113,6 @@ def process_chapter(path: Path, refs: dict[str, Any], _client: Any, _model: str,
     bindings = {"subjects": subjects, "audio": audio_order, "picture_input_order": picture_order, "audio_input_order": audio_order, "unreferenced_visible_entities": []}
     definitions = "\n".join(f"{s['h3_subject_label']} {s['canonical_name']}: use {s['pictures'][0]['h3_picture_label']}." for s in subjects) or "No external visual references."
     prompt = "\n".join(["summary:", "[reference generation] Adapt this chapter into a cinematic beat.", "subject_definitions:", definitions, "audio_definitions:", "None.", "detailed_description:", f"[Shot 1] Faithfully depict this narrative beat: {text[:1800]}", "overall_soundscape:", "Natural scene ambience appropriate to the setting.", "non_diegetic_music:", "Restrained cinematic score only if it supports the scene.", ""])
-    util.save_json(target / "scene_001_assets.json", bindings); (target / "scene_001_prompt.txt").write_text(prompt, encoding="utf-8")
+    util.save_json(target / "scene_001_assets.json", bindings)
+    (target / "scene_001_prompt.txt").write_text(prompt, encoding="utf-8")
     return {"chapter_id": chapter_id, "saved_prompt_count": 1, "outputs": [{"scene_id": "scene_001", "prompt_file": "scene_001_prompt.txt", "assets_file": "scene_001_assets.json"}]}

@@ -34,7 +34,10 @@ class ConsolidateReferencesNode:
             "out_dir": ("STRING", {"default": _default_output_dir()}),
         }}
 
-    RETURN_TYPES = ("MINIMAX_REGISTRY",); RETURN_NAMES = ("consolidated_references",); FUNCTION = "run"; CATEGORY = "MiniMax H3 Novel"
+    RETURN_TYPES = ("MINIMAX_REGISTRY",)
+    RETURN_NAMES = ("consolidated_references",)
+    FUNCTION = "run"
+    CATEGORY = "MiniMax H3 Novel"
 
     def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> tuple[dict[str, Any]]:
         chapters = list(chapter_catalogs or [])
@@ -61,5 +64,7 @@ class ConsolidateReferencesNode:
         audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
         digest = hashlib.sha256("\n".join(f"{c['chapter_id']}:{c.get('source', {}).get('sha256', '')}" for c in chapters).encode()).hexdigest()
         payload = {"schema_version": pipeline.OUTPUT_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": lmstudio_config["chat_backend"]}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
-        output = Path(out_dir.strip()); util.save_json(output / "consolidated_references.json", payload); pipeline.write_asset_prompts(output / "reference_asset_prompts.txt", pictures, audio)
+        output = Path(out_dir.strip())
+        util.save_json(output / "consolidated_references.json", payload)
+        pipeline.write_asset_prompts(output / "reference_asset_prompts.txt", pictures, audio)
         return (payload,)
