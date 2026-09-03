@@ -17,6 +17,7 @@ Requirements:
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import re
@@ -29,13 +30,17 @@ from openai import OpenAI
 
 SCHEMA_VERSION = "minimax-h3-novel-refs.chapter.v2"
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}
-SCRIPT_VERSION = "2.4.1"
+SCRIPT_VERSION = "2.5.0"
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
 THINKING_ENABLED = False
 CHAT_BACKEND = "auto"
 QWEN35_MAX_OUTPUT_TOKENS = 2200
 QWEN35_LENGTH_RETRIES = 2
+QWEN35_SAFE_CHUNK_CHARS = 3600
+QWEN35_TOP_K = 20
+QWEN35_MIN_P = 0.0
+QWEN35_REPEAT_PENALTY = 1.05
 
 
 def _is_comfy_interrupt(error: BaseException) -> bool:
@@ -137,9 +142,12 @@ CHUNK_SCHEMA = {
         "type": "object",
         "properties": {
             "chunk_summary": {"type": "string", "maxLength": 450},
-            "characters": {"type": "array", "items": entity_schema("character")},
-            "locations": {"type": "array", "items": entity_schema("location")},
-            "objects": {"type": "array", "items": entity_schema("object")},
+            # Bounded root arrays are essential for a local model: without them
+            # it can keep discovering incidental nouns until max_tokens closes an
+            # otherwise valid JSON object mid-array.
+            "characters": {"type": "array", "maxItems": 6, "items": entity_schema("character")},
+            "locations": {"type": "array", "maxItems": 4, "items": entity_schema("location")},
+            "objects": {"type": "array", "maxItems": 6, "items": entity_schema("object")},
         },
         "required": ["chunk_summary", "characters", "locations", "objects"],
         "additionalProperties": False,
@@ -290,6 +298,17 @@ def _use_qwen35_chatml(model: str) -> bool:
     return _is_qwen35_model(model)
 
 
+def _use_qwen35_structured(model: str) -> bool:
+    """Use LM Studio's grammar-constrained JSON path unless ChatML is forced.
+
+    `auto` deliberately prefers structured output.  Modern LM Studio applies a
+    grammar for JSON Schema responses, which prevents a normal response from
+    ending with an invalid brace/comma sequence.  The manual ChatML path remains
+    available as an explicit compatibility fallback for older server builds.
+    """
+    return CHAT_BACKEND == "auto" and _is_qwen35_model(model)
+
+
 
 def _complete_json_prefix(text: str) -> str | None:
     """Return the first complete top-level JSON object, or None if incomplete.
@@ -351,6 +370,11 @@ def _qwen35_stream_json_completion(
         max_tokens=max_tokens,
         stop=["<|im_end|>", "<END_JSON>"],
         stream=True,
+        extra_body={
+            "top_k": QWEN35_TOP_K,
+            "min_p": QWEN35_MIN_P,
+            "repeat_penalty": QWEN35_REPEAT_PENALTY,
+        },
     )
     try:
         for event in stream:
@@ -376,6 +400,77 @@ def _qwen35_stream_json_completion(
     elapsed = time.perf_counter() - started
     raw = complete if complete is not None else "".join(chunks)
     return raw, elapsed, None, finish_reason
+
+
+def _qwen35_structured_json_completion(
+    client: OpenAI,
+    model: str,
+    system: str,
+    user: str,
+    schema: dict[str, Any],
+    temperature: float,
+    max_tokens: int,
+) -> tuple[str, float]:
+    """Request grammar-constrained JSON with Qwen-specific LM Studio controls."""
+    started = time.perf_counter()
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "/no_think\n\n" + system},
+            {"role": "user", "content": user},
+        ],
+        temperature=min(temperature, 0.16),
+        top_p=0.8,
+        max_tokens=max_tokens,
+        response_format={"type": "json_schema", "json_schema": schema},
+        # LM Studio supports these sampler controls as OpenAI-compatible
+        # extensions.  They keep local Qwen JSON extraction conservative while
+        # `reasoning: off` avoids spending the output budget on a think block.
+        extra_body={
+            "reasoning": "on" if THINKING_ENABLED else "off",
+            "enableThinking": bool(THINKING_ENABLED),
+            "chat_template_kwargs": {"enable_thinking": bool(THINKING_ENABLED)},
+            "top_k": QWEN35_TOP_K,
+            "min_p": QWEN35_MIN_P,
+            "repeat_penalty": QWEN35_REPEAT_PENALTY,
+        },
+    )
+    raw = response.choices[0].message.content or ""
+    return raw, time.perf_counter() - started
+
+
+def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a retry schema small enough to finish under a short token cap."""
+    compact = copy.deepcopy(schema)
+    root_props = compact["schema"]["properties"]
+    for name in ("characters", "locations", "objects"):
+        root_props[name]["maxItems"] = min(3, int(root_props[name].get("maxItems", 3)))
+
+    def limit(node: dict[str, Any], field_name: str = "") -> None:
+        if node.get("type") == "string" and "maxLength" in node:
+            limit_by_field = {
+                "chunk_summary": 240,
+                "canonical_name": 80,
+                "stable_visual_description": 180,
+                "chapter_appearance": 160,
+                "chapter_state": 160,
+                "voice_description": 100,
+                "evidence": 80,
+            }
+            node["maxLength"] = min(int(node["maxLength"]), limit_by_field.get(field_name, 80))
+        if node.get("type") == "array":
+            item_limit = {"aliases": 2, "distinguishing_features": 3, "reference_view_hints": 2, "evidence": 1}
+            if field_name in item_limit:
+                node["maxItems"] = min(int(node.get("maxItems", item_limit[field_name])), item_limit[field_name])
+            items = node.get("items")
+            if isinstance(items, dict):
+                limit(items, field_name)
+        for name, value in node.get("properties", {}).items():
+            if isinstance(value, dict):
+                limit(value, name)
+
+    limit(compact["schema"])
+    return compact
 
 def _qwen35_chatml_prompt(system: str, user: str, schema: dict[str, Any]) -> str:
     # The Qwen3.5 GGUF template supplied by the model starts assistant generation
@@ -415,29 +510,49 @@ def chat_json(
         effective_max_tokens = min(max_tokens, QWEN35_MAX_OUTPUT_TOKENS)
         last_error: Exception | None = None
         last_raw = ""
+        use_structured = _use_qwen35_structured(model)
         for attempt in range(QWEN35_LENGTH_RETRIES + 1):
+            request_schema = _qwen35_compact_schema(schema) if attempt else schema
             retry_note = ""
             if attempt:
                 retry_note = (
                     "\n\nCRITICAL RETRY: The previous answer was truncated or invalid. "
-                    "Return a MUCH SMALLER JSON object. Obey every maxItems/maxLength limit. "
-                    "Use at most 3 evidence anchors per entity, each <=120 characters. "
-                    "Do not quote dialogue. Do not narrate events. Finish and close the JSON well before the token limit."
-                )
-            prompt = _qwen35_chatml_prompt(system, user + retry_note, schema)
+                    "The retry schema is deliberately smaller: return at most 3 entities in each list. "
+                    "Use one short evidence anchor per entity, omit incidental props, do not quote dialogue, "
+                    "and finish well before the token limit."
+            )
             try:
-                raw, elapsed, completion_tokens, finish_reason = _qwen35_stream_json_completion(
-                    client=client,
-                    model=model,
-                    prompt=prompt,
-                    temperature=(min(temperature, 0.12) if attempt else temperature),
-                    top_p=(0.8 if attempt else 0.9),
-                    max_tokens=effective_max_tokens,
-                )
+                if use_structured:
+                    try:
+                        raw, elapsed = _qwen35_structured_json_completion(
+                            client, model, system, user + retry_note, request_schema,
+                            min(temperature, 0.12) if attempt else temperature, effective_max_tokens,
+                        )
+                        completion_tokens = None
+                        finish_reason = "structured"
+                        backend = "qwen35-structured"
+                    except Exception as structured_error:
+                        # Old LM Studio builds or model runners may not expose
+                        # grammar-constrained OpenAI responses.  Keep auto mode
+                        # compatible by falling back to the established manual
+                        # ChatML stream for this and all later attempts.
+                        print(f"    Qwen3.5 structured JSON unavailable ({structured_error}); falling back to ChatML...")
+                        use_structured = False
+                if not use_structured:
+                    prompt = _qwen35_chatml_prompt(system, user + retry_note, request_schema)
+                    raw, elapsed, completion_tokens, finish_reason = _qwen35_stream_json_completion(
+                        client=client,
+                        model=model,
+                        prompt=prompt,
+                        temperature=(min(temperature, 0.12) if attempt else temperature),
+                        top_p=(0.8 if attempt else 0.9),
+                        max_tokens=effective_max_tokens,
+                    )
+                    backend = "qwen35-chatml-stream"
                 last_raw = raw
                 token_note = f", {completion_tokens} output tokens" if completion_tokens is not None else ""
                 print(
-                    f"    LLM: qwen35-chatml-stream, thinking={'on' if THINKING_ENABLED else 'off'}, "
+                    f"    LLM: {backend}, thinking={'on' if THINKING_ENABLED else 'off'}, "
                     f"{elapsed:.1f}s{token_note}, stop={finish_reason}, cap={effective_max_tokens}, attempt={attempt + 1}"
                 )
                 if finish_reason == "length":
@@ -729,7 +844,16 @@ def process_chapter(
             pass
 
     text = read_chapter(path)
-    chunks = split_chunks(text, max(3000, args.chunk_chars), max(0, args.overlap_paragraphs))
+    requested_chunk_chars = max(3000, args.chunk_chars)
+    effective_chunk_chars = requested_chunk_chars
+    if _use_qwen35_chatml(model):
+        effective_chunk_chars = min(requested_chunk_chars, max(3000, QWEN35_SAFE_CHUNK_CHARS))
+        if effective_chunk_chars != requested_chunk_chars:
+            print(
+                f"  Qwen3.5 safe chunking: {requested_chunk_chars:,} → {effective_chunk_chars:,} chars "
+                "to keep each JSON catalog within its output budget"
+            )
+    chunks = split_chunks(text, effective_chunk_chars, max(0, args.overlap_paragraphs))
     cache_dir = out_dir / ".cache" / chapter_id
     cache_dir.mkdir(parents=True, exist_ok=True)
 

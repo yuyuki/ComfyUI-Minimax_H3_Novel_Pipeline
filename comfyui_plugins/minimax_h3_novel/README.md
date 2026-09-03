@@ -25,8 +25,23 @@ Usage
 
 All non-secret connection settings are entered in the `LM Studio Configuration`
 node: `api_url`, `model`, `chat_backend`, `thinking`,
-`qwen35_max_output_tokens`, and `qwen35_length_retries`. They are shared by
-all three LLM nodes through the `lmstudio_config` output.
+`qwen35_max_output_tokens`, `qwen35_length_retries`, and the Qwen sampler /
+safe-chunk controls. They are shared by all three LLM nodes through the
+`lmstudio_config` output.
+
+### Qwen3.5 extraction profile
+
+Leave `chat_backend` on `auto` and `thinking` off.  For Qwen3.5, the Extract
+node now asks LM Studio's schema-constrained chat endpoint first, with
+`reasoning: off`, `top_k`, `min_p`, and `repeat_penalty` controls.  It falls
+back to the manual ChatML stream only when that endpoint is unavailable.
+
+`qwen35_safe_chunk_chars` defaults to 3600, so a larger Extract-node
+`chunk_chars` value is safely split before an individual JSON catalog becomes
+too large.  The retry schema is also intentionally smaller.  Use 2048 only for
+short passages; 3072–4096 is the practical output budget for passages with
+several named characters, locations, and props.  Reducing `max_tokens` cannot
+repair a response that needs more tokens to close its JSON object.
 
 Enter the API key in **ComfyUI Settings → MiniMax H3 Novel → LM Studio → LM
 Studio API Key**. The browser sends it to the ComfyUI backend before a workflow

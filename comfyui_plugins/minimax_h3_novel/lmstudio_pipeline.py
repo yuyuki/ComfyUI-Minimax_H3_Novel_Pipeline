@@ -68,11 +68,17 @@ def load(step: str) -> ModuleType:
 
 
 def configure_qwen(module: Any, *, thinking: bool, chat_backend: str,
-                   max_output_tokens: int, length_retries: int) -> None:
+                   max_output_tokens: int, length_retries: int,
+                   safe_chunk_chars: int = 3600, top_k: int = 20,
+                   min_p: float = 0.0, repeat_penalty: float = 1.05) -> None:
     module.THINKING_ENABLED = bool(thinking)
     module.CHAT_BACKEND = chat_backend
     module.QWEN35_MAX_OUTPUT_TOKENS = max(256, int(max_output_tokens))
     module.QWEN35_LENGTH_RETRIES = max(0, int(length_retries))
+    module.QWEN35_SAFE_CHUNK_CHARS = max(3000, int(safe_chunk_chars))
+    module.QWEN35_TOP_K = max(1, int(top_k))
+    module.QWEN35_MIN_P = min(1.0, max(0.0, float(min_p)))
+    module.QWEN35_REPEAT_PENALTY = min(2.0, max(0.8, float(repeat_penalty)))
 
 
 def make_client_and_model(module: ModuleType, api_url: str, api_key: str, model: str) -> tuple[object, str]:

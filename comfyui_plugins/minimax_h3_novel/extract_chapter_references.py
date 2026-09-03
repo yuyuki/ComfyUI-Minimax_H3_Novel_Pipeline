@@ -69,13 +69,27 @@ class ExtractChapterReferencesNode:
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         pipeline = lmstudio_pipeline.load("extract")
-        lmstudio_pipeline.configure_qwen(pipeline, thinking=bool(lmstudio_config["thinking"]), chat_backend=str(lmstudio_config["chat_backend"]), max_output_tokens=int(lmstudio_config["qwen35_max_output_tokens"]), length_retries=int(lmstudio_config["qwen35_length_retries"]))
+        lmstudio_pipeline.configure_qwen(
+            pipeline,
+            thinking=bool(lmstudio_config["thinking"]),
+            chat_backend=str(lmstudio_config["chat_backend"]),
+            max_output_tokens=int(lmstudio_config["qwen35_max_output_tokens"]),
+            length_retries=int(lmstudio_config["qwen35_length_retries"]),
+            safe_chunk_chars=int(lmstudio_config.get("qwen35_safe_chunk_chars", 3600)),
+            top_k=int(lmstudio_config.get("qwen35_top_k", 20)),
+            min_p=float(lmstudio_config.get("qwen35_min_p", 0.0)),
+            repeat_penalty=float(lmstudio_config.get("qwen35_repeat_penalty", 1.05)),
+        )
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config["api_key"]), str(lmstudio_config.get("model", "")))
         client = lmstudio_pipeline.make_interruptible_client(client)
         args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), delay=0.0, base_url=lmstudio_config["api_url"])
         output = Path(out_dir.strip())
         output.mkdir(parents=True, exist_ok=True)
-        backend = "qwen35-chatml" if pipeline._use_qwen35_chatml(resolved_model) else "openai-chat"
+        backend = (
+            "qwen35-structured" if pipeline._use_qwen35_structured(resolved_model)
+            else "qwen35-chatml" if pipeline._use_qwen35_chatml(resolved_model)
+            else "openai-chat"
+        )
         _log(f"LM Studio extraction: model={resolved_model}, backend={backend}, chapters={len(paths)}")
         started = time.perf_counter()
         results = []

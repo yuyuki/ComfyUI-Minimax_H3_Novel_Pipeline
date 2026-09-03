@@ -28,35 +28,44 @@ Why this file helps AI agents
   must expose to users.
 
 Recommended plugin design (minimal, actionable)
-- Plugin name: `minimax_h3_comfy` (folder: `comfyui_plugins/minimax_h3_comfy`).
+- Plugin name: `minimax_h3_novel` (folder: `comfyui_plugins/minimax_h3_novel`).
 - Primary node classes (one node per script):
-  - `ExtractChapterReferencesNode` — inputs: generative `CLIP`, chapter files/folder;
+  - `LMStudioConfigurationNode` — inputs: LM Studio API URL, optional model ID,
+    Qwen backend/thinking/output controls; outputs: a non-secret configuration
+    object. The API key must be read from ComfyUI settings or the runtime
+    environment, never from a workflow input.
+  - `ExtractChapterReferencesNode` — inputs: `MINIMAX_LMSTUDIO_CONFIG`, chapter files/folder;
     params: `chunk_chars`, `overlap_paragraphs`, `temperature`, `max_tokens`, `force`.
     outputs: per-chapter JSON payload(s) (Python dict objects) and optional saved files.
-  - `ConsolidateReferencesNode` — inputs: list of chapter JSON payloads; params: `picture_threshold`,
+  - `ConsolidateReferencesNode` — inputs: `MINIMAX_LMSTUDIO_CONFIG`, list of chapter JSON payloads; params: `picture_threshold`,
     `audio_threshold`, `asset_batch_size`, `no_variants`, `audit_max_entities`, etc.; outputs: consolidated
     registry dict and picture/audio briefs list.
-  - `GenerateH3PromptsNode` — inputs: consolidated registry and chapter text; params: `duration`,
+  - `GenerateH3PromptsNode` — inputs: `MINIMAX_LMSTUDIO_CONFIG`, consolidated registry and chapter text; params: `duration`,
     `scenes_per_chunk`, `scenes_per_chapter`, `max_tokens`, `temperature`; outputs: H3 prompt texts.
 - Node behavior notes:
   - Keep the ComfyUI node outputs as Python objects (dicts / lists) so following nodes
     can bind, inspect, and optionally save to disk.
   - Preserve the scripts' schema checks and JSON parse logic; reuse functions where
     practical by importing from the original scripts or factoring shared utilities.
-  - Expose `base_url` and `api_key` so users can point at LM Studio or other OpenAI-compatible endpoints.
+  - All language-model work uses LM Studio's OpenAI-compatible API. Do not add or
+    restore `CLIP` inputs, model loading, or CLIP-dependent code paths.
+  - Expose the non-secret `base_url` and model/backend controls through
+    `LMStudioConfigurationNode`; keep API keys out of workflow JSON, saved outputs,
+    logs, and source code.
 
 Implementation details & constraints
 - Dependencies: `pypdf` (optional for PDFs). Mirror the `requirements.txt` in
   the runtime environment used by ComfyUI.
 - Streaming and Qwen3.5 special-cases: the scripts include robust streaming/ChatML
   helpers. A faithful node implementation should either reuse those helpers or
-  implement equivalent streaming-aware calls (particularly for `qwen35-chatml`).
+  implement equivalent streaming-aware calls (particularly the constrained-JSON
+  Qwen3.5 path and `qwen35-chatml` compatibility fallback).
 - Files vs in-memory: nodes should support both — return payloads in memory and
   optionally write the same JSON files the scripts produce.
 
 Suggested plugin file layout
 ```
-comfyui_plugins/minimax_h3_comfy/
+comfyui_plugins/minimax_h3_novel/
   __init__.py            # node registration
   nodes.py               # ComfyUI node classes
   util.py                # shared helpers ported from scripts (parsers, schema, chat_json)
@@ -65,16 +74,17 @@ comfyui_plugins/minimax_h3_comfy/
 ```
 
 How an AI coding agent should proceed
-1. Create `nodes.py` with three nodes matching the classes above. Keep nodes small —
-   call out to `util.py` which ports parsing/LLM helpers from the scripts.
+1. Keep the LM Studio API nodes small — call out to `util.py` and the bundled
+   pipeline modules for parsing, schema, streaming, and JSON helpers.
 2. Add node registration in `__init__.py` per ComfyUI conventions (import and register nodes).
 3. Provide example flows in `examples/` showing: (Extract → Consolidate → Generate).
 4. Add minimal unit tests or an example notebook that runs the chain against a small
    sample chapter and a mocked LM client.
 
 Security & safety
-- Do not embed credentials in the plugin. The nodes run through ComfyUI's
-  connected generative `CLIP` model.
+- Do not embed credentials in the plugin. The nodes call the configured LM Studio
+  OpenAI-compatible API and must read API keys only from ComfyUI settings or the
+  runtime environment.
 
 Files added/modified by this change
 | File | Purpose |
@@ -82,5 +92,5 @@ Files added/modified by this change
 | [AGENTS.md](AGENTS.md) | Guidance for implementing a ComfyUI plugin mapping the three-step pipeline. |
 
 Next suggestions
-- I can scaffold the plugin (`comfyui_plugins/minimax_h3_comfy`) with `nodes.py` and
-  `util.py` porting the core helpers from the scripts. Shall I scaffold those files now?
+- Extend the existing `comfyui_plugins/minimax_h3_novel` package rather than
+  scaffolding a CLIP-based alternative.
