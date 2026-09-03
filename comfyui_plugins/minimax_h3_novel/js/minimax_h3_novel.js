@@ -9,115 +9,6 @@ function widget(node, name) {
     return node.widgets?.find((item) => item.name === name);
 }
 
-function migrateLegacyExtractDefaults(node) {
-    // Version 1 used a CLIP input and had no endpoint widgets. ComfyUI stores
-    // widget values by position, so recover its values after the LM Studio
-    // fields were inserted at the beginning of the node.
-    const apiUrl = widget(node, "api_url");
-    const apiKey = widget(node, "api_key");
-    const model = widget(node, "model");
-    const chapterPaths = widget(node, "chapter_paths");
-    const savedChapter = widget(node, "saved_chapter");
-    const outDir = widget(node, "out_dir");
-    const chunkChars = widget(node, "chunk_chars");
-    const overlap = widget(node, "overlap_paragraphs");
-    const temperature = widget(node, "temperature");
-    const maxTokens = widget(node, "max_tokens");
-    const isLegacyDefaults = Number(model?.value) === 5500
-        && Number(chapterPaths?.value) === 2
-        && Number(savedChapter?.value) === 0.35
-        && Number(chunkChars?.value) === 8192;
-    if (!isLegacyDefaults) return;
-
-    const legacyPaths = apiUrl.value;
-    const legacySavedChapter = apiKey.value;
-    const legacyOutDir = overlap.value;
-    apiUrl.value = "http://127.0.0.1:1234/v1";
-    apiKey.value = "lm-studio";
-    model.value = "";
-    chapterPaths.value = legacyPaths;
-    savedChapter.value = legacySavedChapter;
-    chunkChars.value = 5500;
-    overlap.value = 2;
-    temperature.value = 0.35;
-    maxTokens.value = 2200;
-    outDir.value = legacyOutDir || outDir.options?.default;
-}
-
-function migrateLegacyConsolidationDefaults(node) {
-    const apiUrl = widget(node, "api_url");
-    const apiKey = widget(node, "api_key");
-    const model = widget(node, "model");
-    const candidateCount = widget(node, "candidate_count");
-    const includeAllBelow = widget(node, "include_all_below");
-    const pictureThreshold = widget(node, "picture_threshold");
-    const audioThreshold = widget(node, "audio_threshold");
-    const maxCharacterViews = widget(node, "max_character_base_views");
-    const maxLocationViews = widget(node, "max_location_base_views");
-    const maxObjectViews = widget(node, "max_object_base_views");
-    const assetBatchSize = widget(node, "asset_batch_size");
-    const noVariants = widget(node, "no_variants");
-    const noAudit = widget(node, "no_audit");
-    const auditMaxEntities = widget(node, "audit_max_entities");
-    const temperature = widget(node, "temperature");
-    const maxTokens = widget(node, "max_tokens");
-    const outDir = widget(node, "out_dir");
-    const isShiftedLegacyNode = Number(apiUrl?.value) === 12
-        && Number(apiKey?.value) === 35
-        && model?.value === "recommended";
-    if (!isShiftedLegacyNode) return;
-
-    const values = [
-        apiUrl.value, apiKey.value, model.value, candidateCount.value,
-        includeAllBelow.value, pictureThreshold.value, audioThreshold.value,
-        maxCharacterViews.value, maxLocationViews.value, maxObjectViews.value,
-        assetBatchSize.value, noVariants.value, noAudit.value,
-        auditMaxEntities.value, temperature.value, maxTokens.value, outDir.value,
-    ];
-    apiUrl.value = "http://127.0.0.1:1234/v1";
-    apiKey.value = "lm-studio";
-    model.value = "";
-    [candidateCount.value, includeAllBelow.value, pictureThreshold.value,
-        audioThreshold.value, maxCharacterViews.value, maxLocationViews.value,
-        maxObjectViews.value, assetBatchSize.value, noVariants.value,
-        noAudit.value, auditMaxEntities.value, temperature.value,
-        maxTokens.value, outDir.value] = values.slice(0, 14);
-}
-
-function migrateLegacyPromptDefaults(node) {
-    const apiUrl = widget(node, "api_url");
-    const apiKey = widget(node, "api_key");
-    const model = widget(node, "model");
-    const chapterPaths = widget(node, "chapter_paths");
-    const savedChapter = widget(node, "saved_chapter");
-    const duration = widget(node, "duration");
-    const maxPictures = widget(node, "max_pictures");
-    const maxAudio = widget(node, "max_audio");
-    const outDir = widget(node, "out_dir");
-    // The former CLIP-based node had: chapter paths, saved chapter, duration,
-    // max pictures, max audio, output folder.
-    const isLegacyNode = Number(model?.value) === 8
-        && Number(chapterPaths?.value) === 8
-        && Number(savedChapter?.value) === 4;
-    if (!isLegacyNode) return;
-
-    const legacyPaths = apiUrl.value;
-    const legacySaved = apiKey.value;
-    const legacyDuration = model.value;
-    const legacyPictures = chapterPaths.value;
-    const legacyAudio = savedChapter.value;
-    const legacyOutDir = duration.value;
-    apiUrl.value = "http://127.0.0.1:1234/v1";
-    apiKey.value = "lm-studio";
-    model.value = "";
-    chapterPaths.value = legacyPaths;
-    savedChapter.value = legacySaved;
-    duration.value = legacyDuration;
-    maxPictures.value = legacyPictures;
-    maxAudio.value = legacyAudio;
-    outDir.value = legacyOutDir || outDir.options?.default;
-}
-
 function pickerButton(node) {
     return widget(node, PICKER_BUTTON_NAME);
 }
@@ -377,9 +268,6 @@ function installSavedChapterPicker(node) {
 app.registerExtension({
     name: EXTENSION_NAME,
     async nodeCreated(node) {
-        if (node.comfyClass === "ConsolidateReferencesNode") migrateLegacyConsolidationDefaults(node);
-        if (node.comfyClass === "ExtractChapterReferencesNode") migrateLegacyExtractDefaults(node);
-        if (node.comfyClass === "GenerateH3PromptsNode") migrateLegacyPromptDefaults(node);
         installSavedChapterPicker(node);
     },
 });
