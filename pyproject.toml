@@ -1,0 +1,14 @@
+[project]
+name = "minimax-h3-novel-pipeline"
+description = "ComfyUI nodes for extracting novel references and generating MiniMax H3 prompts."
+version = "2.0.0"
+dependencies = ["pypdf", "openai>=1.0"]
+
+[project.urls]
+Repository = "https://github.com/yuyuki/minimax_h3_novel_pipeline"
+
+# Used by Comfy Registry https://comfyregistry.org
+[tool.comfy]
+PublisherId = "yuyuki"
+DisplayName = "MiniMax H3 Novel Pipeline"
+Icon = ""
