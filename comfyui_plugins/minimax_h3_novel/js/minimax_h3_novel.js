@@ -17,7 +17,11 @@ function updatePickerButton(node) {
     const button = pickerButton(node);
     const saved = widget(node, "saved_chapter");
     if (!button || !saved) return;
-    button.label = saved.value || "Select chapters";
+    const selected = String(widget(node, "chapter_paths")?.value || "")
+        .split(/\r?\n/)
+        .filter(Boolean);
+    button.label = saved.value
+        || (selected.length === 1 ? selected[0] : selected.length > 1 ? `${selected.length} chapters selected` : "Select chapters");
     app.graph?.setDirtyCanvas(true, true);
 }
 
@@ -35,6 +39,16 @@ function setSavedChapter(node, file) {
     saved.value = file || "";
     saved.callback?.(saved.value);
     updatePickerButton(node);
+}
+
+function setSavedChapters(node, files) {
+    const selected = [...new Set(files)];
+    const paths = widget(node, "chapter_paths");
+    if (paths) {
+        paths.value = selected.join("\n");
+        paths.callback?.(paths.value);
+    }
+    setSavedChapter(node, selected.length === 1 ? selected[0] : "");
 }
 
 async function fetchSavedChapters() {
@@ -73,12 +87,14 @@ async function deleteSavedChapter(node, file, onComplete = null) {
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Delete failed");
-        const paths = widget(node, "chapter_paths");
-        if (paths?.value === file) {
-            paths.value = "";
-            paths.callback?.(paths.value);
+        const selected = String(widget(node, "chapter_paths")?.value || "")
+            .split(/\r?\n/)
+            .filter((path) => path && path !== file);
+        if (selected.length !== String(widget(node, "chapter_paths")?.value || "").split(/\r?\n/).filter(Boolean).length) {
+            setSavedChapters(node, selected);
+        } else if (widget(node, "saved_chapter")?.value === file) {
+            setSavedChapter(node, "");
         }
-        if (widget(node, "saved_chapter")?.value === file) setSavedChapter(node, "");
         const files = await refreshSavedChapters(node);
         await onComplete?.(files);
     } catch (error) {
@@ -181,7 +197,25 @@ async function openSavedChapterDialog(node) {
     document.addEventListener("keydown", onKeyDown, true);
     node._minimaxH3ChapterDialog = { close };
 
+    const selectedFiles = new Set(
+        String(widget(node, "chapter_paths")?.value || widget(node, "saved_chapter")?.value || "")
+            .split(/\r?\n/)
+            .filter(Boolean),
+    );
+    let currentFiles = [];
+    let addSelection;
+    const updateAddSelectionButton = () => {
+        if (!addSelection) return;
+        addSelection.disabled = selectedFiles.size === 0;
+        addSelection.style.opacity = addSelection.disabled ? "0.55" : "1";
+        addSelection.style.cursor = addSelection.disabled ? "default" : "pointer";
+    };
+
     const renderFiles = (files) => {
+        currentFiles = files;
+        for (const file of selectedFiles) {
+            if (!files.includes(file)) selectedFiles.delete(file);
+        }
         list.replaceChildren();
         if (!files.length) {
             const empty = document.createElement("div");
@@ -194,6 +228,17 @@ async function openSavedChapterDialog(node) {
             const row = document.createElement("div");
             row.tabIndex = 0;
             row.style.cssText = "display:flex; align-items:center; gap:10px; padding:9px 10px 9px 16px; cursor:pointer; border-bottom:1px solid #333;";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = selectedFiles.has(file);
+            checkbox.title = `Select ${file}`;
+            checkbox.setAttribute("aria-label", checkbox.title);
+            checkbox.addEventListener("click", (event) => event.stopPropagation());
+            checkbox.addEventListener("change", () => {
+                if (checkbox.checked) selectedFiles.add(file);
+                else selectedFiles.delete(file);
+                updateAddSelectionButton();
+            });
             const name = document.createElement("span");
             name.textContent = file;
             name.style.cssText = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;";
@@ -206,20 +251,21 @@ async function openSavedChapterDialog(node) {
             trash.title = `Delete ${file}`;
             trash.setAttribute("aria-label", trash.title);
             trash.style.cssText += "padding:4px 7px;";
-            const select = () => {
-                setSavedChapter(node, file);
-                close();
+            const toggleSelection = () => {
+                checkbox.checked = !checkbox.checked;
+                checkbox.dispatchEvent(new Event("change"));
             };
-            row.addEventListener("click", select);
+            row.addEventListener("click", toggleSelection);
             row.addEventListener("keydown", (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    select();
+                    toggleSelection();
                 }
             });
-            row.append(name, trash);
+            row.append(checkbox, name, trash);
             list.appendChild(row);
         }
+        updateAddSelectionButton();
     };
     const uploadAndRefresh = (directory) => chooseFiles(node, directory, (files) => {
         if (!closed) renderFiles(files);
@@ -227,7 +273,14 @@ async function openSavedChapterDialog(node) {
     footer.append(
         dialogButton("Select chapter files", () => uploadAndRefresh(false)),
         dialogButton("Select chapter folder", () => uploadAndRefresh(true)),
+        addSelection = dialogButton("Add selection", () => {
+            const selected = currentFiles.filter((file) => selectedFiles.has(file));
+            if (!selected.length) return;
+            setSavedChapters(node, selected);
+            close();
+        }),
     );
+    updateAddSelectionButton();
     document.body.appendChild(overlay);
 
     try {
