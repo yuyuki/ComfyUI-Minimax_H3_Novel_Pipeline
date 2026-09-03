@@ -1,7 +1,7 @@
 [project]
 name = "minimax-h3-novel-pipeline"
 description = "ComfyUI nodes for extracting novel references and generating MiniMax H3 prompts."
-version = "2.0.0"
+version = "0.9.0"
 dependencies = ["pypdf", "openai>=1.0"]
 
 [project.urls]
