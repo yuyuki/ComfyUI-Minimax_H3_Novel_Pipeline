@@ -37,6 +37,12 @@ CHAT_BACKEND = "auto"
 QWEN35_MAX_OUTPUT_TOKENS = 2200
 QWEN35_LENGTH_RETRIES = 2
 
+
+def _is_comfy_interrupt(error: BaseException) -> bool:
+    """Do not retry a ComfyUI Stop request as though it were an LLM error."""
+    return error.__class__.__name__ == "InterruptProcessingException"
+
+
 CHARACTER_VIEWS = [
     "face_front",
     "full_body_front",
@@ -449,6 +455,8 @@ def chat_json(
                         print(f"    JSON incomplete/invalid ({parse_error}); retrying compactly...")
                         continue
             except Exception as error:
+                if _is_comfy_interrupt(error):
+                    raise
                 last_error = error
                 if attempt < QWEN35_LENGTH_RETRIES:
                     print(f"    Qwen3.5 call failed ({error}); retrying...")
@@ -492,6 +500,8 @@ def chat_json(
         print(f"    LLM: openai-chat structured, {elapsed:.1f}s")
         return parse_json(raw)
     except Exception as first_error:
+        if _is_comfy_interrupt(first_error):
+            raise
         response = client.chat.completions.create(
             model=model,
             messages=[

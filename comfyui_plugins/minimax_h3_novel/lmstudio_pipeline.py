@@ -67,7 +67,7 @@ def load(step: str) -> ModuleType:
     return module
 
 
-def configure_qwen(module: ModuleType, *, thinking: bool, chat_backend: str,
+def configure_qwen(module: Any, *, thinking: bool, chat_backend: str,
                    max_output_tokens: int, length_retries: int) -> None:
     module.THINKING_ENABLED = bool(thinking)
     module.CHAT_BACKEND = chat_backend
