@@ -12,7 +12,11 @@ def _saved_chapter_choices() -> list[str]:
     try:
         import folder_paths
         root = Path(folder_paths.get_input_directory()) / "minimax_h3_novel"
-        return [f"minimax_h3_novel/{p.name}" for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() in util.SUPPORTED_EXTENSIONS] if root.is_dir() else [""]
+        # ``saved_chapter`` is only a single-file fallback.  Keep an explicit
+        # empty enum value so workflows using the multi-file ``chapter_paths``
+        # field pass ComfyUI validation.
+        files = sorted(root.iterdir()) if root.is_dir() else []
+        return [""] + [f"minimax_h3_novel/{p.name}" for p in files if p.is_file() and p.suffix.lower() in util.SUPPORTED_EXTENSIONS]
     except Exception:
         return [""]
 
