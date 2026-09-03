@@ -1,4 +1,4 @@
-"""Standalone ComfyUI node for book-level reference consolidation."""
+"""LM Studio-backed ComfyUI node for cross-chapter consolidation."""
 from __future__ import annotations
 
 import argparse
@@ -6,23 +6,10 @@ import hashlib
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import util
-from .extract_chapter_references import _decode_json_with_clip
-from . import standalone_pipeline as pipeline
-
-
-def _load_pipeline_script(path_hint: str = "", pipeline_dir: str = "") -> Any:
-    """Locate Step 2 in either a source checkout or a ComfyUI install.
-
-    The bundled module is deliberately used even when CLI scripts happen to
-    exist beside the custom node.
-    """
-    """Compatibility shim retained for workflows created with older nodes."""
-    return pipeline
+from . import lmstudio_pipeline, util
 
 
 def _default_output_dir() -> str:
-    """Use ComfyUI's managed output directory by default."""
     try:
         import folder_paths
         return str(Path(folder_paths.get_output_directory()) / "minimax_h3_novel" / "references")
@@ -35,108 +22,44 @@ def _log(message: str) -> None:
 
 
 class ConsolidateReferencesNode:
-    """Reconcile chapter catalogs and generate reusable picture/voice briefs."""
-
     @classmethod
     def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "chapter_catalogs": ("MINIMAX_CHAPTERS",),
-                "clip": ("CLIP",),
-                "candidate_count": ("INT", {"default": 12, "min": 1, "max": 1000}),
-                "include_all_below": ("INT", {"default": 35, "min": 0, "max": 100000}),
-                "picture_threshold": (["optional", "recommended", "required"], {"default": "recommended"}),
-                "audio_threshold": (["optional", "recommended", "required"], {"default": "recommended"}),
-                "max_character_base_views": ("INT", {"default": 4, "min": 1, "max": 7}),
-                "max_location_base_views": ("INT", {"default": 3, "min": 1, "max": 6}),
-                "max_object_base_views": ("INT", {"default": 2, "min": 1, "max": 4}),
-                "asset_batch_size": ("INT", {"default": 16, "min": 1, "max": 1000}),
-                "no_variants": ("BOOLEAN", {"default": False}),
-                "no_audit": ("BOOLEAN", {"default": False}),
-                "audit_max_entities": ("INT", {"default": 120, "min": 0, "max": 100000}),
-                "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0, "step": 0.05}),
-                "max_tokens": ("INT", {"default": 8500, "min": 256, "max": 100000}),
-                "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder for consolidated_references.json and reference_asset_prompts.txt."}),
-            },
-        }
+        return {"required": {
+            "chapter_catalogs": ("MINIMAX_CHAPTERS",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
+            "candidate_count": ("INT", {"default": 12, "min": 1, "max": 1000}), "include_all_below": ("INT", {"default": 35, "min": 0, "max": 100000}),
+            "picture_threshold": (["optional", "recommended", "required"], {"default": "recommended"}), "audio_threshold": (["optional", "recommended", "required"], {"default": "recommended"}),
+            "max_character_base_views": ("INT", {"default": 4, "min": 1, "max": 7}), "max_location_base_views": ("INT", {"default": 3, "min": 1, "max": 6}), "max_object_base_views": ("INT", {"default": 2, "min": 1, "max": 4}), "asset_batch_size": ("INT", {"default": 16, "min": 1, "max": 1000}),
+            "no_variants": ("BOOLEAN", {"default": False}), "no_audit": ("BOOLEAN", {"default": False}), "audit_max_entities": ("INT", {"default": 120, "min": 0, "max": 100000}),
+            "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8500, "min": 256, "max": 100000}),
+            "out_dir": ("STRING", {"default": _default_output_dir()}),
+        }}
 
-    RETURN_TYPES = ("MINIMAX_REGISTRY",)
-    RETURN_NAMES = ("consolidated_references",)
-    FUNCTION = "run"
-    CATEGORY = "MiniMax H3 Novel"
+    RETURN_TYPES = ("MINIMAX_REGISTRY",); RETURN_NAMES = ("consolidated_references",); FUNCTION = "run"; CATEGORY = "MiniMax H3 Novel"
 
-    def run(self, chapter_catalogs: Iterable[dict[str, Any]], clip: Any, out_dir: str = "", **params: Any) -> tuple[dict[str, Any]]:
-        if not isinstance(out_dir, str):
-            raise TypeError("out_dir must be a string")
-        if not out_dir.strip():
-            raise ValueError("out_dir must not be empty")
+    def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> tuple[dict[str, Any]]:
         chapters = list(chapter_catalogs or [])
-        if not chapters:
-            raise ValueError("No chapter catalogs were supplied by ExtractChapterReferencesNode.")
-        if not all(callable(getattr(clip, name, None)) for name in ("tokenize", "generate", "decode")):
-            raise TypeError(
-                "ConsolidateReferencesNode requires a generative CLIP. Load a generative "
-                "text model through Load CLIP; standard SD CLIP encoders cannot reconcile catalogs."
-            )
-
-        # Retain the source script's schema checks and legacy upgrade behaviour.
+        if not chapters: raise ValueError("No chapter catalogs were supplied.")
+        if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
+        if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
+        pipeline = lmstudio_pipeline.load("consolidate")
+        lmstudio_pipeline.configure_qwen(pipeline, thinking=bool(lmstudio_config["thinking"]), chat_backend=str(lmstudio_config["chat_backend"]), max_output_tokens=int(lmstudio_config["qwen35_max_output_tokens"]), length_retries=int(lmstudio_config["qwen35_length_retries"]))
+        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config["api_key"]), str(lmstudio_config.get("model", "")))
+        client = lmstudio_pipeline.make_interruptible_client(client)
+        keys = ("candidate_count", "include_all_below", "picture_threshold", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_variants", "no_audit", "audit_max_entities", "temperature", "max_tokens")
+        args = argparse.Namespace(**{key: params[key] for key in keys}, delay=0.0)
+        _log(f"LM Studio consolidation: model={resolved_model}, chapters={len(chapters)}")
+        registry: list[dict[str, Any]] = []
         for chapter in chapters:
-            schema = chapter.get("schema_version")
-            if schema not in {pipeline.INPUT_SCHEMA, pipeline.LEGACY_INPUT_SCHEMA}:
-                raise ValueError(
-                    f"{chapter.get('chapter_id', '<unknown>')}: unsupported schema {schema!r}; "
-                    f"expected {pipeline.INPUT_SCHEMA!r} or {pipeline.LEGACY_INPUT_SCHEMA!r}."
-                )
-            if schema == pipeline.LEGACY_INPUT_SCHEMA:
-                for key in ("characters", "locations", "objects"):
-                    for entity in chapter.get(key, []):
-                        entity.setdefault("reference_view_hints", [])
-
-        args = argparse.Namespace(
-            candidate_count=int(params["candidate_count"]),
-            include_all_below=int(params["include_all_below"]),
-            picture_threshold=params["picture_threshold"],
-            audio_threshold=params["audio_threshold"],
-            max_character_base_views=int(params["max_character_base_views"]),
-            max_location_base_views=int(params["max_location_base_views"]),
-            max_object_base_views=int(params["max_object_base_views"]),
-            asset_batch_size=int(params["asset_batch_size"]),
-            no_variants=bool(params["no_variants"]),
-            no_audit=bool(params["no_audit"]),
-            audit_max_entities=int(params["audit_max_entities"]),
-            temperature=float(params["temperature"]),
-            max_tokens=int(params["max_tokens"]),
-            delay=0.0,
-        )
-        # Reuse the canonical reconciliation and asset-planning code with the
-        # ComfyUI CLIP JSON transport.
-        # All of Step 2's LLM calls flow through ``chat_json``.
-        model = type(clip).__name__
-        _log(f"Consolidating {len(chapters)} chapter catalog(s) with {model}")
-        registry, pictures, audio = pipeline.consolidate(chapters, args)
-        _log(f"Generated {len(pictures)} picture and {len(audio)} audio asset brief(s)")
-
-        digest_source = "\n".join(
-            f"{chapter['chapter_id']}:{chapter.get('source', {}).get('sha256', '')}"
-            for chapter in chapters
-        )
-        payload = {
-            "schema_version": pipeline.OUTPUT_SCHEMA,
-            "source_digest": hashlib.sha256(digest_source.encode()).hexdigest(),
-            "llm": {"backend": "comfyui-clip", "model": model, "thinking": False},
-            "chapters": [{"chapter_id": chapter["chapter_id"], "source_file": chapter.get("source", {}).get("file", ""), "source_sha256": chapter.get("source", {}).get("sha256", "")} for chapter in chapters],
-            "entities": registry,
-            "picture_assets": pictures,
-            "audio_assets": audio,
-            "chapter_entity_map": pipeline.chapter_map(registry),
-            "entity_asset_index": pipeline.asset_index(registry, pictures, audio),
-            "label_note": (
-                "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local. "
-                "Step 3 maps the exact subset used by each clip to <Picture 1>..., <Audio 1>..., while multiple pictures may define the same <Subject N>."
-            ),
-        }
-        output = Path(out_dir.strip())
-        util.save_json(output / "consolidated_references.json", payload)
-        pipeline.write_asset_prompts(output / "reference_asset_prompts.txt", pictures, audio)
-        _log(f"Saved consolidation outputs to {output}")
+            lmstudio_pipeline.comfy_interrupt_check()
+            registry = pipeline.reconcile_chapter(client, resolved_model, chapter, registry, args)
+        lmstudio_pipeline.comfy_interrupt_check()
+        registry = pipeline.audit_registry(client, resolved_model, registry, args)
+        registry.sort(key=lambda item: ({"character": 0, "location": 1, "object": 2}[item["entity_type"]], pipeline.natural_key(item["global_id"])))
+        lmstudio_pipeline.comfy_interrupt_check()
+        pictures = pipeline.generate_picture_assets(client, resolved_model, pipeline.build_picture_specs(registry, args), args)
+        lmstudio_pipeline.comfy_interrupt_check()
+        audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
+        digest = hashlib.sha256("\n".join(f"{c['chapter_id']}:{c.get('source', {}).get('sha256', '')}" for c in chapters).encode()).hexdigest()
+        payload = {"schema_version": pipeline.OUTPUT_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": lmstudio_config["chat_backend"]}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
+        output = Path(out_dir.strip()); util.save_json(output / "consolidated_references.json", payload); pipeline.write_asset_prompts(output / "reference_asset_prompts.txt", pictures, audio)
         return (payload,)

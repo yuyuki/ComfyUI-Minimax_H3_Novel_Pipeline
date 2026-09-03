@@ -10,32 +10,44 @@ function widget(node, name) {
 }
 
 function migrateLegacyExtractDefaults(node) {
-    // Older workflows included endpoint fields before the extraction settings.
-    // ComfyUI stores widget values by position, so after those fields were
-    // removed their old defaults appeared under the wrong labels.
+    // Version 1 used a CLIP input and had no endpoint widgets. ComfyUI stores
+    // widget values by position, so recover its values after the LM Studio
+    // fields were inserted at the beginning of the node.
+    const apiUrl = widget(node, "api_url");
+    const apiKey = widget(node, "api_key");
+    const model = widget(node, "model");
+    const chapterPaths = widget(node, "chapter_paths");
+    const savedChapter = widget(node, "saved_chapter");
     const outDir = widget(node, "out_dir");
     const chunkChars = widget(node, "chunk_chars");
     const overlap = widget(node, "overlap_paragraphs");
     const temperature = widget(node, "temperature");
     const maxTokens = widget(node, "max_tokens");
-    const seed = widget(node, "seed");
-    const isLegacyDefaults = outDir?.value === "http://127.0.0.1:1234/v1"
-        && chunkChars?.value === "lm-studio"
-        && Number(overlap?.value) === 5500
-        && Number(temperature?.value) === 2
-        && Number(maxTokens?.value) === 0
-        && Number(seed?.value) === 8192;
+    const isLegacyDefaults = Number(model?.value) === 5500
+        && Number(chapterPaths?.value) === 2
+        && Number(savedChapter?.value) === 0.35
+        && Number(chunkChars?.value) === 8192;
     if (!isLegacyDefaults) return;
 
-    outDir.value = "";
+    const legacyPaths = apiUrl.value;
+    const legacySavedChapter = apiKey.value;
+    const legacyOutDir = overlap.value;
+    apiUrl.value = "http://127.0.0.1:1234/v1";
+    apiKey.value = "lm-studio";
+    model.value = "";
+    chapterPaths.value = legacyPaths;
+    savedChapter.value = legacySavedChapter;
     chunkChars.value = 5500;
     overlap.value = 2;
     temperature.value = 0.35;
-    maxTokens.value = 8192;
-    seed.value = Math.floor(Math.random() * 0x100000000);
+    maxTokens.value = 2200;
+    outDir.value = legacyOutDir || outDir.options?.default;
 }
 
 function migrateLegacyConsolidationDefaults(node) {
+    const apiUrl = widget(node, "api_url");
+    const apiKey = widget(node, "api_key");
+    const model = widget(node, "model");
     const candidateCount = widget(node, "candidate_count");
     const includeAllBelow = widget(node, "include_all_below");
     const pictureThreshold = widget(node, "picture_threshold");
@@ -50,26 +62,60 @@ function migrateLegacyConsolidationDefaults(node) {
     const temperature = widget(node, "temperature");
     const maxTokens = widget(node, "max_tokens");
     const outDir = widget(node, "out_dir");
-    const thresholds = ["optional", "recommended", "required"];
-    const isShiftedLegacyNode = Number(candidateCount?.value) === 1
-        && Number(includeAllBelow?.value) === 1
-        && !thresholds.includes(pictureThreshold?.value);
+    const isShiftedLegacyNode = Number(apiUrl?.value) === 12
+        && Number(apiKey?.value) === 35
+        && model?.value === "recommended";
     if (!isShiftedLegacyNode) return;
 
-    candidateCount.value = 12;
-    includeAllBelow.value = 35;
-    pictureThreshold.value = "recommended";
-    audioThreshold.value = "recommended";
-    maxCharacterViews.value = 4;
-    maxLocationViews.value = 3;
-    maxObjectViews.value = 2;
-    assetBatchSize.value = 16;
-    noVariants.value = false;
-    noAudit.value = false;
-    auditMaxEntities.value = 120;
-    temperature.value = 0.12;
-    maxTokens.value = 8500;
-    outDir.value = outDir.options?.default ?? "output/minimax_h3_novel/references";
+    const values = [
+        apiUrl.value, apiKey.value, model.value, candidateCount.value,
+        includeAllBelow.value, pictureThreshold.value, audioThreshold.value,
+        maxCharacterViews.value, maxLocationViews.value, maxObjectViews.value,
+        assetBatchSize.value, noVariants.value, noAudit.value,
+        auditMaxEntities.value, temperature.value, maxTokens.value, outDir.value,
+    ];
+    apiUrl.value = "http://127.0.0.1:1234/v1";
+    apiKey.value = "lm-studio";
+    model.value = "";
+    [candidateCount.value, includeAllBelow.value, pictureThreshold.value,
+        audioThreshold.value, maxCharacterViews.value, maxLocationViews.value,
+        maxObjectViews.value, assetBatchSize.value, noVariants.value,
+        noAudit.value, auditMaxEntities.value, temperature.value,
+        maxTokens.value, outDir.value] = values.slice(0, 14);
+}
+
+function migrateLegacyPromptDefaults(node) {
+    const apiUrl = widget(node, "api_url");
+    const apiKey = widget(node, "api_key");
+    const model = widget(node, "model");
+    const chapterPaths = widget(node, "chapter_paths");
+    const savedChapter = widget(node, "saved_chapter");
+    const duration = widget(node, "duration");
+    const maxPictures = widget(node, "max_pictures");
+    const maxAudio = widget(node, "max_audio");
+    const outDir = widget(node, "out_dir");
+    // The former CLIP-based node had: chapter paths, saved chapter, duration,
+    // max pictures, max audio, output folder.
+    const isLegacyNode = Number(model?.value) === 8
+        && Number(chapterPaths?.value) === 8
+        && Number(savedChapter?.value) === 4;
+    if (!isLegacyNode) return;
+
+    const legacyPaths = apiUrl.value;
+    const legacySaved = apiKey.value;
+    const legacyDuration = model.value;
+    const legacyPictures = chapterPaths.value;
+    const legacyAudio = savedChapter.value;
+    const legacyOutDir = duration.value;
+    apiUrl.value = "http://127.0.0.1:1234/v1";
+    apiKey.value = "lm-studio";
+    model.value = "";
+    chapterPaths.value = legacyPaths;
+    savedChapter.value = legacySaved;
+    duration.value = legacyDuration;
+    maxPictures.value = legacyPictures;
+    maxAudio.value = legacyAudio;
+    outDir.value = legacyOutDir || outDir.options?.default;
 }
 
 function pickerButton(node) {
@@ -333,6 +379,72 @@ app.registerExtension({
     async nodeCreated(node) {
         if (node.comfyClass === "ConsolidateReferencesNode") migrateLegacyConsolidationDefaults(node);
         if (node.comfyClass === "ExtractChapterReferencesNode") migrateLegacyExtractDefaults(node);
+        if (node.comfyClass === "GenerateH3PromptsNode") migrateLegacyPromptDefaults(node);
         installSavedChapterPicker(node);
+    },
+});
+
+const LMSTUDIO_API_KEY_SETTING = "MiniMaxH3Novel.LMStudio.ApiKey";
+
+function ensureLmStudioApiKeyFieldWidth() {
+    const styleId = "minimax_h3_novel_lmstudio_api_key_field_width";
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+        #MiniMaxH3Novel\\.LMStudio\\.ApiKey,
+        [id="MiniMaxH3Novel.LMStudio.ApiKey"] {
+            width: 500px !important;
+            max-width: 100% !important;
+            min-width: 300px;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+async function sendLMStudioApiKey() {
+    try {
+        const apiKey = app.ui.settings.getSettingValue(LMSTUDIO_API_KEY_SETTING) || "";
+        const response = await fetch("/minimax_h3_novel/lmstudio-settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ api_key: apiKey }),
+        });
+        if (!response.ok) {
+            console.error("MiniMax H3 Novel: could not save the LM Studio API-key setting.");
+        }
+    } catch (error) {
+        console.error("MiniMax H3 Novel: failed to send the LM Studio API-key setting.", error);
+    }
+}
+
+// This follows ComfyUI's normal global Settings integration. The key is saved
+// by ComfyUI in the local browser profile, never embedded in a workflow, and
+// is passed to the backend only immediately before a workflow is queued.
+app.registerExtension({
+    name: "minimax_h3_novel.lmstudio_settings",
+    settings: [
+        {
+            id: LMSTUDIO_API_KEY_SETTING,
+            name: "LM Studio API Key",
+            type: "text",
+            default: "",
+            category: ["MiniMax H3 Novel", "LM Studio"],
+            tooltip: "Stored locally in ComfyUI settings, not in workflow JSON. Leave blank to use the environment-variable fallback.",
+        },
+    ],
+    async setup() {
+        ensureLmStudioApiKeyFieldWidth();
+        // Settings are loaded after extensions; sync once they are available.
+        setTimeout(() => { sendLMStudioApiKey(); }, 500);
+        const originalSetSettingValue = app.ui.settings.setSettingValue;
+        app.ui.settings.setSettingValue = function(id, value) {
+            originalSetSettingValue.call(this, id, value);
+            if (id === LMSTUDIO_API_KEY_SETTING) sendLMStudioApiKey();
+        };
+    },
+    async beforeQueuing() {
+        await sendLMStudioApiKey();
+        return null;
     },
 });

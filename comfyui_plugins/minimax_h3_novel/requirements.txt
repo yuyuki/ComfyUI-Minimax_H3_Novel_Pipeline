@@ -1,1 +1,2 @@
 pypdf
+openai>=1.0

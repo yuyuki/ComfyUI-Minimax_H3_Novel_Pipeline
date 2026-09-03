@@ -1,7 +1,7 @@
 """Utility helpers ported from the pipeline scripts for use by plugin nodes.
 
 Keep these helpers small and focused so `nodes.py` can call them. They intentionally
-mirror a subset of the original scripts' behaviour (file discovery, reading,
+mirror a subset of the pipeline scripts' behaviour (file discovery, reading,
 and simple JSON helpers).
 """
 from __future__ import annotations

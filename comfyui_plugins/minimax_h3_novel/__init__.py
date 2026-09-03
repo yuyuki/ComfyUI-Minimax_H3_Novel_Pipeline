@@ -26,6 +26,7 @@ def _build_mappings() -> None:
         NODE_CLASS_MAPPINGS.update(
             {
                 "ExtractChapterReferencesNode": _nodes.ExtractChapterReferencesNode,
+                "LMStudioConfigurationNode": _nodes.LMStudioConfigurationNode,
                 "LoadChapterCatalogsNode": _nodes.LoadChapterCatalogsNode,
                 "LoadConsolidatedReferencesNode": _nodes.LoadConsolidatedReferencesNode,
                 "ConsolidateReferencesNode": _nodes.ConsolidateReferencesNode,
@@ -36,6 +37,7 @@ def _build_mappings() -> None:
         NODE_DISPLAY_NAME_MAPPINGS.update(
             {
                 "ExtractChapterReferencesNode": "Extract Chapter References",
+                "LMStudioConfigurationNode": "LM Studio Configuration",
                 "LoadChapterCatalogsNode": "Load Chapter Catalogs",
                 "LoadConsolidatedReferencesNode": "Load Consolidated References",
                 "ConsolidateReferencesNode": "Consolidate References",
@@ -123,6 +125,21 @@ def _register_upload_route() -> None:
                     return web.json_response({"error": "Saved chapter not found"}, status=404)
                 target.unlink()
                 return web.json_response({"deleted": f"minimax_h3_novel/{filename}"})
+            except (ValueError, json.JSONDecodeError) as exc:
+                return web.json_response({"error": str(exc)}, status=400)
+
+        @PromptServer.instance.routes.post("/minimax_h3_novel/lmstudio-settings")
+        async def save_lmstudio_settings(request):
+            """Receive the local ComfyUI setting without ever returning/logging it."""
+            try:
+                from . import lmstudio_settings
+
+                data = await request.json()
+                api_key = data.get("api_key", "")
+                if not isinstance(api_key, str):
+                    raise ValueError("api_key must be a string")
+                lmstudio_settings.set_api_key(api_key)
+                return web.json_response({"configured": bool(api_key.strip())})
             except (ValueError, json.JSONDecodeError) as exc:
                 return web.json_response({"error": str(exc)}, status=400)
 
