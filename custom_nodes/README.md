@@ -21,6 +21,13 @@ Files
 
 Usage
 
+The chapter picker and API-key settings routes require direct local access at
+`http://localhost:8188` or a loopback IP address (use your configured port).
+Remote clients, forwarded proxy requests, and cross-origin browser requests
+receive HTTP 403. This policy covers only this plugin's routes. A proxy that
+strips forwarding headers and rewrites Host/Origin is indistinguishable from a
+local client; do not expose these routes through such a proxy.
+
 ### LM Studio configuration
 
 All non-secret connection settings are entered in the `LM Studio Configuration`

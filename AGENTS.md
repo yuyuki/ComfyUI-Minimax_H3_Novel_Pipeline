@@ -28,7 +28,7 @@ Why this file helps AI agents
   must expose to users.
 
 Recommended plugin design (minimal, actionable)
-- Plugin name: `minimax_h3_novel` (folder: `comfyui_plugins/minimax_h3_novel`).
+- Plugin name: `minimax_h3_novel` (folder: `custom_nodes`).
 - Primary node classes (one node per script):
   - `LMStudioConfigurationNode` — inputs: LM Studio API URL, optional model ID,
     Qwen backend/thinking/output controls; outputs: a non-secret configuration
@@ -92,5 +92,5 @@ Files added/modified by this change
 | [AGENTS.md](AGENTS.md) | Guidance for implementing a ComfyUI plugin mapping the three-step pipeline. |
 
 Next suggestions
-- Extend the existing `comfyui_plugins/minimax_h3_novel` package rather than
+- Extend the existing `custom_nodes` package rather than
   scaffolding a CLIP-based alternative.

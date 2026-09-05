@@ -6,14 +6,14 @@ in its existing ``comfyui_plugins/minimax_h3_novel`` package.
 """
 from __future__ import annotations
 
-from .comfyui_plugins.minimax_h3_novel import (
+from .custom_nodes import (
     NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS,
     comfy_entrypoint,
 )
 
 # This path is relative to this root custom-node package.
-WEB_DIRECTORY = "./comfyui_plugins/minimax_h3_novel/js"
+WEB_DIRECTORY = "./custom_nodes/js"
 
 __all__ = [
     "NODE_CLASS_MAPPINGS",

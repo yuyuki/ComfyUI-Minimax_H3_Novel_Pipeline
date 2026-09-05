@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict
 
 from . import nodes as _nodes
+from .route_access import require_local_request
 
 # Provide mappings expected by ComfyUI custom node loader:
 # - NODE_CLASS_MAPPINGS: dict name -> class
@@ -65,6 +66,7 @@ def _register_upload_route() -> None:
 
         @PromptServer.instance.routes.post("/minimax_h3_novel/upload")
         async def upload_chapters(request):
+            require_local_request(request)
             reader = await request.multipart()
             uploaded = []
             while True:
@@ -98,6 +100,7 @@ def _register_upload_route() -> None:
 
         @PromptServer.instance.routes.get("/minimax_h3_novel/chapters")
         async def list_chapters(request):
+            require_local_request(request)
             files = sorted(
                 (path for path in input_root.iterdir()
                  if path.is_file() and path.suffix.lower() in allowed),
@@ -110,6 +113,7 @@ def _register_upload_route() -> None:
         @PromptServer.instance.routes.delete("/minimax_h3_novel/chapters")
         async def delete_chapter(request):
             """Delete one file previously uploaded through the chapter picker."""
+            require_local_request(request)
             try:
                 data = await request.json()
                 saved_path = str(data.get("file", ""))
@@ -131,6 +135,7 @@ def _register_upload_route() -> None:
         @PromptServer.instance.routes.post("/minimax_h3_novel/lmstudio-settings")
         async def save_lmstudio_settings(request):
             """Receive the local ComfyUI setting without ever returning/logging it."""
+            require_local_request(request)
             try:
                 from . import lmstudio_settings
 

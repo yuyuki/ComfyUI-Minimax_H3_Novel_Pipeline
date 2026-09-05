@@ -5,6 +5,12 @@ const ACCEPTED = ".txt,.md,.markdown,.pdf";
 const CHAPTER_EXTENSIONS = new Set(ACCEPTED.split(","));
 const PICKER_BUTTON_NAME = "saved_chapter_picker";
 
+function localFetch(url, options = {}) {
+    const headers = new Headers(options.headers);
+    headers.set("X-MiniMax-H3-Request", "1");
+    return fetch(url, { ...options, headers });
+}
+
 function widget(node, name) {
     return node.widgets?.find((item) => item.name === name);
 }
@@ -52,7 +58,7 @@ function setSavedChapters(node, files) {
 }
 
 async function fetchSavedChapters() {
-    const response = await fetch("/minimax_h3_novel/chapters");
+    const response = await localFetch("/minimax_h3_novel/chapters");
     if (!response.ok) throw new Error("Could not load saved chapters");
     const result = await response.json();
     return result.files || [];
@@ -80,7 +86,7 @@ async function refreshSavedChapters(node, selectedFile = null) {
 
 async function deleteSavedChapter(node, file, onComplete = null) {
     try {
-        const response = await fetch("/minimax_h3_novel/chapters", {
+        const response = await localFetch("/minimax_h3_novel/chapters", {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ file }),
@@ -128,7 +134,7 @@ function chooseFiles(node, directory, onComplete = null) {
             }
             const form = new FormData();
             for (const file of chapterFiles) form.append("chapters", file, file.name);
-            const response = await fetch("/minimax_h3_novel/upload", { method: "POST", body: form });
+            const response = await localFetch("/minimax_h3_novel/upload", { method: "POST", body: form });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || "Upload failed");
             uploadedFiles = result.files || [];
@@ -346,7 +352,7 @@ function ensureLmStudioApiKeyFieldWidth() {
 async function sendLMStudioApiKey() {
     try {
         const apiKey = app.ui.settings.getSettingValue(LMSTUDIO_API_KEY_SETTING) || "";
-        const response = await fetch("/minimax_h3_novel/lmstudio-settings", {
+        const response = await localFetch("/minimax_h3_novel/lmstudio-settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ api_key: apiKey }),
