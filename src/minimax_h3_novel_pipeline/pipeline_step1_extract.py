@@ -28,6 +28,11 @@ from typing import Any, Iterable
 
 from openai import OpenAI
 
+if __package__:
+    from .path_access import confined_path
+else:
+    from path_access import confined_path
+
 SCHEMA_VERSION = "minimax-h3-novel-refs.chapter.v2"
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}
 SCRIPT_VERSION = "2.5.0"
@@ -830,8 +835,9 @@ def process_chapter(
     model: str,
     args: argparse.Namespace,
 ) -> Path:
+    out_dir = out_dir.resolve()
     chapter_id = slug(path.stem)
-    out_path = out_dir / f"{chapter_id}_references.json"
+    out_path = confined_path(out_dir / f"{chapter_id}_references.json", out_dir)
     source_hash = sha256_file(path)
 
     if out_path.exists() and not args.force:
@@ -854,13 +860,13 @@ def process_chapter(
                 "to keep each JSON catalog within its output budget"
             )
     chunks = split_chunks(text, effective_chunk_chars, max(0, args.overlap_paragraphs))
-    cache_dir = out_dir / ".cache" / chapter_id
+    cache_dir = confined_path(out_dir / ".cache" / chapter_id, out_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"{path.name}: {len(text):,} chars, {len(chunks)} chunk(s)")
     chunk_results: list[dict[str, Any]] = []
     for i, chunk in enumerate(chunks, start=1):
-        cache_path = cache_dir / f"chunk_{i:03d}.json"
+        cache_path = confined_path(cache_dir / f"chunk_{i:03d}.json", out_dir)
         cache_key = hashlib.sha256((SCHEMA_VERSION + "\n" + model + "\nthinking=" + str(THINKING_ENABLED) + "\nchat_backend=" + CHAT_BACKEND + "\n" + chunk).encode()).hexdigest()
         result = None
         if cache_path.exists() and not args.force:
@@ -882,7 +888,7 @@ def process_chapter(
 
     combined = combine_candidates(chunk_results)
     merge_key = hashlib.sha256((SCHEMA_VERSION + "\n" + model + "\nthinking=" + str(THINKING_ENABLED) + "\nchat_backend=" + CHAT_BACKEND + "\n" + json.dumps(combined, ensure_ascii=False, sort_keys=True, default=str)).encode()).hexdigest()
-    merge_cache = cache_dir / "merged.json"
+    merge_cache = confined_path(cache_dir / "merged.json", out_dir)
     merged = None
     if merge_cache.exists() and not args.force:
         try:

@@ -36,7 +36,7 @@ class RouteAccessTests(unittest.TestCase):
                      "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
                      "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SelectH3SceneNode"):
             setattr(fake_nodes, name, type(name, (), {}))
-        web = SimpleNamespace(HTTPForbidden=Forbidden, json_response=lambda data: data)
+        web = SimpleNamespace(HTTPForbidden=Forbidden, json_response=lambda data, **kwargs: data)
         routes = SimpleNamespace(**{method: register(method) for method in ("post", "get", "delete")})
         modules = {
             "aiohttp": SimpleNamespace(web=web),
@@ -125,6 +125,27 @@ class RouteAccessTests(unittest.TestCase):
         settings = sys.modules["access_test_plugin.lmstudio_settings"]
         self.assertEqual(settings.get_api_key(), "test-only")
         settings.set_api_key("")
+
+    def test_upload_collision_preserves_existing_file(self):
+        chapter = Path(self.temp.name) / "minimax_h3_novel" / "chapter.txt"
+        chapter.write_bytes(b"original")
+        request = self.request()
+        part = SimpleNamespace(filename="chapter.txt", read_chunk=AsyncMock(side_effect=[b"new", b""]))
+        request.multipart = AsyncMock(return_value=SimpleNamespace(next=AsyncMock(side_effect=[part, None])))
+        result = asyncio.run(self.routes["post", "/minimax_h3_novel/upload"](request))
+        self.assertEqual(result, {"files": ["minimax_h3_novel/chapter_1.txt"]})
+        self.assertEqual(chapter.read_bytes(), b"original")
+        self.assertEqual(chapter.with_name("chapter_1.txt").read_bytes(), b"new")
+
+    def test_upload_rejects_windows_special_filenames_before_reading_bytes(self):
+        for filename in ("NUL.txt", "chapter.txt:stream.txt", "bad?.txt"):
+            with self.subTest(filename=filename):
+                request = self.request()
+                part = SimpleNamespace(filename=filename, read_chunk=AsyncMock())
+                request.multipart = AsyncMock(return_value=SimpleNamespace(next=AsyncMock(side_effect=[part, None])))
+                result = asyncio.run(self.routes["post", "/minimax_h3_novel/upload"](request))
+                self.assertIn("error", result)
+                part.read_chunk.assert_not_called()
 
 
 if __name__ == "__main__":

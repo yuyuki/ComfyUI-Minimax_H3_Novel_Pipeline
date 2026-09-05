@@ -12,6 +12,7 @@ from typing import Dict
 
 from . import nodes as _nodes
 from .route_access import require_local_request
+from .path_access import confined_path
 
 # Provide mappings expected by ComfyUI custom node loader:
 # - NODE_CLASS_MAPPINGS: dict name -> class
@@ -65,12 +66,15 @@ def _register_upload_route() -> None:
         import folder_paths
 
         allowed = {".txt", ".md", ".markdown", ".pdf"}
-        input_root = Path(folder_paths.get_input_directory()) / "minimax_h3_novel"
-        input_root.mkdir(parents=True, exist_ok=True)
+        def chapter_root() -> Path:
+            return confined_path("minimax_h3_novel", Path(folder_paths.get_input_directory()))
+
+        chapter_root().mkdir(parents=True, exist_ok=True)
 
         @PromptServer.instance.routes.post("/minimax_h3_novel/upload")
         async def upload_chapters(request):
             require_local_request(request)
+            input_root = chapter_root()
             reader = await request.multipart()
             uploaded = []
             while True:
@@ -84,16 +88,21 @@ def _register_upload_route() -> None:
                     return web.json_response(
                         {"error": f"Unsupported chapter type: {filename}"}, status=400
                     )
-                target = input_root / filename
-                if target.exists():
-                    stem = target.stem
-                    suffix = target.suffix
-                    counter = 1
-                    while target.exists():
-                        target = input_root / f"{stem}_{counter}{suffix}"
+                stem, suffix = Path(filename).stem, Path(filename).suffix
+                counter = 0
+                while True:
+                    candidate = filename if counter == 0 else f"{stem}_{counter}{suffix}"
+                    try:
+                        target = confined_path(candidate, input_root)
+                    except ValueError as exc:
+                        return web.json_response({"error": str(exc)}, status=400)
+                    try:
+                        handle = target.open("xb")
+                        break
+                    except FileExistsError:
                         counter += 1
-                    filename = target.name
-                with target.open("wb") as handle:
+                filename = target.name
+                with handle:
                     while True:
                         chunk = await part.read_chunk()
                         if not chunk:
@@ -105,6 +114,7 @@ def _register_upload_route() -> None:
         @PromptServer.instance.routes.get("/minimax_h3_novel/chapters")
         async def list_chapters(request):
             require_local_request(request)
+            input_root = chapter_root()
             files = sorted(
                 (path for path in input_root.iterdir()
                  if path.is_file() and path.suffix.lower() in allowed),
@@ -119,6 +129,7 @@ def _register_upload_route() -> None:
             """Delete one file previously uploaded through the chapter picker."""
             require_local_request(request)
             try:
+                input_root = chapter_root()
                 data = await request.json()
                 saved_path = str(data.get("file", ""))
                 prefix = "minimax_h3_novel/"
@@ -128,6 +139,7 @@ def _register_upload_route() -> None:
                 if filename != saved_path[len(prefix):] or Path(filename).suffix.lower() not in allowed:
                     raise ValueError("Invalid saved chapter path")
                 target = input_root / filename
+                confined_path(target, input_root)
                 # Resolving prevents a crafted filename from escaping the upload folder.
                 if target.resolve().parent != input_root.resolve() or not target.is_file():
                     return web.json_response({"error": "Saved chapter not found"}, status=404)

@@ -77,6 +77,9 @@ Extract Chapter References → Consolidate References → Generate H3 Prompts �
 | Select H3 Scene | Prompt payload and 1-based chapter/scene indexes → prompt, bindings and ordered media IDs |
 
 Use the chapter picker or enter one file/folder per line in `chapter_paths`.
+Chapter paths must stay inside ComfyUI's input directory. Relative paths start
+there, for example `minimax_h3_novel/chapter_01.txt`; copy external chapters
+into that directory or upload them through the picker.
 Supported files are `.txt`, `.md`, `.markdown` and `.pdf`. Folder discovery
 is non-recursive and naturally sorted. Supply the original chapters to both
 Extract and Generate. `saved_chapter` is a single-file fallback.
@@ -86,6 +89,14 @@ their required `out_dir`. Defaults are under ComfyUI's
 `output/minimax_h3_novel/`: `chapter_catalogs`, `references` and `h3_prompts`.
 Consolidation writes `consolidated_references.json` and
 `reference_asset_prompts.txt`. Loader nodes let you resume from saved results.
+`out_dir`, `catalog_path` and `consolidated_path` must stay inside
+`output/minimax_h3_novel`. Relative paths start there: use `chapter_catalogs`,
+`references` or `h3_prompts`, and `references/consolidated_references.json`
+for a saved registry. Absolute paths are accepted only within the corresponding
+root. Parent traversal (`..`), Windows special paths and symlinks/junctions
+that escape the root are rejected. Existing workflows pointing elsewhere must
+move their files and update their paths. Outside ComfyUI, node helpers use
+`input/` and `output/minimax_h3_novel/` beneath the startup working directory.
 
 Generate or load the media described by the registry's briefs, then connect
 the selected scene prompt to your MiniMax H3 video node. Attach images in

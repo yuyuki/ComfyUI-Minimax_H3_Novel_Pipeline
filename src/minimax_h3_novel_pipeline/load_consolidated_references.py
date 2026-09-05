@@ -1,7 +1,6 @@
 """ComfyUI node for reusing a saved Step 2 consolidation output."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from . import util
@@ -20,7 +19,8 @@ class LoadConsolidatedReferencesNode:
                         "default": "",
                         "tooltip": (
                             "Folder containing consolidated_references.json, or "
-                            "the consolidated_references.json file itself."
+                            "the consolidated_references.json file itself. "
+                            "Must be inside output/minimax_h3_novel; relative paths start there."
                         ),
                     },
                 ),
@@ -41,12 +41,13 @@ class LoadConsolidatedReferencesNode:
                 "consolidated_references.json file."
             )
 
-        supplied_path = Path(consolidated_path.strip()).expanduser()
+        supplied_path = util.output_path(consolidated_path.strip())
         json_path = (
             supplied_path / "consolidated_references.json"
             if supplied_path.is_dir()
             else supplied_path
         )
+        json_path = util.output_path(json_path)
         if not json_path.is_file():
             raise ValueError(f"Consolidated references file does not exist: {json_path}")
         if json_path.name != "consolidated_references.json":

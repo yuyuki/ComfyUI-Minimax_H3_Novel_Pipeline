@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+from .path_access import input_path, output_path
+
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}
 
 
@@ -21,27 +23,18 @@ def natural_key(value: str) -> list[Any]:
 def discover_inputs(items: list[Path]) -> list[Path]:
     found: list[Path] = []
     for item in items:
-        # Picker-uploaded files are stored below ComfyUI's input directory and
-        # are returned to the node as relative paths. Keep absolute/manual
-        # paths working as before.
-        if not item.is_absolute():
-            try:
-                import folder_paths
-                input_candidate = Path(folder_paths.get_input_directory()) / item
-                if input_candidate.exists():
-                    item = input_candidate
-            except Exception:
-                pass
+        item = input_path(item)
         if item.is_file() and item.suffix.lower() in SUPPORTED_EXTENSIONS:
             found.append(item)
         elif item.is_dir():
             found.extend(
-                p for p in item.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+                input_path(p) for p in item.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
             )
     return sorted(dict.fromkeys(found), key=lambda p: natural_key(p.name))
 
 
 def read_chapter(path: Path) -> str:
+    path = input_path(path)
     if path.suffix.lower() in {".txt", ".md", ".markdown"}:
         text = path.read_text(encoding="utf-8-sig", errors="replace")
     elif path.suffix.lower() == ".pdf":
@@ -62,10 +55,12 @@ def read_chapter(path: Path) -> str:
 
 
 def load_json(path: Path) -> Any:
+    path = output_path(path)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def save_json(path: Path, data: Any) -> None:
+    path = output_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

@@ -19,3 +19,11 @@ still needs the original chapter text and LM Studio configuration.
 
 All three stages save to their `out_dir`. The pipeline produces no video
 references and does not generate images or audio itself.
+
+Chapter paths are relative to ComfyUI's input directory, for example
+`minimax_h3_novel/chapter_01.txt`. Upload or copy external chapters there.
+Output and loader paths are relative to `output/minimax_h3_novel`: use
+`chapter_catalogs` for extraction, `references` for consolidation and
+`h3_prompts` for generation. Resume with `catalog_path=chapter_catalogs` or
+`consolidated_path=references/consolidated_references.json`. Absolute paths
+must stay within the corresponding root; `..` and links escaping it are rejected.

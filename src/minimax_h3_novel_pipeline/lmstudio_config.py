@@ -7,16 +7,15 @@ from . import lmstudio_settings
 
 
 class LMStudioConfigurationNode:
-    """Read LM Studio settings from environment variables once per workflow."""
+    """Share non-secret LM Studio settings and validate the operator's endpoint."""
 
     DESCRIPTION = """\
-Centralise les réglages LM Studio pour tout le workflow. Connectez la sortie
-`lmstudio_config` aux nodes Extract, Consolidate et Generate H3 Prompts.
+Share LM Studio settings across the workflow. Connect `lmstudio_config`
+to Extract, Consolidate and Generate H3 Prompts.
 
-La clé API est définie dans les réglages ComfyUI : `MiniMax H3 Novel → LM
-Studio → API Key`. Elle n'est pas enregistrée dans le workflow. Les autres
-paramètres sont configurables ici : URL, modèle, backend Qwen, thinking et
-limites de sortie/réessais Qwen3.5.
+Set the API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio → API Key`.
+The key is not saved in the workflow. Configure the URL, model, Qwen backend,
+thinking, and Qwen3.5 output and retry limits here.
 """
 
     @classmethod
@@ -25,45 +24,45 @@ limites de sortie/réessais Qwen3.5.
             "required": {
                 "api_url": ("STRING", {
                     "default": "http://127.0.0.1:1234/v1",
-                    "tooltip": "Doit correspondre à MINIMAX_H3_LMSTUDIO_BASE_URL côté serveur (par défaut http://127.0.0.1:1234/v1).",
+                    "tooltip": "Must match the server's MINIMAX_H3_LMSTUDIO_BASE_URL (default: http://127.0.0.1:1234/v1).",
                 }),
                 "chat_backend": (["auto", "openai-chat", "qwen35-chatml"], {
                     "default": "auto",
-                    "tooltip": "auto utilise d'abord le JSON contraint de LM Studio pour Qwen3.5; qwen35-chatml conserve le mode compatible ancien.",
+                    "tooltip": "auto first uses LM Studio's structured JSON for Qwen3.5; qwen35-chatml keeps the legacy compatibility mode.",
                 }),
                 "thinking": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "Désactivez-le pour accélérer les sorties JSON structurées.",
+                    "tooltip": "Disable thinking for faster structured JSON output.",
                 }),
                 "qwen35_max_output_tokens": ("INT", {
                     "default": 3500, "min": 256, "max": 32768,
-                    "tooltip": "Plafond de sécurité Qwen3.5 ; le stream s'arrête dès que le JSON est complet.",
+                    "tooltip": "Qwen3.5 output limit; streaming stops once the JSON is complete.",
                 }),
                 "qwen35_length_retries": ("INT", {
                     "default": 2, "min": 0, "max": 10,
-                    "tooltip": "Nombre de réessais compacts après un JSON Qwen3.5 incomplet.",
+                    "tooltip": "Number of compact retries after incomplete Qwen3.5 JSON output.",
                 }),
                 "qwen35_safe_chunk_chars": ("INT", {
                     "default": 3600, "min": 3000, "max": 20000,
-                    "tooltip": "Taille maximale d'un passage pendant l'extraction Qwen3.5. Des passages plus courts évitent les JSON tronqués.",
+                    "tooltip": "Maximum passage size during Qwen3.5 extraction. Shorter passages help prevent truncated JSON.",
                 }),
                 "qwen35_top_k": ("INT", {
                     "default": 20, "min": 1, "max": 200,
-                    "tooltip": "Échantillonnage Qwen3.5/LM Studio: limite les choix de tokens pour des JSON plus stables.",
+                    "tooltip": "Qwen3.5/LM Studio sampling: limits token choices for more stable JSON output.",
                 }),
                 "qwen35_min_p": ("FLOAT", {
                     "default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,
-                    "tooltip": "Échantillonnage Qwen3.5/LM Studio. 0 désactive ce filtre; conserver 0 pour l'extraction structurée.",
+                    "tooltip": "Qwen3.5/LM Studio sampling. 0 disables this filter; keep 0 for structured extraction.",
                 }),
                 "qwen35_repeat_penalty": ("FLOAT", {
                     "default": 1.05, "min": 0.8, "max": 2.0, "step": 0.01,
-                    "tooltip": "Pénalise les répétitions Qwen3.5; 1.05 réduit les boucles sans appauvrir les listes JSON.",
+                    "tooltip": "Penalizes Qwen3.5 repetition; 1.05 reduces loops while preserving JSON list detail.",
                 }),
             },
             "optional": {
                 "model": ("STRING", {
                     "default": "",
-                    "tooltip": "ID exact du modèle chargé dans LM Studio. Vide = sélection automatique.",
+                    "tooltip": "Exact ID of the model loaded in LM Studio. Leave empty for automatic selection.",
                 }),
             },
         }
@@ -82,8 +81,8 @@ limites de sortie/réessais Qwen3.5.
         api_key = lmstudio_settings.get_api_key()
         if not api_key:
             raise RuntimeError(
-                "Aucune clé API dans les réglages ComfyUI. Ouvrez Settings → "
-                "MiniMax H3 Novel → LM Studio → API Key, enregistrez la clé, puis réessayez."
+                "No API key in ComfyUI settings. Open Settings → "
+                "MiniMax H3 Novel → LM Studio → API Key, save the key, then retry."
             )
 
         config = {

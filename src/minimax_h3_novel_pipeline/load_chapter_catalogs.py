@@ -1,7 +1,6 @@
 """ComfyUI node for reusing chapter catalogs saved by Step 1."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from . import util
@@ -20,7 +19,8 @@ class LoadChapterCatalogsNode:
                         "default": "",
                         "tooltip": (
                             "Folder containing *_references.json files, or one "
-                            "such JSON file saved by Extract Chapter References."
+                            "such JSON file saved by Extract Chapter References. "
+                            "Must be inside output/minimax_h3_novel; relative paths start there."
                         ),
                     },
                 ),
@@ -36,7 +36,7 @@ class LoadChapterCatalogsNode:
         if not isinstance(catalog_path, str) or not catalog_path.strip():
             raise ValueError("catalog_path must name a saved chapter catalog JSON file or folder.")
 
-        path = Path(catalog_path.strip()).expanduser()
+        path = util.output_path(catalog_path.strip())
         if path.is_file():
             paths = [path]
         elif path.is_dir():

@@ -34,6 +34,11 @@ from typing import Any
 
 from openai import OpenAI
 
+if __package__:
+    from .path_access import confined_path
+else:
+    from path_access import confined_path
+
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
@@ -1246,10 +1251,11 @@ def save_scene(
     prompt: str,
     validation: Validation,
 ) -> dict[str, Any]:
+    chapter_dir = chapter_dir.resolve()
     stem = f"scene_{index:03d}_{slug(scene.title)}"
-    prompt_path = chapter_dir / f"{stem}_prompt.txt"
-    assets_path = chapter_dir / f"{stem}_assets.json"
-    source_path = chapter_dir / f"{stem}_source.txt"
+    prompt_path = confined_path(chapter_dir / f"{stem}_prompt.txt", chapter_dir)
+    assets_path = confined_path(chapter_dir / f"{stem}_assets.json", chapter_dir)
+    source_path = confined_path(chapter_dir / f"{stem}_source.txt", chapter_dir)
     prompt_path.write_text(prompt.rstrip() + "\n", encoding="utf-8")
     assets_path.write_text(json.dumps(bindings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     source_path.write_text(
@@ -1314,9 +1320,9 @@ def process_chapter(
         print(f"WARNING: no consolidated entity mapping for {chapter_id}.", file=sys.stderr)
 
     chunks = split_chunks(text, max(3000, args.chunk_chars), max(0, args.overlap_paragraphs))
-    chapter_dir = args.out_dir / chapter_id
+    chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
-    cache_dir = chapter_dir / ".cache"
+    cache_dir = confined_path(chapter_dir / ".cache", chapter_dir)
     cache_dir.mkdir(exist_ok=True)
 
     print(f"{path.name}: {len(chunks)} planning chunk(s)")
@@ -1329,7 +1335,7 @@ def process_chapter(
                 json.dumps(catalog, ensure_ascii=False, sort_keys=True) + "\n" + chunk
             ).encode()
         ).hexdigest()
-        cache_path = cache_dir / f"plan_{i:03d}.json"
+        cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", chapter_dir)
         chunk_scenes = None
         if cache_path.exists() and not args.force:
             try:
@@ -1372,7 +1378,7 @@ def process_chapter(
                 scene.source_excerpt + "\n" + json.dumps(bindings, ensure_ascii=False, sort_keys=True)
             ).encode()
         ).hexdigest()
-        prompt_cache = cache_dir / f"prompt_{i:03d}.json"
+        prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", chapter_dir)
         prompt = None
         if prompt_cache.exists() and not args.force:
             try:
@@ -1414,9 +1420,9 @@ def process_chapter(
     if saved:
         blocks = []
         for x in saved:
-            p = (chapter_dir / x["prompt_file"]).read_text(encoding="utf-8").rstrip()
+            p = confined_path(x["prompt_file"], chapter_dir).read_text(encoding="utf-8").rstrip()
             blocks.append(f"========== SCENE {x['index']:03d}: {x['title']} ==========\n\n{p}")
-        (chapter_dir / "all_prompts.txt").write_text("\n\n\n".join(blocks) + "\n", encoding="utf-8")
+        confined_path(chapter_dir / "all_prompts.txt", chapter_dir).write_text("\n\n\n".join(blocks) + "\n", encoding="utf-8")
 
     manifest = {
         "chapter_id": chapter_id,
@@ -1427,7 +1433,7 @@ def process_chapter(
         "saved_prompt_count": len(saved),
         "outputs": entries,
     }
-    (chapter_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    confined_path(chapter_dir / "manifest.json", chapter_dir).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest
 
 

@@ -50,7 +50,7 @@ def load(step: str) -> ModuleType:
         path = _bundled_pipeline_dir() / _SCRIPT_FILES[step]
     except KeyError as exc:
         raise ValueError(f"Unknown pipeline step: {step}") from exc
-    module_name = f"minimax_h3_novel_canonical_{step}"
+    module_name = f"{__package__}._bundled_{step}"
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Could not load bundled pipeline script: {path}")

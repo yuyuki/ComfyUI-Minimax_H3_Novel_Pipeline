@@ -25,11 +25,7 @@ def _saved_chapter_choices() -> list[str]:
 
 
 def _default_output_dir() -> str:
-    try:
-        import folder_paths
-        return str(Path(folder_paths.get_output_directory()) / "minimax_h3_novel" / "chapter_catalogs")
-    except Exception:
-        return "output/minimax_h3_novel/chapter_catalogs"
+    return "chapter_catalogs"
 
 
 def _log(message: str) -> None:
@@ -43,14 +39,14 @@ class ExtractChapterReferencesNode:
     def INPUT_TYPES(cls):
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "chapter_paths": ("STRING", {"multiline": True, "default": "", "tooltip": "One chapter file or folder per line."}),
+            "chapter_paths": ("STRING", {"multiline": True, "default": "", "tooltip": "One chapter file or folder per line, inside ComfyUI's input directory. Relative paths start there."}),
             "saved_chapter": (_saved_chapter_choices(), {"tooltip": "Previously uploaded chapter."}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
             "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}),
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 2.0, "step": 0.05}),
             "max_tokens": ("INT", {"default": 2200, "min": 256, "max": 32768, "tooltip": "Normal JSON output budget per extraction/merge call."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),
-            "out_dir": ("STRING", {"default": _default_output_dir()}),
+            "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder inside ComfyUI's output/minimax_h3_novel directory. Relative paths start there."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
@@ -61,6 +57,7 @@ class ExtractChapterReferencesNode:
     def run(self, lmstudio_config: dict[str, Any], chapter_paths: Iterable[Path], saved_chapter: str, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
+        output = util.output_path(out_dir.strip())
         raw_paths = chapter_paths or saved_chapter
         items = [Path(x.strip()) for x in raw_paths.splitlines() if x.strip()] if isinstance(raw_paths, str) else [Path(x) for x in raw_paths]
         paths = util.discover_inputs(items)
@@ -83,7 +80,6 @@ class ExtractChapterReferencesNode:
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config.get("model", "")))
         client = lmstudio_pipeline.make_interruptible_client(client)
         args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), delay=0.0, base_url=lmstudio_config["api_url"])
-        output = Path(out_dir.strip())
         output.mkdir(parents=True, exist_ok=True)
         backend = (
             "qwen35-structured" if pipeline._use_qwen35_structured(resolved_model)
