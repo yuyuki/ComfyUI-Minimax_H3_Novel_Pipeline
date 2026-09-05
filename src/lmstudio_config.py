@@ -14,8 +14,7 @@ Share LM Studio settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
 Set the API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio → API Key`.
-The key is not saved in the workflow. Configure the URL, model, Qwen backend,
-thinking, and Qwen3.5 output and retry limits here.
+The key is not saved in the workflow. Configure the URL, model, thinking, and Qwen3.5 output and retry limits here.
 """
 
     @classmethod
@@ -25,10 +24,6 @@ thinking, and Qwen3.5 output and retry limits here.
                 "api_url": ("STRING", {
                     "default": "http://127.0.0.1:1234/v1",
                     "tooltip": "Must match the server's MINIMAX_H3_LMSTUDIO_BASE_URL (default: http://127.0.0.1:1234/v1).",
-                }),
-                "chat_backend": (["auto", "openai-chat", "qwen35-chatml"], {
-                    "default": "auto",
-                    "tooltip": "auto first uses LM Studio's structured JSON for Qwen3.5; qwen35-chatml keeps the legacy compatibility mode.",
                 }),
                 "thinking": ("BOOLEAN", {
                     "default": False,
@@ -72,7 +67,7 @@ thinking, and Qwen3.5 output and retry limits here.
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
-    def run(self, api_url: str, model: str = "", chat_backend: str = "auto", thinking: bool = False,
+    def run(self, api_url: str, model: str = "", thinking: bool = False,
             qwen35_max_output_tokens: int = 3500, qwen35_length_retries: int = 2,
             qwen35_safe_chunk_chars: int = 3600, qwen35_top_k: int = 20,
             qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05) -> tuple[dict[str, Any], str]:
@@ -88,7 +83,6 @@ thinking, and Qwen3.5 output and retry limits here.
         config = {
             "api_url": api_url.strip(),
             "model": (model or "").strip(),
-            "chat_backend": chat_backend,
             "thinking": bool(thinking),
             "qwen35_max_output_tokens": max(256, int(qwen35_max_output_tokens)),
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
@@ -101,7 +95,7 @@ thinking, and Qwen3.5 output and retry limits here.
         selected_model = config["model"] or "auto-select loaded Qwen/first model"
         status = (
             f"LM Studio: {config['api_url']} | model: {selected_model} | "
-            f"backend: {config['chat_backend']} | thinking: {config['thinking']} | "
+            f"thinking: {config['thinking']} | "
             "API key: ComfyUI Settings (hidden)"
         )
         return config, status

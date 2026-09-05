@@ -113,10 +113,10 @@ def test_chapter_fields_reject_external_reads(roots, monkeypatch, tmp_path, node
 
 def test_loaders_resume_from_confined_outputs(roots, tmp_path):
     _, output = roots
-    catalog = {"schema_version": "test", "chapter_id": "one", "characters": []}
+    catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "one", "characters": []}
     util.save_json(Path("chapter_catalogs/one_references.json"), catalog)
     assert LoadChapterCatalogsNode().run("chapter_catalogs")[0] == [catalog]
-    registry = {"entities": [], "chapter_entity_map": {}, "entity_asset_index": {},
+    registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "chapter_entity_map": {}, "entity_asset_index": {},
                 "picture_assets": [], "audio_assets": []}
     util.save_json(Path("references/consolidated_references.json"), registry)
     assert LoadConsolidatedReferencesNode().run("references")[0] == registry

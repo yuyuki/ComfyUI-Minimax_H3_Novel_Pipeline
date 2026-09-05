@@ -119,7 +119,10 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
 
     qwen = _is_qwen35_model(model)
     cap = min(max_tokens, QWEN35_MAX_OUTPUT_TOKENS) if qwen else max_tokens
-    retries = QWEN35_LENGTH_RETRIES if qwen else 0
+    # Structured-output backends can occasionally end a response mid-string
+    # even for non-Qwen3.5 models. Always allow one compact retry instead of
+    # failing the whole ComfyUI run on that transient malformed response.
+    retries = QWEN35_LENGTH_RETRIES if qwen else 1
     for attempt in range(retries + 1):
         comfy_interrupt_check()
         request_schema = _qwen35_compact_schema(schema) if attempt else schema

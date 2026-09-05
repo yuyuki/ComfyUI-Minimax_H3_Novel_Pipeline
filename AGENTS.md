@@ -12,12 +12,12 @@
 
 - Root `__init__.py` is the ComfyUI checkout entrypoint. It re-exports mappings
   from `src/minimax_h3_novel_pipeline` and serves `./web/js`.
-- `src/minimax_h3_novel_pipeline/__init__.py` registers seven nodes and four
+- `src/minimax_h3_novel_pipeline/__init__.py` registers six nodes and four
   local HTTP routes. `nodes.py` exports the node classes.
 - Each node has its own module: `lmstudio_config.py`,
   `extract_chapter_references.py`, `load_chapter_catalogs.py`,
   `consolidate_references.py`, `load_consolidated_references.py`,
-  `generate_h3_prompts.py`, and `select_h3_scene.py`.
+  and `generate_h3_prompts.py`.
 - `lmstudio_pipeline.py` dynamically loads bundled scripts relative to its
   own directory, configures Qwen behavior and wraps streaming cancellation.
 - `util.py` contains file discovery, JSON persistence and shared helpers.

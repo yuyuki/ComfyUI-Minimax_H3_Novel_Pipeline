@@ -13,6 +13,15 @@ from typing import Any, Iterable
 
 from .path_access import input_path, output_path
 
+CHAPTER_SCHEMA = "minimax-h3-novel-refs.chapter.v3"
+REGISTRY_SCHEMA = "minimax-h3-novel-refs.consolidated.v3"
+
+
+def require_schema(data: Any, expected: str) -> None:
+    if not isinstance(data, dict) or data.get("schema_version") != expected:
+        raise ValueError(f"Expected current schema {expected}; regenerate older outputs.")
+
+
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}
 
 
@@ -76,3 +85,24 @@ def catalog_summary(catalogs: Iterable[dict[str, Any]]) -> str:
             f"{len(catalog.get('objects', []))} objects"
         )
     return "\n".join(rows) or "No chapter catalogs."
+
+
+def split_chunks(text: str, max_chars: int, overlap_paragraphs: int) -> list[str]:
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if not paragraphs:
+        return [text]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for para in paragraphs:
+        add = len(para) + (2 if current else 0)
+        if current and current_len + add > max_chars:
+            chunks.append("\n\n".join(current))
+            current = current[-overlap_paragraphs:] if overlap_paragraphs else []
+            current_len = sum(len(x) for x in current) + max(0, len(current) - 1) * 2
+        current.append(para)
+        current_len += add
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks

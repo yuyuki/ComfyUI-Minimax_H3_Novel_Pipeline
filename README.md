@@ -53,8 +53,8 @@ proxies. The chapter picker and settings endpoints require direct local
 browser access to ComfyUI, such as `http://localhost:8188`; remote,
 cross-origin and forwarded proxy requests are rejected.
 
-For Qwen3.5, `chat_backend=auto` and `thinking=false` select the structured
-JSON path with a ChatML compatibility fallback. Configuration also exposes
+All stages require LM Studio structured JSON output. `thinking=false` reduces
+reasoning overhead. Configuration also exposes
 output-token caps, compact retries, safe extraction chunk size and sampler
 controls. Requests stream responses and check ComfyUI cancellation between
 chunks.
@@ -63,7 +63,7 @@ chunks.
 
 ```text
 LM Studio Configuration ──► Extract / Consolidate / Generate
-Extract Chapter References → Consolidate References → Generate H3 Prompts → Select H3 Scene
+Extract Chapter References → Consolidate References → Generate H3 Prompts
 ```
 
 | Node | Inputs and result |
@@ -73,8 +73,7 @@ Extract Chapter References → Consolidate References → Generate H3 Prompts �
 | Load Chapter Catalogs | Saved `*_references.json` files → chapter catalog list |
 | Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs |
 | Load Consolidated References | Saved registry JSON → registry object |
-| Generate H3 Prompts | Registry and original chapter files → chapter/scene prompt payload |
-| Select H3 Scene | Prompt payload and 1-based chapter/scene indexes → prompt, bindings and ordered media IDs |
+| Generate H3 Prompts | Registry and original chapter files → chapter/scene prompt payload and save-ready text |
 
 Use the chapter picker or enter one file/folder per line in `chapter_paths`.
 Chapter paths must stay inside ComfyUI's input directory. Relative paths start
@@ -98,12 +97,11 @@ that escape the root are rejected. Existing workflows pointing elsewhere must
 move their files and update their paths. Outside ComfyUI, node helpers use
 `input/` and `output/minimax_h3_novel/` beneath the startup working directory.
 
-Generate or load the media described by the registry's briefs, then connect
-the selected scene prompt to your MiniMax H3 video node. Attach images in
-`image_asset_ids_in_h3_order` and audio in `audio_asset_ids_in_h3_order`.
-H3 labels such as `<Picture 1>` are local to each request; several views may
-refer to the same subject. The novel pipeline produces no video references.
-See [examples/README.md](examples/README.md) for wiring instructions.
+Generate or load the media described by the registry's briefs, then use the
+desired entry from Generate's `prompts` payload with your MiniMax H3 video
+node. H3 labels such as `<Picture 1>` are local to each request; several
+views may refer to the same subject. The novel pipeline produces no video
+references. See [examples/README.md](examples/README.md) for wiring instructions.
 
 ## Repository layout
 
@@ -142,13 +140,15 @@ or ComfyUI server. CI runs tests and lint on Python 3.10/3.12 on Linux and
 Windows and builds source/wheel distributions. Lint excludes historical
 `external source/` bundles.
 
-For a live smoke test, restart ComfyUI, confirm all seven nodes appear under
+For a live smoke test, restart ComfyUI, confirm all six nodes appear under
 **MiniMax H3 Novel**, upload a short chapter, configure LM Studio, and run
-Extract → Consolidate → Generate → Select. Check the saved JSON, selected
-prompt and reference order, and confirm Stop interrupts a running request.
+Extract → Consolidate → Generate. Check the saved JSON and confirm Stop
+interrupts a running request.
 
 License: [GNU GPL v3](LICENSE).
 
-Extraction uses hierarchical merges (`merge_batch_size`, default 6) and caches each merge batch for resuming. This limits partial catalogs per call; dense catalogs can still require a larger context window. Existing compatible chapter outputs remain reusable; enable `force` to regenerate them.
+Extraction uses hierarchical merges (`merge_batch_size`, default 6) and caches each merge batch for resuming. This limits partial catalogs per call; dense catalogs can still require a larger context window. Enable `force` to regenerate cached results.
 
-Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. Optional `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups. Existing node connections remain compatible.
+Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
+
+Only current v3 chapter catalogs and registries are accepted. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.

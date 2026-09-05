@@ -40,7 +40,7 @@ def test_cached_merge_checks_cancellation(tmp_path, monkeypatch):
         raise RuntimeError("interrupted")
     monkeypatch.setattr(lmstudio_pipeline, "comfy_interrupt_check", stop)
     with pytest.raises(RuntimeError, match="interrupted"):
-        step.hierarchical_merge_candidates(None, "model", "chapter", [{}], SimpleNamespace(), tmp_path)
+        step.hierarchical_merge_candidates(None, "model", "chapter", [{}], SimpleNamespace(merge_batch_size=2), tmp_path)
 
 
 def entity(gid, name, kind="character"):

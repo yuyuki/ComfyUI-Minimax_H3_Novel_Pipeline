@@ -2,23 +2,21 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import re
-import sys
-import time
 from pathlib import Path
 from typing import Any, Iterable
 
 from openai import OpenAI
 
 from . import lmstudio_json as json_backend
-from .lmstudio_json import chat_json, select_model as select_model, _is_comfy_interrupt
+from .lmstudio_json import chat_json, select_model as select_model
 
 from .path_access import confined_path
+from .util import read_chapter, split_chunks
 
-SCHEMA_VERSION = "minimax-h3-novel-refs.chapter.v2"
+from .util import CHAPTER_SCHEMA as SCHEMA_VERSION
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
 
@@ -170,24 +168,6 @@ def slug(text: str) -> str:
     return value or "chapter"
 
 
-def read_chapter(path: Path) -> str:
-    if path.suffix.lower() in {".txt", ".md", ".markdown"}:
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
-    elif path.suffix.lower() == ".pdf":
-        try:
-            from pypdf import PdfReader
-        except ImportError as exc:
-            raise RuntimeError("PDF input requires: pip install pypdf") from exc
-        text = "\n\n".join((page.extract_text() or "") for page in PdfReader(str(path)).pages)
-    else:
-        raise ValueError(f"Unsupported file type: {path.suffix}")
-
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n{4,}", "\n\n\n", text).strip()
-    if len(text) < 100:
-        raise ValueError("Chapter is empty or too short after extraction.")
-    return text
 
 
 def sha256_file(path: Path) -> str:
@@ -198,25 +178,6 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def split_chunks(text: str, max_chars: int, overlap_paragraphs: int) -> list[str]:
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
-    if not paragraphs:
-        return [text]
-
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
-    for para in paragraphs:
-        add = len(para) + (2 if current else 0)
-        if current and current_len + add > max_chars:
-            chunks.append("\n\n".join(current))
-            current = current[-overlap_paragraphs:] if overlap_paragraphs else []
-            current_len = sum(len(x) for x in current) + max(0, len(current) - 1) * 2
-        current.append(para)
-        current_len += add
-    if current:
-        chunks.append("\n\n".join(current))
-    return chunks
 
 
 def make_client(base_url: str, api_key: str, *, http_client=None) -> OpenAI:
@@ -450,8 +411,6 @@ def hierarchical_merge_candidates(
                 print(f"  merging round {round_no}, batch {batch_no}/{batch_count} ({len(batch)} partial catalog(s))")
                 merged = merge_candidates(client, model, chapter_id, combined, args)
                 cache_path.write_text(json.dumps({"cache_key": key, "result": merged}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                if args.delay:
-                    time.sleep(args.delay)
             else:
                 print(f"  merge round {round_no}, batch {batch_no}/{batch_count}: cached")
             last_merged, last_combined = merged, combined
@@ -483,7 +442,7 @@ def process_chapter(
         try:
             old = json.loads(out_path.read_text(encoding="utf-8"))
             if old.get("schema_version") == SCHEMA_VERSION and old.get("source", {}).get("sha256") == source_hash:
-                print(f"SKIP {path.name}: unchanged v2 output exists.")
+                print(f"SKIP {path.name}: unchanged current output exists.")
                 return out_path
         except Exception:
             pass
@@ -519,8 +478,6 @@ def process_chapter(
             print(f"  extracting chunk {i}/{len(chunks)}")
             result = extract_chunk(client, model, chapter_id, chunk, i, len(chunks), args)
             cache_path.write_text(json.dumps({"cache_key": cache_key, "result": result}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            if args.delay:
-                time.sleep(args.delay)
         else:
             print(f"  chunk {i}/{len(chunks)}: cached")
         chunk_results.append(result)

@@ -34,7 +34,7 @@ class RouteAccessTests(unittest.TestCase):
         fake_nodes = ModuleType("access_test_plugin.nodes")
         for name in ("ExtractChapterReferencesNode", "LMStudioConfigurationNode",
                      "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
-                     "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SelectH3SceneNode"):
+                     "ConsolidateReferencesNode", "GenerateH3PromptsNode"):
             setattr(fake_nodes, name, type(name, (), {}))
         web = SimpleNamespace(HTTPForbidden=Forbidden, json_response=lambda data, **kwargs: data)
         routes = SimpleNamespace(**{method: register(method) for method in ("post", "get", "delete")})

@@ -6,7 +6,6 @@ node implementations live in `nodes.py`.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Dict
 
@@ -37,7 +36,6 @@ def _build_mappings() -> None:
                 "LoadConsolidatedReferencesNode": _nodes.LoadConsolidatedReferencesNode,
                 "ConsolidateReferencesNode": _nodes.ConsolidateReferencesNode,
                 "GenerateH3PromptsNode": _nodes.GenerateH3PromptsNode,
-                "SelectH3SceneNode": _nodes.SelectH3SceneNode,
             }
         )
         NODE_DISPLAY_NAME_MAPPINGS.update(
@@ -48,7 +46,6 @@ def _build_mappings() -> None:
                 "LoadConsolidatedReferencesNode": "Load Consolidated References",
                 "ConsolidateReferencesNode": "Consolidate References",
                 "GenerateH3PromptsNode": "Generate H3 Prompts",
-                "SelectH3SceneNode": "Select H3 Scene",
             }
         )
     except Exception as e:
@@ -174,26 +171,4 @@ def _register_upload_route() -> None:
 _register_upload_route()
 
 
-def comfy_entrypoint() -> Dict[str, type]:
-    """ComfyUI entrypoint: return node class mappings for registration.
-
-    This function is intentionally simple so ComfyUI loaders that call it
-    get a plain mapping. We also return mappings via the module-level
-    `NODE_CLASS_MAPPINGS` variable which some loaders inspect directly.
-    """
-    return NODE_CLASS_MAPPINGS
-
-
-# Diagnostic output to help users see why ComfyUI might skip the module.
-try:
-    pkg = __package__ or "<root>"
-    mod_file = Path(__file__).resolve()
-    print(f"[minimax_h3_novel] package={pkg} file={mod_file}")
-    print(f"[minimax_h3_novel] sys.path contains {len(sys.path)} entries")
-    print(f"[minimax_h3_novel] NODE_CLASS_MAPPINGS keys={list(NODE_CLASS_MAPPINGS.keys())}")
-    print(f"[minimax_h3_novel] comfy_entrypoint present={callable(comfy_entrypoint)}")
-except Exception:
-    pass
-
-
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "comfy_entrypoint"]
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

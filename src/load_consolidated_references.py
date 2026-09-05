@@ -57,6 +57,7 @@ class LoadConsolidatedReferencesNode:
             )
 
         registry = util.load_json(json_path)
+        util.require_schema(registry, util.REGISTRY_SCHEMA)
         if not isinstance(registry, dict):
             raise ValueError(f"{json_path.name}: expected a JSON object.")
 

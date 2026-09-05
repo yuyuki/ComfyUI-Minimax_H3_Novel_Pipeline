@@ -3,24 +3,18 @@ from __future__ import annotations
 
 import argparse
 import difflib
-import hashlib
 import json
 import re
-import sys
-import time
 from pathlib import Path
 from typing import Any, Iterable
 
 from openai import OpenAI
 
-from . import lmstudio_json as json_backend
-from .lmstudio_json import chat_json, select_model as select_model, _is_comfy_interrupt
+from .lmstudio_json import chat_json, select_model as select_model
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
 
 
-INPUT_SCHEMA = "minimax-h3-novel-refs.chapter.v2"
-OUTPUT_SCHEMA = "minimax-h3-novel-refs.consolidated.v2"
 
 IMPORTANCE_ORDER = {"background": 0, "minor": 1, "recurring": 2, "major": 3}
 PRIORITY_ORDER = {"optional": 0, "recommended": 1, "required": 2}
@@ -550,8 +544,6 @@ def audit_registry(
         )
         removed = _apply_audit_result([by_id[x] for x in active_ids], result)
         removed_all.update(removed)
-        if args.delay:
-            time.sleep(args.delay)
     if removed_all:
         print(f"  scalable audit merged {len(removed_all)} duplicate ID(s)")
     return [e for e in registry if e["global_id"] not in removed_all]
@@ -731,8 +723,6 @@ def generate_picture_assets(
         )
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item
-        if args.delay:
-            time.sleep(args.delay)
 
     assets: list[dict[str, Any]] = []
     for spec in specs:
@@ -775,8 +765,6 @@ def generate_audio_assets(
         )
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item
-        if args.delay:
-            time.sleep(args.delay)
 
     assets = []
     for spec in specs:

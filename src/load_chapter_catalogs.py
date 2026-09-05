@@ -57,6 +57,7 @@ class LoadChapterCatalogsNode:
         catalogs: list[dict[str, Any]] = []
         for json_path in paths:
             data = util.load_json(json_path)
+            util.require_schema(data, util.CHAPTER_SCHEMA)
             if not isinstance(data, dict):
                 raise ValueError(f"{json_path.name}: expected a chapter catalog JSON object.")
             if not data.get("chapter_id") or not data.get("schema_version"):
