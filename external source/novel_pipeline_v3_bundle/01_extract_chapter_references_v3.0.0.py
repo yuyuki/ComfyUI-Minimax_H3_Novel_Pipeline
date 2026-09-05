@@ -17,12 +17,13 @@ Requirements:
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
+import glob
 import json
 import re
 import sys
 import time
+import threading
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -30,23 +31,13 @@ from openai import OpenAI
 
 SCHEMA_VERSION = "minimax-h3-novel-refs.chapter.v2"
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}
-SCRIPT_VERSION = "2.5.0"
+SCRIPT_VERSION = "3.0.0"
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
 THINKING_ENABLED = False
 CHAT_BACKEND = "auto"
 QWEN35_MAX_OUTPUT_TOKENS = 2200
 QWEN35_LENGTH_RETRIES = 2
-QWEN35_SAFE_CHUNK_CHARS = 3600
-QWEN35_TOP_K = 20
-QWEN35_MIN_P = 0.0
-QWEN35_REPEAT_PENALTY = 1.05
-
-
-def _is_comfy_interrupt(error: BaseException) -> bool:
-    """Do not retry a ComfyUI Stop request as though it were an LLM error."""
-    return error.__class__.__name__ == "InterruptProcessingException"
-
 
 CHARACTER_VIEWS = [
     "face_front",
@@ -142,12 +133,9 @@ CHUNK_SCHEMA = {
         "type": "object",
         "properties": {
             "chunk_summary": {"type": "string", "maxLength": 450},
-            # Bounded root arrays are essential for a local model: without them
-            # it can keep discovering incidental nouns until max_tokens closes an
-            # otherwise valid JSON object mid-array.
-            "characters": {"type": "array", "maxItems": 6, "items": entity_schema("character")},
-            "locations": {"type": "array", "maxItems": 4, "items": entity_schema("location")},
-            "objects": {"type": "array", "maxItems": 6, "items": entity_schema("object")},
+            "characters": {"type": "array", "items": entity_schema("character")},
+            "locations": {"type": "array", "items": entity_schema("location")},
+            "objects": {"type": "array", "items": entity_schema("object")},
         },
         "required": ["chunk_summary", "characters", "locations", "objects"],
         "additionalProperties": False,
@@ -196,8 +184,20 @@ def slug(text: str) -> str:
 
 
 def discover_inputs(items: list[Path]) -> list[Path]:
-    found: list[Path] = []
+    """Expand * and ? internally, then return supported files alphabetically."""
+    expanded: list[Path] = []
     for item in items:
+        raw = str(item)
+        if "*" in raw or "?" in raw:
+            matches = [Path(p) for p in glob.glob(raw)]
+            if not matches:
+                print(f"WARNING: input pattern matched nothing: {raw}", file=sys.stderr)
+            expanded.extend(matches)
+        else:
+            expanded.append(item)
+
+    found: list[Path] = []
+    for item in expanded:
         if item.is_file() and item.suffix.lower() in SUPPORTED_EXTENSIONS:
             found.append(item)
         elif item.is_dir():
@@ -207,8 +207,9 @@ def discover_inputs(items: list[Path]) -> list[Path]:
             )
         else:
             print(f"WARNING: ignoring unsupported/missing input: {item}", file=sys.stderr)
-    return sorted(dict.fromkeys(found), key=lambda p: natural_key(p.name))
 
+    unique = {str(p.resolve()).casefold(): p for p in found}
+    return sorted(unique.values(), key=lambda p: (p.name.casefold(), str(p).casefold()))
 
 def read_chapter(path: Path) -> str:
     if path.suffix.lower() in {".txt", ".md", ".markdown"}:
@@ -298,17 +299,319 @@ def _use_qwen35_chatml(model: str) -> bool:
     return _is_qwen35_model(model)
 
 
-def _use_qwen35_structured(model: str) -> bool:
-    """Use LM Studio's grammar-constrained JSON path unless ChatML is forced.
 
-    `auto` deliberately prefers structured output.  Modern LM Studio applies a
-    grammar for JSON Schema responses, which prevents a normal response from
-    ending with an invalid brace/comma sequence.  The manual ChatML path remains
-    available as an explicit compatibility fallback for older server builds.
+
+
+def _format_eta(seconds: float | None) -> str:
+    """Compact approximate remaining-time formatter for the live progress line."""
+    if seconds is None or not isinstance(seconds, (int, float)) or seconds < 0 or seconds != seconds:
+        return "estimating..."
+    seconds = min(float(seconds), 99 * 24 * 3600 + 23 * 3600 + 59 * 60 + 59)
+    total = int(round(seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"~{days}d {hours:02d}:{minutes:02d}"
+    if hours:
+        return f"~{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"~{minutes:02d}:{secs:02d}"
+
+
+class _RunProgress:
+    """Adaptive two-level progress/ETA tracker for one script run.
+
+    The script supplies deterministic progress spans for known work (chunks,
+    scenes, batches, etc.).  The currently running LLM call contributes a
+    fractional amount learned from recently completed calls.  This keeps the
+    percentage monotonic and avoids pretending max_tokens is the expected output.
     """
-    return CHAT_BACKEND == "auto" and _is_qwen35_model(model)
+
+    def __init__(self, total_items: int) -> None:
+        self.total_items = max(1, int(total_items))
+        self.run_started = time.perf_counter()
+        self.input_started = self.run_started
+        self.current_index = 1
+        self.current_name = ""
+        self.current_progress = 0.0
+        self.op_base = 0.0
+        self.op_span = 0.0
+        self.op_peak = 0.0
+        self.call_samples: list[tuple[float, int]] = []
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _clamp(value: float) -> float:
+        return min(1.0, max(0.0, float(value)))
+
+    def start_item(self, index: int, name: str = "") -> None:
+        with self._lock:
+            self.current_index = min(self.total_items, max(1, int(index)))
+            self.current_name = name
+            self.input_started = time.perf_counter()
+            self.current_progress = 0.0
+            self.op_base = 0.0
+            self.op_span = 0.0
+            self.op_peak = 0.0
+
+    def start_operation(self, base: float, span: float) -> None:
+        with self._lock:
+            self.op_base = self._clamp(base)
+            self.op_span = max(0.0, min(1.0 - self.op_base, float(span)))
+            self.current_progress = max(self.current_progress, self.op_base)
+            self.op_peak = 0.0
+
+    def advance(self, progress: float) -> None:
+        with self._lock:
+            self.current_progress = max(self.current_progress, self._clamp(progress))
+            self.op_base = self.current_progress
+            self.op_span = 0.0
+            self.op_peak = 0.0
+
+    def finish_operation(self) -> None:
+        with self._lock:
+            self.current_progress = max(self.current_progress, self._clamp(self.op_base + self.op_span))
+            self.op_base = self.current_progress
+            self.op_span = 0.0
+            self.op_peak = 0.0
+
+    def finish_item(self) -> None:
+        self.advance(1.0)
+
+    def record_call(self, elapsed: float, token_events: int) -> None:
+        if elapsed <= 0:
+            return
+        with self._lock:
+            self.call_samples.append((float(elapsed), max(0, int(token_events))))
+            if len(self.call_samples) > 24:
+                del self.call_samples[:-24]
+
+    @staticmethod
+    def _median(values: list[float]) -> float | None:
+        if not values:
+            return None
+        values = sorted(values)
+        mid = len(values) // 2
+        if len(values) % 2:
+            return values[mid]
+        return (values[mid - 1] + values[mid]) / 2.0
+
+    def _active_fraction(self, token_events: int, elapsed: float) -> float:
+        durations = [d for d, _ in self.call_samples if d > 0]
+        token_counts = [float(t) for _, t in self.call_samples if t > 0]
+        expected_duration = self._median(durations)
+        expected_tokens = self._median(token_counts)
+        if expected_duration is None and expected_tokens is None:
+            return 0.0
+
+        time_fraction = (elapsed / expected_duration) if expected_duration else 0.0
+        token_fraction = (token_events / expected_tokens) if expected_tokens else 0.0
+        if token_events <= 0:
+            # During TTFT only advance cautiously from historical wall-clock data.
+            estimate = 0.25 * time_fraction
+        elif expected_duration and expected_tokens:
+            estimate = 0.45 * time_fraction + 0.55 * token_fraction
+        elif expected_tokens:
+            estimate = token_fraction
+        else:
+            estimate = time_fraction
+        return min(0.97, max(0.0, estimate))
+
+    def snapshot(self, token_events: int = 0, active_elapsed: float = 0.0) -> tuple[float, float | None, float, float | None]:
+        now = time.perf_counter()
+        with self._lock:
+            active = self._active_fraction(token_events, active_elapsed)
+            self.op_peak = max(self.op_peak, active)
+            current = max(
+                self.current_progress,
+                self._clamp(self.op_base + self.op_span * self.op_peak),
+            )
+            total = self._clamp(((self.current_index - 1) + current) / self.total_items)
+            input_elapsed = max(0.0, now - self.input_started)
+            run_elapsed = max(0.0, now - self.run_started)
+
+        # Ratio-based ETA becomes useful as soon as deterministic progress exists.
+        input_eta = input_elapsed * (1.0 - current) / current if current >= 0.01 else None
+        total_eta = run_elapsed * (1.0 - total) / total if total >= 0.005 else None
+        return current, input_eta, total, total_eta
 
 
+_RUN_PROGRESS: _RunProgress | None = None
+
+
+def _progress_start_item(index: int, name: str = "") -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.start_item(index, name)
+
+
+def _progress_start_operation(base: float, span: float) -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.start_operation(base, span)
+
+
+def _progress_advance(progress: float) -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.advance(progress)
+
+
+def _progress_finish_operation() -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.finish_operation()
+
+
+def _progress_finish_item() -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.finish_item()
+
+def _enable_windows_ansi() -> bool:
+    """Enable ANSI/VT escape sequences on Windows consoles when possible."""
+    if sys.platform != "win32" or not sys.stdout.isatty():
+        return sys.stdout.isatty()
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if handle in (0, -1) or not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        if mode.value & ENABLE_VIRTUAL_TERMINAL_PROCESSING:
+            return True
+        return bool(kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+    except Exception:
+        return False
+
+
+class _LiveTokenRate:
+    """Single-line live throughput plus current-input and whole-run ETA display."""
+
+    _GREEN = "\x1b[92m"
+    _CYAN = "\x1b[96m"
+    _YELLOW = "\x1b[93m"
+    _DIM = "\x1b[2m"
+    _RESET = "\x1b[0m"
+    _CLEAR_LINE = "\x1b[2K"
+
+    def __init__(self, label: str = "LLM", refresh_interval: float = 0.25) -> None:
+        self.label = label
+        self.started = time.perf_counter()
+        self.first_token_at: float | None = None
+        self.token_events = 0
+        self.refresh_interval = refresh_interval
+        self.is_tty = sys.stdout.isatty()
+        self.use_ansi = _enable_windows_ansi() if self.is_tty else False
+        self._token_lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        if self.is_tty:
+            self._thread = threading.Thread(target=self._refresh_loop, name="llm-live-meter", daemon=True)
+            self._thread.start()
+
+    def _refresh_loop(self) -> None:
+        while not self._stop.wait(self.refresh_interval):
+            self._render()
+
+    def update(self, piece: str) -> None:
+        if not piece:
+            return
+        now = time.perf_counter()
+        with self._token_lock:
+            if self.first_token_at is None:
+                self.first_token_at = now
+            self.token_events += 1
+
+    def _render(self, now: float | None = None) -> None:
+        if not self.is_tty:
+            return
+        now = time.perf_counter() if now is None else now
+        with self._token_lock:
+            tokens = self.token_events
+            first_token_at = self.first_token_at
+        total_elapsed = max(now - self.started, 1e-9)
+        generation_elapsed = max(now - first_token_at, 0.10) if first_token_at is not None else 0.0
+        rate = (tokens / generation_elapsed) if generation_elapsed > 0 else 0.0
+
+        progress_text = ""
+        if _RUN_PROGRESS is not None:
+            current, current_eta, total, total_eta = _RUN_PROGRESS.snapshot(tokens, total_elapsed)
+            current_s = f"{current * 100:5.1f}%"
+            total_s = f"{total * 100:5.1f}%"
+            if self.use_ansi:
+                progress_text = (
+                    f" | Current: {self._CYAN}{current_s}{self._RESET} ETA {_format_eta(current_eta)}"
+                    f" | Total: {self._YELLOW}{total_s}{self._RESET} ETA {_format_eta(total_eta)}"
+                )
+            else:
+                progress_text = (
+                    f" | Current: {current_s} ETA {_format_eta(current_eta)}"
+                    f" | Total: {total_s} ETA {_format_eta(total_eta)}"
+                )
+
+        if self.use_ansi:
+            msg = (
+                f"    {self.label}: {self._GREEN}{rate:6.1f} tok/s{self._RESET} | "
+                f"{self._DIM}{tokens:5d} tok{self._RESET}{progress_text}"
+            )
+            sys.stdout.write("\r" + self._CLEAR_LINE + msg)
+        else:
+            msg = f"    {self.label}: {rate:6.1f} tok/s | {tokens:5d} tok{progress_text}"
+            sys.stdout.write("\r" + msg)
+        sys.stdout.flush()
+
+    def finish(self) -> tuple[int, float, float]:
+        now = time.perf_counter()
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(0.5, self.refresh_interval * 2))
+        if self.is_tty:
+            self._render(now)
+            if self.use_ansi:
+                sys.stdout.write(self._RESET)
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        with self._token_lock:
+            tokens = self.token_events
+            first_token_at = self.first_token_at
+        elapsed = max(now - self.started, 1e-9)
+        generation_elapsed = max(now - first_token_at, 0.10) if first_token_at is not None else elapsed
+        rate = tokens / generation_elapsed
+        if _RUN_PROGRESS is not None:
+            _RUN_PROGRESS.record_call(elapsed, tokens)
+        return tokens, elapsed, rate
+
+
+def _stream_chat_completion(client: OpenAI, **kwargs: Any) -> tuple[str, float, int, str, bool]:
+    """Stream a chat completion while displaying live tokens/second."""
+    meter = _LiveTokenRate("LLM")
+    content_chunks: list[str] = []
+    finish_reason = "unknown"
+    reasoning_seen = False
+    stream = client.chat.completions.create(stream=True, **kwargs)
+    try:
+        for event in stream:
+            if not event.choices:
+                continue
+            choice = event.choices[0]
+            delta = choice.delta
+            content = getattr(delta, "content", None) or ""
+            reasoning = getattr(delta, "reasoning_content", None) or ""
+            if content:
+                content_chunks.append(content)
+            if reasoning:
+                reasoning_seen = True
+            meter.update(content or reasoning)
+            if getattr(choice, "finish_reason", None):
+                finish_reason = str(choice.finish_reason)
+    finally:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+    token_events, elapsed, _ = meter.finish()
+    return "".join(content_chunks), elapsed, token_events, finish_reason, reasoning_seen
 
 def _complete_json_prefix(text: str) -> str | None:
     """Return the first complete top-level JSON object, or None if incomplete.
@@ -350,18 +653,12 @@ def _qwen35_stream_json_completion(
     temperature: float,
     top_p: float,
     max_tokens: int,
-) -> tuple[str, float, int | None, str]:
-    """Stream a manual ChatML completion and stop as soon as valid JSON closes.
-
-    Qwen3.5 chat-tuned GGUFs used through /v1/completions do not always emit
-    <|im_end|> promptly. Waiting for that token can make a compact JSON request
-    run until max_tokens or the HTTP timeout. Streaming lets us terminate once
-    the root JSON object is syntactically complete.
-    """
-    started = time.perf_counter()
+) -> tuple[str, float, int, str]:
+    """Stream manual ChatML JSON and show live generation throughput."""
     chunks: list[str] = []
     complete: str | None = None
     finish_reason = "json_complete"
+    meter = _LiveTokenRate("LLM")
     stream = client.completions.create(
         model=model,
         prompt=prompt,
@@ -370,11 +667,6 @@ def _qwen35_stream_json_completion(
         max_tokens=max_tokens,
         stop=["<|im_end|>", "<END_JSON>"],
         stream=True,
-        extra_body={
-            "top_k": QWEN35_TOP_K,
-            "min_p": QWEN35_MIN_P,
-            "repeat_penalty": QWEN35_REPEAT_PENALTY,
-        },
     )
     try:
         for event in stream:
@@ -384,6 +676,7 @@ def _qwen35_stream_json_completion(
             piece = choice.text or ""
             if piece:
                 chunks.append(piece)
+                meter.update(piece)
                 current = "".join(chunks)
                 complete = _complete_json_prefix(current)
                 if complete is not None:
@@ -397,80 +690,9 @@ def _qwen35_stream_json_completion(
                 close()
             except Exception:
                 pass
-    elapsed = time.perf_counter() - started
+    token_events, elapsed, _ = meter.finish()
     raw = complete if complete is not None else "".join(chunks)
-    return raw, elapsed, None, finish_reason
-
-
-def _qwen35_structured_json_completion(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-    schema: dict[str, Any],
-    temperature: float,
-    max_tokens: int,
-) -> tuple[str, float]:
-    """Request grammar-constrained JSON with Qwen-specific LM Studio controls."""
-    started = time.perf_counter()
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "/no_think\n\n" + system},
-            {"role": "user", "content": user},
-        ],
-        temperature=min(temperature, 0.16),
-        top_p=0.8,
-        max_tokens=max_tokens,
-        response_format={"type": "json_schema", "json_schema": schema},
-        # LM Studio supports these sampler controls as OpenAI-compatible
-        # extensions.  They keep local Qwen JSON extraction conservative while
-        # `reasoning: off` avoids spending the output budget on a think block.
-        extra_body={
-            "reasoning": "on" if THINKING_ENABLED else "off",
-            "enableThinking": bool(THINKING_ENABLED),
-            "chat_template_kwargs": {"enable_thinking": bool(THINKING_ENABLED)},
-            "top_k": QWEN35_TOP_K,
-            "min_p": QWEN35_MIN_P,
-            "repeat_penalty": QWEN35_REPEAT_PENALTY,
-        },
-    )
-    raw = response.choices[0].message.content or ""
-    return raw, time.perf_counter() - started
-
-
-def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Return a retry schema small enough to finish under a short token cap."""
-    compact = copy.deepcopy(schema)
-    root_props = compact["schema"]["properties"]
-    for name in ("characters", "locations", "objects"):
-        root_props[name]["maxItems"] = min(3, int(root_props[name].get("maxItems", 3)))
-
-    def limit(node: dict[str, Any], field_name: str = "") -> None:
-        if node.get("type") == "string" and "maxLength" in node:
-            limit_by_field = {
-                "chunk_summary": 240,
-                "canonical_name": 80,
-                "stable_visual_description": 180,
-                "chapter_appearance": 160,
-                "chapter_state": 160,
-                "voice_description": 100,
-                "evidence": 80,
-            }
-            node["maxLength"] = min(int(node["maxLength"]), limit_by_field.get(field_name, 80))
-        if node.get("type") == "array":
-            item_limit = {"aliases": 2, "distinguishing_features": 3, "reference_view_hints": 2, "evidence": 1}
-            if field_name in item_limit:
-                node["maxItems"] = min(int(node.get("maxItems", item_limit[field_name])), item_limit[field_name])
-            items = node.get("items")
-            if isinstance(items, dict):
-                limit(items, field_name)
-        for name, value in node.get("properties", {}).items():
-            if isinstance(value, dict):
-                limit(value, name)
-
-    limit(compact["schema"])
-    return compact
+    return raw, elapsed, token_events, finish_reason
 
 def _qwen35_chatml_prompt(system: str, user: str, schema: dict[str, Any]) -> str:
     # The Qwen3.5 GGUF template supplied by the model starts assistant generation
@@ -510,49 +732,29 @@ def chat_json(
         effective_max_tokens = min(max_tokens, QWEN35_MAX_OUTPUT_TOKENS)
         last_error: Exception | None = None
         last_raw = ""
-        use_structured = _use_qwen35_structured(model)
         for attempt in range(QWEN35_LENGTH_RETRIES + 1):
-            request_schema = _qwen35_compact_schema(schema) if attempt else schema
             retry_note = ""
             if attempt:
                 retry_note = (
                     "\n\nCRITICAL RETRY: The previous answer was truncated or invalid. "
-                    "The retry schema is deliberately smaller: return at most 3 entities in each list. "
-                    "Use one short evidence anchor per entity, omit incidental props, do not quote dialogue, "
-                    "and finish well before the token limit."
-            )
+                    "Return a MUCH SMALLER JSON object. Obey every maxItems/maxLength limit. "
+                    "Use at most 3 evidence anchors per entity, each <=120 characters. "
+                    "Do not quote dialogue. Do not narrate events. Finish and close the JSON well before the token limit."
+                )
+            prompt = _qwen35_chatml_prompt(system, user + retry_note, schema)
             try:
-                if use_structured:
-                    try:
-                        raw, elapsed = _qwen35_structured_json_completion(
-                            client, model, system, user + retry_note, request_schema,
-                            min(temperature, 0.12) if attempt else temperature, effective_max_tokens,
-                        )
-                        completion_tokens = None
-                        finish_reason = "structured"
-                        backend = "qwen35-structured"
-                    except Exception as structured_error:
-                        # Old LM Studio builds or model runners may not expose
-                        # grammar-constrained OpenAI responses.  Keep auto mode
-                        # compatible by falling back to the established manual
-                        # ChatML stream for this and all later attempts.
-                        print(f"    Qwen3.5 structured JSON unavailable ({structured_error}); falling back to ChatML...")
-                        use_structured = False
-                if not use_structured:
-                    prompt = _qwen35_chatml_prompt(system, user + retry_note, request_schema)
-                    raw, elapsed, completion_tokens, finish_reason = _qwen35_stream_json_completion(
-                        client=client,
-                        model=model,
-                        prompt=prompt,
-                        temperature=(min(temperature, 0.12) if attempt else temperature),
-                        top_p=(0.8 if attempt else 0.9),
-                        max_tokens=effective_max_tokens,
-                    )
-                    backend = "qwen35-chatml-stream"
+                raw, elapsed, completion_tokens, finish_reason = _qwen35_stream_json_completion(
+                    client=client,
+                    model=model,
+                    prompt=prompt,
+                    temperature=(min(temperature, 0.12) if attempt else temperature),
+                    top_p=(0.8 if attempt else 0.9),
+                    max_tokens=effective_max_tokens,
+                )
                 last_raw = raw
-                token_note = f", {completion_tokens} output tokens" if completion_tokens is not None else ""
+                token_note = f", {completion_tokens} streamed tokens, {completion_tokens / max(elapsed, 1e-9):.1f} tok/s"
                 print(
-                    f"    LLM: {backend}, thinking={'on' if THINKING_ENABLED else 'off'}, "
+                    f"    LLM: qwen35-chatml-stream, thinking={'on' if THINKING_ENABLED else 'off'}, "
                     f"{elapsed:.1f}s{token_note}, stop={finish_reason}, cap={effective_max_tokens}, attempt={attempt + 1}"
                 )
                 if finish_reason == "length":
@@ -570,8 +772,6 @@ def chat_json(
                         print(f"    JSON incomplete/invalid ({parse_error}); retrying compactly...")
                         continue
             except Exception as error:
-                if _is_comfy_interrupt(error):
-                    raise
                 last_error = error
                 if attempt < QWEN35_LENGTH_RETRIES:
                     print(f"    Qwen3.5 call failed ({error}); retrying...")
@@ -584,17 +784,18 @@ def chat_json(
             f"Tail of last raw output:\n{snippet}"
         )
 
-    # Generic OpenAI-compatible chat path for non-Qwen3.5 models. We still send
-    # both common hints. Servers/models that do not recognize them may ignore them.
+    # Generic OpenAI-compatible chat path for non-Qwen3.5 models.
+    # Stream both the structured request and fallback so tok/s is visible live.
     thinking_directive = "/think" if THINKING_ENABLED else "/no_think"
-    controlled_system = f"{thinking_directive}\n\n{system}"
+    controlled_system = f"{thinking_directive}\\n\\n{system}"
     messages = [{"role": "system", "content": controlled_system}, {"role": "user", "content": user}]
     extra_body = {
         "enableThinking": bool(THINKING_ENABLED),
         "chat_template_kwargs": {"enable_thinking": bool(THINKING_ENABLED)},
     }
     try:
-        response = client.chat.completions.create(
+        raw, elapsed, completion_tokens, finish_reason, reasoning_seen = _stream_chat_completion(
+            client,
             model=model,
             messages=messages,
             temperature=temperature,
@@ -603,27 +804,25 @@ def chat_json(
             response_format={"type": "json_schema", "json_schema": schema},
             extra_body=extra_body,
         )
-        raw = response.choices[0].message.content or ""
-        if not raw.strip():
-            reasoning = getattr(response.choices[0].message, "reasoning_content", None)
-            if reasoning:
-                raise RuntimeError(
-                    "LM Studio returned reasoning_content but empty content; "
-                    "try --chat-backend qwen35-chatml for a Qwen3.5 model."
-                )
-        elapsed = time.perf_counter() - start_time
-        print(f"    LLM: openai-chat structured, {elapsed:.1f}s")
+        if not raw.strip() and reasoning_seen:
+            raise RuntimeError(
+                "LM Studio returned reasoning_content but empty content; "
+                "try --chat-backend qwen35-chatml for a Qwen3.5 model."
+            )
+        print(
+            f"    LLM: openai-chat structured, {elapsed:.1f}s, "
+            f"{completion_tokens} streamed tokens, {completion_tokens / max(elapsed, 1e-9):.1f} tok/s, stop={finish_reason}"
+        )
         return parse_json(raw)
     except Exception as first_error:
-        if _is_comfy_interrupt(first_error):
-            raise
-        response = client.chat.completions.create(
+        raw, elapsed, completion_tokens, finish_reason, reasoning_seen = _stream_chat_completion(
+            client,
             model=model,
             messages=[
-                {"role": "system", "content": controlled_system + "\nReturn ONLY valid JSON with no Markdown."},
+                {"role": "system", "content": controlled_system + "\\nReturn ONLY valid JSON with no Markdown."},
                 {
                     "role": "user",
-                    "content": user + "\n\nRequired JSON schema:\n" + json.dumps(schema["schema"], ensure_ascii=False),
+                    "content": user + "\\n\\nRequired JSON schema:\\n" + json.dumps(schema["schema"], ensure_ascii=False),
                 },
             ],
             temperature=temperature,
@@ -631,18 +830,18 @@ def chat_json(
             max_tokens=max_tokens,
             extra_body=extra_body,
         )
-        raw = response.choices[0].message.content or ""
-        elapsed = time.perf_counter() - start_time
-        print(f"    LLM: openai-chat JSON fallback, {elapsed:.1f}s")
+        print(
+            f"    LLM: openai-chat JSON fallback, {elapsed:.1f}s, "
+            f"{completion_tokens} streamed tokens, {completion_tokens / max(elapsed, 1e-9):.1f} tok/s, stop={finish_reason}"
+        )
         try:
             return parse_json(raw)
         except Exception as second_error:
-            reasoning = getattr(response.choices[0].message, "reasoning_content", None)
-            reasoning_note = "\nReasoning stream was present." if reasoning else ""
+            reasoning_note = "\\nReasoning stream was present." if reasoning_seen else ""
             raise RuntimeError(
-                f"Structured output failed: {first_error}\n"
-                f"Fallback JSON failed: {second_error}{reasoning_note}\n"
-                f"Raw output:\n{raw[:3000]}"
+                f"Structured output failed: {first_error}\\n"
+                f"Fallback JSON failed: {second_error}{reasoning_note}\\n"
+                f"Raw output:\\n{raw[:3000]}"
             ) from second_error
 
 
@@ -795,7 +994,7 @@ def merge_candidates(
         f"Chapter ID: {chapter_id}\n\nMerge this catalog:\n{json.dumps(compact, ensure_ascii=False, indent=2)}",
         MERGE_SCHEMA,
         min(args.temperature, 0.2),
-        max(args.max_tokens, 3000),
+        max(args.max_tokens, 6000),
     )
 
 
@@ -823,6 +1022,81 @@ def assign_local_ids(merged: dict[str, Any], combined: dict[str, Any]) -> dict[s
     return output
 
 
+
+def _hierarchical_merge_call_count(n: int, batch_size: int) -> int:
+    n = max(1, n)
+    if n == 1:
+        return 1
+    calls = 0
+    while n > 1:
+        n = (n + batch_size - 1) // batch_size
+        calls += n
+    return calls
+
+
+def _merged_as_partial(merged: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "chunk_summary": merged.get("chapter_summary", ""),
+        "characters": [{k: v for k, v in x.items() if k != "source_candidate_ids"} for x in merged.get("characters", [])],
+        "locations": [{k: v for k, v in x.items() if k != "source_candidate_ids"} for x in merged.get("locations", [])],
+        "objects": [{k: v for k, v in x.items() if k != "source_candidate_ids"} for x in merged.get("objects", [])],
+    }
+
+
+def hierarchical_merge_candidates(
+    client: OpenAI, model: str, chapter_id: str, chunk_results: list[dict[str, Any]],
+    args: argparse.Namespace, cache_dir: Path, op_index: int, progress_span: float,
+) -> tuple[dict[str, Any], dict[str, Any], int]:
+    """Bound every chapter merge prompt by --merge-batch-size.
+
+    Returns the final merged catalog plus the immediate combined catalog used to
+    assign local IDs, and the next operation index.
+    """
+    level = list(chunk_results)
+    round_no = 1
+    if len(level) == 1:
+        batches = [level]
+    while True:
+        next_level: list[dict[str, Any]] = []
+        batch_count = (len(level) + args.merge_batch_size - 1) // args.merge_batch_size
+        last_merged = None
+        last_combined = None
+        for batch_no, start in enumerate(range(0, len(level), args.merge_batch_size), start=1):
+            batch = level[start:start + args.merge_batch_size]
+            combined = combine_candidates(batch)
+            key = hashlib.sha256((
+                SCHEMA_VERSION + "\n" + model + "\n" + str(THINKING_ENABLED) + "\n" + CHAT_BACKEND + "\n" +
+                json.dumps(combined, ensure_ascii=False, sort_keys=True, default=str)
+            ).encode()).hexdigest()
+            cache_path = cache_dir / f"merge_r{round_no:02d}_b{batch_no:03d}.json"
+            merged = None
+            if cache_path.exists() and not args.force:
+                try:
+                    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                    if cached.get("cache_key") == key:
+                        merged = cached["result"]
+                except Exception:
+                    pass
+            _progress_start_operation(op_index * progress_span, progress_span)
+            if merged is None:
+                print(f"  merging round {round_no}, batch {batch_no}/{batch_count} ({len(batch)} partial catalog(s))")
+                merged = merge_candidates(client, model, chapter_id, combined, args)
+                cache_path.write_text(json.dumps({"cache_key": key, "result": merged}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                _progress_finish_operation()
+                if args.delay:
+                    time.sleep(args.delay)
+            else:
+                _progress_advance((op_index + 1) * progress_span)
+                print(f"  merge round {round_no}, batch {batch_no}/{batch_count}: cached")
+            op_index += 1
+            last_merged, last_combined = merged, combined
+            next_level.append(_merged_as_partial(merged))
+        if len(next_level) == 1:
+            assert last_merged is not None and last_combined is not None
+            return last_merged, last_combined, op_index
+        level = next_level
+        round_no += 1
+
 def process_chapter(
     path: Path,
     out_dir: Path,
@@ -844,22 +1118,18 @@ def process_chapter(
             pass
 
     text = read_chapter(path)
-    requested_chunk_chars = max(3000, args.chunk_chars)
-    effective_chunk_chars = requested_chunk_chars
-    if _use_qwen35_chatml(model):
-        effective_chunk_chars = min(requested_chunk_chars, max(3000, QWEN35_SAFE_CHUNK_CHARS))
-        if effective_chunk_chars != requested_chunk_chars:
-            print(
-                f"  Qwen3.5 safe chunking: {requested_chunk_chars:,} → {effective_chunk_chars:,} chars "
-                "to keep each JSON catalog within its output budget"
-            )
-    chunks = split_chunks(text, effective_chunk_chars, max(0, args.overlap_paragraphs))
+    chunks = split_chunks(text, max(3000, args.chunk_chars), max(0, args.overlap_paragraphs))
+    merge_calls = _hierarchical_merge_call_count(len(chunks), args.merge_batch_size)
+    progress_units = len(chunks) + merge_calls
+    progress_span = 1.0 / max(1, progress_units)
     cache_dir = out_dir / ".cache" / chapter_id
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"{path.name}: {len(text):,} chars, {len(chunks)} chunk(s)")
+    print(f"{path.name}: {len(text):,} chars, {len(chunks)} chunk(s), {merge_calls} merge call(s)")
     chunk_results: list[dict[str, Any]] = []
+    op_index = 0
     for i, chunk in enumerate(chunks, start=1):
+        _progress_start_operation(op_index * progress_span, progress_span)
         cache_path = cache_dir / f"chunk_{i:03d}.json"
         cache_key = hashlib.sha256((SCHEMA_VERSION + "\n" + model + "\nthinking=" + str(THINKING_ENABLED) + "\nchat_backend=" + CHAT_BACKEND + "\n" + chunk).encode()).hexdigest()
         result = None
@@ -874,27 +1144,19 @@ def process_chapter(
             print(f"  extracting chunk {i}/{len(chunks)}")
             result = extract_chunk(client, model, chapter_id, chunk, i, len(chunks), args)
             cache_path.write_text(json.dumps({"cache_key": cache_key, "result": result}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _progress_finish_operation()
             if args.delay:
                 time.sleep(args.delay)
         else:
+            _progress_advance((op_index + 1) * progress_span)
             print(f"  chunk {i}/{len(chunks)}: cached")
+        op_index += 1
         chunk_results.append(result)
 
-    combined = combine_candidates(chunk_results)
-    merge_key = hashlib.sha256((SCHEMA_VERSION + "\n" + model + "\nthinking=" + str(THINKING_ENABLED) + "\nchat_backend=" + CHAT_BACKEND + "\n" + json.dumps(combined, ensure_ascii=False, sort_keys=True, default=str)).encode()).hexdigest()
-    merge_cache = cache_dir / "merged.json"
-    merged = None
-    if merge_cache.exists() and not args.force:
-        try:
-            cached = json.loads(merge_cache.read_text(encoding="utf-8"))
-            if cached.get("cache_key") == merge_key:
-                merged = cached["result"]
-        except Exception:
-            pass
-    if merged is None:
-        print("  merging overlapping candidates")
-        merged = merge_candidates(client, model, chapter_id, combined, args)
-        merge_cache.write_text(json.dumps({"cache_key": merge_key, "result": merged}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    merged, combined, op_index = hierarchical_merge_candidates(
+        client, model, chapter_id, chunk_results, args, cache_dir, op_index, progress_span
+    )
+    _progress_advance(1.0)
 
     catalog = assign_local_ids(merged, combined)
     payload = {
@@ -933,7 +1195,7 @@ def _format_command(parts: list[Any]) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Extract v2 per-chapter novel reference catalogs.")
-    p.add_argument("inputs", nargs="+", type=Path, help="Chapter file(s) and/or directories.")
+    p.add_argument("inputs", nargs="+", type=Path, help="Chapter file(s), directories, and/or * ? wildcard patterns. Matches are processed alphabetically.")
     p.add_argument("--out-dir", type=Path, default=Path("chapter_references"))
     p.add_argument("--base-url", default="http://127.0.0.1:1234/v1")
     p.add_argument("--api-key", default="lm-studio")
@@ -965,6 +1227,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--chunk-chars", type=int, default=5500)
     p.add_argument("--overlap-paragraphs", type=int, default=2)
+    p.add_argument("--merge-batch-size", type=int, default=6, help="Maximum partial chunk catalogs per hierarchical merge call.")
     p.add_argument("--temperature", type=float, default=0.18)
     p.add_argument("--max-tokens", type=int, default=2200)
     p.add_argument(
@@ -991,15 +1254,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    global THINKING_ENABLED, CHAT_BACKEND, QWEN35_MAX_OUTPUT_TOKENS, QWEN35_LENGTH_RETRIES
+    global THINKING_ENABLED, CHAT_BACKEND, QWEN35_MAX_OUTPUT_TOKENS, QWEN35_LENGTH_RETRIES, _RUN_PROGRESS
     THINKING_ENABLED = bool(args.thinking)
     CHAT_BACKEND = args.chat_backend
     QWEN35_MAX_OUTPUT_TOKENS = max(256, int(args.qwen35_max_output_tokens))
     QWEN35_LENGTH_RETRIES = max(0, int(args.qwen35_length_retries))
+    args.merge_batch_size = max(2, int(args.merge_batch_size))
     files = discover_inputs(args.inputs)
     if not files:
         print("ERROR: no supported chapter files found.", file=sys.stderr)
         return 2
+    _RUN_PROGRESS = _RunProgress(len(files))
     args.out_dir.mkdir(parents=True, exist_ok=True)
     try:
         lm = make_client(args.base_url, args.api_key)
@@ -1019,12 +1284,15 @@ def main() -> int:
         print(f"Qwen3.5 compact retries: {QWEN35_LENGTH_RETRIES}")
     print(f"Chapters: {len(files)}\n")
     failures = 0
-    for path in files:
+    for input_index, path in enumerate(files, start=1):
+        _progress_start_item(input_index, path.name)
         try:
             process_chapter(path, args.out_dir, lm, model, args)
         except Exception as exc:
             failures += 1
             print(f"ERROR {path}: {exc}", file=sys.stderr)
+        finally:
+            _progress_finish_item()
     print(f"\nCompleted: {len(files) - failures}/{len(files)} chapter(s).")
     if failures == 0:
         next_parts: list[Any] = [

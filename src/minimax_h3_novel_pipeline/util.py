@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Iterable, List
+from typing import Any, Iterable
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}
 

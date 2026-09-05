@@ -80,7 +80,7 @@ class ExtractChapterReferencesNode:
             min_p=float(lmstudio_config.get("qwen35_min_p", 0.0)),
             repeat_penalty=float(lmstudio_config.get("qwen35_repeat_penalty", 1.05)),
         )
-        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config["api_key"]), str(lmstudio_config.get("model", "")))
+        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config.get("model", "")))
         client = lmstudio_pipeline.make_interruptible_client(client)
         args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), delay=0.0, base_url=lmstudio_config["api_url"])
         output = Path(out_dir.strip())

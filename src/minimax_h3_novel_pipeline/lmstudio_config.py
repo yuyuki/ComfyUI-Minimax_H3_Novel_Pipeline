@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import lmstudio_pipeline, lmstudio_settings
+from . import lmstudio_settings
 
 
 class LMStudioConfigurationNode:
@@ -25,7 +25,7 @@ limites de sortie/réessais Qwen3.5.
             "required": {
                 "api_url": ("STRING", {
                     "default": "http://127.0.0.1:1234/v1",
-                    "tooltip": "URL du serveur OpenAI-compatible de LM Studio.",
+                    "tooltip": "Doit correspondre à MINIMAX_H3_LMSTUDIO_BASE_URL côté serveur (par défaut http://127.0.0.1:1234/v1).",
                 }),
                 "chat_backend": (["auto", "openai-chat", "qwen35-chatml"], {
                     "default": "auto",
@@ -77,8 +77,7 @@ limites de sortie/réessais Qwen3.5.
             qwen35_max_output_tokens: int = 3500, qwen35_length_retries: int = 2,
             qwen35_safe_chunk_chars: int = 3600, qwen35_top_k: int = 20,
             qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05) -> tuple[dict[str, Any], str]:
-        if not api_url.strip():
-            raise ValueError("api_url ne peut pas être vide.")
+        api_url = lmstudio_settings.validate_api_url(api_url)
 
         api_key = lmstudio_settings.get_api_key()
         if not api_key:
@@ -89,7 +88,6 @@ limites de sortie/réessais Qwen3.5.
 
         config = {
             "api_url": api_url.strip(),
-            "api_key": api_key,
             "model": (model or "").strip(),
             "chat_backend": chat_backend,
             "thinking": bool(thinking),

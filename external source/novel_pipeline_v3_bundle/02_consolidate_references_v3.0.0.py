@@ -25,10 +25,12 @@ from __future__ import annotations
 import argparse
 import difflib
 import hashlib
+import glob
 import json
 import re
 import sys
 import time
+import threading
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -39,13 +41,7 @@ THINKING_ENABLED = False
 CHAT_BACKEND = "auto"
 QWEN35_MAX_OUTPUT_TOKENS = 3500
 QWEN35_LENGTH_RETRIES = 2
-SCRIPT_VERSION = "2.4.1"
-
-
-def _is_comfy_interrupt(error: BaseException) -> bool:
-    """Do not retry a ComfyUI Stop request as though it were an LLM error."""
-    return error.__class__.__name__ == "InterruptProcessingException"
-
+SCRIPT_VERSION = "3.0.0"
 
 INPUT_SCHEMA = "minimax-h3-novel-refs.chapter.v2"
 LEGACY_INPUT_SCHEMA = "minimax-h3-novel-refs.chapter.v1"
@@ -276,6 +272,319 @@ def _use_qwen35_chatml(model: str) -> bool:
 
 
 
+
+
+def _format_eta(seconds: float | None) -> str:
+    """Compact approximate remaining-time formatter for the live progress line."""
+    if seconds is None or not isinstance(seconds, (int, float)) or seconds < 0 or seconds != seconds:
+        return "estimating..."
+    seconds = min(float(seconds), 99 * 24 * 3600 + 23 * 3600 + 59 * 60 + 59)
+    total = int(round(seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"~{days}d {hours:02d}:{minutes:02d}"
+    if hours:
+        return f"~{hours:d}:{minutes:02d}:{secs:02d}"
+    return f"~{minutes:02d}:{secs:02d}"
+
+
+class _RunProgress:
+    """Adaptive two-level progress/ETA tracker for one script run.
+
+    The script supplies deterministic progress spans for known work (chunks,
+    scenes, batches, etc.).  The currently running LLM call contributes a
+    fractional amount learned from recently completed calls.  This keeps the
+    percentage monotonic and avoids pretending max_tokens is the expected output.
+    """
+
+    def __init__(self, total_items: int) -> None:
+        self.total_items = max(1, int(total_items))
+        self.run_started = time.perf_counter()
+        self.input_started = self.run_started
+        self.current_index = 1
+        self.current_name = ""
+        self.current_progress = 0.0
+        self.op_base = 0.0
+        self.op_span = 0.0
+        self.op_peak = 0.0
+        self.call_samples: list[tuple[float, int]] = []
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _clamp(value: float) -> float:
+        return min(1.0, max(0.0, float(value)))
+
+    def start_item(self, index: int, name: str = "") -> None:
+        with self._lock:
+            self.current_index = min(self.total_items, max(1, int(index)))
+            self.current_name = name
+            self.input_started = time.perf_counter()
+            self.current_progress = 0.0
+            self.op_base = 0.0
+            self.op_span = 0.0
+            self.op_peak = 0.0
+
+    def start_operation(self, base: float, span: float) -> None:
+        with self._lock:
+            self.op_base = self._clamp(base)
+            self.op_span = max(0.0, min(1.0 - self.op_base, float(span)))
+            self.current_progress = max(self.current_progress, self.op_base)
+            self.op_peak = 0.0
+
+    def advance(self, progress: float) -> None:
+        with self._lock:
+            self.current_progress = max(self.current_progress, self._clamp(progress))
+            self.op_base = self.current_progress
+            self.op_span = 0.0
+            self.op_peak = 0.0
+
+    def finish_operation(self) -> None:
+        with self._lock:
+            self.current_progress = max(self.current_progress, self._clamp(self.op_base + self.op_span))
+            self.op_base = self.current_progress
+            self.op_span = 0.0
+            self.op_peak = 0.0
+
+    def finish_item(self) -> None:
+        self.advance(1.0)
+
+    def record_call(self, elapsed: float, token_events: int) -> None:
+        if elapsed <= 0:
+            return
+        with self._lock:
+            self.call_samples.append((float(elapsed), max(0, int(token_events))))
+            if len(self.call_samples) > 24:
+                del self.call_samples[:-24]
+
+    @staticmethod
+    def _median(values: list[float]) -> float | None:
+        if not values:
+            return None
+        values = sorted(values)
+        mid = len(values) // 2
+        if len(values) % 2:
+            return values[mid]
+        return (values[mid - 1] + values[mid]) / 2.0
+
+    def _active_fraction(self, token_events: int, elapsed: float) -> float:
+        durations = [d for d, _ in self.call_samples if d > 0]
+        token_counts = [float(t) for _, t in self.call_samples if t > 0]
+        expected_duration = self._median(durations)
+        expected_tokens = self._median(token_counts)
+        if expected_duration is None and expected_tokens is None:
+            return 0.0
+
+        time_fraction = (elapsed / expected_duration) if expected_duration else 0.0
+        token_fraction = (token_events / expected_tokens) if expected_tokens else 0.0
+        if token_events <= 0:
+            # During TTFT only advance cautiously from historical wall-clock data.
+            estimate = 0.25 * time_fraction
+        elif expected_duration and expected_tokens:
+            estimate = 0.45 * time_fraction + 0.55 * token_fraction
+        elif expected_tokens:
+            estimate = token_fraction
+        else:
+            estimate = time_fraction
+        return min(0.97, max(0.0, estimate))
+
+    def snapshot(self, token_events: int = 0, active_elapsed: float = 0.0) -> tuple[float, float | None, float, float | None]:
+        now = time.perf_counter()
+        with self._lock:
+            active = self._active_fraction(token_events, active_elapsed)
+            self.op_peak = max(self.op_peak, active)
+            current = max(
+                self.current_progress,
+                self._clamp(self.op_base + self.op_span * self.op_peak),
+            )
+            total = self._clamp(((self.current_index - 1) + current) / self.total_items)
+            input_elapsed = max(0.0, now - self.input_started)
+            run_elapsed = max(0.0, now - self.run_started)
+
+        # Ratio-based ETA becomes useful as soon as deterministic progress exists.
+        input_eta = input_elapsed * (1.0 - current) / current if current >= 0.01 else None
+        total_eta = run_elapsed * (1.0 - total) / total if total >= 0.005 else None
+        return current, input_eta, total, total_eta
+
+
+_RUN_PROGRESS: _RunProgress | None = None
+
+
+def _progress_start_item(index: int, name: str = "") -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.start_item(index, name)
+
+
+def _progress_start_operation(base: float, span: float) -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.start_operation(base, span)
+
+
+def _progress_advance(progress: float) -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.advance(progress)
+
+
+def _progress_finish_operation() -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.finish_operation()
+
+
+def _progress_finish_item() -> None:
+    if _RUN_PROGRESS is not None:
+        _RUN_PROGRESS.finish_item()
+
+def _enable_windows_ansi() -> bool:
+    """Enable ANSI/VT escape sequences on Windows consoles when possible."""
+    if sys.platform != "win32" or not sys.stdout.isatty():
+        return sys.stdout.isatty()
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if handle in (0, -1) or not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        if mode.value & ENABLE_VIRTUAL_TERMINAL_PROCESSING:
+            return True
+        return bool(kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+    except Exception:
+        return False
+
+
+class _LiveTokenRate:
+    """Single-line live throughput plus current-input and whole-run ETA display."""
+
+    _GREEN = "\x1b[92m"
+    _CYAN = "\x1b[96m"
+    _YELLOW = "\x1b[93m"
+    _DIM = "\x1b[2m"
+    _RESET = "\x1b[0m"
+    _CLEAR_LINE = "\x1b[2K"
+
+    def __init__(self, label: str = "LLM", refresh_interval: float = 0.25) -> None:
+        self.label = label
+        self.started = time.perf_counter()
+        self.first_token_at: float | None = None
+        self.token_events = 0
+        self.refresh_interval = refresh_interval
+        self.is_tty = sys.stdout.isatty()
+        self.use_ansi = _enable_windows_ansi() if self.is_tty else False
+        self._token_lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        if self.is_tty:
+            self._thread = threading.Thread(target=self._refresh_loop, name="llm-live-meter", daemon=True)
+            self._thread.start()
+
+    def _refresh_loop(self) -> None:
+        while not self._stop.wait(self.refresh_interval):
+            self._render()
+
+    def update(self, piece: str) -> None:
+        if not piece:
+            return
+        now = time.perf_counter()
+        with self._token_lock:
+            if self.first_token_at is None:
+                self.first_token_at = now
+            self.token_events += 1
+
+    def _render(self, now: float | None = None) -> None:
+        if not self.is_tty:
+            return
+        now = time.perf_counter() if now is None else now
+        with self._token_lock:
+            tokens = self.token_events
+            first_token_at = self.first_token_at
+        total_elapsed = max(now - self.started, 1e-9)
+        generation_elapsed = max(now - first_token_at, 0.10) if first_token_at is not None else 0.0
+        rate = (tokens / generation_elapsed) if generation_elapsed > 0 else 0.0
+
+        progress_text = ""
+        if _RUN_PROGRESS is not None:
+            current, current_eta, total, total_eta = _RUN_PROGRESS.snapshot(tokens, total_elapsed)
+            current_s = f"{current * 100:5.1f}%"
+            total_s = f"{total * 100:5.1f}%"
+            if self.use_ansi:
+                progress_text = (
+                    f" | Current: {self._CYAN}{current_s}{self._RESET} ETA {_format_eta(current_eta)}"
+                    f" | Total: {self._YELLOW}{total_s}{self._RESET} ETA {_format_eta(total_eta)}"
+                )
+            else:
+                progress_text = (
+                    f" | Current: {current_s} ETA {_format_eta(current_eta)}"
+                    f" | Total: {total_s} ETA {_format_eta(total_eta)}"
+                )
+
+        if self.use_ansi:
+            msg = (
+                f"    {self.label}: {self._GREEN}{rate:6.1f} tok/s{self._RESET} | "
+                f"{self._DIM}{tokens:5d} tok{self._RESET}{progress_text}"
+            )
+            sys.stdout.write("\r" + self._CLEAR_LINE + msg)
+        else:
+            msg = f"    {self.label}: {rate:6.1f} tok/s | {tokens:5d} tok{progress_text}"
+            sys.stdout.write("\r" + msg)
+        sys.stdout.flush()
+
+    def finish(self) -> tuple[int, float, float]:
+        now = time.perf_counter()
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(0.5, self.refresh_interval * 2))
+        if self.is_tty:
+            self._render(now)
+            if self.use_ansi:
+                sys.stdout.write(self._RESET)
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        with self._token_lock:
+            tokens = self.token_events
+            first_token_at = self.first_token_at
+        elapsed = max(now - self.started, 1e-9)
+        generation_elapsed = max(now - first_token_at, 0.10) if first_token_at is not None else elapsed
+        rate = tokens / generation_elapsed
+        if _RUN_PROGRESS is not None:
+            _RUN_PROGRESS.record_call(elapsed, tokens)
+        return tokens, elapsed, rate
+
+
+def _stream_chat_completion(client: OpenAI, **kwargs: Any) -> tuple[str, float, int, str, bool]:
+    """Stream a chat completion while displaying live tokens/second."""
+    meter = _LiveTokenRate("LLM")
+    content_chunks: list[str] = []
+    finish_reason = "unknown"
+    reasoning_seen = False
+    stream = client.chat.completions.create(stream=True, **kwargs)
+    try:
+        for event in stream:
+            if not event.choices:
+                continue
+            choice = event.choices[0]
+            delta = choice.delta
+            content = getattr(delta, "content", None) or ""
+            reasoning = getattr(delta, "reasoning_content", None) or ""
+            if content:
+                content_chunks.append(content)
+            if reasoning:
+                reasoning_seen = True
+            meter.update(content or reasoning)
+            if getattr(choice, "finish_reason", None):
+                finish_reason = str(choice.finish_reason)
+    finally:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+    token_events, elapsed, _ = meter.finish()
+    return "".join(content_chunks), elapsed, token_events, finish_reason, reasoning_seen
+
 def _complete_json_prefix(text: str) -> str | None:
     """Return the first complete top-level JSON object, or None if incomplete.
 
@@ -316,18 +625,12 @@ def _qwen35_stream_json_completion(
     temperature: float,
     top_p: float,
     max_tokens: int,
-) -> tuple[str, float, int | None, str]:
-    """Stream a manual ChatML completion and stop as soon as valid JSON closes.
-
-    Qwen3.5 chat-tuned GGUFs used through /v1/completions do not always emit
-    <|im_end|> promptly. Waiting for that token can make a compact JSON request
-    run until max_tokens or the HTTP timeout. Streaming lets us terminate once
-    the root JSON object is syntactically complete.
-    """
-    started = time.perf_counter()
+) -> tuple[str, float, int, str]:
+    """Stream manual ChatML JSON and show live generation throughput."""
     chunks: list[str] = []
     complete: str | None = None
     finish_reason = "json_complete"
+    meter = _LiveTokenRate("LLM")
     stream = client.completions.create(
         model=model,
         prompt=prompt,
@@ -345,6 +648,7 @@ def _qwen35_stream_json_completion(
             piece = choice.text or ""
             if piece:
                 chunks.append(piece)
+                meter.update(piece)
                 current = "".join(chunks)
                 complete = _complete_json_prefix(current)
                 if complete is not None:
@@ -358,9 +662,9 @@ def _qwen35_stream_json_completion(
                 close()
             except Exception:
                 pass
-    elapsed = time.perf_counter() - started
+    token_events, elapsed, _ = meter.finish()
     raw = complete if complete is not None else "".join(chunks)
-    return raw, elapsed, None, finish_reason
+    return raw, elapsed, token_events, finish_reason
 
 def _qwen35_chatml_prompt(system: str, user: str, schema: dict[str, Any]) -> str:
     # The Qwen3.5 GGUF template supplied by the model starts assistant generation
@@ -416,7 +720,7 @@ def chat_json(
                     top_p=(0.8 if attempt else 0.9), max_tokens=effective_max_tokens,
                 )
                 last_raw = raw
-                token_note = f", {completion_tokens} output tokens" if completion_tokens is not None else ""
+                token_note = f", {completion_tokens} streamed tokens, {completion_tokens / max(elapsed, 1e-9):.1f} tok/s"
                 print(
                     f"    LLM: qwen35-chatml-stream, thinking={'on' if THINKING_ENABLED else 'off'}, "
                     f"{elapsed:.1f}s{token_note}, stop={finish_reason}, cap={effective_max_tokens}, attempt={attempt + 1}"
@@ -434,8 +738,6 @@ def chat_json(
                         print(f"    JSON incomplete/invalid ({parse_error}); retrying compactly...")
                         continue
             except Exception as error:
-                if _is_comfy_interrupt(error):
-                    raise
                 last_error = error
                 if attempt < QWEN35_LENGTH_RETRIES:
                     print(f"    Qwen3.5 call failed ({error}); retrying...")
@@ -447,17 +749,18 @@ def chat_json(
             f"{QWEN35_LENGTH_RETRIES + 1} attempt(s): {last_error}\nTail of last raw output:\n{snippet}"
         )
 
-    # Generic OpenAI-compatible chat path for non-Qwen3.5 models. We still send
-    # both common hints. Servers/models that do not recognize them may ignore them.
+    # Generic OpenAI-compatible chat path for non-Qwen3.5 models.
+    # Stream both the structured request and fallback so tok/s is visible live.
     thinking_directive = "/think" if THINKING_ENABLED else "/no_think"
-    controlled_system = f"{thinking_directive}\n\n{system}"
+    controlled_system = f"{thinking_directive}\\n\\n{system}"
     messages = [{"role": "system", "content": controlled_system}, {"role": "user", "content": user}]
     extra_body = {
         "enableThinking": bool(THINKING_ENABLED),
         "chat_template_kwargs": {"enable_thinking": bool(THINKING_ENABLED)},
     }
     try:
-        response = client.chat.completions.create(
+        raw, elapsed, completion_tokens, finish_reason, reasoning_seen = _stream_chat_completion(
+            client,
             model=model,
             messages=messages,
             temperature=temperature,
@@ -466,27 +769,25 @@ def chat_json(
             response_format={"type": "json_schema", "json_schema": schema},
             extra_body=extra_body,
         )
-        raw = response.choices[0].message.content or ""
-        if not raw.strip():
-            reasoning = getattr(response.choices[0].message, "reasoning_content", None)
-            if reasoning:
-                raise RuntimeError(
-                    "LM Studio returned reasoning_content but empty content; "
-                    "try --chat-backend qwen35-chatml for a Qwen3.5 model."
-                )
-        elapsed = time.perf_counter() - start_time
-        print(f"    LLM: openai-chat structured, {elapsed:.1f}s")
+        if not raw.strip() and reasoning_seen:
+            raise RuntimeError(
+                "LM Studio returned reasoning_content but empty content; "
+                "try --chat-backend qwen35-chatml for a Qwen3.5 model."
+            )
+        print(
+            f"    LLM: openai-chat structured, {elapsed:.1f}s, "
+            f"{completion_tokens} streamed tokens, {completion_tokens / max(elapsed, 1e-9):.1f} tok/s, stop={finish_reason}"
+        )
         return parse_json(raw)
     except Exception as first_error:
-        if _is_comfy_interrupt(first_error):
-            raise
-        response = client.chat.completions.create(
+        raw, elapsed, completion_tokens, finish_reason, reasoning_seen = _stream_chat_completion(
+            client,
             model=model,
             messages=[
-                {"role": "system", "content": controlled_system + "\nReturn ONLY valid JSON with no Markdown."},
+                {"role": "system", "content": controlled_system + "\\nReturn ONLY valid JSON with no Markdown."},
                 {
                     "role": "user",
-                    "content": user + "\n\nRequired JSON schema:\n" + json.dumps(schema["schema"], ensure_ascii=False),
+                    "content": user + "\\n\\nRequired JSON schema:\\n" + json.dumps(schema["schema"], ensure_ascii=False),
                 },
             ],
             temperature=temperature,
@@ -494,29 +795,49 @@ def chat_json(
             max_tokens=max_tokens,
             extra_body=extra_body,
         )
-        raw = response.choices[0].message.content or ""
-        elapsed = time.perf_counter() - start_time
-        print(f"    LLM: openai-chat JSON fallback, {elapsed:.1f}s")
+        print(
+            f"    LLM: openai-chat JSON fallback, {elapsed:.1f}s, "
+            f"{completion_tokens} streamed tokens, {completion_tokens / max(elapsed, 1e-9):.1f} tok/s, stop={finish_reason}"
+        )
         try:
             return parse_json(raw)
         except Exception as second_error:
-            reasoning = getattr(response.choices[0].message, "reasoning_content", None)
-            reasoning_note = "\nReasoning stream was present." if reasoning else ""
+            reasoning_note = "\\nReasoning stream was present." if reasoning_seen else ""
             raise RuntimeError(
-                f"Structured output failed: {first_error}\n"
-                f"Fallback JSON failed: {second_error}{reasoning_note}\n"
-                f"Raw output:\n{raw[:3000]}"
+                f"Structured output failed: {first_error}\\n"
+                f"Fallback JSON failed: {second_error}{reasoning_note}\\n"
+                f"Raw output:\\n{raw[:3000]}"
             ) from second_error
 
 
-def discover_jsons(path: Path) -> list[Path]:
-    if path.is_file():
-        return [path]
-    return sorted(
-        [p for p in path.glob("*_references.json") if p.is_file() and p.name != "consolidated_references.json"],
-        key=lambda p: natural_key(p.name),
-    )
+def discover_jsons(items: list[Path]) -> list[Path]:
+    """Expand * and ? internally, then return step-1 JSON files alphabetically."""
+    expanded: list[Path] = []
+    for item in items:
+        raw = str(item)
+        if "*" in raw or "?" in raw:
+            matches = [Path(p) for p in glob.glob(raw)]
+            if not matches:
+                print(f"WARNING: input pattern matched nothing: {raw}", file=sys.stderr)
+            expanded.extend(matches)
+        else:
+            expanded.append(item)
 
+    found: list[Path] = []
+    for item in expanded:
+        if item.is_file() and item.suffix.lower() == ".json":
+            if item.name != "consolidated_references.json":
+                found.append(item)
+        elif item.is_dir():
+            found.extend(
+                p for p in item.glob("*_references.json")
+                if p.is_file() and p.name != "consolidated_references.json"
+            )
+        else:
+            print(f"WARNING: ignoring unsupported/missing input: {item}", file=sys.stderr)
+
+    unique = {str(p.resolve()).casefold(): p for p in found}
+    return sorted(unique.values(), key=lambda p: (p.name.casefold(), str(p).casefold()))
 
 def load_chapters(paths: list[Path]) -> list[dict[str, Any]]:
     chapters: list[dict[str, Any]] = []
@@ -735,29 +1056,72 @@ Union useful reference_view_hints. If there are no clear duplicates, return none
 """.strip()
 
 
-def audit_registry(
-    client: OpenAI,
-    model: str,
-    registry: list[dict[str, Any]],
-    args: argparse.Namespace,
-) -> list[dict[str, Any]]:
-    if args.no_audit or len(registry) < 2 or len(registry) > args.audit_max_entities:
-        return registry
-    result = chat_json(
-        client,
-        model,
-        AUDIT_SYSTEM,
-        json.dumps([compact_global(e) for e in registry], ensure_ascii=False, indent=2),
-        AUDIT_SCHEMA,
-        min(args.temperature, 0.10),
-        max(args.max_tokens, 6500),
-    )
+def _audit_candidate_clusters(registry: list[dict[str, Any]], similarity_threshold: float, max_cluster_size: int) -> list[list[str]]:
+    """Build bounded likely-duplicate clusters without ever sending the full registry.
+
+    Blocking by normalized tokens/prefixes keeps candidate-pair growth manageable while
+    exact aliases and fuzzy name similarity connect plausible duplicates.
+    """
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for entity in registry:
+        by_type.setdefault(entity["entity_type"], []).append(entity)
+
+    clusters: list[list[str]] = []
+    for items in by_type.values():
+        buckets: dict[str, set[int]] = {}
+        for i, entity in enumerate(items):
+            names = [norm_name(entity.get("canonical_name", "")), *[norm_name(x) for x in entity.get("aliases", [])]]
+            keys: set[str] = set()
+            for name in filter(None, names):
+                keys.add("p:" + name[:3])
+                keys.update("t:" + token for token in name.split() if len(token) >= 3)
+            for key in keys:
+                buckets.setdefault(key, set()).add(i)
+
+        parent = list(range(len(items)))
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        def union(a: int, b: int) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra
+
+        seen_pairs: set[tuple[int, int]] = set()
+        for members in buckets.values():
+            ids = list(members)
+            for ai in range(len(ids)):
+                for bi in range(ai + 1, len(ids)):
+                    a, b = ids[ai], ids[bi]
+                    pair = (min(a, b), max(a, b))
+                    if pair in seen_pairs:
+                        continue
+                    seen_pairs.add(pair)
+                    if similarity(items[a], items[b]) >= similarity_threshold:
+                        union(a, b)
+
+        components: dict[int, list[str]] = {}
+        for i, entity in enumerate(items):
+            components.setdefault(find(i), []).append(entity["global_id"])
+        for ids in components.values():
+            if len(ids) < 2:
+                continue
+            for offset in range(0, len(ids), max_cluster_size):
+                part = ids[offset:offset + max_cluster_size]
+                if len(part) >= 2:
+                    clusters.append(part)
+    return clusters
+
+
+def _apply_audit_result(registry: list[dict[str, Any]], result: dict[str, Any]) -> set[str]:
     by_id = {e["global_id"]: e for e in registry}
     removed: set[str] = set()
     for group in result.get("merge_groups", []):
         keep_id = group.get("keep_global_id")
-        merge_ids = [x for x in group.get("merge_global_ids", []) if x in by_id and x != keep_id]
-        if keep_id not in by_id or not merge_ids:
+        merge_ids = [x for x in group.get("merge_global_ids", []) if x in by_id and x != keep_id and x not in removed]
+        if keep_id not in by_id or keep_id in removed or not merge_ids:
             continue
         keep = by_id[keep_id]
         if any(by_id[x]["entity_type"] != keep["entity_type"] for x in merge_ids):
@@ -792,7 +1156,54 @@ def audit_registry(
                 if var not in keep["chapter_variations"]:
                     keep["chapter_variations"].append(var)
             removed.add(mid)
-    return [e for e in registry if e["global_id"] not in removed]
+    return removed
+
+
+def audit_registry(
+    client: OpenAI,
+    model: str,
+    registry: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> list[dict[str, Any]]:
+    if args.no_audit or len(registry) < 2:
+        return registry
+
+    # Small registries keep the old whole-registry audit because it is cheap and gives
+    # the LLM maximum context. Large registries switch automatically to bounded clusters.
+    if len(registry) <= args.audit_max_entities:
+        result = chat_json(
+            client, model, AUDIT_SYSTEM,
+            json.dumps([compact_global(e) for e in registry], ensure_ascii=False, indent=2),
+            AUDIT_SCHEMA, min(args.temperature, 0.10), max(args.max_tokens, 6500),
+        )
+        removed = _apply_audit_result(registry, result)
+        return [e for e in registry if e["global_id"] not in removed]
+
+    clusters = _audit_candidate_clusters(registry, args.audit_similarity, args.audit_cluster_size)
+    print(f"  scalable audit: {len(clusters)} candidate cluster(s) from {len(registry)} entities")
+    removed_all: set[str] = set()
+    by_id = {e["global_id"]: e for e in registry}
+    span = 1.0 / max(1, len(clusters))
+    for i, ids in enumerate(clusters, start=1):
+        active_ids = [x for x in ids if x in by_id and x not in removed_all]
+        if len(active_ids) < 2:
+            _progress_advance(i * span)
+            continue
+        _progress_start_operation((i - 1) * span, span)
+        print(f"  audit cluster {i}/{len(clusters)} ({len(active_ids)} entities)")
+        result = chat_json(
+            client, model, AUDIT_SYSTEM,
+            json.dumps([compact_global(by_id[x]) for x in active_ids], ensure_ascii=False, indent=2),
+            AUDIT_SCHEMA, min(args.temperature, 0.10), max(args.max_tokens, 6500),
+        )
+        removed = _apply_audit_result(registry, result)
+        removed_all.update(removed)
+        _progress_finish_operation()
+        if args.delay:
+            time.sleep(args.delay)
+    if removed_all:
+        print(f"  scalable audit merged {len(removed_all)} duplicate ID(s)")
+    return [e for e in registry if e["global_id"] not in removed_all]
 
 
 def threshold(priority: str, minimum: str) -> bool:
@@ -956,7 +1367,11 @@ def generate_picture_assets(
 ) -> list[dict[str, Any]]:
     briefs: dict[str, dict[str, str]] = {}
     batches = list(batched(specs, args.asset_batch_size))
+    if not batches:
+        _progress_advance(1.0)
     for i, batch in enumerate(batches, start=1):
+        span = 1.0 / len(batches)
+        _progress_start_operation((i - 1) * span, span)
         print(f"  picture brief batch {i}/{len(batches)} ({len(batch)} assets)")
         result = chat_json(
             client,
@@ -969,6 +1384,7 @@ def generate_picture_assets(
         )
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item
+        _progress_finish_operation()
         if args.delay:
             time.sleep(args.delay)
 
@@ -1000,7 +1416,11 @@ def generate_audio_assets(
         return []
     briefs: dict[str, dict[str, str]] = {}
     batches = list(batched(specs, args.asset_batch_size))
+    if not batches:
+        _progress_advance(1.0)
     for i, batch in enumerate(batches, start=1):
+        span = 1.0 / len(batches)
+        _progress_start_operation((i - 1) * span, span)
         print(f"  audio brief batch {i}/{len(batches)} ({len(batch)} assets)")
         result = chat_json(
             client,
@@ -1013,6 +1433,7 @@ def generate_audio_assets(
         )
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item
+        _progress_finish_operation()
         if args.delay:
             time.sleep(args.delay)
 
@@ -1119,7 +1540,7 @@ def _recommended_chapter_inputs(chapters: list[dict[str, Any]]) -> list[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Consolidate v2 chapter refs and generate multi-view asset specs.")
-    p.add_argument("input", type=Path, help="Directory of step-1 JSONs or a single JSON.")
+    p.add_argument("inputs", nargs="+", type=Path, help="Step-1 JSON file(s), directories, and/or * ? wildcard patterns. Matches are processed alphabetically.")
     p.add_argument("--out", type=Path, default=Path("consolidated_references.json"))
     p.add_argument("--asset-prompts-out", type=Path, default=Path("reference_asset_prompts.txt"))
     p.add_argument("--base-url", default="http://127.0.0.1:1234/v1")
@@ -1173,6 +1594,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-variants", action="store_true")
     p.add_argument("--no-audit", action="store_true")
     p.add_argument("--audit-max-entities", type=int, default=120)
+    p.add_argument("--audit-similarity", type=float, default=0.68, help="Name/alias similarity threshold for scalable duplicate clusters.")
+    p.add_argument("--audit-cluster-size", type=int, default=24, help="Maximum entities sent to one duplicate-audit LLM call.")
     p.add_argument("--qwen35-length-retries", type=int, default=2, help="Compact retries for truncated/invalid Qwen3.5 JSON.")
     p.add_argument("--version", action="version", version=f"%(prog)s {SCRIPT_VERSION}")
     p.add_argument("--delay", type=float, default=0.0)
@@ -1181,12 +1604,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    global THINKING_ENABLED, CHAT_BACKEND, QWEN35_MAX_OUTPUT_TOKENS, QWEN35_LENGTH_RETRIES
+    global THINKING_ENABLED, CHAT_BACKEND, QWEN35_MAX_OUTPUT_TOKENS, QWEN35_LENGTH_RETRIES, _RUN_PROGRESS
     THINKING_ENABLED = bool(args.thinking)
     CHAT_BACKEND = args.chat_backend
     QWEN35_MAX_OUTPUT_TOKENS = max(256, int(args.qwen35_max_output_tokens))
     QWEN35_LENGTH_RETRIES = max(0, int(args.qwen35_length_retries))
-    paths = discover_jsons(args.input)
+    args.audit_cluster_size = max(2, int(args.audit_cluster_size))
+    args.audit_similarity = min(1.0, max(0.0, float(args.audit_similarity)))
+    paths = discover_jsons(args.inputs)
     if not paths:
         print("ERROR: no chapter reference JSONs found.", file=sys.stderr)
         return 2
@@ -1208,22 +1633,33 @@ def main() -> int:
         print(f"Qwen3.5 output cap: {QWEN35_MAX_OUTPUT_TOKENS} tokens (stream stops at complete JSON)")
     print(f"Chapter JSONs: {len(chapters)}\n")
 
+    # Each chapter reconciliation plus audit, picture-brief and audio-brief stages.
+    _RUN_PROGRESS = _RunProgress(len(chapters) + 3)
     registry: list[dict[str, Any]] = []
     for i, chapter in enumerate(chapters, start=1):
+        _progress_start_item(i, chapter['chapter_id'])
+        _progress_start_operation(0.0, 1.0)
         print(f"[{i}/{len(chapters)}] Reconciling {chapter['chapter_id']}")
         try:
             registry = reconcile_chapter(lm, model, chapter, registry, args)
+            _progress_finish_operation()
+            _progress_finish_item()
         except Exception as exc:
             print(f"ERROR reconciling {chapter['chapter_id']}: {exc}", file=sys.stderr)
             return 1
         if args.delay:
             time.sleep(args.delay)
 
+    _progress_start_item(len(chapters) + 1, "duplicate audit")
+    _progress_start_operation(0.0, 1.0)
     print(f"Registry before audit: {len(registry)} entities")
     try:
         registry = audit_registry(lm, model, registry, args)
     except Exception as exc:
         print(f"WARNING: duplicate audit failed; continuing: {exc}", file=sys.stderr)
+    finally:
+        _progress_finish_operation()
+        _progress_finish_item()
     registry.sort(
         key=lambda e: (
             {"character": 0, "location": 1, "object": 2}[e["entity_type"]],
@@ -1238,8 +1674,12 @@ def main() -> int:
     print(f"Planned voice references:   {len(audio_specs)}")
 
     try:
+        _progress_start_item(len(chapters) + 2, "picture asset briefs")
         pictures = generate_picture_assets(lm, model, picture_specs, args)
+        _progress_finish_item()
+        _progress_start_item(len(chapters) + 3, "audio asset briefs")
         audio = generate_audio_assets(lm, model, audio_specs, args)
+        _progress_finish_item()
     except Exception as exc:
         print(f"ERROR generating asset briefs: {exc}", file=sys.stderr)
         return 1

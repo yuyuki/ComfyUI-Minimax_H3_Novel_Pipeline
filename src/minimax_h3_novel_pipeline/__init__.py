@@ -1,6 +1,6 @@
 """ComfyUI plugin registration for MiniMax H3 novel pipeline nodes.
 
-This module exposes `NODES` for ComfyUI to import and register. The actual
+This module exposes `NODE_CLASS_MAPPINGS` for ComfyUI to import and register. The actual
 node implementations live in `nodes.py`.
 """
 from __future__ import annotations
@@ -18,7 +18,11 @@ from .route_access import require_local_request
 # - NODE_DISPLAY_NAME_MAPPINGS: optional human-friendly labels
 NODE_CLASS_MAPPINGS: Dict[str, type] = {}
 NODE_DISPLAY_NAME_MAPPINGS: Dict[str, str] = {}
-WEB_DIRECTORY = "./js"
+# Source checkouts keep web assets at the root; wheels bundle them here.
+_web_root = Path(__file__).resolve().parent / "web"
+if not _web_root.is_dir():
+    _web_root = Path(__file__).resolve().parents[2] / "web"
+WEB_DIRECTORY = str(_web_root / "js")
 
 
 def _build_mappings() -> None:

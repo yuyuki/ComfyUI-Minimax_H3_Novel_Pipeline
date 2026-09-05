@@ -36,6 +36,20 @@ node: `api_url`, `model`, `chat_backend`, `thinking`,
 safe-chunk controls. They are shared by all three LLM nodes through the
 `lmstudio_config` output.
 
+The workflow URL must exactly match the trusted server endpoint (an optional
+trailing slash is accepted). The default is `http://127.0.0.1:1234/v1`. To use
+another host, port, or base path, set this in the environment that starts
+ComfyUI and use the same URL in the node:
+
+```powershell
+$env:MINIMAX_H3_LMSTUDIO_BASE_URL = "https://your-lmstudio-server.example/v1"
+```
+
+This trust setting cannot be changed by a workflow. All three LLM nodes validate
+the endpoint before retrieving the API key; the configuration output contains
+no key. Authenticated requests do not follow redirects or use environment proxy
+settings, so configure the final, directly reachable LM Studio endpoint.
+
 ### Qwen3.5 extraction profile
 
 Leave `chat_backend` on `auto` and `thinking` off.  For Qwen3.5, the Extract

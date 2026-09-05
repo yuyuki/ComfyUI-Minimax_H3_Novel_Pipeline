@@ -10,6 +10,8 @@ from types import SimpleNamespace
 from types import ModuleType
 from typing import Any, Callable, Iterator
 
+from . import lmstudio_settings
+
 _SCRIPT_FILES = {
     # These deliberately do not share names with the ComfyUI node modules.
     # Loading ``extract_chapter_references.py`` here would reload the node as a
@@ -61,7 +63,7 @@ def load(step: str) -> ModuleType:
         if exc.name == "openai":
             raise RuntimeError(
                 "The LM Studio nodes require the OpenAI Python client. "
-                "Install comfyui_plugins/minimax_h3_novel/requirements.txt in ComfyUI's Python environment."
+                "Install the repository's requirements.txt in ComfyUI's Python environment."
             ) from exc
         raise
     return module
@@ -81,13 +83,22 @@ def configure_qwen(module: Any, *, thinking: bool, chat_backend: str,
     module.QWEN35_REPEAT_PENALTY = min(2.0, max(0.8, float(repeat_penalty)))
 
 
-def make_client_and_model(module: ModuleType, api_url: str, api_key: str, model: str) -> tuple[object, str]:
-    if not isinstance(api_url, str) or not api_url.strip():
-        raise ValueError("api_url must be a non-empty LM Studio OpenAI-compatible URL.")
+def make_client_and_model(module: ModuleType, api_url: str, model: str) -> tuple[object, str]:
+    # Recheck here: downstream nodes can receive forged or cached configuration.
+    api_url = lmstudio_settings.validate_api_url(api_url)
+    api_key = lmstudio_settings.get_api_key()
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("api_key must not be empty (LM Studio accepts 'lm-studio' by default).")
-    client = module.make_client(api_url.strip(), api_key.strip())
-    return client, module.select_model(client, model.strip() or None)
+    import httpx
+
+    # Redirects and ambient proxies must not reroute the operator's credential.
+    transport = httpx.Client(follow_redirects=False, trust_env=False, timeout=300.0)
+    try:
+        client = module.make_client(api_url, api_key.strip(), http_client=transport)
+        return client, module.select_model(client, model.strip() or None)
+    except BaseException:
+        transport.close()
+        raise
 
 
 def comfy_interrupt_check() -> None:

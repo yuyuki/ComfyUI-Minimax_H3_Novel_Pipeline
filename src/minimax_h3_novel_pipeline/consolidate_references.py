@@ -46,7 +46,7 @@ class ConsolidateReferencesNode:
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         pipeline = lmstudio_pipeline.load("consolidate")
         lmstudio_pipeline.configure_qwen(pipeline, thinking=bool(lmstudio_config["thinking"]), chat_backend=str(lmstudio_config["chat_backend"]), max_output_tokens=int(lmstudio_config["qwen35_max_output_tokens"]), length_retries=int(lmstudio_config["qwen35_length_retries"]))
-        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config["api_key"]), str(lmstudio_config.get("model", "")))
+        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config.get("model", "")))
         client = lmstudio_pipeline.make_interruptible_client(client)
         keys = ("candidate_count", "include_all_below", "picture_threshold", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_variants", "no_audit", "audit_max_entities", "temperature", "max_tokens")
         args = argparse.Namespace(**{key: params[key] for key in keys}, delay=0.0)
