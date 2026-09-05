@@ -27,3 +27,7 @@ Output and loader paths are relative to `output/minimax_h3_novel`: use
 `h3_prompts` for generation. Resume with `catalog_path=chapter_catalogs` or
 `consolidated_path=references/consolidated_references.json`. Absolute paths
 must stay within the corresponding root; `..` and links escaping it are rejected.
+
+Extraction uses hierarchical merges (`merge_batch_size`, default 6) and caches each merge batch for resuming. This limits partial catalogs per call; dense catalogs can still require a larger context window. Existing compatible chapter outputs remain reusable; enable `force` to regenerate them.
+
+Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. Optional `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups. Existing node connections remain compatible.

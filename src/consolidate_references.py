@@ -27,6 +27,9 @@ class ConsolidateReferencesNode:
             "no_variants": ("BOOLEAN", {"default": False}), "no_audit": ("BOOLEAN", {"default": False}), "audit_max_entities": ("INT", {"default": 120, "min": 0, "max": 100000}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8500, "min": 256, "max": 100000}),
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder inside ComfyUI's output/minimax_h3_novel directory. Relative paths start there."}),
+        }, "optional": {
+            "audit_similarity": ("FLOAT", {"default": 0.68, "min": 0.0, "max": 1.0, "step": 0.01}),
+            "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
         }}
 
     RETURN_TYPES = ("MINIMAX_REGISTRY",)
@@ -45,7 +48,7 @@ class ConsolidateReferencesNode:
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config.get("model", "")))
         client = lmstudio_pipeline.make_interruptible_client(client)
         keys = ("candidate_count", "include_all_below", "picture_threshold", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_variants", "no_audit", "audit_max_entities", "temperature", "max_tokens")
-        args = argparse.Namespace(**{key: params[key] for key in keys}, delay=0.0)
+        args = argparse.Namespace(**{key: params[key] for key in keys}, delay=0.0, audit_similarity=float(params.get("audit_similarity", 0.68)), audit_cluster_size=max(2, int(params.get("audit_cluster_size", 24))))
         _log(f"LM Studio consolidation: model={resolved_model}, chapters={len(chapters)}")
         registry: list[dict[str, Any]] = []
         for chapter in chapters:

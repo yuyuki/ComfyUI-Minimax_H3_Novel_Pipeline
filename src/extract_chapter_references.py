@@ -47,6 +47,8 @@ class ExtractChapterReferencesNode:
             "max_tokens": ("INT", {"default": 2200, "min": 256, "max": 32768, "tooltip": "Normal JSON output budget per extraction/merge call."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder inside ComfyUI's output/minimax_h3_novel directory. Relative paths start there."}),
+        }, "optional": {
+            "merge_batch_size": ("INT", {"default": 6, "min": 2, "max": 32, "tooltip": "Partial catalogs per merge call."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
@@ -79,7 +81,7 @@ class ExtractChapterReferencesNode:
         )
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), str(lmstudio_config.get("model", "")))
         client = lmstudio_pipeline.make_interruptible_client(client)
-        args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), delay=0.0, base_url=lmstudio_config["api_url"])
+        args = argparse.Namespace(merge_batch_size=max(2, int(params.get("merge_batch_size", 6))), chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), delay=0.0, base_url=lmstudio_config["api_url"])
         output.mkdir(parents=True, exist_ok=True)
         backend = (
             "qwen35-structured" if pipeline._use_qwen35_structured(resolved_model)

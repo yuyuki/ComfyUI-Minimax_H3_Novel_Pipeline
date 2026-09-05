@@ -1,25 +1,4 @@
-#!/usr/bin/env python3
-"""
-STEP 2/3 — Consolidate chapter reference JSONs into a book-level registry and
-build multi-view image/audio asset specifications.
-
-Input:
-    *_references.json files produced by 01_extract_chapter_references.py
-
-Outputs:
-    consolidated_references.json
-    reference_asset_prompts.txt
-
-Main v2 feature:
-    One important entity may own multiple picture assets, e.g.
-      PIC_CHAR_001_FACE_FRONT
-      PIC_CHAR_001_FULL_BODY_FRONT
-      PIC_CHAR_001_THREE_QUARTER
-      PIC_CHAR_001_BACK_VIEW
-
-MiniMax <Picture N>/<Subject N> labels are NOT permanently assigned here.
-Step 3 maps the subset used by each clip to request-local H3 labels.
-"""
+"""ComfyUI pipeline step2 consolidate implementation."""
 from __future__ import annotations
 
 import argparse
@@ -34,15 +13,13 @@ from typing import Any, Iterable
 
 from openai import OpenAI
 
+from . import lmstudio_json as json_backend
+from .lmstudio_json import chat_json, select_model as select_model, _is_comfy_interrupt
+
 # Qwen thinking control. Non-thinking is the default for this pipeline.
-THINKING_ENABLED = False
-CHAT_BACKEND = "auto"
-QWEN35_MAX_OUTPUT_TOKENS = 3500
-QWEN35_LENGTH_RETRIES = 2
-SCRIPT_VERSION = "2.4.1"
+
 
 INPUT_SCHEMA = "minimax-h3-novel-refs.chapter.v2"
-LEGACY_INPUT_SCHEMA = "minimax-h3-novel-refs.chapter.v1"
 OUTPUT_SCHEMA = "minimax-h3-novel-refs.consolidated.v2"
 
 IMPORTANCE_ORDER = {"background": 0, "minor": 1, "recurring": 2, "major": 3}
@@ -230,302 +207,8 @@ def stronger(a: str, b: str, order: dict[str, int]) -> str:
     return a if order.get(a, 0) >= order.get(b, 0) else b
 
 
-def make_client(base_url: str, api_key: str) -> OpenAI:
-    return OpenAI(base_url=base_url.rstrip("/"), api_key=api_key, timeout=300.0, max_retries=2)
-
-
-def select_model(client: OpenAI, requested: str | None) -> str:
-    if requested:
-        return requested
-    models = list(client.models.list().data)
-    if not models:
-        raise RuntimeError("LM Studio exposes no models. Load one first.")
-    return next((m.id for m in models if "qwen" in m.id.casefold()), models[0].id)
-
-
-def parse_json(text: str) -> dict[str, Any]:
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S | re.I).strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
-    text = re.sub(r"\s*```$", "", text)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start, end = text.find("{"), text.rfind("}")
-        if start >= 0 and end > start:
-            return json.loads(text[start:end + 1])
-        raise
-
-
-def _is_qwen35_model(model: str) -> bool:
-    normalized = model.casefold().replace("_", "").replace("-", "").replace(".", "")
-    return "qwen35" in normalized
-
-
-def _use_qwen35_chatml(model: str) -> bool:
-    if CHAT_BACKEND == "qwen35-chatml":
-        return True
-    if CHAT_BACKEND == "openai-chat":
-        return False
-    return _is_qwen35_model(model)
-
-
-
-def _complete_json_prefix(text: str) -> str | None:
-    """Return the first complete top-level JSON object, or None if incomplete.
-
-    This is intentionally a small streaming parser. It tracks string/escape state
-    so braces inside JSON strings do not affect nesting depth.
-    """
-    start = text.find("{")
-    if start < 0:
-        return None
-    depth = 0
-    in_string = False
-    escaped = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start:i + 1]
-    return None
-
-
-def _qwen35_stream_json_completion(
-    client: OpenAI,
-    model: str,
-    prompt: str,
-    temperature: float,
-    top_p: float,
-    max_tokens: int,
-) -> tuple[str, float, int | None, str]:
-    """Stream a manual ChatML completion and stop as soon as valid JSON closes.
-
-    Qwen3.5 chat-tuned GGUFs used through /v1/completions do not always emit
-    <|im_end|> promptly. Waiting for that token can make a compact JSON request
-    run until max_tokens or the HTTP timeout. Streaming lets us terminate once
-    the root JSON object is syntactically complete.
-    """
-    started = time.perf_counter()
-    chunks: list[str] = []
-    complete: str | None = None
-    finish_reason = "json_complete"
-    stream = client.completions.create(
-        model=model,
-        prompt=prompt,
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
-        stop=["<|im_end|>", "<END_JSON>"],
-        stream=True,
-    )
-    try:
-        for event in stream:
-            if not event.choices:
-                continue
-            choice = event.choices[0]
-            piece = choice.text or ""
-            if piece:
-                chunks.append(piece)
-                current = "".join(chunks)
-                complete = _complete_json_prefix(current)
-                if complete is not None:
-                    break
-            if getattr(choice, "finish_reason", None):
-                finish_reason = str(choice.finish_reason)
-    finally:
-        close = getattr(stream, "close", None)
-        if callable(close):
-            try:
-                close()
-            except Exception:
-                pass
-    elapsed = time.perf_counter() - started
-    raw = complete if complete is not None else "".join(chunks)
-    return raw, elapsed, None, finish_reason
-
-def _qwen35_chatml_prompt(system: str, user: str, schema: dict[str, Any]) -> str:
-    # The Qwen3.5 GGUF template supplied by the model starts assistant generation
-    # with <think>.  In non-thinking mode it inserts an EMPTY closed think block.
-    # Building that prefix ourselves via /v1/completions avoids LM Studio builds
-    # where enable_thinking/chat_template_kwargs are ignored by /v1/chat/completions.
-    schema_text = json.dumps(schema["schema"], ensure_ascii=False)
-    system_json = (
-        system
-        + "\n\nReturn ONLY valid JSON. Do not use Markdown fences or commentary. "
-          "Your output must satisfy the JSON schema supplied by the user."
-    )
-    user_json = user + "\n\nRequired JSON schema:\n" + schema_text
-    assistant_prefix = "<think>\n" if THINKING_ENABLED else "<think>\n\n</think>\n\n"
-    return (
-        "<|im_start|>system\n" + system_json + "<|im_end|>\n"
-        "<|im_start|>user\n" + user_json + "<|im_end|>\n"
-        "<|im_start|>assistant\n" + assistant_prefix
-    )
-
-
-def chat_json(
-    client: OpenAI,
-    model: str,
-    system: str,
-    user: str,
-    schema: dict[str, Any],
-    temperature: float,
-    max_tokens: int,
-) -> dict[str, Any]:
-    start_time = time.perf_counter()
-
-    # Qwen3.5-specific robust path. It bypasses LM Studio's chat-template
-    # thinking toggle and json_schema/reasoning interaction by constructing the
-    # model's ChatML prefix explicitly.
-    if _use_qwen35_chatml(model):
-        effective_max_tokens = min(max_tokens, QWEN35_MAX_OUTPUT_TOKENS)
-        last_error: Exception | None = None
-        last_raw = ""
-        for attempt in range(QWEN35_LENGTH_RETRIES + 1):
-            retry_note = ""
-            if attempt:
-                retry_note = (
-                    "\n\nCRITICAL RETRY: The previous JSON was truncated or invalid. "
-                    "Return a substantially more compact JSON response. Remove repetition, keep descriptions concise, "
-                    "and close the root JSON object well before the token limit."
-                )
-            prompt = _qwen35_chatml_prompt(system, user + retry_note, schema)
-            try:
-                raw, elapsed, completion_tokens, finish_reason = _qwen35_stream_json_completion(
-                    client=client, model=model, prompt=prompt,
-                    temperature=(min(temperature, 0.15) if attempt else temperature),
-                    top_p=(0.8 if attempt else 0.9), max_tokens=effective_max_tokens,
-                )
-                last_raw = raw
-                token_note = f", {completion_tokens} output tokens" if completion_tokens is not None else ""
-                print(
-                    f"    LLM: qwen35-chatml-stream, thinking={'on' if THINKING_ENABLED else 'off'}, "
-                    f"{elapsed:.1f}s{token_note}, stop={finish_reason}, cap={effective_max_tokens}, attempt={attempt + 1}"
-                )
-                if finish_reason == "length":
-                    last_error = RuntimeError(f"generation hit output cap ({effective_max_tokens} tokens)")
-                    if attempt < QWEN35_LENGTH_RETRIES:
-                        print("    retrying with aggressive JSON compaction...")
-                        continue
-                try:
-                    return parse_json(raw)
-                except Exception as parse_error:
-                    last_error = parse_error
-                    if attempt < QWEN35_LENGTH_RETRIES:
-                        print(f"    JSON incomplete/invalid ({parse_error}); retrying compactly...")
-                        continue
-            except Exception as error:
-                last_error = error
-                if attempt < QWEN35_LENGTH_RETRIES:
-                    print(f"    Qwen3.5 call failed ({error}); retrying...")
-                    continue
-        elapsed_total = time.perf_counter() - start_time
-        snippet = last_raw[-1200:] if last_raw else "<no output>"
-        raise RuntimeError(
-            f"Qwen3.5 manual ChatML completion failed after {elapsed_total:.1f}s and "
-            f"{QWEN35_LENGTH_RETRIES + 1} attempt(s): {last_error}\nTail of last raw output:\n{snippet}"
-        )
-
-    # Generic OpenAI-compatible chat path for non-Qwen3.5 models. We still send
-    # both common hints. Servers/models that do not recognize them may ignore them.
-    thinking_directive = "/think" if THINKING_ENABLED else "/no_think"
-    controlled_system = f"{thinking_directive}\n\n{system}"
-    messages = [{"role": "system", "content": controlled_system}, {"role": "user", "content": user}]
-    extra_body = {
-        "enableThinking": bool(THINKING_ENABLED),
-        "chat_template_kwargs": {"enable_thinking": bool(THINKING_ENABLED)},
-    }
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            top_p=0.9,
-            max_tokens=max_tokens,
-            response_format={"type": "json_schema", "json_schema": schema},
-            extra_body=extra_body,
-        )
-        raw = response.choices[0].message.content or ""
-        if not raw.strip():
-            reasoning = getattr(response.choices[0].message, "reasoning_content", None)
-            if reasoning:
-                raise RuntimeError(
-                    "LM Studio returned reasoning_content but empty content; "
-                    "try --chat-backend qwen35-chatml for a Qwen3.5 model."
-                )
-        elapsed = time.perf_counter() - start_time
-        print(f"    LLM: openai-chat structured, {elapsed:.1f}s")
-        return parse_json(raw)
-    except Exception as first_error:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": controlled_system + "\nReturn ONLY valid JSON with no Markdown."},
-                {
-                    "role": "user",
-                    "content": user + "\n\nRequired JSON schema:\n" + json.dumps(schema["schema"], ensure_ascii=False),
-                },
-            ],
-            temperature=temperature,
-            top_p=0.9,
-            max_tokens=max_tokens,
-            extra_body=extra_body,
-        )
-        raw = response.choices[0].message.content or ""
-        elapsed = time.perf_counter() - start_time
-        print(f"    LLM: openai-chat JSON fallback, {elapsed:.1f}s")
-        try:
-            return parse_json(raw)
-        except Exception as second_error:
-            reasoning = getattr(response.choices[0].message, "reasoning_content", None)
-            reasoning_note = "\nReasoning stream was present." if reasoning else ""
-            raise RuntimeError(
-                f"Structured output failed: {first_error}\n"
-                f"Fallback JSON failed: {second_error}{reasoning_note}\n"
-                f"Raw output:\n{raw[:3000]}"
-            ) from second_error
-
-
-def discover_jsons(path: Path) -> list[Path]:
-    if path.is_file():
-        return [path]
-    return sorted(
-        [p for p in path.glob("*_references.json") if p.is_file() and p.name != "consolidated_references.json"],
-        key=lambda p: natural_key(p.name),
-    )
-
-
-def load_chapters(paths: list[Path]) -> list[dict[str, Any]]:
-    chapters: list[dict[str, Any]] = []
-    for path in paths:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        schema = data.get("schema_version")
-        if schema not in {INPUT_SCHEMA, LEGACY_INPUT_SCHEMA}:
-            raise ValueError(
-                f"{path.name}: unsupported schema {schema!r}; expected {INPUT_SCHEMA!r} "
-                f"or legacy {LEGACY_INPUT_SCHEMA!r}."
-            )
-        if schema == LEGACY_INPUT_SCHEMA:
-            print(f"INFO: upgrading legacy v1 chapter JSON in memory: {path.name}")
-            for key in ("characters", "locations", "objects"):
-                for entity in data.get(key, []):
-                    entity.setdefault("reference_view_hints", [])
-        data["_json_path"] = str(path.resolve())
-        chapters.append(data)
-    return chapters
+def make_client(base_url: str, api_key: str, *, http_client=None) -> OpenAI:
+    return OpenAI(base_url=base_url.rstrip("/"), api_key=api_key, timeout=300.0, max_retries=2, http_client=http_client)
 
 
 def incoming_entities(chapter: dict[str, Any]) -> list[dict[str, Any]]:
@@ -725,29 +408,73 @@ Union useful reference_view_hints. If there are no clear duplicates, return none
 """.strip()
 
 
-def audit_registry(
-    client: OpenAI,
-    model: str,
-    registry: list[dict[str, Any]],
-    args: argparse.Namespace,
-) -> list[dict[str, Any]]:
-    if args.no_audit or len(registry) < 2 or len(registry) > args.audit_max_entities:
-        return registry
-    result = chat_json(
-        client,
-        model,
-        AUDIT_SYSTEM,
-        json.dumps([compact_global(e) for e in registry], ensure_ascii=False, indent=2),
-        AUDIT_SCHEMA,
-        min(args.temperature, 0.10),
-        max(args.max_tokens, 6500),
-    )
+def _audit_candidate_clusters(registry: list[dict[str, Any]], similarity_threshold: float, max_cluster_size: int) -> list[list[str]]:
+    """Build bounded likely-duplicate clusters without ever sending the full registry.
+
+    Blocking by normalized tokens/prefixes keeps candidate-pair growth manageable while
+    exact aliases and fuzzy name similarity connect plausible duplicates.
+    """
+    max_cluster_size = max(2, int(max_cluster_size))
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for entity in registry:
+        by_type.setdefault(entity["entity_type"], []).append(entity)
+
+    clusters: list[list[str]] = []
+    for items in by_type.values():
+        buckets: dict[str, set[int]] = {}
+        for i, entity in enumerate(items):
+            names = [norm_name(entity.get("canonical_name", "")), *[norm_name(x) for x in entity.get("aliases", [])]]
+            keys: set[str] = set()
+            for name in filter(None, names):
+                keys.add("p:" + name[:3])
+                keys.update("t:" + token for token in name.split() if len(token) >= 3)
+            for key in keys:
+                buckets.setdefault(key, set()).add(i)
+
+        parent = list(range(len(items)))
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        def union(a: int, b: int) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra
+
+        seen_pairs: set[tuple[int, int]] = set()
+        for members in buckets.values():
+            ids = sorted(members)
+            for ai in range(len(ids)):
+                for bi in range(ai + 1, len(ids)):
+                    a, b = ids[ai], ids[bi]
+                    pair = (min(a, b), max(a, b))
+                    if pair in seen_pairs:
+                        continue
+                    seen_pairs.add(pair)
+                    if similarity(items[a], items[b]) >= similarity_threshold:
+                        union(a, b)
+
+        components: dict[int, list[str]] = {}
+        for i, entity in enumerate(items):
+            components.setdefault(find(i), []).append(entity["global_id"])
+        for ids in components.values():
+            if len(ids) < 2:
+                continue
+            for offset in range(0, len(ids), max_cluster_size):
+                part = ids[offset:offset + max_cluster_size]
+                if len(part) >= 2:
+                    clusters.append(part)
+    return clusters
+
+
+def _apply_audit_result(registry: list[dict[str, Any]], result: dict[str, Any]) -> set[str]:
     by_id = {e["global_id"]: e for e in registry}
     removed: set[str] = set()
     for group in result.get("merge_groups", []):
         keep_id = group.get("keep_global_id")
-        merge_ids = [x for x in group.get("merge_global_ids", []) if x in by_id and x != keep_id]
-        if keep_id not in by_id or not merge_ids:
+        merge_ids = [x for x in group.get("merge_global_ids", []) if x in by_id and x != keep_id and x not in removed]
+        if keep_id not in by_id or keep_id in removed or not merge_ids:
             continue
         keep = by_id[keep_id]
         if any(by_id[x]["entity_type"] != keep["entity_type"] for x in merge_ids):
@@ -782,7 +509,52 @@ def audit_registry(
                 if var not in keep["chapter_variations"]:
                     keep["chapter_variations"].append(var)
             removed.add(mid)
-    return [e for e in registry if e["global_id"] not in removed]
+    return removed
+
+
+def audit_registry(
+    client: OpenAI,
+    model: str,
+    registry: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> list[dict[str, Any]]:
+    if args.no_audit or len(registry) < 2:
+        return registry
+
+    # Small registries keep the old whole-registry audit because it is cheap and gives
+    # the LLM maximum context. Large registries switch automatically to bounded clusters.
+    if len(registry) <= args.audit_max_entities:
+        result = chat_json(
+            client, model, AUDIT_SYSTEM,
+            json.dumps([compact_global(e) for e in registry], ensure_ascii=False, indent=2),
+            AUDIT_SCHEMA, min(args.temperature, 0.10), max(args.max_tokens, 6500),
+        )
+        removed = _apply_audit_result(registry, result)
+        return [e for e in registry if e["global_id"] not in removed]
+
+    clusters = _audit_candidate_clusters(registry, float(args.audit_similarity), int(args.audit_cluster_size))
+    print(f"  scalable audit: {len(clusters)} candidate cluster(s) from {len(registry)} entities")
+    removed_all: set[str] = set()
+    by_id = {e["global_id"]: e for e in registry}
+    for i, ids in enumerate(clusters, start=1):
+        from .lmstudio_pipeline import comfy_interrupt_check
+        comfy_interrupt_check()
+        active_ids = [x for x in ids if x in by_id and x not in removed_all]
+        if len(active_ids) < 2:
+            continue
+        print(f"  audit cluster {i}/{len(clusters)} ({len(active_ids)} entities)")
+        result = chat_json(
+            client, model, AUDIT_SYSTEM,
+            json.dumps([compact_global(by_id[x]) for x in active_ids], ensure_ascii=False, indent=2),
+            AUDIT_SCHEMA, min(args.temperature, 0.10), max(args.max_tokens, 6500),
+        )
+        removed = _apply_audit_result([by_id[x] for x in active_ids], result)
+        removed_all.update(removed)
+        if args.delay:
+            time.sleep(args.delay)
+    if removed_all:
+        print(f"  scalable audit merged {len(removed_all)} duplicate ID(s)")
+    return [e for e in registry if e["global_id"] not in removed_all]
 
 
 def threshold(priority: str, minimum: str) -> bool:
@@ -1077,224 +849,3 @@ def write_asset_prompts(path: Path, pictures: list[dict[str, Any]], audio: list[
     path.write_text("\n\n\n".join(blocks) + "\n", encoding="utf-8")
 
 
-
-def _cli_quote(value: Any) -> str:
-    """Quote one argument for a copy/paste friendly shell command."""
-    text = str(value)
-    if not text:
-        return '""'
-    if re.search(r'[\\s"&|<>^()]', text):
-        return '"' + text.replace('"', '\\"') + '"'
-    return text
-
-
-def _format_command(parts: list[Any]) -> str:
-    return " ".join(_cli_quote(x) for x in parts)
-
-
-
-def _recommended_chapter_inputs(chapters: list[dict[str, Any]]) -> list[str]:
-    """Prefer one common source directory; otherwise use exact source paths."""
-    paths: list[Path] = []
-    for chapter in chapters:
-        raw = chapter.get("source", {}).get("absolute_path")
-        if raw:
-            paths.append(Path(raw))
-    if not paths:
-        return ["chapters"]
-    parents = {str(p.parent) for p in paths}
-    if len(parents) == 1:
-        return [str(paths[0].parent)]
-    return [str(p) for p in paths]
-
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Consolidate v2 chapter refs and generate multi-view asset specs.")
-    p.add_argument("input", type=Path, help="Directory of step-1 JSONs or a single JSON.")
-    p.add_argument("--out", type=Path, default=Path("consolidated_references.json"))
-    p.add_argument("--asset-prompts-out", type=Path, default=Path("reference_asset_prompts.txt"))
-    p.add_argument("--base-url", default="http://127.0.0.1:1234/v1")
-    p.add_argument("--api-key", default="lm-studio")
-    p.add_argument("--model", default=None)
-    thinking = p.add_mutually_exclusive_group()
-    thinking.add_argument(
-        "--thinking",
-        dest="thinking",
-        action="store_true",
-        help="Enable Qwen reasoning/thinking mode (/think).",
-    )
-    thinking.add_argument(
-        "--no-thinking",
-        dest="thinking",
-        action="store_false",
-        help="Disable Qwen reasoning/thinking mode (/no_think, default).",
-    )
-    p.set_defaults(thinking=False)
-    p.add_argument(
-        "--chat-backend",
-        choices=["auto", "openai-chat", "qwen35-chatml"],
-        default="auto",
-        help=(
-            "LLM transport for JSON calls. auto uses manual Qwen3.5 ChatML via "
-            "/v1/completions for qwen3.5/qwen35 model IDs, otherwise OpenAI chat. "
-            "qwen35-chatml is the recommended workaround when LM Studio ignores "
-            "enable_thinking=false for Qwen3.5."
-        ),
-    )
-    p.add_argument("--temperature", type=float, default=0.12)
-    p.add_argument("--max-tokens", type=int, default=8500)
-    p.add_argument(
-        "--qwen35-max-output-tokens", "--max-output-tokens",
-        dest="qwen35_max_output_tokens",
-        type=int,
-        default=3500,
-        help=(
-            "Safety cap for manual Qwen3.5 ChatML JSON completions. "
-            "Streaming normally stops earlier as soon as a complete JSON object closes."
-        ),
-    )
-    p.add_argument("--candidate-count", type=int, default=12)
-    p.add_argument("--include-all-below", type=int, default=35)
-    p.add_argument("--picture-threshold", choices=list(PRIORITY_ORDER), default="recommended")
-    p.add_argument("--audio-threshold", choices=list(PRIORITY_ORDER), default="recommended")
-    p.add_argument("--max-character-base-views", type=int, default=4)
-    p.add_argument("--max-location-base-views", type=int, default=3)
-    p.add_argument("--max-object-base-views", type=int, default=2)
-    p.add_argument("--asset-batch-size", type=int, default=16)
-    p.add_argument("--no-variants", action="store_true")
-    p.add_argument("--no-audit", action="store_true")
-    p.add_argument("--audit-max-entities", type=int, default=120)
-    p.add_argument("--qwen35-length-retries", type=int, default=2, help="Compact retries for truncated/invalid Qwen3.5 JSON.")
-    p.add_argument("--version", action="version", version=f"%(prog)s {SCRIPT_VERSION}")
-    p.add_argument("--delay", type=float, default=0.0)
-    return p
-
-
-def main() -> int:
-    args = build_parser().parse_args()
-    global THINKING_ENABLED, CHAT_BACKEND, QWEN35_MAX_OUTPUT_TOKENS, QWEN35_LENGTH_RETRIES
-    THINKING_ENABLED = bool(args.thinking)
-    CHAT_BACKEND = args.chat_backend
-    QWEN35_MAX_OUTPUT_TOKENS = max(256, int(args.qwen35_max_output_tokens))
-    QWEN35_LENGTH_RETRIES = max(0, int(args.qwen35_length_retries))
-    paths = discover_jsons(args.input)
-    if not paths:
-        print("ERROR: no chapter reference JSONs found.", file=sys.stderr)
-        return 2
-    try:
-        chapters = load_chapters(paths)
-        lm = make_client(args.base_url, args.api_key)
-        model = select_model(lm, args.model)
-    except Exception as exc:
-        print(f"ERROR initializing: {exc}", file=sys.stderr)
-        return 1
-
-    print(f"Script version: {SCRIPT_VERSION}")
-    print(f"LM Studio: {args.base_url}")
-    print(f"Model: {model}")
-    print(f"Thinking: {'enabled' if THINKING_ENABLED else 'disabled'}")
-    resolved_backend = "qwen35-chatml" if _use_qwen35_chatml(model) else "openai-chat"
-    print(f"Chat backend: {resolved_backend} (requested: {CHAT_BACKEND})")
-    if resolved_backend == "qwen35-chatml":
-        print(f"Qwen3.5 output cap: {QWEN35_MAX_OUTPUT_TOKENS} tokens (stream stops at complete JSON)")
-    print(f"Chapter JSONs: {len(chapters)}\n")
-
-    registry: list[dict[str, Any]] = []
-    for i, chapter in enumerate(chapters, start=1):
-        print(f"[{i}/{len(chapters)}] Reconciling {chapter['chapter_id']}")
-        try:
-            registry = reconcile_chapter(lm, model, chapter, registry, args)
-        except Exception as exc:
-            print(f"ERROR reconciling {chapter['chapter_id']}: {exc}", file=sys.stderr)
-            return 1
-        if args.delay:
-            time.sleep(args.delay)
-
-    print(f"Registry before audit: {len(registry)} entities")
-    try:
-        registry = audit_registry(lm, model, registry, args)
-    except Exception as exc:
-        print(f"WARNING: duplicate audit failed; continuing: {exc}", file=sys.stderr)
-    registry.sort(
-        key=lambda e: (
-            {"character": 0, "location": 1, "object": 2}[e["entity_type"]],
-            natural_key(e["global_id"]),
-        )
-    )
-    print(f"Registry after audit: {len(registry)} entities")
-
-    picture_specs = build_picture_specs(registry, args)
-    audio_specs = build_audio_specs(registry, args)
-    print(f"Planned picture references: {len(picture_specs)}")
-    print(f"Planned voice references:   {len(audio_specs)}")
-
-    try:
-        pictures = generate_picture_assets(lm, model, picture_specs, args)
-        audio = generate_audio_assets(lm, model, audio_specs, args)
-    except Exception as exc:
-        print(f"ERROR generating asset briefs: {exc}", file=sys.stderr)
-        return 1
-
-    digest = hashlib.sha256(
-        "\n".join(
-            f"{c['chapter_id']}:{c.get('source', {}).get('sha256', '')}"
-            for c in chapters
-        ).encode()
-    ).hexdigest()
-
-    payload = {
-        "schema_version": OUTPUT_SCHEMA,
-        "source_digest": digest,
-        "llm": {"base_url": args.base_url, "model": model, "thinking": THINKING_ENABLED, "chat_backend": CHAT_BACKEND},
-        "chapters": [
-            {
-                "chapter_id": c["chapter_id"],
-                "source_file": c.get("source", {}).get("file", ""),
-                "source_sha256": c.get("source", {}).get("sha256", ""),
-            }
-            for c in chapters
-        ],
-        "entities": registry,
-        "picture_assets": pictures,
-        "audio_assets": audio,
-        "video_assets": [],
-        "chapter_entity_map": build_chapter_map(registry),
-        "entity_asset_index": build_entity_asset_index(registry, pictures, audio),
-        "label_note": (
-            "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local. "
-            "Step 3 maps the exact subset used by each clip to <Picture 1>..., <Audio 1>..., while multiple pictures may define the same <Subject N>."
-        ),
-    }
-
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    args.asset_prompts_out.parent.mkdir(parents=True, exist_ok=True)
-    write_asset_prompts(args.asset_prompts_out, pictures, audio)
-
-    print(f"\nSaved: {args.out}")
-    print(f"Picture assets: {len(pictures)}")
-    print(f"Audio assets:   {len(audio)}")
-    print(f"Asset prompts:  {args.asset_prompts_out}")
-
-    next_parts: list[Any] = [
-        sys.executable,
-        "03_generate_h3_prompts.py",
-        *_recommended_chapter_inputs(chapters),
-        "--references", args.out,
-        "--out-dir", "h3_prompts",
-        "--duration", 8,
-        "--base-url", args.base_url,
-        "--model", model,
-        "--thinking" if THINKING_ENABLED else "--no-thinking",
-        "--chat-backend", resolved_backend,
-        "--max-output-tokens", QWEN35_MAX_OUTPUT_TOKENS,
-        "--qwen35-length-retries", QWEN35_LENGTH_RETRIES,
-    ]
-    if args.api_key != "lm-studio":
-        next_parts.extend(["--api-key", "YOUR_LM_STUDIO_API_KEY"])
-    print("\nNext recommended command (Step 3/3):")
-    print(_format_command(next_parts))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

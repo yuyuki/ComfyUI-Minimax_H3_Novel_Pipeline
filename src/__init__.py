@@ -22,7 +22,7 @@ NODE_DISPLAY_NAME_MAPPINGS: Dict[str, str] = {}
 # Source checkouts keep web assets at the root; wheels bundle them here.
 _web_root = Path(__file__).resolve().parent / "web"
 if not _web_root.is_dir():
-    _web_root = Path(__file__).resolve().parents[2] / "web"
+    _web_root = Path(__file__).resolve().parents[1] / "web"
 WEB_DIRECTORY = str(_web_root / "js")
 
 

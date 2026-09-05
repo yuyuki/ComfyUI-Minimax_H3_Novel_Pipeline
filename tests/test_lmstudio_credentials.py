@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 import httpx
 
 
-ROOT = Path(__file__).resolve().parents[1] / "src" / "minimax_h3_novel_pipeline"
+ROOT = Path(__file__).resolve().parents[1] / "src"
 DEFAULT_URL = "http://127.0.0.1:1234/v1"
 
 

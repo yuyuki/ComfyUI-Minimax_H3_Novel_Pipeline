@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 
-ROOT = Path(__file__).resolve().parents[1] / "src" / "minimax_h3_novel_pipeline"
+ROOT = Path(__file__).resolve().parents[1] / "src"
 
 
 class Forbidden(Exception):

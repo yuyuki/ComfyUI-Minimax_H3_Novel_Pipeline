@@ -45,7 +45,7 @@ includes = []
 
 [tool.setuptools]
 packages = ["minimax_h3_novel_pipeline", "minimax_h3_novel_pipeline.web"]
-package-dir = {"" = "src", "minimax_h3_novel_pipeline.web" = "web"}
+package-dir = {"minimax_h3_novel_pipeline" = "src", "minimax_h3_novel_pipeline.web" = "web"}
 include-package-data = false
 
 [tool.setuptools.package-data]
