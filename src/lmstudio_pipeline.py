@@ -37,7 +37,7 @@ def configure_qwen(*, thinking: bool,
     lmstudio_json.QWEN35_REPEAT_PENALTY = min(2.0, max(0.8, float(repeat_penalty)))
 
 
-def make_client_and_model(module: ModuleType, api_url: str, model: str) -> tuple[object, str]:
+def make_client_and_model(module: ModuleType, api_url: str) -> tuple[object, str]:
     # Recheck here: downstream nodes can receive forged or cached configuration.
     api_url = lmstudio_settings.validate_api_url(api_url)
     api_key = lmstudio_settings.get_api_key()
@@ -49,7 +49,7 @@ def make_client_and_model(module: ModuleType, api_url: str, model: str) -> tuple
     transport = httpx.Client(follow_redirects=False, trust_env=False, timeout=300.0)
     try:
         client = module.make_client(api_url, api_key.strip(), http_client=transport)
-        return client, module.select_model(client, model.strip() or None)
+        return client, module.select_model(client, None)
     except BaseException:
         transport.close()
         raise

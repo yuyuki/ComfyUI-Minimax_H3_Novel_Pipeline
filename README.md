@@ -32,8 +32,7 @@ by the nodes. PDF reading uses `pypdf`; text and Markdown do not need it.
    Use `lm-studio` if authentication is disabled. The current nodes read this
    setting; an environment-variable API-key selector is not exposed.
 3. Add **LM Studio Configuration**. Its default URL is
-   `http://127.0.0.1:1234/v1`; leave `model` empty for automatic selection,
-   or enter the loaded model's ID.
+   `http://127.0.0.1:1234/v1`. The loaded model is selected automatically.
 4. Connect its `lmstudio_config` output to Extract, Consolidate and Generate.
 
 The API key is kept out of workflows and node outputs. ComfyUI's browser
@@ -68,7 +67,7 @@ Extract Chapter References → Consolidate References → Generate H3 Prompts
 
 | Node | Inputs and result |
 |---|---|
-| LM Studio Configuration | URL, model and Qwen controls → shared non-secret configuration |
+| LM Studio Configuration | URL and Qwen controls → shared non-secret configuration |
 | Extract Chapter References | Chapter files or folder → chapter catalog list and summary |
 | Load Chapter Catalogs | Saved `*_references.json` files → chapter catalog list |
 | Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs |

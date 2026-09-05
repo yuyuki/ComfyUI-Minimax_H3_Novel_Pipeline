@@ -47,13 +47,16 @@ class CredentialTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.config.LMStudioConfigurationNode().run(url)
                     with self.assertRaises(ValueError):
-                        self.pipeline.make_client_and_model(module, url, "")
+                        self.pipeline.make_client_and_model(module, url)
             get_key.assert_not_called()
             module.make_client.assert_not_called()
 
     def test_configuration_does_not_expose_secret(self):
         config, status = self.config.LMStudioConfigurationNode().run(DEFAULT_URL + "/")
         self.assertEqual(config["api_url"], DEFAULT_URL)
+        self.assertNotIn("model", config)
+        self.assertNotIn("model", self.config.LMStudioConfigurationNode.INPUT_TYPES().get("optional", {}))
+        self.assertNotIn("model", self.config.LMStudioConfigurationNode.INPUT_TYPES()["required"])
         self.assertNotIn("api_key", config)
         self.assertNotIn("operator-secret", json.dumps([config, status]))
 
@@ -71,7 +74,7 @@ class CredentialTests(unittest.TestCase):
         os.environ["MINIMAX_H3_LMSTUDIO_BASE_URL"] = "https://new.example/v1"
         module = SimpleNamespace(make_client=Mock())
         with self.assertRaises(ValueError):
-            self.pipeline.make_client_and_model(module, config["api_url"], "")
+            self.pipeline.make_client_and_model(module, config["api_url"])
         module.make_client.assert_not_called()
 
     def test_authenticated_request_does_not_follow_redirects(self):
@@ -92,6 +95,7 @@ class CredentialTests(unittest.TestCase):
             return SimpleNamespace(url=url, key=key, transport=http_client)
 
         def select_model(client, model):
+            self.assertIsNone(model)
             response = client.transport.get(client.url + "/models",
                                             headers={"Authorization": "Bearer " + client.key})
             self.assertEqual(response.status_code, 307)
@@ -99,7 +103,7 @@ class CredentialTests(unittest.TestCase):
 
         module = SimpleNamespace(make_client=make_client, select_model=select_model)
         with patch("httpx.Client", side_effect=transport_factory):
-            client, model = self.pipeline.make_client_and_model(module, DEFAULT_URL, "")
+            client, model = self.pipeline.make_client_and_model(module, DEFAULT_URL)
         self.addCleanup(client.transport.close)
         self.assertEqual(model, "selected-model")
         self.assertEqual(len(requests), 1)

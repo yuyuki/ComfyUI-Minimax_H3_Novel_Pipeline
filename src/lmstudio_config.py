@@ -14,7 +14,7 @@ Share LM Studio settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
 Set the API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio → API Key`.
-The key is not saved in the workflow. Configure the URL, model, thinking, and Qwen3.5 output and retry limits here.
+The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 output and retry limits here.
 """
 
     @classmethod
@@ -54,12 +54,6 @@ The key is not saved in the workflow. Configure the URL, model, thinking, and Qw
                     "tooltip": "Penalizes Qwen3.5 repetition; 1.05 reduces loops while preserving JSON list detail.",
                 }),
             },
-            "optional": {
-                "model": ("STRING", {
-                    "default": "",
-                    "tooltip": "Exact ID of the model loaded in LM Studio. Leave empty for automatic selection.",
-                }),
-            },
         }
 
     RETURN_TYPES = ("MINIMAX_LMSTUDIO_CONFIG", "STRING")
@@ -67,7 +61,7 @@ The key is not saved in the workflow. Configure the URL, model, thinking, and Qw
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
-    def run(self, api_url: str, model: str = "", thinking: bool = False,
+    def run(self, api_url: str, thinking: bool = False,
             qwen35_max_output_tokens: int = 3500, qwen35_length_retries: int = 2,
             qwen35_safe_chunk_chars: int = 3600, qwen35_top_k: int = 20,
             qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05) -> tuple[dict[str, Any], str]:
@@ -82,7 +76,6 @@ The key is not saved in the workflow. Configure the URL, model, thinking, and Qw
 
         config = {
             "api_url": api_url.strip(),
-            "model": (model or "").strip(),
             "thinking": bool(thinking),
             "qwen35_max_output_tokens": max(256, int(qwen35_max_output_tokens)),
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
@@ -92,9 +85,8 @@ The key is not saved in the workflow. Configure the URL, model, thinking, and Qw
             "qwen35_repeat_penalty": min(2.0, max(0.8, float(qwen35_repeat_penalty))),
             "api_key_source": "ComfyUI Settings",
         }
-        selected_model = config["model"] or "auto-select loaded Qwen/first model"
         status = (
-            f"LM Studio: {config['api_url']} | model: {selected_model} | "
+            f"LM Studio: {config['api_url']} | model: auto-select loaded Qwen/first model | "
             f"thinking: {config['thinking']} | "
             "API key: ComfyUI Settings (hidden)"
         )
