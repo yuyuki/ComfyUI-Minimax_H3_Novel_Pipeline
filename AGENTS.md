@@ -1,96 +1,82 @@
-# AGENTS: ComfyUI plugin for MiniMax H3 novel pipeline
+# AGENTS: MiniMax H3 Novel Pipeline
 
-Purpose
-- Provide concise instructions for AI coding agents to implement a ComfyUI plugin
-  that reproduces the behavior of the three-step novel reference pipeline in this
-  repository as ComfyUI nodes.
+## Working rules
 
-Token efficiency and instruction compliance
-- Be concise: communicate and implement only what the task requires.
-- Do not provide summaries unless the user explicitly requests one.
-- Follow all user, repository, and system instructions strictly; do not weaken,
-  reinterpret, or silently bypass them.
-- Ask the user for clarification only when it is necessary to proceed safely or
-  when a choice would materially affect the result.
+- Be concise; do not provide summaries unless explicitly requested.
+- Follow user, repository and system instructions strictly. Do not silently
+  weaken or bypass requirements.
+- Ask for clarification only when necessary for safety or a material choice.
+- Preserve existing user edits and the scaffold's `src/` layout.
 
-Key repository entry points
-- Step 1: [01_extract_chapter_references.py](01_extract_chapter_references.py) — extract
-  per-chapter JSON reference catalogs using an LLM.
-- Step 2: [02_consolidate_references.py](02_consolidate_references.py) — merge chapter
-  catalogs to a consolidated registry and produce picture/audio asset briefs.
-- Step 3: [03_generate_h3_prompts.py](03_generate_h3_prompts.py) — generate
-  MiniMax H3 full-reference prompts per chapter/scene using the consolidated registry.
+## Current architecture
 
-Why this file helps AI agents
-- Links the canonical scripts (above) and summarizes responsibilities so an agent
-  can implement ComfyUI node equivalents without re-reading the whole repo.
-- Lists required runtime dependencies and key configuration knobs the plugin
-  must expose to users.
+- Root `__init__.py` is the ComfyUI checkout entrypoint. It re-exports mappings
+  from `src/minimax_h3_novel_pipeline` and serves `./web/js`.
+- `src/minimax_h3_novel_pipeline/__init__.py` registers seven nodes and four
+  local HTTP routes. `nodes.py` exports the node classes.
+- Each node has its own module: `lmstudio_config.py`,
+  `extract_chapter_references.py`, `load_chapter_catalogs.py`,
+  `consolidate_references.py`, `load_consolidated_references.py`,
+  `generate_h3_prompts.py`, and `select_h3_scene.py`.
+- `lmstudio_pipeline.py` dynamically loads bundled scripts relative to its
+  own directory, configures Qwen behavior and wraps streaming cancellation.
+- `util.py` contains file discovery, JSON persistence and shared helpers.
+- `lmstudio_settings.py` stores the API key in memory and validates the
+  trusted endpoint. `route_access.py` enforces direct local browser access.
+- `web/js/minimax_h3_novel.js` implements chapter picking and settings.
+- `external source/` contains historical reference bundles. Do not import
+  them at runtime or edit them as a substitute for changing bundled code.
 
-Recommended plugin design (minimal, actionable)
-- Plugin name: `minimax_h3_novel` (folder: `custom_nodes`).
-- Primary node classes (one node per script):
-  - `LMStudioConfigurationNode` — inputs: LM Studio API URL, optional model ID,
-    Qwen backend/thinking/output controls; outputs: a non-secret configuration
-    object. The API key must be read from ComfyUI settings or the runtime
-    environment, never from a workflow input.
-  - `ExtractChapterReferencesNode` — inputs: `MINIMAX_LMSTUDIO_CONFIG`, chapter files/folder;
-    params: `chunk_chars`, `overlap_paragraphs`, `temperature`, `max_tokens`, `force`.
-    outputs: per-chapter JSON payload(s) (Python dict objects) and optional saved files.
-  - `ConsolidateReferencesNode` — inputs: `MINIMAX_LMSTUDIO_CONFIG`, list of chapter JSON payloads; params: `picture_threshold`,
-    `audio_threshold`, `asset_batch_size`, `no_variants`, `audit_max_entities`, etc.; outputs: consolidated
-    registry dict and picture/audio briefs list.
-  - `GenerateH3PromptsNode` — inputs: `MINIMAX_LMSTUDIO_CONFIG`, consolidated registry and chapter text; params: `duration`,
-    `scenes_per_chunk`, `scenes_per_chapter`, `max_tokens`, `temperature`; outputs: H3 prompt texts.
-- Node behavior notes:
-  - Keep the ComfyUI node outputs as Python objects (dicts / lists) so following nodes
-    can bind, inspect, and optionally save to disk.
-  - Preserve the scripts' schema checks and JSON parse logic; reuse functions where
-    practical by importing from the original scripts or factoring shared utilities.
-  - All language-model work uses LM Studio's OpenAI-compatible API. Do not add or
-    restore `CLIP` inputs, model loading, or CLIP-dependent code paths.
-  - Expose the non-secret `base_url` and model/backend controls through
-    `LMStudioConfigurationNode`; keep API keys out of workflow JSON, saved outputs,
-    logs, and source code.
+## Pipeline entry points
 
-Implementation details & constraints
-- Dependencies: `pypdf` (optional for PDFs). Mirror the `requirements.txt` in
-  the runtime environment used by ComfyUI.
-- Streaming and Qwen3.5 special-cases: the scripts include robust streaming/ChatML
-  helpers. A faithful node implementation should either reuse those helpers or
-  implement equivalent streaming-aware calls (particularly the constrained-JSON
-  Qwen3.5 path and `qwen35-chatml` compatibility fallback).
-- Files vs in-memory: nodes should support both — return payloads in memory and
-  optionally write the same JSON files the scripts produce.
+All paths below are relative to `src/minimax_h3_novel_pipeline/`:
 
-Suggested plugin file layout
-```
-comfyui_plugins/minimax_h3_novel/
-  __init__.py            # node registration
-  nodes.py               # ComfyUI node classes
-  util.py                # shared helpers ported from scripts (parsers, schema, chat_json)
-  requirements.txt       # subset of repo requirements for plugin runtime
-  examples/              # small example flows demonstrating the 3-node chain
-```
+| Stage | Node wrapper | Bundled implementation |
+|---|---|---|
+| Extract | `extract_chapter_references.py` | `pipeline_step1_extract.py` |
+| Consolidate | `consolidate_references.py` | `pipeline_step2_consolidate.py` |
+| Generate | `generate_h3_prompts.py` | `pipeline_step3_generate.py` |
 
-How an AI coding agent should proceed
-1. Keep the LM Studio API nodes small — call out to `util.py` and the bundled
-   pipeline modules for parsing, schema, streaming, and JSON helpers.
-2. Add node registration in `__init__.py` per ComfyUI conventions (import and register nodes).
-3. Provide example flows in `examples/` showing: (Extract → Consolidate → Generate).
-4. Add minimal unit tests or an example notebook that runs the chain against a small
-   sample chapter and a mocked LM client.
+Keep node wrappers small. Reuse bundled schema checks, JSON parsing,
+streaming, compact retries and Qwen3.5 structured-JSON/ChatML fallbacks.
+Preserve existing node IDs and socket types for workflow compatibility.
 
-Security & safety
-- Do not embed credentials in the plugin. The nodes call the configured LM Studio
-  OpenAI-compatible API and must read API keys only from ComfyUI settings or the
-  runtime environment.
+## Behavior and security constraints
 
-Files added/modified by this change
-| File | Purpose |
-|------|---------|
-| [AGENTS.md](AGENTS.md) | Guidance for implementing a ComfyUI plugin mapping the three-step pipeline. |
+- All language-model work uses LM Studio's OpenAI-compatible API. Never add
+  CLIP inputs, model loading or CLIP-dependent execution paths.
+- Share non-secret URL, model and backend controls through
+  `LMStudioConfigurationNode` and `MINIMAX_LMSTUDIO_CONFIG`.
+- Credentials may come only from ComfyUI settings or the runtime environment,
+  never workflow inputs. The current node implementation uses ComfyUI settings;
+  do not document an environment-key selector unless it is implemented.
+- Keep API keys out of workflow JSON, saved outputs, logs and source code.
+- Validate the endpoint before retrieving credentials. Only the operator's
+  `MINIMAX_H3_LMSTUDIO_BASE_URL` (default `http://127.0.0.1:1234/v1`) is trusted.
+  Keep redirects and ambient proxies disabled for authenticated requests.
+- Preserve local-route checks before body parsing or filesystem mutations.
+- Pass dictionaries/lists between nodes. The current three stages also require
+  `out_dir` and save results; loaders support resuming from those files.
+- Registry briefs describe image/audio assets; do not fabricate media or
+  introduce video references. Preserve scene-local H3 binding order.
+- Preserve streaming cancellation checks and existing cache/schema behavior.
 
-Next suggestions
-- Extend the existing `custom_nodes` package rather than
-  scaffolding a CLIP-based alternative.
+## Packaging and validation
+
+- Keep `requirements.txt` and `pyproject.toml` runtime dependencies aligned:
+  `pypdf`, `openai>=1.0,<3`, `httpx>=0.27,<1`. PDF support uses `pypdf`.
+- Setuptools maps the root `web/` directory into the wheel's
+  `minimax_h3_novel_pipeline.web` package. Keep both source-checkout and
+  installed-package frontend paths working.
+- `MANIFEST.in` must include the root entrypoint, runtime requirements,
+  documentation, examples and browser JavaScript in the source distribution.
+- Update root `README.md` and `examples/README.md` when setup or wiring changes.
+- Install development tools with `python -m pip install -e ".[dev]"`.
+- Run `python -m pytest`, `ruff check .`, and `python -m build` for layout or
+  packaging changes. Pytest configuration lives only in `pyproject.toml`.
+- Add focused regression coverage for affected behavior; mock network work.
+  Tests must run without ComfyUI or a live LM Studio server. Check root
+  registration, installed imports and bundled assets after file moves.
+- Lint excludes historical `external source/` bundles. Do not hide failures
+  in the active package. Report live runtime validation separately from
+  offline checks.
