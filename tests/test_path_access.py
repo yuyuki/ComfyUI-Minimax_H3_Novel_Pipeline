@@ -81,7 +81,7 @@ def test_input_discovery_uses_server_root_and_natural_order(roots, monkeypatch, 
 
 
 @pytest.mark.parametrize("node,kwargs", [
-    (ExtractChapterReferencesNode, {"saved_chapter": ""}),
+    (ExtractChapterReferencesNode, {"chapter_selection": {}}),
     (ConsolidateReferencesNode, {"chapter_catalogs": [{"chapter_id": "one"}]}),
     (GenerateH3PromptsNode, {"consolidated_references": {}, "saved_chapter": ""}),
 ])
@@ -104,10 +104,11 @@ def test_chapter_selection_rejects_external_reads(roots, monkeypatch, tmp_path, 
     monkeypatch.setattr(lmstudio_pipeline, "load", load)
     outside = tmp_path / "private.txt"
     outside.write_text("Private text. " * 20, encoding="utf-8")
-    for fields in ({"chapter_selection": {"chapter_paths": str(outside)}, "saved_chapter": ""},
-                   {"saved_chapter": str(outside)}):
-        with pytest.raises(ValueError):
-            node().run(lmstudio_config={}, out_dir="safe", **fields, **extra)
+    fields = {"chapter_selection": {"chapter_paths": str(outside)}}
+    if node is GenerateH3PromptsNode:
+        fields["saved_chapter"] = ""
+    with pytest.raises(ValueError):
+        node().run(lmstudio_config={}, out_dir="safe", **fields, **extra)
     load.assert_not_called()
 
 

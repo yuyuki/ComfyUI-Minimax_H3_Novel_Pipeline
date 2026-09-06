@@ -98,8 +98,8 @@ Chapter paths must stay inside ComfyUI's input directory. Relative paths start
 there, for example `minimax_h3_novel/chapter_01.txt`; copy external chapters
 into that directory or upload them through the picker.
 Supported files are `.txt`, `.md`, `.markdown` and `.pdf`. Folder discovery
-is non-recursive and naturally sorted. `saved_chapter` on Extract and Generate
-remains available as a single-file fallback.
+is non-recursive and naturally sorted. Generate retains `saved_chapter` as a
+single-file fallback.
 
 The three stages return Python dictionaries/lists and also write results to
 their required `out_dir`. Defaults are under ComfyUI's
