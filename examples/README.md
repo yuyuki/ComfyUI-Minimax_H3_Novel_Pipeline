@@ -2,10 +2,11 @@
 
 1. Add **LM Studio Configuration**, enter the server URL, and set the
    API key in ComfyUI Settings → MiniMax H3 Novel → LM Studio.
-2. Add **Extract Chapter References**, **Consolidate References** and
-   **Generate H3 Prompts**. Connect configuration to all three.
-3. Choose a chapter in Extract and Generate, or enter the same chapter paths
-   in both. Connect Extract's `chapter_catalogs` to Consolidate, then
+2. Add **Select Chapters**, **Extract Chapter References**, **Consolidate
+   References** and **Generate H3 Prompts**. Connect configuration to all three.
+3. Choose the chapters once in Select Chapters, then connect its
+   `chapter_selection` output to Extract and Generate. Connect Extract's
+   `chapter_catalogs` to Consolidate, then
    Consolidate's `consolidated_references` to Generate.
 4. Use the desired chapter and scene entry from Generate's `prompts` payload
    with your MiniMax H3 Reference to Video node. Generate/load the media from

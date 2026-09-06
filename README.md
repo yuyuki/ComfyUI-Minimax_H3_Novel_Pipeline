@@ -77,25 +77,29 @@ JSON object completed, before receiving the server's final event.
 
 ```text
 LM Studio Configuration ──► Extract / Consolidate / Generate
+Select Chapters ─────────► Extract / Generate
 Extract Chapter References → Consolidate References → Generate H3 Prompts
 ```
 
 | Node | Inputs and result |
 |---|---|
 | LM Studio Configuration | URL and Qwen controls → shared non-secret configuration |
-| Extract Chapter References | Chapter files or folder → chapter catalog list and summary |
+| Select Chapters | Chapter files or folder → shared chapter selection |
+| Extract Chapter References | Shared chapter selection → chapter catalog list and summary |
 | Load Chapter Catalogs | Saved `*_references.json` files → chapter catalog list |
 | Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs |
 | Load Consolidated References | Saved registry JSON → registry object |
-| Generate H3 Prompts | Registry and original chapter files → chapter/scene prompt payload and save-ready text |
+| Generate H3 Prompts | Registry and shared chapter selection → chapter/scene prompt payload and save-ready text |
 
-Use the chapter picker or enter one file/folder per line in `chapter_paths`.
+Add **Select Chapters**, then connect its `chapter_selection` output to both
+Extract and Generate. Use its picker or enter one file/folder per line in its
+`chapter_paths` field.
 Chapter paths must stay inside ComfyUI's input directory. Relative paths start
 there, for example `minimax_h3_novel/chapter_01.txt`; copy external chapters
 into that directory or upload them through the picker.
 Supported files are `.txt`, `.md`, `.markdown` and `.pdf`. Folder discovery
-is non-recursive and naturally sorted. Supply the original chapters to both
-Extract and Generate. `saved_chapter` is a single-file fallback.
+is non-recursive and naturally sorted. `saved_chapter` on Extract and Generate
+remains available as a single-file fallback.
 
 The three stages return Python dictionaries/lists and also write results to
 their required `out_dir`. Defaults are under ComfyUI's
@@ -154,7 +158,7 @@ or ComfyUI server. CI runs tests and lint on Python 3.10/3.12 on Linux and
 Windows and builds source/wheel distributions. Lint excludes historical
 `external source/` bundles.
 
-For a live smoke test, restart ComfyUI, confirm all six nodes appear under
+For a live smoke test, restart ComfyUI, confirm all seven nodes appear under
 **MiniMax H3 Novel**, upload a short chapter, configure LM Studio, and run
 Extract → Consolidate → Generate. Check the saved JSON and confirm Stop
 interrupts a running request.

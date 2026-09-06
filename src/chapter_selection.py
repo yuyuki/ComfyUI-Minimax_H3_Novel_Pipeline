@@ -21,17 +21,15 @@ def saved_chapter_choices() -> list[str]:
         return [""]
 
 
-def chapter_paths(selection: Any, fallback_paths: Any = "", saved_chapter: str = "") -> str:
-    """Return selected paths, accepting the node output and legacy widgets."""
+def chapter_paths(selection: Any, saved_chapter: str = "") -> str:
+    """Return paths from the shared selection or a single saved-chapter fallback."""
     if isinstance(selection, dict):
         selection = selection.get("chapter_paths", "")
     if isinstance(selection, (list, tuple)):
         selection = "\n".join(str(path) for path in selection)
     if isinstance(selection, str) and selection.strip():
         return selection
-    if isinstance(fallback_paths, (list, tuple)):
-        return "\n".join(str(path) for path in fallback_paths)
-    return str(fallback_paths or saved_chapter or "")
+    return str(saved_chapter or "")
 
 
 class SelectChaptersNode:

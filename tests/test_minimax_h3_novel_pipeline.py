@@ -26,7 +26,7 @@ def plugin():
 
 def test_root_registration_and_frontend(plugin):
     assert set(plugin.NODE_CLASS_MAPPINGS) == {
-        "LMStudioConfigurationNode", "ExtractChapterReferencesNode",
+        "LMStudioConfigurationNode", "SelectChaptersNode", "ExtractChapterReferencesNode",
         "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
         "ConsolidateReferencesNode", "GenerateH3PromptsNode",
     }
@@ -53,7 +53,7 @@ def test_installed_package_import_outside_checkout(tmp_path):
     result = subprocess.run(
         [sys.executable, "-c",
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
-         "assert len(p.NODE_CLASS_MAPPINGS) == 6; "
+         "assert len(p.NODE_CLASS_MAPPINGS) == 7; "
          "assert (Path(p.WEB_DIRECTORY) / 'minimax_h3_novel.js').is_file(); "
          "from minimax_h3_novel_pipeline.lmstudio_pipeline import load; "
          "[load(s) for s in ('extract', 'consolidate', 'generate')]"],

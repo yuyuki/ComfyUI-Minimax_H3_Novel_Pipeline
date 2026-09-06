@@ -19,12 +19,12 @@ class GenerateH3PromptsNode:
     def INPUT_TYPES(cls):
         return {"required": {
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "chapter_paths": ("STRING", {"multiline": True, "default": "", "tooltip": "One chapter file or folder per line, inside ComfyUI's input directory. Relative paths start there."}), "saved_chapter": (saved_chapter_choices(),), "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0}),
+            "saved_chapter": (saved_chapter_choices(),), "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0}),
             "chunk_chars": ("INT", {"default": 14000, "min": 3000, "max": 1000000}), "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}), "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000}),
             "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 10}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8000, "min": 256, "max": 100000}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder inside ComfyUI's output/minimax_h3_novel directory. Relative paths start there."}),
         }, "optional": {
-            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters. Takes precedence over the legacy chapter fields."}),
+            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING")
@@ -32,13 +32,13 @@ class GenerateH3PromptsNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
-    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_paths: str, saved_chapter: str, out_dir: str, **params: Any) -> tuple[dict[str, Any], str]:
+    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], saved_chapter: str, out_dir: str, **params: Any) -> tuple[dict[str, Any], str]:
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
         output = util.output_path(out_dir.strip())
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
-        selected_paths = selected_chapter_paths(params.get("chapter_selection"), chapter_paths, saved_chapter)
+        selected_paths = selected_chapter_paths(params.get("chapter_selection"), saved_chapter=saved_chapter)
         paths = util.discover_inputs([Path(p.strip()) for p in selected_paths.splitlines() if p.strip()])
         if not paths: raise ValueError("No supported chapter files found.")
         pipeline = lmstudio_pipeline.load("generate")

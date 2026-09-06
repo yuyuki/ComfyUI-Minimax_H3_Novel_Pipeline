@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import lmstudio_pipeline, util
 from .chapter_selection import chapter_paths as selected_chapter_paths, saved_chapter_choices
@@ -24,7 +24,6 @@ class ExtractChapterReferencesNode:
     def INPUT_TYPES(cls):
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "chapter_paths": ("STRING", {"multiline": True, "default": "", "tooltip": "One chapter file or folder per line, inside ComfyUI's input directory. Relative paths start there."}),
             "saved_chapter": (saved_chapter_choices(), {"tooltip": "Previously uploaded chapter."}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
             "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}),
@@ -34,7 +33,7 @@ class ExtractChapterReferencesNode:
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder inside ComfyUI's output/minimax_h3_novel directory. Relative paths start there."}),
             "merge_batch_size": ("INT", {"default": 6, "min": 2, "max": 32, "tooltip": "Partial catalogs per merge call."}),
         }, "optional": {
-            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters. Takes precedence over the legacy chapter fields."}),
+            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
@@ -42,11 +41,11 @@ class ExtractChapterReferencesNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
-    def run(self, lmstudio_config: dict[str, Any], chapter_paths: Iterable[Path], saved_chapter: str, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
+    def run(self, lmstudio_config: dict[str, Any], saved_chapter: str, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         output = util.output_path(out_dir.strip())
-        raw_paths = selected_chapter_paths(params.get("chapter_selection"), chapter_paths, saved_chapter)
+        raw_paths = selected_chapter_paths(params.get("chapter_selection"), saved_chapter=saved_chapter)
         items = [Path(x.strip()) for x in raw_paths.splitlines() if x.strip()] if isinstance(raw_paths, str) else [Path(x) for x in raw_paths]
         paths = util.discover_inputs(items)
         if not paths:
