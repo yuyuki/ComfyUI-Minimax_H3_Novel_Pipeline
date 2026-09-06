@@ -83,7 +83,7 @@ def test_input_discovery_uses_server_root_and_natural_order(roots, monkeypatch, 
 @pytest.mark.parametrize("node,kwargs", [
     (ExtractChapterReferencesNode, {"chapter_selection": {}}),
     (ConsolidateReferencesNode, {"chapter_catalogs": [{"chapter_id": "one"}]}),
-    (GenerateH3PromptsNode, {"consolidated_references": {}, "saved_chapter": ""}),
+    (GenerateH3PromptsNode, {"consolidated_references": {}, "chapter_selection": {}}),
 ])
 def test_all_stages_reject_output_escape_before_loading_pipeline(roots, monkeypatch, tmp_path, node, kwargs):
     load = Mock(side_effect=AssertionError("Must reject before pipeline/network work"))
@@ -105,8 +105,6 @@ def test_chapter_selection_rejects_external_reads(roots, monkeypatch, tmp_path, 
     outside = tmp_path / "private.txt"
     outside.write_text("Private text. " * 20, encoding="utf-8")
     fields = {"chapter_selection": {"chapter_paths": str(outside)}}
-    if node is GenerateH3PromptsNode:
-        fields["saved_chapter"] = ""
     with pytest.raises(ValueError):
         node().run(lmstudio_config={}, out_dir="safe", **fields, **extra)
     load.assert_not_called()
