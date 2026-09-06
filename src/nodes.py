@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .consolidate_references import ConsolidateReferencesNode
+from .chapter_selection import SelectChaptersNode
 from .extract_chapter_references import ExtractChapterReferencesNode
 from .generate_h3_prompts import GenerateH3PromptsNode
 from .load_chapter_catalogs import LoadChapterCatalogsNode
@@ -11,6 +12,7 @@ from .lmstudio_config import LMStudioConfigurationNode
 
 NODE_CLASS_MAPPINGS = {
     "LMStudioConfigurationNode": LMStudioConfigurationNode,
+    "SelectChaptersNode": SelectChaptersNode,
     "ExtractChapterReferencesNode": ExtractChapterReferencesNode,
     "LoadChapterCatalogsNode": LoadChapterCatalogsNode,
     "LoadConsolidatedReferencesNode": LoadConsolidatedReferencesNode,
@@ -21,6 +23,7 @@ NODE_CLASS_MAPPINGS = {
 __all__ = [
     "ExtractChapterReferencesNode",
     "LMStudioConfigurationNode",
+    "SelectChaptersNode",
     "LoadChapterCatalogsNode",
     "LoadConsolidatedReferencesNode",
     "ConsolidateReferencesNode",

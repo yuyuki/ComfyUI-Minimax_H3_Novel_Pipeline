@@ -332,6 +332,7 @@ async function openSavedChapterDialog(node) {
 }
 
 function installSavedChapterPicker(node) {
+    if (node.comfyClass !== "SelectChaptersNode") return;
     const saved = widget(node, "saved_chapter");
     if (!saved || pickerButton(node)) return;
     // Keep this hidden enum value so existing workflows and the Python nodes

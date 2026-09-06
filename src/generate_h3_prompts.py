@@ -6,20 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from . import lmstudio_pipeline, util
+from .chapter_selection import chapter_paths as selected_chapter_paths, saved_chapter_choices
 from .path_access import confined_path
-
-
-def _saved_chapter_choices() -> list[str]:
-    try:
-        import folder_paths
-        root = Path(folder_paths.get_input_directory()) / "minimax_h3_novel"
-        # ``saved_chapter`` is only a single-file fallback.  Keep an explicit
-        # empty enum value so workflows using the multi-file ``chapter_paths``
-        # field pass ComfyUI validation.
-        files = sorted(root.iterdir()) if root.is_dir() else []
-        return [""] + [f"minimax_h3_novel/{p.name}" for p in files if p.is_file() and p.suffix.lower() in util.SUPPORTED_EXTENSIONS]
-    except Exception:
-        return [""]
 
 
 def _default_output_dir() -> str:
@@ -31,10 +19,12 @@ class GenerateH3PromptsNode:
     def INPUT_TYPES(cls):
         return {"required": {
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "chapter_paths": ("STRING", {"multiline": True, "default": "", "tooltip": "One chapter file or folder per line, inside ComfyUI's input directory. Relative paths start there."}), "saved_chapter": (_saved_chapter_choices(),), "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0}),
+            "chapter_paths": ("STRING", {"multiline": True, "default": "", "tooltip": "One chapter file or folder per line, inside ComfyUI's input directory. Relative paths start there."}), "saved_chapter": (saved_chapter_choices(),), "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0}),
             "chunk_chars": ("INT", {"default": 14000, "min": 3000, "max": 1000000}), "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}), "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000}),
             "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 10}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8000, "min": 256, "max": 100000}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder inside ComfyUI's output/minimax_h3_novel directory. Relative paths start there."}),
+        }, "optional": {
+            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters. Takes precedence over the legacy chapter fields."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING")
@@ -48,7 +38,8 @@ class GenerateH3PromptsNode:
         output = util.output_path(out_dir.strip())
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
-        paths = util.discover_inputs([Path(p.strip()) for p in (chapter_paths or saved_chapter).splitlines() if p.strip()])
+        selected_paths = selected_chapter_paths(params.get("chapter_selection"), chapter_paths, saved_chapter)
+        paths = util.discover_inputs([Path(p.strip()) for p in selected_paths.splitlines() if p.strip()])
         if not paths: raise ValueError("No supported chapter files found.")
         pipeline = lmstudio_pipeline.load("generate")
         lmstudio_pipeline.configure_qwen(thinking=bool(lmstudio_config["thinking"]), length_retries=int(lmstudio_config["qwen35_length_retries"]), top_k=int(lmstudio_config["qwen35_top_k"]), min_p=float(lmstudio_config["qwen35_min_p"]), repeat_penalty=float(lmstudio_config["qwen35_repeat_penalty"]))

@@ -31,6 +31,7 @@ def _build_mappings() -> None:
         NODE_CLASS_MAPPINGS.update(
             {
                 "ExtractChapterReferencesNode": _nodes.ExtractChapterReferencesNode,
+                "SelectChaptersNode": _nodes.SelectChaptersNode,
                 "LMStudioConfigurationNode": _nodes.LMStudioConfigurationNode,
                 "LoadChapterCatalogsNode": _nodes.LoadChapterCatalogsNode,
                 "LoadConsolidatedReferencesNode": _nodes.LoadConsolidatedReferencesNode,
@@ -41,6 +42,7 @@ def _build_mappings() -> None:
         NODE_DISPLAY_NAME_MAPPINGS.update(
             {
                 "ExtractChapterReferencesNode": "Extract Chapter References",
+                "SelectChaptersNode": "Select Chapters",
                 "LMStudioConfigurationNode": "LM Studio Configuration",
                 "LoadChapterCatalogsNode": "Load Chapter Catalogs",
                 "LoadConsolidatedReferencesNode": "Load Consolidated References",
