@@ -63,7 +63,10 @@ chunks.
 Set `max_tokens` separately on Extract, Consolidate and Generate. Each node's
 value is the output-token limit for all of its requests, including retries and
 merges. LM Studio Configuration has no shared output-token limit. Existing
-configuration nodes migrate the removed field when loaded in the browser.
+configuration nodes migrate the removed fields when loaded in the browser.
+Extraction uses its own `chunk_chars`, with no shared Qwen chunk cap or hidden
+3,000-character minimum. Paragraph boundaries and overlap still affect actual
+chunk sizes.
 
 Each streamed request logs `content_chars`, `reasoning_chars`, `finish_reason`
 and `local_stop` to the ComfyUI console. Counts are characters, not tokens;

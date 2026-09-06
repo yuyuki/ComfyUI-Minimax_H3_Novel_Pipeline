@@ -58,6 +58,8 @@ class CredentialTests(unittest.TestCase):
         self.assertNotIn("model", self.config.LMStudioConfigurationNode.INPUT_TYPES().get("optional", {}))
         self.assertNotIn("model", self.config.LMStudioConfigurationNode.INPUT_TYPES()["required"])
         self.assertNotIn("qwen35_max_output_tokens", config)
+        self.assertNotIn("qwen35_safe_chunk_chars", config)
+        self.assertNotIn("qwen35_safe_chunk_chars", self.config.LMStudioConfigurationNode.INPUT_TYPES()["required"])
         self.assertNotIn("qwen35_max_output_tokens", self.config.LMStudioConfigurationNode.INPUT_TYPES()["required"])
         self.assertNotIn("api_key", config)
         self.assertNotIn("operator-secret", json.dumps([config, status]))

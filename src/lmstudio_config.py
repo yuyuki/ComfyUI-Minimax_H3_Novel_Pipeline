@@ -33,10 +33,6 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
                     "default": 2, "min": 0, "max": 10,
                     "tooltip": "Number of compact retries after incomplete Qwen3.5 JSON output.",
                 }),
-                "qwen35_safe_chunk_chars": ("INT", {
-                    "default": 3600, "min": 3000, "max": 20000,
-                    "tooltip": "Maximum passage size during Qwen3.5 extraction. Shorter passages help prevent truncated JSON.",
-                }),
                 "qwen35_top_k": ("INT", {
                     "default": 20, "min": 1, "max": 200,
                     "tooltip": "Qwen3.5/LM Studio sampling: limits token choices for more stable JSON output.",
@@ -59,7 +55,7 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
 
     def run(self, api_url: str, thinking: bool = False,
             qwen35_length_retries: int = 2,
-            qwen35_safe_chunk_chars: int = 3600, qwen35_top_k: int = 20,
+            qwen35_top_k: int = 20,
             qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05) -> tuple[dict[str, Any], str]:
         api_url = lmstudio_settings.validate_api_url(api_url)
 
@@ -74,7 +70,6 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
             "api_url": api_url.strip(),
             "thinking": bool(thinking),
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
-            "qwen35_safe_chunk_chars": max(3000, int(qwen35_safe_chunk_chars)),
             "qwen35_top_k": max(1, int(qwen35_top_k)),
             "qwen35_min_p": min(1.0, max(0.0, float(qwen35_min_p))),
             "qwen35_repeat_penalty": min(2.0, max(0.8, float(qwen35_repeat_penalty))),

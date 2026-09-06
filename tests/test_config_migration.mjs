@@ -16,16 +16,26 @@ test("old configuration preserves every remaining widget and does not mutate sou
     extension.beforeRegisterNodeDef(Config, { name: "LMStudioConfigurationNode" });
     const old = {
         widgets_values: ["url", false, 8000, 2, 3600, 20, 0, 1.05],
-        widgets_values_named: { qwen35_max_output_tokens: 8000, qwen35_length_retries: 2 },
+        widgets_values_named: { qwen35_max_output_tokens: 8000, qwen35_safe_chunk_chars: 3600, qwen35_length_retries: 2 },
     };
     const instance = new Config();
     assert.equal(instance.configure(old), "configured");
-    assert.deepEqual(instance.loaded.widgets_values, ["url", false, 2, 3600, 20, 0, 1.05]);
+    assert.deepEqual(instance.loaded.widgets_values, ["url", false, 2, 20, 0, 1.05]);
     assert.deepEqual(instance.loaded.widgets_values_named, { qwen35_length_retries: 2 });
     assert.equal(old.widgets_values.length, 8);
     const migrated = instance.loaded;
     instance.configure(migrated);
     assert.deepEqual(instance.loaded, migrated);
+});
+
+test("configuration with only the legacy chunk cap migrates", () => {
+    class Config { configure(info) { this.loaded = info; } }
+    extension.beforeRegisterNodeDef(Config, { name: "LMStudioConfigurationNode" });
+    const instance = new Config();
+    const old = { widgets_values: ["url", true, 4, 5000, 30, 0.1, 1.1] };
+    instance.configure(old);
+    assert.deepEqual(instance.loaded.widgets_values, ["url", true, 4, 30, 0.1, 1.1]);
+    assert.equal(old.widgets_values.length, 7);
 });
 
 test("unrelated node configuration is untouched", () => {

@@ -11,14 +11,19 @@ app.registerExtension({
         if (nodeData.name !== "LMStudioConfigurationNode") return;
         const configure = nodeType.prototype.configure;
         nodeType.prototype.configure = function (info) {
-            const values = info.widgets_values;
-            // Previous configuration: URL, thinking, output cap, then five controls.
+            let values = info.widgets_values;
+            // Migrate both legacy layouts: with both shared limits, or chunk cap only.
             if (Array.isArray(values) && values.length === 8) {
-                info = { ...info, widgets_values: [...values.slice(0, 2), ...values.slice(3)] };
+                values = [...values.slice(0, 2), ...values.slice(3)];
+            }
+            if (Array.isArray(values) && values.length === 7) {
+                values = [...values.slice(0, 3), ...values.slice(4)];
+                info = { ...info, widgets_values: values };
             }
             if (info.widgets_values_named) {
                 const named = { ...info.widgets_values_named };
                 delete named.qwen35_max_output_tokens;
+                delete named.qwen35_safe_chunk_chars;
                 info = { ...info, widgets_values_named: named };
             }
             return configure?.apply(this, [info]);

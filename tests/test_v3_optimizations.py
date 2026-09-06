@@ -81,3 +81,26 @@ def test_cluster_matching_respects_aliases_and_types():
     alice["aliases"] = ["Alice"]
     registry = [alice, entity("b", "Alice"), entity("c", "Alice", "location")]
     assert step._audit_candidate_clusters(registry, 0.68, 24) == [["a", "b"]]
+
+
+@pytest.mark.parametrize("model", ["qwen3.5-9b", "other-model"])
+@pytest.mark.parametrize("chunk_chars,expected_count", [(1000, 6), (5500, 1)])
+def test_extraction_uses_node_chunk_size(tmp_path, monkeypatch, model, chunk_chars, expected_count):
+    from minimax_h3_novel_pipeline import path_access
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    step = lmstudio_pipeline.load("extract")
+    chapter = tmp_path / "chapter.txt"
+    chapter.write_text("\n\n".join(str(i) * 800 for i in range(6)), encoding="utf-8")
+    extracted = []
+
+    def extract(client, model, chapter_id, chunk, *unused):
+        extracted.append(chunk)
+        return {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
+
+    monkeypatch.setattr(step, "extract_chunk", extract)
+    monkeypatch.setattr(step, "hierarchical_merge_candidates",
+                        lambda *args: ({"chapter_summary": ""}, {"characters": [], "locations": [], "objects": []}))
+    args = SimpleNamespace(force=False, chunk_chars=chunk_chars, overlap_paragraphs=0, base_url="http://127.0.0.1:1234/v1")
+    step.process_chapter(chapter, tmp_path, None, model, args)
+    assert len(extracted) == expected_count
+    assert all(len(chunk) <= chunk_chars for chunk in extracted)

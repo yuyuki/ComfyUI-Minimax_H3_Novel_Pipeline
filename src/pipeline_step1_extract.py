@@ -448,16 +448,7 @@ def process_chapter(
             pass
 
     text = read_chapter(path)
-    requested_chunk_chars = max(3000, args.chunk_chars)
-    effective_chunk_chars = requested_chunk_chars
-    if json_backend._is_qwen35_model(model):
-        effective_chunk_chars = min(requested_chunk_chars, max(3000, json_backend.QWEN35_SAFE_CHUNK_CHARS))
-        if effective_chunk_chars != requested_chunk_chars:
-            print(
-                f"  Qwen3.5 safe chunking: {requested_chunk_chars:,} → {effective_chunk_chars:,} chars "
-                "to keep each JSON catalog within its output budget"
-            )
-    chunks = split_chunks(text, effective_chunk_chars, max(0, args.overlap_paragraphs))
+    chunks = split_chunks(text, args.chunk_chars, max(0, args.overlap_paragraphs))
     cache_dir = confined_path(out_dir / ".cache" / chapter_id, out_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 

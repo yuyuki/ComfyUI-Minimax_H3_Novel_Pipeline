@@ -70,7 +70,6 @@ class ExtractChapterReferencesNode:
         lmstudio_pipeline.configure_qwen(
             thinking=bool(lmstudio_config["thinking"]),
             length_retries=int(lmstudio_config["qwen35_length_retries"]),
-            safe_chunk_chars=int(lmstudio_config["qwen35_safe_chunk_chars"]),
             top_k=int(lmstudio_config["qwen35_top_k"]),
             min_p=float(lmstudio_config["qwen35_min_p"]),
             repeat_penalty=float(lmstudio_config["qwen35_repeat_penalty"]),

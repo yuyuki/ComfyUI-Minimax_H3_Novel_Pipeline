@@ -20,7 +20,9 @@ references and does not generate images or audio itself.
 
 Set each stage's output budget with its own `max_tokens`; configuration no
 longer applies a second cap. Old configuration widgets migrate on workflow
-load. Restart ComfyUI and refresh the browser after updating the node package.
+load. Set extraction passage size with Extract's `chunk_chars`; the shared
+`qwen35_safe_chunk_chars` field is removed. Paragraphs and overlap are preserved.
+Restart ComfyUI and refresh the browser after updating the node package.
 For JSON failures, check the ComfyUI console's `LLM stream` lines for character
 counts, `finish_reason` and `local_stop`. These diagnostics omit generated text.
 
