@@ -18,6 +18,12 @@ still needs the original chapter text and LM Studio configuration.
 All three stages save to their `out_dir`. The pipeline produces no video
 references and does not generate images or audio itself.
 
+Set each stage's output budget with its own `max_tokens`; configuration no
+longer applies a second cap. Old configuration widgets migrate on workflow
+load. Restart ComfyUI and refresh the browser after updating the node package.
+For JSON failures, check the ComfyUI console's `LLM stream` lines for character
+counts, `finish_reason` and `local_stop`. These diagnostics omit generated text.
+
 Chapter paths are relative to ComfyUI's input directory, for example
 `minimax_h3_novel/chapter_01.txt`. Upload or copy external chapters there.
 Output and loader paths are relative to `output/minimax_h3_novel`: use

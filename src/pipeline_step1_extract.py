@@ -333,7 +333,7 @@ def merge_candidates(
         f"Chapter ID: {chapter_id}\n\nMerge this catalog:\n{json.dumps(compact, ensure_ascii=False, indent=2)}",
         MERGE_SCHEMA,
         min(args.temperature, 0.2),
-        max(args.max_tokens, 3000),
+        args.max_tokens,
     )
 
 

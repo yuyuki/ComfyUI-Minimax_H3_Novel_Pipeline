@@ -521,7 +521,7 @@ def audit_registry(
         result = chat_json(
             client, model, AUDIT_SYSTEM,
             json.dumps([compact_global(e) for e in registry], ensure_ascii=False, indent=2),
-            AUDIT_SCHEMA, min(args.temperature, 0.10), max(args.max_tokens, 6500),
+            AUDIT_SCHEMA, min(args.temperature, 0.10), args.max_tokens,
         )
         removed = _apply_audit_result(registry, result)
         return [e for e in registry if e["global_id"] not in removed]
@@ -540,7 +540,7 @@ def audit_registry(
         result = chat_json(
             client, model, AUDIT_SYSTEM,
             json.dumps([compact_global(by_id[x]) for x in active_ids], ensure_ascii=False, indent=2),
-            AUDIT_SCHEMA, min(args.temperature, 0.10), max(args.max_tokens, 6500),
+            AUDIT_SCHEMA, min(args.temperature, 0.10), args.max_tokens,
         )
         removed = _apply_audit_result([by_id[x] for x in active_ids], result)
         removed_all.update(removed)
@@ -719,7 +719,7 @@ def generate_picture_assets(
             json.dumps(batch, ensure_ascii=False, indent=2),
             PICTURE_BRIEF_SCHEMA,
             0.22,
-            max(args.max_tokens, 7000),
+            args.max_tokens,
         )
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item
@@ -761,7 +761,7 @@ def generate_audio_assets(
             json.dumps(batch, ensure_ascii=False, indent=2),
             AUDIO_BRIEF_SCHEMA,
             0.18,
-            max(args.max_tokens, 6000),
+            args.max_tokens,
         )
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item

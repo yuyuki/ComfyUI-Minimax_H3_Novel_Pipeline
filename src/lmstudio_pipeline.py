@@ -25,11 +25,10 @@ def load(step: str) -> ModuleType:
 
 
 def configure_qwen(*, thinking: bool,
-                   max_output_tokens: int, length_retries: int,
+                   length_retries: int,
                    safe_chunk_chars: int = 3600, top_k: int = 20,
                    min_p: float = 0.0, repeat_penalty: float = 1.05) -> None:
     lmstudio_json.THINKING_ENABLED = bool(thinking)
-    lmstudio_json.QWEN35_MAX_OUTPUT_TOKENS = max(256, int(max_output_tokens))
     lmstudio_json.QWEN35_LENGTH_RETRIES = max(0, int(length_retries))
     lmstudio_json.QWEN35_SAFE_CHUNK_CHARS = max(3000, int(safe_chunk_chars))
     lmstudio_json.QWEN35_TOP_K = max(1, int(top_k))

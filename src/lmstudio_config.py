@@ -14,7 +14,7 @@ Share LM Studio settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
 Set the API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio → API Key`.
-The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 output and retry limits here.
+The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 retry and sampling controls here. Set max_tokens on each processing node.
 """
 
     @classmethod
@@ -28,10 +28,6 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 o
                 "thinking": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "Disable thinking for faster structured JSON output.",
-                }),
-                "qwen35_max_output_tokens": ("INT", {
-                    "default": 3500, "min": 256, "max": 32768,
-                    "tooltip": "Qwen3.5 output limit; streaming stops once the JSON is complete.",
                 }),
                 "qwen35_length_retries": ("INT", {
                     "default": 2, "min": 0, "max": 10,
@@ -62,7 +58,7 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 o
     CATEGORY = "MiniMax H3 Novel"
 
     def run(self, api_url: str, thinking: bool = False,
-            qwen35_max_output_tokens: int = 3500, qwen35_length_retries: int = 2,
+            qwen35_length_retries: int = 2,
             qwen35_safe_chunk_chars: int = 3600, qwen35_top_k: int = 20,
             qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05) -> tuple[dict[str, Any], str]:
         api_url = lmstudio_settings.validate_api_url(api_url)
@@ -77,7 +73,6 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 o
         config = {
             "api_url": api_url.strip(),
             "thinking": bool(thinking),
-            "qwen35_max_output_tokens": max(256, int(qwen35_max_output_tokens)),
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
             "qwen35_safe_chunk_chars": max(3000, int(qwen35_safe_chunk_chars)),
             "qwen35_top_k": max(1, int(qwen35_top_k)),

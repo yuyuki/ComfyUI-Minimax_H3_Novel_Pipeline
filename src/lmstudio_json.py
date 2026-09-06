@@ -11,7 +11,6 @@ from openai import OpenAI
 
 THINKING_ENABLED = False
 CHAT_BACKEND = "structured-json"
-QWEN35_MAX_OUTPUT_TOKENS = 3500
 QWEN35_LENGTH_RETRIES = 2
 QWEN35_SAFE_CHUNK_CHARS = 3600
 QWEN35_TOP_K = 20
@@ -118,7 +117,6 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     from .lmstudio_pipeline import comfy_interrupt_check
 
     qwen = _is_qwen35_model(model)
-    cap = min(max_tokens, QWEN35_MAX_OUTPUT_TOKENS) if qwen else max_tokens
     # Structured-output backends can occasionally end a response mid-string
     # even for non-Qwen3.5 models. Always allow one compact retry instead of
     # failing the whole ComfyUI run on that transient malformed response.
@@ -137,23 +135,47 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             messages=[{"role": "system", "content": ("/think" if THINKING_ENABLED else "/no_think") + "\n\n" + system},
                       {"role": "user", "content": user + note}],
             temperature=min(temperature, 0.12) if attempt else temperature,
-            top_p=0.8 if qwen else 0.9, max_tokens=cap,
+            top_p=0.8 if qwen else 0.9, max_tokens=max_tokens,
             response_format={"type": "json_schema", "json_schema": request_schema},
             extra_body=extra, stream=True,
         )
         raw = ""
+        content_chars = reasoning_chars = 0
+        finish_reason = "not_received"
+        local_stop = "stream_end"
         try:
             for event in stream:
                 comfy_interrupt_check()
                 if not event.choices:
                     continue
-                raw += event.choices[0].delta.content or ""
+                choice = event.choices[0]
+                reason = getattr(choice, "finish_reason", None)
+                if reason is not None:
+                    # Only log known metadata, never arbitrary server text.
+                    finish_reason = reason if reason in {"stop", "length", "content_filter", "tool_calls", "function_call"} else "other"
+                content = choice.delta.content or ""
+                content_chars += len(content)
+                for field in ("reasoning_content", "reasoning"):
+                    reasoning = getattr(choice.delta, field, None)
+                    if isinstance(reasoning, str):
+                        reasoning_chars += len(reasoning)
+                raw += content
                 complete = _complete_json_prefix(raw)
                 if complete is not None:
                     raw = complete
+                    local_stop = "json_complete"
                     break
+        except BaseException:
+            local_stop = "interrupted_or_error"
+            raise
         finally:
             stream.close()
+            diagnostics = (
+                f"attempt={attempt + 1}, max_tokens={max_tokens}, "
+                f"content_chars={content_chars}, reasoning_chars={reasoning_chars}, "
+                f"finish_reason={finish_reason}, local_stop={local_stop}"
+            )
+            print(f"    LLM stream: {diagnostics}", flush=True)
         try:
             result = parse_json(raw)
             if not isinstance(result, dict):
@@ -162,5 +184,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             return result
         except (ValueError, TypeError) as error:
             if attempt == retries:
-                raise RuntimeError(f"Invalid structured JSON after {attempt + 1} attempt(s).") from error
+                raise RuntimeError(
+                    f"Invalid structured JSON after {attempt + 1} attempt(s). {diagnostics}"
+                ) from error
     raise AssertionError("Unreachable")

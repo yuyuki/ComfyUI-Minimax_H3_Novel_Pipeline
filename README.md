@@ -60,6 +60,18 @@ chunks.
 
 ## Workflow
 
+Set `max_tokens` separately on Extract, Consolidate and Generate. Each node's
+value is the output-token limit for all of its requests, including retries and
+merges. LM Studio Configuration has no shared output-token limit. Existing
+configuration nodes migrate the removed field when loaded in the browser.
+
+Each streamed request logs `content_chars`, `reasoning_chars`, `finish_reason`
+and `local_stop` to the ComfyUI console. Counts are characters, not tokens;
+reasoning counts sum string values in `reasoning_content` and `reasoning`.
+No generated text is logged. `finish_reason=not_received` with
+`local_stop=json_complete` means the client closed the stream as soon as the
+JSON object completed, before receiving the server's final event.
+
 ```text
 LM Studio Configuration ──► Extract / Consolidate / Generate
 Extract Chapter References → Consolidate References → Generate H3 Prompts
