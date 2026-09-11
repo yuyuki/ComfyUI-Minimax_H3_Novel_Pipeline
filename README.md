@@ -101,15 +101,22 @@ Supported files are `.txt`, `.md`, `.markdown` and `.pdf`. Folder discovery
 is non-recursive and naturally sorted.
 
 The three stages return Python dictionaries/lists and also write results to
-their required `out_dir`. Defaults are under ComfyUI's
-`output/minimax_h3_novel/`: `chapter_catalogs`, `references` and `h3_prompts`.
-Consolidation writes `consolidated_references.json` and
-`reference_asset_prompts.txt`. Loader nodes let you resume from saved results.
+their required `out_dir`. Every queued execution reserves one shared local-time
+`yyyyMMddHHMMSS` folder under `output/minimax_h3_novel/`, even when settings are
+unchanged. Defaults within that run are `chapter_catalogs`, `references` and
+`h3_prompts`. Timestamp collisions advance to the next free second without
+overwriting an earlier run. LM Studio Configuration shows the run folder in its status.
+Consolidation writes `consolidated_references.json`, `reference_asset_prompts.txt`,
+`visual_designs.json` and an `image_prompts/` export. Generate writes the same image
+export alongside its existing chapter/scene files. Loader nodes reuse saved inputs;
+new outputs always belong to the new run. Fresh runs do not reuse another run's disk caches.
 `out_dir`, `catalog_path` and `consolidated_path` must stay inside
-`output/minimax_h3_novel`. Relative paths start there: use `chapter_catalogs`,
-`references` or `h3_prompts`, and `references/consolidated_references.json`
-for a saved registry. Absolute paths are accepted only within the corresponding
-root. Parent traversal (`..`), Windows special paths and symlinks/junctions
+`output/minimax_h3_novel`. Stage `out_dir` paths are relative to the current run:
+use `chapter_catalogs`, `references` or `h3_prompts`. Loader paths start at the plugin
+output root: use `20260911153042/references/consolidated_references.json`, for example.
+Existing in-root absolute stage paths become run-relative subfolders (a leading
+previous-run timestamp is removed). Absolute loader paths retain their original meaning.
+Parent traversal (`..`), Windows special paths and symlinks/junctions
 that escape the root are rejected. Existing workflows pointing elsewhere must
 move their files and update their paths. Outside ComfyUI, node helpers use
 `input/` and `output/minimax_h3_novel/` beneath the startup working directory.
@@ -119,6 +126,46 @@ desired entry from Generate's `prompts` payload with your MiniMax H3 video
 node. H3 labels such as `<Picture 1>` are local to each request; several
 views may refer to the same subject. The novel pipeline produces no video
 references. See [examples/README.md](examples/README.md) for wiring instructions.
+
+## Qwen-Image reference prompts and editable designs
+
+Consolidate References has an `image_style` dropdown: **realistic photographic**
+(default), cinematic photographic, digital illustration, anime, watercolor and
+3D render. `image_asset_scope` defaults to **all entities**, including optional
+characters, places and objects. Select **existing priority threshold** to use
+`picture_threshold` instead. Audio continues to use its own threshold.
+The default asset batch size is 4; existing workflows retain their saved value.
+
+Each entity gets a separate file in `image_prompts/characters/`, `places/` or
+`objects/`, named with its stable entity ID and name. Each file contains the source
+description, clearly labeled **Added design details**, and a complete copy-paste
+prompt for each generated angle and chapter variant. `image_prompts.json` contains
+the same records. Generate's appended `image_prompt_text` output provides these
+texts in ComfyUI; existing `prompts` and `prompt_text` sockets keep their positions.
+The `prompts` dictionary also includes `image_prompts` records.
+
+Missing visual details are designed once per entity and stored separately from
+novel facts in `references/visual_designs.json`. To change them, edit only that
+entity's `added_details` object, for example `"hair": "Short copper hair."`.
+Set Consolidate's `visual_designs_path` to the edited file, relative to the plugin
+output root, and queue again. Use Load Chapter Catalogs to avoid repeating extraction.
+Imported additions replace the previous additions for that entity; `{}` removes
+them. Entities omitted from the file receive a new design. IDs, names and types
+must match the current registry. The current novel facts take precedence over the
+file's informational `source_facts` snapshot. LM Studio checks additions for
+contradictions and reports conflicting traits for correction; this semantic check
+still requires human review. Chapter appearance takes precedence over a base design.
+
+Style is applied when Consolidate generates briefs. Loading an existing registry
+and running Generate exports its saved prompts without restyling or additional
+image-prompt LLM calls. Older v3 registries remain loadable and show no added design
+details unless recorded. Copy a single view's prompt into your separate Qwen-Image-2512
+workflow. Text prompts alone cannot guarantee identical identity across independently
+generated images; visually review the resulting references before binding them to H3.
+
+Extraction caches now include prompt text, schemas and generation settings. Completed
+catalogs missing the new fingerprint regenerate when processed directly; loaders can
+still read them. Existing JSON retry/fallback and streaming cancellation behavior remain.
 
 ## Repository layout
 

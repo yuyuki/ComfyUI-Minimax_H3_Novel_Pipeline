@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import lmstudio_settings
+from .run_output import reserve_run
 
 
 class LMStudioConfigurationNode:
@@ -58,6 +59,11 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # Saving a new run is intentional even when the queued graph is unchanged.
+        return float("nan")
+
     def run(self, api_url: str, thinking: bool = False,
             qwen35_length_retries: int = 2,
             qwen35_top_k: int = 20,
@@ -79,10 +85,11 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
             "qwen35_min_p": min(1.0, max(0.0, float(qwen35_min_p))),
             "qwen35_repeat_penalty": min(2.0, max(0.8, float(qwen35_repeat_penalty))),
             "api_key_source": "ComfyUI Settings",
+            "run_folder": reserve_run(),
         }
         status = (
             f"LM Studio: {config['api_url']} | model: auto-select loaded Qwen/first model | "
             f"thinking: {config['thinking']} | "
-            "API key: ComfyUI Settings (hidden)"
+            f"API key: ComfyUI Settings (hidden) | run: {config['run_folder']}"
         )
         return config, status

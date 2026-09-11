@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import lmstudio_pipeline, util
+from .run_output import stage_output
 from .chapter_selection import chapter_paths as selected_chapter_paths
 
 def _default_output_dir() -> str:
@@ -30,7 +31,7 @@ class ExtractChapterReferencesNode:
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 2.0, "step": 0.05}),
             "max_tokens": ("INT", {"default": 2200, "min": 256, "max": 32768, "tooltip": "Normal JSON output budget per extraction/merge call."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),
-            "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Folder inside ComfyUI's output/minimax_h3_novel directory. Relative paths start there."}),
+            "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "merge_batch_size": ("INT", {"default": 6, "min": 2, "max": 32, "tooltip": "Partial catalogs per merge call."}),
         }}
 
@@ -42,7 +43,7 @@ class ExtractChapterReferencesNode:
     def run(self, lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
-        output = util.output_path(out_dir.strip())
+        output = stage_output(lmstudio_config, out_dir.strip())
         raw_paths = selected_chapter_paths(chapter_selection)
         items = [Path(x.strip()) for x in raw_paths.splitlines() if x.strip()] if isinstance(raw_paths, str) else [Path(x) for x in raw_paths]
         paths = util.discover_inputs(items)

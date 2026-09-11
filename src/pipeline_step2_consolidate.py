@@ -11,6 +11,7 @@ from typing import Any, Iterable
 from openai import OpenAI
 
 from .lmstudio_json import chat_json, select_model as select_model
+from .reference_requests import validated_request, validate_assets
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
 
@@ -124,8 +125,8 @@ AUDIT_SCHEMA = {
 
 PICTURE_BRIEF_ITEM = {
     "asset_id": {"type": "string"},
-    "description": {"type": "string"},
-    "generation_prompt": {"type": "string"},
+    "description": {"type": "string", "maxLength": 300},
+    "generation_prompt": {"type": "string", "maxLength": 300},
 }
 PICTURE_BRIEF_SCHEMA = {
     "name": "picture_asset_briefs_v2",
@@ -587,7 +588,7 @@ def desired_base_views(entity: dict[str, Any], args: argparse.Namespace) -> list
             base = ["hero_three_quarter"]
         limit = args.max_object_base_views
 
-    merged = ordered_valid_views(typ, base + entity.get("reference_view_hints", []))
+    merged = list(dict.fromkeys(base + ordered_valid_views(typ, entity.get("reference_view_hints", []))))
     return merged[:max(1, limit)]
 
 
@@ -602,7 +603,8 @@ def variant_views(entity_type: str) -> list[str]:
 def build_picture_specs(registry: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
     for e in registry:
-        if not threshold(e.get("reference_priority", "optional"), args.picture_threshold):
+        if (getattr(args, "image_asset_scope", "all entities") != "all entities"
+                and not threshold(e.get("reference_priority", "optional"), args.picture_threshold)):
             continue
         for view in desired_base_views(e, args):
             specs.append(
@@ -640,6 +642,10 @@ def build_picture_specs(registry: list[dict[str, Any]], args: argparse.Namespace
                         "chapter_visual_state": var.get("visual_state", ""),
                     }
                 )
+    for spec in specs:
+        design = getattr(args, "visual_designs", {}).get(spec["linked_global_id"], {})
+        spec["added_details"] = design.get("added_details", {})
+        spec["image_style"] = getattr(args, "image_style", "realistic photographic")
     return specs
 
 
@@ -663,28 +669,66 @@ def build_audio_specs(registry: list[dict[str, Any]], args: argparse.Namespace) 
 
 
 PICTURE_BRIEF_SYSTEM = """
-Create reusable image-reference briefs for a novel-to-video workflow.
-You receive explicit asset specs. Return exactly one brief for every asset_id.
+Create composition instructions for reusable Qwen-Image-2512 reference images.
+Return exactly one asset per supplied asset_id, preserving IDs exactly.
+Treat each spec independently. Never transfer an entity's traits or setting to another.
 
-Rules:
-- Preserve the entity's canonical identity across all of its views.
-- Use only source-supported stable visual details. Do NOT invent unspecified age,
-  ethnicity, hair/eye color, body shape, clothing, architecture, markings, etc.
-- The generation_prompt must explicitly request the supplied view_type.
-- References should be neutral and legible rather than action-heavy.
-- Character face_front: clear identity portrait/front head-and-shoulders or chest-up.
-- Character full_body_front: head-to-toe, front-facing, neutral pose, unobstructed.
-- three_quarter/profile/back_view must preserve exactly the same identity, body,
-  hair and clothing characteristics as the canonical description.
-- Location wide_establishing should show persistent spatial layout; secondary/reverse
-  angles should depict the same place from another coherent viewpoint; key_detail
-  should isolate a source-supported distinctive feature.
-- Object references should clearly preserve shape, materials and distinctive details.
-- For chapter variants, preserve canonical identity and apply ONLY chapter_visual_state.
-- Keep lighting sufficiently neutral for reference utility unless lighting itself is
-  a persistent defining trait.
-- Do not include MiniMax <Picture N>/<Subject N> labels in generation_prompt.
+The caller assembles the complete prompt from the exact shared source description,
+approved added_details, selected image_style, view framing and chapter_visual_state.
+Your two fields are:
+- description: one short English sentence describing the purpose of this view.
+- generation_prompt: only one or two short English sentences about composition,
+  background and lighting, at most 300 characters. Do NOT repeat the identity, name,
+  appearance, materials, style or requested view: the caller already includes them.
+
+Example for a neutral character portrait:
+{"assets":[{"asset_id":"PIC_CHAR_001_FACE_FRONT","description":"A clear facial identity reference.",
+"generation_prompt":"Centered composition against a plain unobtrusive background, with soft even lighting and sharp facial detail."}]}
+
+Use neutral, legible lighting unless source facts establish a defining light source.
+Characters: simple background, neutral pose, unobstructed view; never invent a setting.
+Places: show coherent spatial layout; preserve established architecture across angles.
+Objects: uncluttered background and readable contours; do not invent extra props.
+Chapter state overrides a conflicting base outfit or temporary state.
+One image and one view, no collage, no captions, no watermark or MiniMax labels.
+Never refer to a previous image or say 'same as above'. No added identity traits.
 """.strip()
+
+
+VIEW_FRAMING = {
+    "face_front": "Front-facing head-and-shoulders identity portrait, face clearly visible.",
+    "full_body_front": "Front-facing full-body view, head to toe, neutral pose, feet and hands visible.",
+    "three_quarter": "Three-quarter view of the character, neutral pose, unobstructed silhouette.",
+    "back_view": "Rear view of the character, facing away, full silhouette visible.",
+    "profile": "Side-profile view of the character, clear facial silhouette.",
+    "expression_closeup": "Close-up of the character's face with a restrained natural expression.",
+    "costume_detail": "Close-up of the established clothing and its visible construction details.",
+    "wide_establishing": "Wide establishing view showing the location's persistent spatial layout.",
+    "secondary_angle": "Alternate three-quarter viewpoint of the location, preserving its established layout.",
+    "reverse_angle": "Reverse viewpoint of the location, preserving the established spatial relationships.",
+    "key_detail": "Close-up of the location's defining architectural or environmental detail.",
+    "interior_zone": "View into an established interior zone, with clear spatial depth.",
+    "exterior_approach": "Exterior approach view showing the established entrance and surroundings.",
+    "hero_three_quarter": "Three-quarter product view of the entire object, unobstructed silhouette.",
+    "side_profile": "Side-profile view of the entire object, showing its proportions clearly.",
+    "detail_closeup": "Close-up of the object's distinguishing detail, with its material clearly visible.",
+    "scale_context": "View of the object in its established context with readable relative scale.",
+}
+
+
+def complete_image_prompt(spec, composition):
+    """Repeat exact identity choices deterministically across independently copied views."""
+    parts = [f"{spec.get('image_style', 'realistic photographic')} image of {spec['canonical_name']}.",
+             spec.get("stable_visual_description", "").strip()]
+    parts.extend(spec.get("distinguishing_features", []))
+    if spec.get("added_details"):
+        parts.append("Base visual design: " + "; ".join(f"{k.replace('_', ' ')}: {v.rstrip('. ')}" for k, v in spec["added_details"].items()) + ".")
+    if spec.get("chapter_visual_state"):
+        parts.append("For this image, apply this chapter appearance in place of any conflicting base outfit or state: "
+                     + spec["chapter_visual_state"])
+    parts.append(VIEW_FRAMING[spec["view_type"]])
+    parts.extend([composition.strip(), "Single image, single view. No added captions or watermark."])
+    return " ".join(part for part in parts if part)
 
 
 AUDIO_BRIEF_SYSTEM = """
@@ -712,15 +756,15 @@ def generate_picture_assets(
     batches = list(batched(specs, args.asset_batch_size))
     for i, batch in enumerate(batches, start=1):
         print(f"  picture brief batch {i}/{len(batches)} ({len(batch)} assets)")
-        result = chat_json(
-            client,
-            model,
-            PICTURE_BRIEF_SYSTEM,
-            json.dumps(batch, ensure_ascii=False, indent=2),
-            PICTURE_BRIEF_SCHEMA,
-            0.22,
-            args.max_tokens,
-        )
+        def validate_picture_batch(data):
+            validate_assets(data, batch)
+            for item in data["assets"]:
+                if any(len(item[key]) > 300 for key in ("description", "generation_prompt")):
+                    raise ValueError("Keep description and composition instructions each under 300 characters.")
+                if re.search(r"same as above|previous image|<Picture|<Subject|<Audio", item["generation_prompt"], re.I):
+                    raise ValueError("Composition must stand alone without references to other images or MiniMax labels.")
+        result = validated_request(chat_json, client, model, PICTURE_BRIEF_SYSTEM, batch,
+                                   PICTURE_BRIEF_SCHEMA, args, validate_picture_batch)
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item
 
@@ -733,7 +777,7 @@ def generate_picture_assets(
             **{k: v for k, v in spec.items() if k not in {"stable_visual_description", "distinguishing_features", "chapter_visual_state"}},
             "asset_role": "identity_reference" if spec["entity_type"] == "character" else ("environment_reference" if spec["entity_type"] == "location" else "object_reference"),
             "description": brief["description"].strip(),
-            "generation_prompt": brief["generation_prompt"].strip(),
+            "generation_prompt": complete_image_prompt(spec, brief["generation_prompt"]),
             "suggested_filename": spec["asset_id"].lower() + ".png",
         }
         assets.append(asset)
@@ -754,15 +798,8 @@ def generate_audio_assets(
     batches = list(batched(specs, args.asset_batch_size))
     for i, batch in enumerate(batches, start=1):
         print(f"  audio brief batch {i}/{len(batches)} ({len(batch)} assets)")
-        result = chat_json(
-            client,
-            model,
-            AUDIO_BRIEF_SYSTEM,
-            json.dumps(batch, ensure_ascii=False, indent=2),
-            AUDIO_BRIEF_SCHEMA,
-            0.18,
-            args.max_tokens,
-        )
+        result = validated_request(chat_json, client, model, AUDIO_BRIEF_SYSTEM, batch,
+                                   AUDIO_BRIEF_SCHEMA, args, lambda data: validate_assets(data, batch))
         for item in result.get("assets", []):
             briefs[item["asset_id"]] = item
 

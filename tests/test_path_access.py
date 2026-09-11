@@ -167,8 +167,12 @@ def test_extraction_existing_cache_still_loads(roots):
     chapter.write_text("Chapter text. " * 20, encoding="utf-8")
     step = lmstudio_pipeline.load("extract")
     payload = {"schema_version": step.SCHEMA_VERSION, "source": {"sha256": step.sha256_file(chapter)}}
+    args = SimpleNamespace(force=False)
+    payload["cache_key"] = step.cache_fingerprint("mock", args, step.SCHEMA_VERSION,
+                                                step.EXTRACT_SYSTEM, step.MERGE_SYSTEM,
+                                                step.CHUNK_SCHEMA, step.MERGE_SCHEMA, step.sha256_file(chapter))
     util.save_json(output / "chapter_references.json", payload)
-    saved = step.process_chapter(chapter, output, None, "mock", SimpleNamespace(force=False))
+    saved = step.process_chapter(chapter, output, None, "mock", args)
     assert util.load_json(saved) == payload
 
 

@@ -8,7 +8,14 @@
    `chapter_selection` output to Extract and Generate. Connect Extract's
    `chapter_catalogs` to Consolidate, then
    Consolidate's `consolidated_references` to Generate.
-4. Use the desired chapter and scene entry from Generate's `prompts` payload
+4. In Consolidate, choose `image_style` (default **realistic photographic**) and
+   keep `image_asset_scope=all entities` to include every character, place and object.
+   Use `asset_batch_size=4` as the initial setting for the Qwen3.5 9B model.
+5. Queue the workflow. Open the new timestamp folder shown in configuration status.
+   Copy each view's prompt from `references/image_prompts/` into your Qwen-Image-2512
+   workflow, or use Generate's `image_prompt_text` output. The same export is saved
+   under `h3_prompts/image_prompts/`. Generate and review one image per view.
+6. Use the desired chapter and scene entry from Generate's `prompts` payload
    with your MiniMax H3 Reference to Video node. Generate/load the media from
    the registry's briefs and attach it in the entry's image/audio asset-ID order.
 
@@ -29,13 +36,40 @@ counts, `finish_reason` and `local_stop`. These diagnostics omit generated text.
 
 Chapter paths are relative to ComfyUI's input directory, for example
 `minimax_h3_novel/chapter_01.txt`. Upload or copy external chapters there.
-Output and loader paths are relative to `output/minimax_h3_novel`: use
+Every queue execution creates a shared `yyyyMMddHHMMSS` folder, using local time,
+under `output/minimax_h3_novel`. Output subfolders are relative to that run: use
 `chapter_catalogs` for extraction, `references` for consolidation and
-`h3_prompts` for generation. Resume with `catalog_path=chapter_catalogs` or
-`consolidated_path=references/consolidated_references.json`. Absolute paths
+`h3_prompts` for generation. Loader paths include the previous timestamp: for example,
+`catalog_path=20260911153042/chapter_catalogs` or
+`consolidated_path=20260911153042/references/consolidated_references.json`. Absolute paths
 must stay within the corresponding root; `..` and links escaping it are rejected.
 
 Extraction uses hierarchical merges (`merge_batch_size`, default 6) and caches each merge batch for resuming. This limits partial catalogs per call; dense catalogs can still require a larger context window. Enable `force` to regenerate cached results.
+
+To edit invented appearance details, open the previous run's
+`references/visual_designs.json`. Each entity has its ID, name, type, a source-facts
+snapshot and an editable `added_details` object:
+
+```json
+"added_details": {
+  "hair": "Short copper hair.",
+  "default_outfit": "A plain charcoal linen tunic."
+}
+```
+
+Change or remove traits in that object; leave IDs, names and types intact. Use
+Load Chapter Catalogs for the same novel, set Consolidate's `visual_designs_path`
+to that edited file, and queue again. Outputs go into a fresh run. Imported designs
+are checked against the current source facts; contradictions must be corrected.
+An empty object removes all additions for an entity. Omitted entities are designed
+anew. The selected style affects all new reference prompts. Loading a consolidated
+registry preserves its already generated style and prompts.
+
+For each entity, the text export labels source description and added design details
+separately, followed by individual copy-paste prompts for each view and variant.
+`image_prompts.json` contains asset IDs, descriptions and prompts for automation.
+Style/design choices do not modify extracted novel facts. Review generated images
+for consistency before using them as H3 references.
 
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 
