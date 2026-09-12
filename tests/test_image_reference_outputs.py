@@ -183,6 +183,33 @@ def test_asset_retries_are_bounded_and_cancelable(monkeypatch):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("path", ["", "   "])
+def test_blank_design_import_generates_new_designs(output_root, path):
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        calls.append(schema["name"])
+        return {"added_details": []}
+
+    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options(), path)
+    assert calls == ["visual_design_additions"]
+    assert designs["entities"][0]["added_details"] == {}
+
+
+@pytest.mark.parametrize("path", ["missing/visual_designs.json", "."])
+def test_invalid_design_import_fails_before_model_work(output_root, monkeypatch, path):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Invalid import must fail before loading the pipeline or calling LM Studio")
+
+    monkeypatch.setattr(lmstudio_pipeline, "load", unexpected)
+    monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", unexpected)
+    params = {**node_defaults(ConsolidateReferencesNode), "visual_designs_path": path}
+    chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "source": {}}
+    with pytest.raises(ValueError, match="Clear visual_designs_path to generate new designs"):
+        ConsolidateReferencesNode().run([chapter], {}, **params)
+    assert list(output_root.iterdir()) == []
+
+
 def test_edit_design_then_import_reuses_additions(output_root):
     calls = []
     def chat(client, model, system, user, schema, *args):
@@ -256,7 +283,13 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
                   qwen35_top_k=20, qwen35_min_p=0, qwen35_repeat_penalty=1.05,
                   run_folder=run_output.reserve_run())
     chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "source": {}}
-    result, = ConsolidateReferencesNode().run([chapter], config, **node_defaults(ConsolidateReferencesNode))
+    result, summary = ConsolidateReferencesNode().run([chapter], config, **node_defaults(ConsolidateReferencesNode))
+    assert ConsolidateReferencesNode.RETURN_TYPES == ("MINIMAX_REGISTRY", "STRING")
+    assert ConsolidateReferencesNode.RETURN_NAMES == ("consolidated_references", "registry_summary")
+    assert summary == (
+        "1 chapters: 1 characters, 0 locations, 0 objects\n"
+        f"{len(result['picture_assets'])} picture briefs, {len(result['audio_assets'])} audio briefs"
+    )
     saved = output_root / config["run_folder"] / "references/consolidated_references.json"
     loaded, = LoadConsolidatedReferencesNode().run(str(saved))
     assert loaded == result

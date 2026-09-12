@@ -72,10 +72,27 @@ def source_facts(entity):
             "chapter_variations": entity.get("chapter_variations", [])}
 
 
-def load_designs(path, entities):
+def resolve_designs_path(path):
+    """Validate an optional import before spending time on consolidation."""
+    if isinstance(path, str):
+        path = path.strip()
     if not path:
+        return None
+    resolved = util.output_path(path)
+    if not resolved.is_file():
+        raise ValueError(
+            f"visual_designs_path must point to an existing visual_designs.json file: {resolved}. "
+            "Clear visual_designs_path to generate new designs, or select an existing edited file. "
+            "Consolidation creates visual_designs.json in its output folder automatically."
+        )
+    return resolved
+
+
+def load_designs(path, entities):
+    path = resolve_designs_path(path)
+    if path is None:
         return {}
-    payload = util.load_json(util.output_path(path))
+    payload = util.load_json(path)
     util.require_schema(payload, DESIGN_SCHEMA_VERSION)
     items = payload.get("entities")
     if not isinstance(items, list):

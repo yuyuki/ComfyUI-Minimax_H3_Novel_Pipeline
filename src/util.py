@@ -87,6 +87,19 @@ def catalog_summary(catalogs: Iterable[dict[str, Any]]) -> str:
     return "\n".join(rows) or "No chapter catalogs."
 
 
+def registry_summary(registry: dict[str, Any]) -> str:
+    """Return compact reference counts for a text preview node."""
+    entities = registry.get("entities", [])
+    counts = {kind: sum(item.get("entity_type") == kind for item in entities)
+              for kind in ("character", "location", "object")}
+    return (
+        f"{len(registry.get('chapters', []))} chapters: "
+        f"{counts['character']} characters, {counts['location']} locations, {counts['object']} objects\n"
+        f"{len(registry.get('picture_assets', []))} picture briefs, "
+        f"{len(registry.get('audio_assets', []))} audio briefs"
+    )
+
+
 def split_chunks(text: str, max_chars: int, overlap_paragraphs: int) -> list[str]:
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     if not paragraphs:

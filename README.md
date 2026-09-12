@@ -95,13 +95,15 @@ Extract Chapter References → Consolidate References → Generate H3 Prompts
 | Select Chapters | Chapter files or folder → shared chapter selection |
 | Extract Chapter References | Shared chapter selection → chapter catalog list and summary |
 | Load Chapter Catalogs | Saved `*_references.json` files → chapter catalog list |
-| Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs |
+| Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs, plus a text summary |
 | Load Consolidated References | Saved registry JSON → registry object |
 | Generate H3 Prompts | Registry and shared chapter selection → chapter/scene prompt payload and save-ready text |
 
 Add **Select Chapters**, then connect its `chapter_selection` output to both
 Extract and Generate. Use its picker or enter one file/folder per line in its
 `chapter_paths` field.
+Connect Consolidate's `registry_summary` output to a Preview Text node to inspect
+chapter, entity and asset-brief counts.
 Chapter paths must stay inside ComfyUI's input directory. Relative paths start
 there, for example `minimax_h3_novel/chapter_01.txt`; copy external chapters
 into that directory or upload them through the picker.

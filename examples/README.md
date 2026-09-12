@@ -7,7 +7,9 @@
 3. Choose the chapters once in Select Chapters, then connect its
    `chapter_selection` output to Extract and Generate. Connect Extract's
    `chapter_catalogs` to Consolidate, then
-   Consolidate's `consolidated_references` to Generate.
+   Consolidate's `consolidated_references` to Generate. Optionally connect
+   Consolidate's `registry_summary` to a Preview Text node for chapter, entity
+   and asset-brief counts.
 4. In Consolidate, choose `image_style` (default **realistic photographic**) and
    keep `image_asset_scope=all entities` to include every character, place and object.
    Use `asset_batch_size=4` as the initial setting for the Qwen3.5 9B model.

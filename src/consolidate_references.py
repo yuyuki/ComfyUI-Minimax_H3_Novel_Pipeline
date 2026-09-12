@@ -7,7 +7,7 @@ from typing import Any, Iterable
 
 from . import lmstudio_pipeline, util
 from .run_output import stage_output
-from .visual_designs import IMAGE_STYLES, prepare_designs
+from .visual_designs import IMAGE_STYLES, prepare_designs, resolve_designs_path
 from .image_prompt_export import export_image_prompts
 
 
@@ -34,19 +34,20 @@ class ConsolidateReferencesNode:
             "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
         }, "optional": {
             "image_style": (list(IMAGE_STYLES), {"default": "realistic photographic"}),
-            "visual_designs_path": ("STRING", {"default": "", "tooltip": "Edited visual_designs.json inside output/minimax_h3_novel. Leave empty to design missing details."}),
+            "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional existing visual_designs.json to import inside output/minimax_h3_novel. Leave empty on the first run; consolidation saves this file automatically."}),
             "image_asset_scope": (["all entities", "existing priority threshold"], {"default": "all entities"}),
         }}
 
-    RETURN_TYPES = ("MINIMAX_REGISTRY",)
-    RETURN_NAMES = ("consolidated_references",)
+    RETURN_TYPES = ("MINIMAX_REGISTRY", "STRING")
+    RETURN_NAMES = ("consolidated_references", "registry_summary")
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
-    def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> tuple[dict[str, Any]]:
+    def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> tuple[dict[str, Any], str]:
         chapters = list(chapter_catalogs or [])
         if not chapters: raise ValueError("No chapter catalogs were supplied.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
+        designs_path = resolve_designs_path(params.get("visual_designs_path", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
         for chapter in chapters:
             util.require_schema(chapter, util.CHAPTER_SCHEMA)
@@ -72,7 +73,7 @@ class ConsolidateReferencesNode:
             registry = pipeline.audit_registry(client, resolved_model, registry, args)
             registry.sort(key=lambda item: ({"character": 0, "location": 1, "object": 2}[item["entity_type"]], pipeline.natural_key(item["global_id"])))
             designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
-                                      params.get("visual_designs_path", ""))
+                                      designs_path)
             util.save_json(output / "visual_designs.json", designs)
             args.visual_designs = {item["global_id"]: item for item in designs["entities"]}
             lmstudio_pipeline.comfy_interrupt_check()
@@ -86,4 +87,4 @@ class ConsolidateReferencesNode:
             util.save_json(output / "consolidated_references.json", payload)
             export_image_prompts(payload, output / "image_prompts")
             pipeline.write_asset_prompts(util.output_path(output / "reference_asset_prompts.txt"), pictures, audio)
-            return (payload,)
+            return payload, util.registry_summary(payload)
