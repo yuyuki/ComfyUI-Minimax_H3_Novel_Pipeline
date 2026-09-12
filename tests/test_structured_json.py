@@ -2,7 +2,9 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import httpx
 import pytest
+from openai import APIError, OpenAI
 
 from minimax_h3_novel_pipeline import lmstudio_json, lmstudio_pipeline, util
 
@@ -40,6 +42,30 @@ def test_stream_stops_at_complete_json():
     assert stream.closed and stream.consumed == 2
     assert create.call_args.kwargs["response_format"]["type"] == "json_schema"
     assert create.call_args.kwargs["stream"] is True
+
+
+@pytest.mark.parametrize("thinking", [False, True])
+@pytest.mark.parametrize("model", ["qwen3.5-9b-uncensored-hauhaucs-aggressive@q6_k", "other-model"])
+def test_thinking_control_and_qwen_prefill_survive_retries(monkeypatch, thinking, model):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", thinking)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    first, second = Stream(['{"value":']), Stream(['{"value":"ok"}'])
+    client, create = client_for(first, second)
+    assert lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.2, 200) == {"value": "ok"}
+    assert first.closed and second.closed
+    assert create.call_count == 2
+    for call in create.call_args_list:
+        request = call.kwargs
+        assert request["extra_body"]["chat_template_kwargs"]["enable_thinking"] is thinking
+        messages = request["messages"]
+        assert messages[0]["content"].endswith("\n\nsystem")
+        assert messages[1]["content"].startswith("user")
+        if model.startswith("qwen") and not thinking:
+            assert messages[2:] == [{"role": "assistant", "content": "<think>\n\n</think>\n\n"}]
+        else:
+            assert len(messages) == 2
+        assert request["response_format"]["type"] == "json_schema"
+        assert request["max_tokens"] == 200
 
 
 def test_qwen_retries_invalid_output_with_schema_and_closes_streams(monkeypatch):
@@ -111,3 +137,95 @@ def test_complete_json_reports_client_stop_without_consuming_finish(capsys):
     assert "finish_reason=not_received" in output
     assert "local_stop=json_complete" in output
     assert "private" not in output
+
+
+GRAMMAR_ERROR = (
+    "Failed to initialize samplers: Unexpected empty grammar stack "
+    "after accepting piece: <think> (248068)"
+)
+
+
+@pytest.mark.parametrize("streamed_error", [False, True])
+def test_thinking_grammar_failure_uses_schema_constrained_chatml(monkeypatch, streamed_error):
+    import json
+
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", False)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    requests = []
+    responses = []
+
+    def handle(request):
+        requests.append((request.url.path, json.loads(request.content)))
+        if len(requests) == 1:
+            error = {"error": {"message": GRAMMAR_ERROR, "type": "invalid_request_error", "code": 400}}
+            response = (
+                httpx.Response(200, text="data: " + json.dumps(error) + "\n\n",
+                               headers={"content-type": "text/event-stream"})
+                if streamed_error else httpx.Response(400, json=error)
+            )
+        else:
+            # Malformed raw output must compact-retry using the same backend.
+            content = '{"value":' if len(requests) == 2 else '{"value":"ok"}'
+            event = {"id": "test", "object": "text_completion", "created": 0,
+                     "model": "qwen3.5", "choices": [{"index": 0, "text": content, "finish_reason": "length"}]}
+            response = httpx.Response(200, text="data: " + json.dumps(event) + "\n\ndata: [DONE]\n\n",
+                                      headers={"content-type": "text/event-stream"})
+        responses.append(response)
+        return response
+
+    with OpenAI(api_key="test", base_url="http://localhost:1234/v1", max_retries=0,
+                http_client=httpx.Client(transport=httpx.MockTransport(handle))) as client:
+        assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200) == {"value": "ok"}
+    assert [path for path, _ in requests] == ["/v1/chat/completions", "/v1/completions", "/v1/completions"]
+    for _, body in requests:
+        assert body["response_format"]["type"] == "json_schema"
+        assert body["max_tokens"] == 200 and body["stream"] is True
+    prompt = requests[1][1]["prompt"]
+    assert "<|im_start|>system\n/no_think\n\nsystem<|im_end|>" in prompt
+    assert "<|im_start|>user\nuser<|im_end|>" in prompt
+    assert prompt.endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n")
+    assert all(response.is_closed for response in responses)
+
+
+@pytest.mark.parametrize("model,thinking,message", [
+    ("other-model", False, GRAMMAR_ERROR),
+    ("qwen3.5", True, GRAMMAR_ERROR),
+    ("qwen3.5", False, "Connection failed"),
+])
+def test_unrelated_api_failures_do_not_switch_backend(monkeypatch, model, thinking, message):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", thinking)
+    error = APIError(message, httpx.Request("POST", "http://localhost/v1/chat/completions"), body=None)
+    client, create = client_for(error)
+    with pytest.raises(APIError):
+        lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.2, 200)
+    assert create.call_count == 1
+
+
+def test_chatml_fallback_is_bounded_and_does_not_need_length_retries(monkeypatch):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", False)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 0)
+    error = APIError(GRAMMAR_ERROR, httpx.Request("POST", "http://localhost/v1/chat/completions"), body=None)
+    client, create = client_for(error)
+    fallback = Mock(side_effect=error)
+    client.completions = SimpleNamespace(create=fallback)
+    with pytest.raises(APIError):
+        lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200)
+    assert create.call_count == fallback.call_count == 1
+
+
+def test_cancellation_closes_chatml_stream_without_retry(monkeypatch):
+    class InterruptProcessingException(Exception):
+        pass
+
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", False)
+    monkeypatch.setattr(lmstudio_pipeline, "comfy_interrupt_check",
+                        Mock(side_effect=[None, None, InterruptProcessingException()]))
+    error = APIError(GRAMMAR_ERROR, httpx.Request("POST", "http://localhost/v1/chat/completions"), body=None)
+    client, create = client_for(error)
+    stream = Stream([SimpleNamespace(choices=[SimpleNamespace(text='{"value":"ok"}')])])
+    fallback = Mock(return_value=stream)
+    client.completions = SimpleNamespace(create=fallback)
+    with pytest.raises(InterruptProcessingException):
+        lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200)
+    assert stream.closed
+    assert create.call_count == fallback.call_count == 1

@@ -29,10 +29,10 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
                 "thinking": ("BOOLEAN", {
                     "default": False,
                     "tooltip": (
-                        "Disable thinking for faster structured JSON output. If reasoning_chars "
-                        "is not 0 while this is disabled, the model's thinking flag probably "
-                        "is not working: add `{%- set enable_thinking = false %}` at the "
-                        "beginning of its Chat Template Jinja content."
+                        "Disable thinking for faster structured JSON output. Qwen3.5 requests "
+                        "also prefill a closed thinking block so LM Studio continues directly "
+                        "with JSON. Check thinking and reasoning_chars in the console to verify "
+                        "the setting with your model and runtime."
                     ),
                 }),
                 "qwen35_length_retries": ("INT", {
