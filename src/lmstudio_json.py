@@ -132,7 +132,11 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     # even for non-Qwen3.5 models. Always allow one compact retry instead of
     # failing the whole ComfyUI run on that transient malformed response.
     retries = QWEN35_LENGTH_RETRIES if qwen else 1
-    raw_chatml = False
+    # Keep compatibility discoveries on the client so subsequent stage requests
+    # do not repeat a known sampler failure. A new client probes normally again.
+    backend_key = (str(getattr(client, "base_url", "")), model)
+    successful_chatml = vars(client).get("_minimax_h3_chatml_models", set())
+    raw_chatml = qwen and not THINKING_ENABLED and backend_key in successful_chatml
     attempt = 0
     while attempt <= retries:
         comfy_interrupt_check()
@@ -223,6 +227,9 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             result = parse_json(raw)
             if not isinstance(result, dict):
                 raise ValueError("Expected a JSON object.")
+            if raw_chatml:
+                successful_chatml.add(backend_key)
+                client._minimax_h3_chatml_models = successful_chatml
             print(f"    LLM: structured JSON, {time.perf_counter() - started:.1f}s, attempt={attempt + 1}")
             return result
         except (ValueError, TypeError) as error:

@@ -176,7 +176,9 @@ def test_thinking_grammar_failure_uses_schema_constrained_chatml(monkeypatch, st
     with OpenAI(api_key="test", base_url="http://localhost:1234/v1", max_retries=0,
                 http_client=httpx.Client(transport=httpx.MockTransport(handle))) as client:
         assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200) == {"value": "ok"}
-    assert [path for path, _ in requests] == ["/v1/chat/completions", "/v1/completions", "/v1/completions"]
+        assert lmstudio_json.chat_json(client, "qwen3.5", "system", "next user", SCHEMA, 0.2, 200) == {"value": "ok"}
+    assert [path for path, _ in requests] == ["/v1/chat/completions", "/v1/completions", "/v1/completions", "/v1/completions"]
+    assert "next user" in requests[-1][1]["prompt"]
     for _, body in requests:
         assert body["response_format"]["type"] == "json_schema"
         assert body["max_tokens"] == 200 and body["stream"] is True
@@ -211,6 +213,31 @@ def test_chatml_fallback_is_bounded_and_does_not_need_length_retries(monkeypatch
     with pytest.raises(APIError):
         lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200)
     assert create.call_count == fallback.call_count == 1
+    assert not vars(client).get("_minimax_h3_chatml_models")
+
+
+@pytest.mark.parametrize("change", ["model", "endpoint", "client", "thinking"])
+def test_successful_chatml_preference_is_scoped(monkeypatch, change):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", False)
+    error = APIError(GRAMMAR_ERROR, httpx.Request("POST", "http://localhost/v1/chat/completions"), body=None)
+    client, create = client_for(error, Stream(['{"value":"chat"}']))
+    client.base_url = "http://localhost/v1"
+    client.completions = SimpleNamespace(create=Mock(return_value=Stream([
+        SimpleNamespace(choices=[SimpleNamespace(text='{"value":"raw"}')]),
+    ])))
+    assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200) == {"value": "raw"}
+    model = "qwen3.5"
+    if change == "model":
+        model = "qwen3.5-other"
+    elif change == "endpoint":
+        client.base_url = "http://localhost:1235/v1"
+    elif change == "client":
+        client, create = client_for(Stream(['{"value":"chat"}']))
+        client.base_url = "http://localhost/v1"
+    else:
+        monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", True)
+    assert lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.2, 200) == {"value": "chat"}
+    assert create.call_count == (1 if change == "client" else 2)
 
 
 def test_cancellation_closes_chatml_stream_without_retry(monkeypatch):
