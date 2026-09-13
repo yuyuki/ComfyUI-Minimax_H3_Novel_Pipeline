@@ -1,6 +1,8 @@
 """ComfyUI pipeline step2 consolidate implementation."""
 from __future__ import annotations
 
+from . import progress
+
 import argparse
 import difflib
 import json
@@ -531,7 +533,7 @@ def audit_registry(
     print(f"  scalable audit: {len(clusters)} candidate cluster(s) from {len(registry)} entities")
     removed_all: set[str] = set()
     by_id = {e["global_id"]: e for e in registry}
-    for i, ids in enumerate(clusters, start=1):
+    for i, ids in enumerate(progress.steps(clusters), start=1):
         from .lmstudio_pipeline import comfy_interrupt_check
         comfy_interrupt_check()
         active_ids = [x for x in ids if x in by_id and x not in removed_all]
@@ -754,7 +756,7 @@ def generate_picture_assets(
 ) -> list[dict[str, Any]]:
     briefs: dict[str, dict[str, str]] = {}
     batches = list(batched(specs, args.asset_batch_size))
-    for i, batch in enumerate(batches, start=1):
+    for i, batch in enumerate(progress.steps(batches), start=1):
         print(f"  picture brief batch {i}/{len(batches)} ({len(batch)} assets)")
         def validate_picture_batch(data):
             validate_assets(data, batch)
@@ -796,7 +798,7 @@ def generate_audio_assets(
         return []
     briefs: dict[str, dict[str, str]] = {}
     batches = list(batched(specs, args.asset_batch_size))
-    for i, batch in enumerate(batches, start=1):
+    for i, batch in enumerate(progress.steps(batches), start=1):
         print(f"  audio brief batch {i}/{len(batches)} ({len(batch)} assets)")
         result = validated_request(chat_json, client, model, AUDIO_BRIEF_SYSTEM, batch,
                                    AUDIO_BRIEF_SCHEMA, args, lambda data: validate_assets(data, batch))

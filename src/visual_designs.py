@@ -1,6 +1,8 @@
 """Editable adaptation choices kept separate from source-supported registry facts."""
 from __future__ import annotations
 
+from . import progress
+
 from . import util
 from .reference_requests import validated_request
 from .lmstudio_pipeline import comfy_interrupt_check
@@ -122,7 +124,7 @@ def load_designs(path, entities):
 def prepare_designs(chat, client, model, entities, args, path=""):
     imported = load_designs(path, entities)
     designs = []
-    for entity in entities:
+    for entity in progress.steps(entities):
         comfy_interrupt_check()
         gid = entity["global_id"]
         base = {key: entity[key] for key in ("global_id", "entity_type", "canonical_name")}

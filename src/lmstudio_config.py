@@ -1,6 +1,8 @@
 """Secure LM Studio configuration node for the MiniMax H3 workflow."""
 from __future__ import annotations
 
+from . import progress
+
 from typing import Any
 
 from . import lmstudio_settings, lmstudio_models
@@ -70,6 +72,7 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
         # Saving a new run is intentional even when the queued graph is unchanged.
         return float("nan")
 
+    @progress.node_progress
     def run(self, api_url: str, thinking: bool = False,
             qwen35_length_retries: int = 2,
             qwen35_top_k: int = 20,

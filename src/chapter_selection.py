@@ -1,6 +1,8 @@
 """Reusable chapter picker for MiniMax H3 pipeline nodes."""
 from __future__ import annotations
 
+from . import progress
+
 from pathlib import Path
 from typing import Any
 
@@ -47,5 +49,6 @@ class SelectChaptersNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @progress.node_progress
     def run(self, chapter_paths: str, saved_chapter: str) -> tuple[dict[str, str]]:
         return ({"chapter_paths": chapter_paths or saved_chapter or ""},)

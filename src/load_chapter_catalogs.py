@@ -1,6 +1,8 @@
 """ComfyUI node for reusing chapter catalogs saved by Step 1."""
 from __future__ import annotations
 
+from . import progress
+
 from typing import Any
 
 from . import util
@@ -32,6 +34,7 @@ class LoadChapterCatalogsNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @progress.node_progress
     def run(self, catalog_path: str) -> tuple[list[dict[str, Any]], str]:
         if not isinstance(catalog_path, str) or not catalog_path.strip():
             raise ValueError("catalog_path must name a saved chapter catalog JSON file or folder.")
@@ -55,7 +58,7 @@ class LoadChapterCatalogsNode:
             raise ValueError(f"No *_references.json files found in: {path}")
 
         catalogs: list[dict[str, Any]] = []
-        for json_path in paths:
+        for json_path in progress.steps(paths):
             data = util.load_json(json_path)
             util.require_schema(data, util.CHAPTER_SCHEMA)
             if not isinstance(data, dict):

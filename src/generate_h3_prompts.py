@@ -1,6 +1,8 @@
 """LM Studio-backed MiniMax H3 prompt-generation ComfyUI node."""
 from __future__ import annotations
 
+from . import progress
+
 import argparse
 from pathlib import Path
 from typing import Any
@@ -32,6 +34,7 @@ class GenerateH3PromptsNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @progress.node_progress
     def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> tuple[dict[str, Any], str, str]:
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
@@ -49,9 +52,10 @@ class GenerateH3PromptsNode:
             args.out_dir.mkdir(parents=True, exist_ok=True)
             image_records, image_text = export_image_prompts(consolidated_references, output / "image_prompts")
             manifests = []
-            for path in paths:
+            for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
-                manifests.append(pipeline.process_chapter(path, consolidated_references, client, resolved_model, args))
+                with progress.scope(0.98 * index / len(paths), 0.98 * (index + 1) / len(paths)):
+                    manifests.append(pipeline.process_chapter(path, consolidated_references, client, resolved_model, args))
             for manifest in manifests:
                 target = confined_path(manifest["chapter_id"], args.out_dir)
                 for scene in manifest["outputs"]:

@@ -1,6 +1,8 @@
 """ComfyUI pipeline step1 extract implementation."""
 from __future__ import annotations
 
+from . import progress
+
 from .prompt_cache import fingerprint as cache_fingerprint
 
 import argparse
@@ -401,6 +403,14 @@ def hierarchical_merge_candidates(
     level = list(chunk_results)
     if not level:
         raise ValueError("No chunk catalogs to merge.")
+    remaining = len(level)
+    total_batches = 0
+    while True:
+        remaining = (remaining + batch_size - 1) // batch_size
+        total_batches += remaining
+        if remaining == 1:
+            break
+    completed_batches = 0
     round_no = 1
     while True:
         next_level: list[dict[str, Any]] = []
@@ -434,6 +444,8 @@ def hierarchical_merge_candidates(
                 for entity in partial[kind]:
                     entity.pop("local_id", None)
             next_level.append(_merged_as_partial(partial))
+            completed_batches += 1
+            progress.report(completed_batches / total_batches)
         if len(next_level) == 1:
             assert last_merged is not None and last_combined is not None
             return last_merged, last_combined
@@ -472,7 +484,7 @@ def process_chapter(
 
     print(f"{path.name}: {len(text):,} chars, {len(chunks)} chunk(s)")
     chunk_results: list[dict[str, Any]] = []
-    for i, chunk in enumerate(chunks, start=1):
+    for i, chunk in enumerate(progress.steps(chunks, 0, 0.65), start=1):
         cache_path = confined_path(cache_dir / f"chunk_{i:03d}.json", out_dir)
         cache_key = cache_fingerprint(model, args, SCHEMA_VERSION, EXTRACT_SYSTEM, CHUNK_SCHEMA,
                                       chapter_id, i, len(chunks), chunk, client=client)
@@ -492,9 +504,10 @@ def process_chapter(
             print(f"  chunk {i}/{len(chunks)}: cached")
         chunk_results.append(result)
 
-    merged, combined = hierarchical_merge_candidates(
-        client, model, chapter_id, chunk_results, args, cache_dir
-    )
+    with progress.scope(0.65, 0.98):
+        merged, combined = hierarchical_merge_candidates(
+            client, model, chapter_id, chunk_results, args, cache_dir
+        )
 
     catalog = assign_local_ids(merged, combined)
     payload = {

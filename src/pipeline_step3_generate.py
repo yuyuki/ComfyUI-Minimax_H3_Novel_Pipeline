@@ -1,6 +1,8 @@
 """ComfyUI pipeline step3 generate implementation."""
 from __future__ import annotations
 
+from . import progress
+
 import argparse
 import json
 import re
@@ -970,7 +972,7 @@ def process_chapter(
 
     print(f"{path.name}: {len(chunks)} planning chunk(s)")
     scenes: list[Scene] = []
-    for i, chunk in enumerate(chunks, start=1):
+    for i, chunk in enumerate(progress.steps(chunks, 0, 0.3), start=1):
         cache_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, PLAN_SYSTEM, SCENE_SCHEMA,
                                       refs.get("source_digest", ""), catalog, i, len(chunks), chunk, client=client)
         cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", chapter_dir)
@@ -999,7 +1001,7 @@ def process_chapter(
     print(f"  selected {len(scenes)} scene(s)")
 
     entries: list[dict[str, Any]] = []
-    for i, scene in enumerate(scenes, start=1):
+    for i, scene in enumerate(progress.steps(scenes, 0.3, 0.98), start=1):
         print(f"  [{i}/{len(scenes)}] {scene.title}")
         bindings = build_bindings(refs, scene, chapter_id, args)
         if not bindings["subjects"] and not bindings["audio"]:

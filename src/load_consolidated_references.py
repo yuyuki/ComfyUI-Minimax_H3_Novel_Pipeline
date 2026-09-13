@@ -1,6 +1,8 @@
 """ComfyUI node for reusing a saved Step 2 consolidation output."""
 from __future__ import annotations
 
+from . import progress
+
 from typing import Any
 
 from . import util
@@ -32,6 +34,7 @@ class LoadConsolidatedReferencesNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @progress.node_progress
     def run(
         self, consolidated_path: str
     ) -> tuple[dict[str, Any]]:

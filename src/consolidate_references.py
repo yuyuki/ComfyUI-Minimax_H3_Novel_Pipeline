@@ -1,6 +1,8 @@
 """LM Studio-backed ComfyUI node for cross-chapter consolidation."""
 from __future__ import annotations
 
+from . import progress
+
 import argparse
 import hashlib
 from typing import Any, Iterable
@@ -43,6 +45,7 @@ class ConsolidateReferencesNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @progress.node_progress
     def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> tuple[dict[str, Any], str]:
         chapters = list(chapter_catalogs or [])
         if not chapters: raise ValueError("No chapter catalogs were supplied.")
@@ -65,20 +68,24 @@ class ConsolidateReferencesNode:
                 raise ValueError("Unknown image asset scope.")
             _log(f"LM Studio consolidation: model={resolved_model}, chapters={len(chapters)}")
             registry: list[dict[str, Any]] = []
-            for chapter in chapters:
+            for chapter in progress.steps(chapters, 0, 0.3):
                 lmstudio_pipeline.comfy_interrupt_check()
                 registry = pipeline.reconcile_chapter(client, resolved_model, chapter, registry, args)
             lmstudio_pipeline.comfy_interrupt_check()
-            registry = pipeline.audit_registry(client, resolved_model, registry, args)
+            with progress.scope(0.3, 0.4):
+                registry = pipeline.audit_registry(client, resolved_model, registry, args)
             registry.sort(key=lambda item: ({"character": 0, "location": 1, "object": 2}[item["entity_type"]], pipeline.natural_key(item["global_id"])))
-            designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
-                                      designs_path)
+            with progress.scope(0.4, 0.55):
+                designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
+                                          designs_path)
             util.save_json(output / "visual_designs.json", designs)
             args.visual_designs = {item["global_id"]: item for item in designs["entities"]}
             lmstudio_pipeline.comfy_interrupt_check()
-            pictures = pipeline.generate_picture_assets(client, resolved_model, pipeline.build_picture_specs(registry, args), args)
+            with progress.scope(0.55, 0.85):
+                pictures = pipeline.generate_picture_assets(client, resolved_model, pipeline.build_picture_specs(registry, args), args)
             lmstudio_pipeline.comfy_interrupt_check()
-            audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
+            with progress.scope(0.85, 0.98):
+                audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
             digest = hashlib.sha256("\n".join(f"{c['chapter_id']}:{c.get('source', {}).get('sha256', '')}" for c in chapters).encode()).hexdigest()
             payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
             payload["visual_designs"] = designs

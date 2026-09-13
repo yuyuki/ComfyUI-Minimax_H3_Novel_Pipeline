@@ -1,6 +1,8 @@
 """LM Studio-backed ComfyUI node for chapter-reference extraction."""
 from __future__ import annotations
 
+from . import progress
+
 import argparse
 import time
 from pathlib import Path
@@ -40,6 +42,7 @@ class ExtractChapterReferencesNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @progress.node_progress
     def run(self, lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
@@ -59,10 +62,11 @@ class ExtractChapterReferencesNode:
             _log(f"LM Studio extraction: model={resolved_model}, chapters={len(paths)}")
             started = time.perf_counter()
             results = []
-            for path in paths:
+            for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
-                saved = pipeline.process_chapter(path, output, client, resolved_model, args)
-                results.append(util.load_json(saved))
+                with progress.scope(index / len(paths), (index + 1) / len(paths)):
+                    saved = pipeline.process_chapter(path, output, client, resolved_model, args)
+                    results.append(util.load_json(saved))
             elapsed_seconds = int(time.perf_counter() - started)
             hours, remainder = divmod(elapsed_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
