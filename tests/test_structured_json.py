@@ -82,6 +82,42 @@ def test_merge_retry_can_return_more_than_three_entities(monkeypatch):
     assert "maxItems" not in retry["schema"]["properties"]["characters"]
 
 
+@pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA", "MERGE_SCHEMA"])
+@pytest.mark.parametrize("kind", ["characters", "locations", "objects"])
+@pytest.mark.parametrize("invalid", [{}, {"canonical_name": ""}, {"canonical_name": " \t\n"}, {"canonical_name": None}])
+def test_blank_name_requests_correction(monkeypatch, schema_name, kind, invalid):
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    step = lmstudio_pipeline.load("extract")
+    schema = getattr(step, schema_name)
+    valid = {kind: [{"canonical_name": "la gardienne"}]}
+    first = Stream([json.dumps({kind: [invalid]})])
+    second = Stream([json.dumps(valid)])
+    client, create = client_for(first, second)
+    assert lmstudio_json.chat_json(client, "qwen3.5", "system", "passage", schema, 0.2, 8192) == valid
+    request = create.call_args.kwargs
+    assert "missing or blank canonical_name" in request["messages"][-1]["content"]
+    fields = request["response_format"]["json_schema"]["schema"]["properties"][kind]["items"]["properties"]
+    assert fields["canonical_name"]["minLength"] == 1
+    assert first.closed and second.closed
+
+
+def test_blank_name_fails_after_retry_budget(monkeypatch):
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    step = lmstudio_pipeline.load("extract")
+    raw = json.dumps({"characters": [{"canonical_name": " "}]})
+    client, create = client_for(Stream([raw]), Stream([raw]))
+    with pytest.raises(RuntimeError, match="after 2 attempt"):
+        lmstudio_json.chat_json(client, "qwen3.5", "system", "passage", step.CHUNK_SCHEMA, 0.2, 8192)
+    assert create.call_count == 2
+
+
+def test_evidence_cleanup_preserves_original_excerpt():
+    step = lmstudio_pipeline.load("extract")
+    excerpt = "« La gardienne\n  portait une cape rouge. »"
+    entity = step.clean_entity({"canonical_name": "la gardienne", "evidence": [excerpt, excerpt]}, "characters")
+    assert entity["evidence"] == [excerpt]
+
+
 @pytest.mark.parametrize("profiled", [False, True])
 def test_cache_fingerprint_tracks_compact_policy(monkeypatch, profiled):
     from minimax_h3_novel_pipeline import prompt_cache

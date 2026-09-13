@@ -111,6 +111,22 @@ def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _validate_canonical_names(value: Any, schema: dict[str, Any]) -> None:
+    """Enforce nonblank names where the request schema requires them."""
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        if props.get("canonical_name", {}).get("minLength", 0) > 0:
+            name = value.get("canonical_name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Every entity must have a non-empty canonical_name.")
+        for key, child_schema in props.items():
+            if key in value:
+                _validate_canonical_names(value[key], child_schema)
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for item in value:
+            _validate_canonical_names(item, schema["items"])
+
+
 def model_settings(client, model):
     profile = getattr(client, "__dict__", {}).get("_minimax_h3_profile") or lmstudio_models.profile_for_model(model)
     settings = getattr(client, "__dict__", {}).get("_minimax_h3_settings") or dict(
@@ -136,6 +152,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     successful_chatml = vars(client).get("_minimax_h3_chatml_models", set())
     raw_chatml = allow_chatml and backend_key in successful_chatml
     attempt = 0
+    correction = ""
     while attempt <= retries:
         comfy_interrupt_check()
         request_schema = _qwen35_compact_schema(schema) if attempt else schema
@@ -143,7 +160,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             "\nReturn compact JSON within the output limit. Shorten summaries and redundant prose; "
             "preserve distinct entities and source-supported visual traits."
         ) if attempt else ""
-        messages, extra, top_p = profile.request_settings(model, system, user + note, settings)
+        messages, extra, top_p = profile.request_settings(model, system, user + note + correction, settings)
         started = time.perf_counter()
         stream = None
         raw = ""
@@ -210,6 +227,16 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             result = parse_json(raw)
             if not isinstance(result, dict):
                 raise ValueError("Expected a JSON object.")
+            try:
+                _validate_canonical_names(result, request_schema["schema"])
+            except ValueError:
+                correction = (
+                    "\nYour previous response contained a missing or blank canonical_name. "
+                    "Return the complete JSON again with a non-empty, source-supported name "
+                    "for every entity; use a short source-language descriptive label for unnamed entities. "
+                    "Never invent a proper name."
+                )
+                raise
             if raw_chatml:
                 successful_chatml.add(backend_key)
                 client._minimax_h3_chatml_models = successful_chatml
