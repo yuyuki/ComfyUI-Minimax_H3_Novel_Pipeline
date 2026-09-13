@@ -199,6 +199,11 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                     reasoning = getattr(delta, field, None)
                     if isinstance(reasoning, str):
                         reasoning_chars += len(reasoning)
+                if reasoning_chars and allow_chatml and not raw_chatml:
+                    raw_chatml = True
+                    local_stop = "reasoning_fallback"
+                    print("    LLM: reasoning returned with thinking disabled; retrying structured JSON with raw ChatML.", flush=True)
+                    break
                 raw += content
                 complete = _complete_json_prefix(raw)
                 if complete is not None:
@@ -223,6 +228,8 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 f"finish_reason={finish_reason}, local_stop={local_stop}"
             )
             print(f"    LLM stream: {diagnostics}", flush=True)
+        if local_stop == "reasoning_fallback":
+            continue
         try:
             result = parse_json(raw)
             if not isinstance(result, dict):

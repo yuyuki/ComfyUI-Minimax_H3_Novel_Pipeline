@@ -143,7 +143,8 @@ def test_stream_stops_at_complete_json():
 
 
 @pytest.mark.parametrize("thinking", [False, True])
-@pytest.mark.parametrize("model", ["qwen3.5-9b-uncensored-hauhaucs-aggressive@q6_k", "other-model"])
+@pytest.mark.parametrize("model", ["qwen3.5-9b-uncensored-hauhaucs-aggressive@q6_k",
+                                   "Qwen3.8-9B-Distill-Heretic-Uncensored-Q8_0.gguf", "other-model"])
 def test_thinking_control_and_qwen_prefill_survive_retries(monkeypatch, thinking, model):
     monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", thinking)
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
@@ -158,12 +159,45 @@ def test_thinking_control_and_qwen_prefill_survive_retries(monkeypatch, thinking
         messages = request["messages"]
         assert messages[0]["content"].endswith("\n\nsystem")
         assert messages[1]["content"].startswith("user")
-        if model.startswith("qwen") and not thinking:
+        if model.casefold().startswith("qwen") and not thinking:
             assert messages[2:] == [{"role": "assistant", "content": "<think>\n\n</think>\n\n"}]
         else:
             assert len(messages) == 2
         assert request["response_format"]["type"] == "json_schema"
         assert request["max_tokens"] == 200
+
+
+@pytest.mark.parametrize("model", ["qwen3.5", "Qwen3.8-9B-Distill-Heretic-Uncensored-Q8_0.gguf"])
+@pytest.mark.parametrize("thinking", [False, True])
+def test_unwanted_reasoning_retries_with_closed_chatml(monkeypatch, capsys, model, thinking):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", thinking)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 0)
+    reasoning = SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+        content=None, reasoning_content="private reasoning",
+    ))])
+    chat_stream = Stream([reasoning, '{"value":"chat"}'])
+    raw_stream = Stream([SimpleNamespace(choices=[SimpleNamespace(text='{"value":"raw"}')])])
+    client, create = client_for(chat_stream)
+    fallback = Mock(return_value=raw_stream)
+    client.completions = SimpleNamespace(create=fallback)
+    expected = {"value": "chat" if thinking else "raw"}
+    assert lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.2, 200) == expected
+    assert chat_stream.closed
+    assert create.call_count == 1
+    if thinking:
+        fallback.assert_not_called()
+    else:
+        assert chat_stream.consumed == 1 and raw_stream.closed
+        request = fallback.call_args.kwargs
+        assert request["prompt"].endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n")
+        assert request["extra_body"]["response_format"]["type"] == "json_schema"
+        assert fallback.call_count == 1
+        # Subsequent requests reuse the successful backend without probing again.
+        assert lmstudio_json.chat_json(client, model, "system", "next", SCHEMA, 0.2, 200) == expected
+        assert create.call_count == 1 and fallback.call_count == 2
+    log = capsys.readouterr().out
+    assert "private reasoning" not in log
+    assert "reasoning_chars=17" in log
 
 
 def test_qwen_retries_invalid_output_with_schema_and_closes_streams(monkeypatch):
@@ -211,6 +245,7 @@ def test_node_token_budget_is_used_for_every_attempt(monkeypatch, model):
 
 
 def test_reasoning_only_length_failure_has_safe_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", True)
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 0)
     event = SimpleNamespace(choices=[SimpleNamespace(
         delta=SimpleNamespace(content=None, reasoning_content="secret", reasoning="private"),

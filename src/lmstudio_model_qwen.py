@@ -24,6 +24,11 @@ def is_qwen35(model):
     return "qwen35" in normalized
 
 
+def supports_thinking_prefill(model):
+    normalized = model.casefold().replace("_", "").replace("-", "").replace(".", "")
+    return is_qwen35(model) or "qwen38" in normalized
+
+
 def request_settings(model, system, user, settings):
     thinking = settings["thinking"]
     special = is_qwen35(model)
@@ -34,8 +39,8 @@ def request_settings(model, system, user, settings):
     extra = {"chat_template_kwargs": {"enable_thinking": thinking}}
     if special:
         extra.update({key: settings[key] for key in ("top_k", "min_p", "repeat_penalty")})
-        if not thinking:
-            messages.append({"role": "assistant", "content": "<think>\n\n</think>\n\n"})
+    if supports_thinking_prefill(model) and not thinking:
+        messages.append({"role": "assistant", "content": "<think>\n\n</think>\n\n"})
     return messages, extra, 0.8 if special else 0.9
 
 
@@ -44,7 +49,7 @@ def retries(model, settings):
 
 
 def allows_chatml(model, settings):
-    return is_qwen35(model) and not settings["thinking"]
+    return supports_thinking_prefill(model) and not settings["thinking"]
 
 
 def is_thinking_grammar_error(error):

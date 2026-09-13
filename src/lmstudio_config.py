@@ -29,7 +29,7 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
                 "thinking": ("BOOLEAN", {
                     "default": False,
                     "tooltip": (
-                        "Disable thinking for faster structured JSON output. Qwen3.5 requests "
+                        "Disable thinking for faster structured JSON output. Qwen3.5/3.8 requests "
                         "also prefill a closed thinking block so LM Studio continues directly "
                         "with JSON. Check thinking and reasoning_chars in the console to verify "
                         "the setting with your model and runtime."
