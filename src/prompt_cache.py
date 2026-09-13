@@ -15,5 +15,6 @@ def fingerprint(model, args, *content, client=None):
     if getattr(client, "__dict__", {}).get("_minimax_h3_profile") is not None:
         profile, model_settings = lmstudio_json.model_settings(client, model)
         backend = {"profile": profile.NAME, "settings": model_settings, "chat_backend": lmstudio_json.CHAT_BACKEND}
+    backend["compact_schema_version"] = lmstudio_json.COMPACT_SCHEMA_VERSION
     return hashlib.sha256(json.dumps([model, settings, backend, content],
                                     ensure_ascii=False, sort_keys=True).encode()).hexdigest()

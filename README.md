@@ -241,7 +241,9 @@ interrupts a running request.
 
 License: [GNU GPL v3](LICENSE).
 
-Extraction uses hierarchical merges (`merge_batch_size`, default 6) and caches each merge batch for resuming. This limits partial catalogs per call; dense catalogs can still require a larger context window. Enable `force` to regenerate cached results.
+Extraction uses hierarchical merges (`merge_batch_size`, default 2) and caches each merge batch for resuming. The default `max_tokens` is 8192 per extraction/merge call. This limits partial catalogs per call; the final catalog must still fit the output budget, and dense catalogs can require more output tokens and a larger context window. Existing workflows retain their saved settings; update these controls to adopt the new defaults. Enable `force` to regenerate cached results.
+
+Compact retries retain the original entity capacities, six distinguishing features of up to 120 characters each, and justified reference views. They allow 500 characters for stable visual descriptions and 350 for chapter appearance/state, shortening summaries and evidence instead. Retry-policy changes invalidate cached outputs. Extraction still selects continuity-relevant entities within the passage schema's limits (6 characters, 4 locations, 6 objects); reduce `chunk_chars` for crowded passages. These limits are character counts, not token counts, and unknown source traits remain unknown.
 
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 

@@ -29,10 +29,10 @@ class ExtractChapterReferencesNode:
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
             "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}),
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 2.0, "step": 0.05}),
-            "max_tokens": ("INT", {"default": 2200, "min": 256, "max": 32768, "tooltip": "Normal JSON output budget per extraction/merge call."}),
+            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768, "tooltip": "JSON output budget per extraction/merge call. Dense catalogs may need more tokens."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
-            "merge_batch_size": ("INT", {"default": 6, "min": 2, "max": 32, "tooltip": "Partial catalogs per merge call."}),
+            "merge_batch_size": ("INT", {"default": 2, "min": 2, "max": 32, "tooltip": "Partial catalogs per merge call. Final merged catalogs must still fit the output budget."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")

@@ -17,6 +17,21 @@ QWEN35_LENGTH_RETRIES = lmstudio_model_qwen.DEFAULTS["length_retries"]
 QWEN35_TOP_K = lmstudio_model_qwen.DEFAULTS["top_k"]
 QWEN35_MIN_P = lmstudio_model_qwen.DEFAULTS["min_p"]
 QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
+COMPACT_SCHEMA_VERSION = 2
+
+# Character counts, not token counts. Preserve visual identity on retries and
+# leave unrelated schema fields alone (this helper is shared by all stages).
+COMPACT_FIELD_LIMITS = {
+    "chunk_summary": 240,
+    "chapter_summary": 400,
+    "canonical_name": 80,
+    "stable_visual_description": 500,
+    "chapter_appearance": 350,
+    "chapter_state": 350,
+    "distinguishing_features": 120,
+    "voice_description": 100,
+    "evidence": 120,
+}
 
 def _is_comfy_interrupt(error: BaseException) -> bool:
     """Do not retry a ComfyUI Stop request as though it were an LLM error."""
@@ -75,27 +90,14 @@ def _complete_json_prefix(text: str) -> str | None:
     return None
 
 def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Return a retry schema small enough to finish under a short token cap."""
+    """Compact prose without reducing entity coverage or visual identity limits."""
     compact = copy.deepcopy(schema)
-    root_props = compact["schema"]["properties"]
-    for name in ("characters", "locations", "objects"):
-        if name in root_props:
-            root_props[name]["maxItems"] = min(3, int(root_props[name].get("maxItems", 3)))
 
     def limit(node: dict[str, Any], field_name: str = "") -> None:
-        if node.get("type") == "string" and "maxLength" in node:
-            limit_by_field = {
-                "chunk_summary": 240,
-                "canonical_name": 80,
-                "stable_visual_description": 180,
-                "chapter_appearance": 160,
-                "chapter_state": 160,
-                "voice_description": 100,
-                "evidence": 80,
-            }
-            node["maxLength"] = min(int(node["maxLength"]), limit_by_field.get(field_name, 80))
+        if node.get("type") == "string" and "maxLength" in node and field_name in COMPACT_FIELD_LIMITS:
+            node["maxLength"] = min(int(node["maxLength"]), COMPACT_FIELD_LIMITS[field_name])
         if node.get("type") == "array":
-            item_limit = {"aliases": 2, "distinguishing_features": 3, "reference_view_hints": 2, "evidence": 1}
+            item_limit = {"aliases": 2, "evidence": 2}
             if field_name in item_limit:
                 node["maxItems"] = min(int(node.get("maxItems", item_limit[field_name])), item_limit[field_name])
             items = node.get("items")
@@ -137,7 +139,10 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     while attempt <= retries:
         comfy_interrupt_check()
         request_schema = _qwen35_compact_schema(schema) if attempt else schema
-        note = "\nReturn compact JSON with short descriptions and finish within the output limit." if attempt else ""
+        note = (
+            "\nReturn compact JSON within the output limit. Shorten summaries and redundant prose; "
+            "preserve distinct entities and source-supported visual traits."
+        ) if attempt else ""
         messages, extra, top_p = profile.request_settings(model, system, user + note, settings)
         started = time.perf_counter()
         stream = None

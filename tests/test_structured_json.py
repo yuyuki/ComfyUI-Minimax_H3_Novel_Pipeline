@@ -1,4 +1,6 @@
 """The current backend always streams schema-constrained JSON."""
+import copy
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -33,6 +35,65 @@ class Stream:
 def client_for(*streams):
     create = Mock(side_effect=streams)
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), create
+
+
+@pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA", "MERGE_SCHEMA"])
+def test_compact_retry_preserves_visual_detail_and_entity_capacity(schema_name):
+    step = lmstudio_pipeline.load("extract")
+    schema = getattr(step, schema_name)
+    original = copy.deepcopy(schema)
+    compact = lmstudio_json._qwen35_compact_schema(schema)
+    props = compact["schema"]["properties"]
+    for kind in ("characters", "locations", "objects"):
+        assert props[kind].get("maxItems") == schema["schema"]["properties"][kind].get("maxItems")
+        fields = props[kind]["items"]["properties"]
+        assert fields["stable_visual_description"]["maxLength"] == 500
+        state = "chapter_appearance" if kind == "characters" else "chapter_state"
+        assert fields[state]["maxLength"] == 350
+        assert fields["distinguishing_features"]["maxItems"] == 6
+        assert fields["distinguishing_features"]["items"]["maxLength"] == 120
+        assert fields["evidence"]["maxItems"] == 2
+        assert fields["evidence"]["items"]["maxLength"] == 120
+        assert fields["reference_view_hints"] == schema["schema"]["properties"][kind]["items"]["properties"]["reference_view_hints"]
+    summary = "chunk_summary" if schema_name == "CHUNK_SCHEMA" else "chapter_summary"
+    assert props[summary]["maxLength"] == (240 if summary == "chunk_summary" else 400)
+    assert schema == original
+
+
+def test_compact_retry_leaves_unrelated_fields_and_stricter_limits_intact():
+    schema = copy.deepcopy(SCHEMA)
+    schema["schema"]["properties"] = {
+        "generation_prompt": {"type": "string", "maxLength": 300},
+        "canonical_name": {"type": "string", "maxLength": 20},
+        "description": {"type": "string"},
+    }
+    assert lmstudio_json._qwen35_compact_schema(schema) == schema
+
+
+def test_merge_retry_can_return_more_than_three_entities(monkeypatch):
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    step = lmstudio_pipeline.load("extract")
+    result = {"chapter_summary": "A gathering.", "characters": [
+        {"canonical_name": f"Person {i}"} for i in range(8)
+    ], "locations": [], "objects": []}
+    client, create = client_for(Stream(['{"characters":']), Stream([json.dumps(result)]))
+    assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", step.MERGE_SCHEMA, 0.2, 8192) == result
+    retry = create.call_args.kwargs["response_format"]["json_schema"]
+    assert "maxItems" not in retry["schema"]["properties"]["characters"]
+
+
+@pytest.mark.parametrize("profiled", [False, True])
+def test_cache_fingerprint_tracks_compact_policy(monkeypatch, profiled):
+    from minimax_h3_novel_pipeline import prompt_cache
+
+    client = SimpleNamespace()
+    if profiled:
+        client._minimax_h3_profile = SimpleNamespace(NAME="Test")
+        client._minimax_h3_settings = {"thinking": False}
+    args = SimpleNamespace(max_tokens=8192)
+    before = prompt_cache.fingerprint("model", args, SCHEMA, client=client)
+    monkeypatch.setattr(lmstudio_json, "COMPACT_SCHEMA_VERSION", lmstudio_json.COMPACT_SCHEMA_VERSION + 1)
+    assert prompt_cache.fingerprint("model", args, SCHEMA, client=client) != before
 
 
 def test_stream_stops_at_complete_json():

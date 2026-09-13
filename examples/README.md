@@ -46,7 +46,9 @@ under `output/minimax_h3_novel`. Output subfolders are relative to that run: use
 `consolidated_path=20260911153042/references/consolidated_references.json`. Absolute paths
 must stay within the corresponding root; `..` and links escaping it are rejected.
 
-Extraction uses hierarchical merges (`merge_batch_size`, default 6) and caches each merge batch for resuming. This limits partial catalogs per call; dense catalogs can still require a larger context window. Enable `force` to regenerate cached results.
+Extraction uses hierarchical merges (`merge_batch_size`, default 2) and caches each merge batch for resuming. The default `max_tokens` is 8192 per extraction/merge call. Update these controls in existing workflows to adopt the new defaults. The final catalog must still fit the output budget; dense catalogs may need more output tokens and a larger context window. For crowded passages, reduce `chunk_chars` to avoid the per-passage limits of 6 characters, 4 locations and 6 objects. Enable `force` to regenerate cached results.
+
+Compact retries preserve entity capacities and visual features, allowing 500 characters for stable descriptions and 350 for chapter appearance/state. Cached results from the older retry policy are regenerated automatically.
 
 To edit invented appearance details, open the previous run's
 `references/visual_designs.json`. Each entity has its ID, name, type, a source-facts
