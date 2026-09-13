@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
+import time
 
 
 _active = ContextVar("minimax_h3_progress", default=None)
@@ -48,20 +49,30 @@ def steps(items, start=0, end=1):
 
 
 def node_progress(function):
-    """Keep ComfyUI optional for standalone imports and offline tests."""
+    """Report progress and completion time, keeping ComfyUI optional."""
     @wraps(function)
     def run(*args, **kwargs):
+        started = time.perf_counter()
         try:
             from comfy.utils import ProgressBar
         except ImportError:
-            return function(*args, **kwargs)
-        bar = ProgressBar(100)
-        token = _active.set((bar, 0, 1))
+            ProgressBar = None
+        bar = ProgressBar(100) if ProgressBar is not None else None
+        token = _active.set((bar, 0, 1)) if bar is not None else None
         try:
-            bar.update_absolute(0)
+            if bar is not None:
+                bar.update_absolute(0)
             result = function(*args, **kwargs)
-            bar.update_absolute(100)
+            if bar is not None:
+                bar.update_absolute(100)
+            hours, remainder = divmod(int(time.perf_counter() - started), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            print(
+                f"[minimax_h3_novel] {function.__qualname__} complete in {hours:02d}:{minutes:02d}:{seconds:02d}",
+                flush=True,
+            )
             return result
         finally:
-            _active.reset(token)
+            if token is not None:
+                _active.reset(token)
     return run

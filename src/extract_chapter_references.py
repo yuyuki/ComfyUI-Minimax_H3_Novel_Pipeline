@@ -4,7 +4,6 @@ from __future__ import annotations
 from . import progress
 
 import argparse
-import time
 from pathlib import Path
 from typing import Any
 
@@ -60,15 +59,10 @@ class ExtractChapterReferencesNode:
             args = argparse.Namespace(merge_batch_size=max(2, int(params["merge_batch_size"])), chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), base_url=lmstudio_config["api_url"])
             output.mkdir(parents=True, exist_ok=True)
             _log(f"LM Studio extraction: model={resolved_model}, chapters={len(paths)}")
-            started = time.perf_counter()
             results = []
             for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
                 with progress.scope(index / len(paths), (index + 1) / len(paths)):
                     saved = pipeline.process_chapter(path, output, client, resolved_model, args)
                     results.append(util.load_json(saved))
-            elapsed_seconds = int(time.perf_counter() - started)
-            hours, remainder = divmod(elapsed_seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            _log(f"Extraction complete in {hours:02d}:{minutes:02d}:{seconds:02d}")
             return results, util.catalog_summary(results)

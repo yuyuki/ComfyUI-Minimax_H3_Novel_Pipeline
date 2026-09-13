@@ -51,7 +51,7 @@ def test_nested_work_and_skipped_items(bars):
 
 
 @pytest.mark.parametrize("error", [RuntimeError, KeyboardInterrupt])
-def test_failure_does_not_complete_or_leak_context(bars, error):
+def test_failure_does_not_complete_or_leak_context(bars, error, capsys):
     @progress.node_progress
     def run():
         with progress.scope(0, 0.5):
@@ -62,6 +62,26 @@ def test_failure_does_not_complete_or_leak_context(bars, error):
         run()
     assert bars[0].values == [0, 25]
     assert progress._active.get() is None
+    assert "complete in" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("with_comfy", [True, False])
+@pytest.mark.parametrize("elapsed, expected", [
+    (0.0023, "00:00:00"),
+    (280.4964, "00:04:40"),
+    (3661.9, "01:01:01"),
+    (90061, "25:01:01"),
+])
+def test_node_completion_time(bars, monkeypatch, capsys, with_comfy, elapsed, expected):
+    if not with_comfy:
+        monkeypatch.setitem(sys.modules, "comfy.utils", None)
+    ticks = iter([100, 100 + elapsed])
+    monkeypatch.setattr(progress.time, "perf_counter", lambda: next(ticks))
+    node = NODE_CLASS_MAPPINGS["SelectChaptersNode"]()
+    assert node.run("chapter.txt", "") == ({"chapter_paths": "chapter.txt"},)
+    assert capsys.readouterr().out == (
+        f"[minimax_h3_novel] SelectChaptersNode.run complete in {expected}\n"
+    )
 
 
 def test_empty_stages_and_monotonic_progress(bars):
