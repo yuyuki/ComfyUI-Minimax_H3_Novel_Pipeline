@@ -256,3 +256,119 @@ def test_cancellation_closes_chatml_stream_without_retry(monkeypatch):
         lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200)
     assert stream.closed
     assert create.call_count == fallback.call_count == 1
+
+
+@pytest.mark.parametrize("thinking", [False, True])
+def test_mistral_retries_without_qwen_options(monkeypatch, thinking):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", thinking)
+    first, second = Stream(['{"value":']), Stream(['{"value":"ok"}'])
+    client, create = client_for(first, second)
+    result = lmstudio_json.chat_json(client, "Mistral-Small-3.2-24B-Instruct-Q4_K_M", "system", "user", SCHEMA, 0.15, 8192)
+    assert result == {"value": "ok"}
+    assert first.closed and second.closed
+    assert create.call_count == 2
+    for call in create.call_args_list:
+        request = call.kwargs
+        assert request["extra_body"] == {}
+        assert request["messages"][0] == {"role": "system", "content": "system"}
+        assert len(request["messages"]) == 2
+        assert request["top_p"] == 0.9
+        assert request["max_tokens"] == 8192
+        assert request["response_format"]["type"] == "json_schema"
+
+
+def test_mistral_does_not_use_qwen_grammar_fallback():
+    error = APIError("Failed to initialize samplers: unexpected empty grammar stack <think>",
+                     request=httpx.Request("POST", "http://localhost/v1/chat/completions"), body=None)
+    client, create = client_for(error)
+    with pytest.raises(APIError):
+        lmstudio_json.chat_json(client, "mistral-small", "system", "user", SCHEMA, 0.15, 8192)
+    assert create.call_count == 1
+
+
+@pytest.mark.parametrize("stage", ["extract", "consolidate", "generate"])
+@pytest.mark.parametrize("family,expected", [("Mistral", "mistral-small-3.2"), ("Qwen", "qwen3.5-9b")])
+def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, family, expected):
+    from minimax_h3_novel_pipeline import lmstudio_settings
+
+    def respond(request):
+        assert request.url.path == "/v1/models"
+        return httpx.Response(200, json={"data": [
+            {"id": "unrelated", "object": "model"},
+            {"id": "qwen3.5-9b", "object": "model"},
+            {"id": "mistral-small-3.2", "object": "model"},
+        ]})
+
+    real_client = httpx.Client
+    class MockClient(real_client):
+        def __init__(self, **kwargs):
+            super().__init__(transport=httpx.MockTransport(respond), **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", MockClient)
+    monkeypatch.setattr(lmstudio_settings, "get_api_key", lambda: "test-key")
+    config = {"model_family": family, "thinking": False, "qwen35_top_k": 37}
+    client, model = lmstudio_pipeline.make_client_and_model(
+        lmstudio_pipeline.load(stage), "http://127.0.0.1:1234/v1", config)
+    with client:
+        assert model == expected
+        assert client._minimax_h3_profile.NAME == family
+        if family == "Qwen":
+            assert client._minimax_h3_settings["top_k"] == 37
+        else:
+            assert client._minimax_h3_settings == {"thinking": False}
+        config["qwen35_top_k"] = 1
+        monkeypatch.setattr(lmstudio_json, "QWEN35_TOP_K", 2)
+        create = Mock(return_value=Stream(['{"value":"ok"}']))
+        monkeypatch.setattr(client.chat.completions, "create", create)
+        lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.15, 8192)
+        extra = create.call_args.kwargs["extra_body"]
+        if family == "Mistral":
+            assert extra == {}
+        else:
+            assert extra["top_k"] == 37
+
+
+@pytest.mark.parametrize("family", ["Mistral", "Qwen"])
+def test_family_selection_requires_matching_model(family):
+    from minimax_h3_novel_pipeline import lmstudio_models
+    client = SimpleNamespace(models=SimpleNamespace(list=lambda: SimpleNamespace(data=[SimpleNamespace(id="other")])))
+    with pytest.raises(RuntimeError, match=f"no matching {family}"):
+        lmstudio_models.select_family_model(client, family)
+
+
+def test_unknown_family_rejected_before_credentials(monkeypatch):
+    from minimax_h3_novel_pipeline import lmstudio_config, lmstudio_settings
+    key = Mock(side_effect=AssertionError("credentials accessed"))
+    monkeypatch.setattr(lmstudio_settings, "get_api_key", key)
+    with pytest.raises(ValueError, match="Unsupported model family"):
+        lmstudio_config.LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1", model_family="unknown")
+    key.assert_not_called()
+
+
+@pytest.mark.parametrize("family,attempts", [("Mistral", 2), ("Qwen", 4)])
+def test_semantic_retries_follow_client_profile(family, attempts):
+    from minimax_h3_novel_pipeline import lmstudio_models, reference_requests
+    profile = lmstudio_models.get_profile(family)
+    client = SimpleNamespace(_minimax_h3_profile=profile,
+                             _minimax_h3_settings=profile.settings_from_config({"qwen35_length_retries": 3}))
+    chat = Mock(return_value={})
+    validate = Mock(side_effect=ValueError("missing field"))
+    with pytest.raises(ValueError, match="bounded retries"):
+        reference_requests.validated_request(chat, client, "qwen3.5" if family == "Qwen" else "mistral-small",
+                                             "system", "user", SCHEMA,
+                                             SimpleNamespace(temperature=0.15, max_tokens=500), validate)
+    assert chat.call_count == attempts
+
+
+def test_cache_uses_client_settings_and_ignores_other_clients(monkeypatch):
+    from minimax_h3_novel_pipeline import lmstudio_models, prompt_cache
+    profile = lmstudio_models.get_profile("Qwen")
+    def client(top_k):
+        return SimpleNamespace(_minimax_h3_profile=profile,
+                               _minimax_h3_settings=profile.settings_from_config({"qwen35_top_k": top_k}))
+    first, second = client(20), client(37)
+    args = SimpleNamespace(temperature=0.15, max_tokens=500)
+    initial = prompt_cache.fingerprint("qwen3.5", args, "prompt", client=first)
+    assert initial != prompt_cache.fingerprint("qwen3.5", args, "prompt", client=second)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_TOP_K", 99)
+    assert initial == prompt_cache.fingerprint("qwen3.5", args, "prompt", client=first)

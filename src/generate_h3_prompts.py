@@ -42,8 +42,7 @@ class GenerateH3PromptsNode:
         paths = util.discover_inputs([Path(p.strip()) for p in selected_paths.splitlines() if p.strip()])
         if not paths: raise ValueError("No supported chapter files found.")
         pipeline = lmstudio_pipeline.load("generate")
-        lmstudio_pipeline.configure_qwen(thinking=bool(lmstudio_config["thinking"]), length_retries=int(lmstudio_config["qwen35_length_retries"]), top_k=int(lmstudio_config["qwen35_top_k"]), min_p=float(lmstudio_config["qwen35_min_p"]), repeat_penalty=float(lmstudio_config["qwen35_repeat_penalty"]))
-        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]))
+        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
             keys = ("duration", "chunk_chars", "overlap_paragraphs", "scenes_per_chunk", "max_scenes", "max_pictures", "max_pictures_per_subject", "max_audio", "temperature", "max_tokens", "repair_attempts", "force")
             args = argparse.Namespace(**{key: params[key] for key in keys}, out_dir=output)

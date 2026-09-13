@@ -20,8 +20,8 @@ test("old configuration preserves every remaining widget and does not mutate sou
     };
     const instance = new Config();
     assert.equal(instance.configure(old), "configured");
-    assert.deepEqual(instance.loaded.widgets_values, ["url", false, 2, 20, 0, 1.05]);
-    assert.deepEqual(instance.loaded.widgets_values_named, { qwen35_length_retries: 2 });
+    assert.deepEqual(instance.loaded.widgets_values, ["url", false, 2, 20, 0, 1.05, "Qwen"]);
+    assert.deepEqual(instance.loaded.widgets_values_named, { qwen35_length_retries: 2, model_family: "Qwen" });
     assert.equal(old.widgets_values.length, 8);
     const migrated = instance.loaded;
     instance.configure(migrated);
@@ -34,7 +34,7 @@ test("configuration with only the legacy chunk cap migrates", () => {
     const instance = new Config();
     const old = { widgets_values: ["url", true, 4, 5000, 30, 0.1, 1.1] };
     instance.configure(old);
-    assert.deepEqual(instance.loaded.widgets_values, ["url", true, 4, 30, 0.1, 1.1]);
+    assert.deepEqual(instance.loaded.widgets_values, ["url", true, 4, 30, 0.1, 1.1, "Qwen"]);
     assert.equal(old.widgets_values.length, 7);
 });
 
@@ -43,4 +43,26 @@ test("unrelated node configuration is untouched", () => {
     const original = Other.prototype.configure;
     extension.beforeRegisterNodeDef(Other, { name: "ExtractChapterReferencesNode" });
     assert.equal(Other.prototype.configure, original);
+});
+
+for (const family of ["Qwen", "Mistral"]) {
+    test(`current ${family} configuration survives repeated loading`, () => {
+        class Config { configure(info) { this.loaded = info; } }
+        extension.beforeRegisterNodeDef(Config, { name: "LMStudioConfigurationNode" });
+        const instance = new Config();
+        const info = { widgets_values: ["url", false, 2, 20, 0, 1.05, family],
+            widgets_values_named: { model_family: family } };
+        instance.configure(info);
+        assert.deepEqual(instance.loaded, info);
+        instance.configure(instance.loaded);
+        assert.deepEqual(instance.loaded, info);
+    });
+}
+
+test("six-widget configuration gains Qwen without shifting sampling values", () => {
+    class Config { configure(info) { this.loaded = info; } }
+    extension.beforeRegisterNodeDef(Config, { name: "LMStudioConfigurationNode" });
+    const instance = new Config();
+    instance.configure({ widgets_values: ["url", false, 2, 20, 0, 1.05] });
+    assert.deepEqual(instance.loaded.widgets_values, ["url", false, 2, 20, 0, 1.05, "Qwen"]);
 });

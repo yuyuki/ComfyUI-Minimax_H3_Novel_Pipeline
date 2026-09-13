@@ -972,7 +972,7 @@ def process_chapter(
     scenes: list[Scene] = []
     for i, chunk in enumerate(chunks, start=1):
         cache_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, PLAN_SYSTEM, SCENE_SCHEMA,
-                                      refs.get("source_digest", ""), catalog, i, len(chunks), chunk)
+                                      refs.get("source_digest", ""), catalog, i, len(chunks), chunk, client=client)
         cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", chapter_dir)
         chunk_scenes = None
         if cache_path.exists() and not args.force:
@@ -1009,7 +1009,7 @@ def process_chapter(
             continue
 
         prompt_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, H3_RULES, PROMPT_SCHEMA,
-                                       "duration-aware-generation.v1", scene_to_dict(scene), bindings)
+                                       "duration-aware-generation.v1", scene_to_dict(scene), bindings, client=client)
         prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", chapter_dir)
         prompt = None
         if prompt_cache.exists() and not args.force:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import lmstudio_settings
+from . import lmstudio_settings, lmstudio_models
 from .run_output import reserve_run
 
 
@@ -15,7 +15,7 @@ Share LM Studio settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
 Set the API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio → API Key`.
-The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 retry and sampling controls here. Set max_tokens on each processing node.
+The key is not saved in the workflow. Choose Qwen or Mistral and configure the URL here. Thinking and qwen35 controls apply only to Qwen. Set max_tokens on each processing node.
 """
 
     @classmethod
@@ -52,6 +52,12 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
                     "tooltip": "Penalizes Qwen3.5 repetition; 1.05 reduces loops while preserving JSON list detail.",
                 }),
             },
+            "optional": {
+                "model_family": (list(lmstudio_models.PROFILES), {
+                    "default": "Qwen",
+                    "tooltip": "Select a matching model exposed by LM Studio. Load the model there first. Mistral ignores thinking and qwen35 controls.",
+                }),
+            },
         }
 
     RETURN_TYPES = ("MINIMAX_LMSTUDIO_CONFIG", "STRING")
@@ -67,8 +73,11 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
     def run(self, api_url: str, thinking: bool = False,
             qwen35_length_retries: int = 2,
             qwen35_top_k: int = 20,
-            qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05) -> tuple[dict[str, Any], str]:
+            qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05,
+            model_family: str = "Qwen") -> tuple[dict[str, Any], str]:
         api_url = lmstudio_settings.validate_api_url(api_url)
+
+        lmstudio_models.get_profile(model_family)
 
         api_key = lmstudio_settings.get_api_key()
         if not api_key:
@@ -79,6 +88,7 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
 
         config = {
             "api_url": api_url.strip(),
+            "model_family": model_family,
             "thinking": bool(thinking),
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
             "qwen35_top_k": max(1, int(qwen35_top_k)),
@@ -88,8 +98,8 @@ The key is not saved in the workflow. Configure the URL, thinking, and Qwen3.5 r
             "run_folder": reserve_run(),
         }
         status = (
-            f"LM Studio: {config['api_url']} | model: auto-select loaded Qwen/first model | "
-            f"thinking: {config['thinking']} | "
+            f"LM Studio: {config['api_url']} | model family: {model_family} (select matching model) | "
+            f"thinking: {config['thinking'] if model_family == 'Qwen' else 'not used'} | "
             f"API key: ComfyUI Settings (hidden) | run: {config['run_folder']}"
         )
         return config, status

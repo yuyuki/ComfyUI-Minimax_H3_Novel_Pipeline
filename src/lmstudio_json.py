@@ -7,14 +7,16 @@ import re
 import time
 from typing import Any
 
-from openai import APIError, OpenAI
+from openai import OpenAI
 
-THINKING_ENABLED = False
+from . import lmstudio_model_qwen, lmstudio_models
+
+THINKING_ENABLED = lmstudio_model_qwen.DEFAULTS["thinking"]
 CHAT_BACKEND = "structured-json"
-QWEN35_LENGTH_RETRIES = 2
-QWEN35_TOP_K = 20
-QWEN35_MIN_P = 0.0
-QWEN35_REPEAT_PENALTY = 1.05
+QWEN35_LENGTH_RETRIES = lmstudio_model_qwen.DEFAULTS["length_retries"]
+QWEN35_TOP_K = lmstudio_model_qwen.DEFAULTS["top_k"]
+QWEN35_MIN_P = lmstudio_model_qwen.DEFAULTS["min_p"]
+QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
 
 def _is_comfy_interrupt(error: BaseException) -> bool:
     """Do not retry a ComfyUI Stop request as though it were an LLM error."""
@@ -39,22 +41,6 @@ def parse_json(text: str) -> dict[str, Any]:
         if start >= 0 and end > start:
             return json.loads(text[start:end + 1])
         raise
-
-def _is_qwen35_model(model: str) -> bool:
-    normalized = model.casefold().replace("_", "").replace("-", "").replace(".", "")
-    return "qwen35" in normalized
-
-
-def _is_thinking_grammar_error(error: BaseException) -> bool:
-    """Match only the sampler failure caused by a thinking template token."""
-    message = str(error).casefold()
-    return (
-        isinstance(error, APIError)
-        and getattr(error, "status_code", None) in (None, 400)
-        and "failed to initialize samplers" in message
-        and "unexpected empty grammar stack" in message
-        and "<think>" in message
-    )
 
 def _complete_json_prefix(text: str) -> str | None:
     """Return the first complete top-level JSON object, or None if incomplete.
@@ -123,38 +109,36 @@ def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def model_settings(client, model):
+    profile = getattr(client, "__dict__", {}).get("_minimax_h3_profile") or lmstudio_models.profile_for_model(model)
+    settings = getattr(client, "__dict__", {}).get("_minimax_h3_settings") or dict(
+        thinking=THINKING_ENABLED, length_retries=QWEN35_LENGTH_RETRIES,
+        top_k=QWEN35_TOP_K, min_p=QWEN35_MIN_P, repeat_penalty=QWEN35_REPEAT_PENALTY,
+    )
+    return profile, settings
+
+
 def chat_json(client: OpenAI, model: str, system: str, user: str,
               schema: dict[str, Any], temperature: float, max_tokens: int) -> dict[str, Any]:
     from .lmstudio_pipeline import comfy_interrupt_check
 
-    qwen = _is_qwen35_model(model)
+    profile, settings = model_settings(client, model)
+    allow_chatml = profile.allows_chatml(model, settings)
     # Structured-output backends can occasionally end a response mid-string
     # even for non-Qwen3.5 models. Always allow one compact retry instead of
     # failing the whole ComfyUI run on that transient malformed response.
-    retries = QWEN35_LENGTH_RETRIES if qwen else 1
+    retries = profile.retries(model, settings)
     # Keep compatibility discoveries on the client so subsequent stage requests
     # do not repeat a known sampler failure. A new client probes normally again.
     backend_key = (str(getattr(client, "base_url", "")), model)
     successful_chatml = vars(client).get("_minimax_h3_chatml_models", set())
-    raw_chatml = qwen and not THINKING_ENABLED and backend_key in successful_chatml
+    raw_chatml = allow_chatml and backend_key in successful_chatml
     attempt = 0
     while attempt <= retries:
         comfy_interrupt_check()
         request_schema = _qwen35_compact_schema(schema) if attempt else schema
         note = "\nReturn compact JSON with short descriptions and finish within the output limit." if attempt else ""
-        extra = {"chat_template_kwargs": {"enable_thinking": THINKING_ENABLED}}
-        messages = [
-            {"role": "system", "content": ("/think" if THINKING_ENABLED else "/no_think") + "\n\n" + system},
-            {"role": "user", "content": user + note},
-        ]
-        if qwen:
-            extra.update(top_k=QWEN35_TOP_K, min_p=QWEN35_MIN_P, repeat_penalty=QWEN35_REPEAT_PENALTY)
-            if not THINKING_ENABLED:
-                # LM Studio may ignore chat_template_kwargs on its public API.
-                # A final assistant message is a response prefill: continue after
-                # Qwen's closed thinking block instead of opening a new one.
-                # Keep the JSON itself unprefilled so the schema starts at '{'.
-                messages.append({"role": "assistant", "content": "<think>\n\n</think>\n\n"})
+        messages, extra, top_p = profile.request_settings(model, system, user + note, settings)
         started = time.perf_counter()
         stream = None
         raw = ""
@@ -165,18 +149,12 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             options = dict(
                 model=model,
                 temperature=min(temperature, 0.12) if attempt else temperature,
-                top_p=0.8 if qwen else 0.9, max_tokens=max_tokens, stream=True,
+                top_p=top_p, max_tokens=max_tokens, stream=True,
             )
             response_format = {"type": "json_schema", "json_schema": request_schema}
             if raw_chatml:
-                # The legacy endpoint does not apply the server's chat template.
-                # Close thinking in the prompt, before JSON grammar sampling starts.
-                prompt = "".join(
-                    f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
-                    for message in messages[:2]
-                ) + "<|im_start|>assistant\n<think>\n\n</think>\n\n"
                 stream = client.completions.create(
-                    **options, prompt=prompt, stop=["<|im_end|>", "<|endoftext|>"],
+                    **options, **profile.completion_options(messages),
                     extra_body={**extra, "response_format": response_format},
                 )
             else:
@@ -207,8 +185,8 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                     break
         except BaseException as error:
             local_stop = "interrupted_or_error"
-            if (qwen and not THINKING_ENABLED and not raw_chatml
-                    and not _is_comfy_interrupt(error) and _is_thinking_grammar_error(error)):
+            if (allow_chatml and not raw_chatml
+                    and not _is_comfy_interrupt(error) and lmstudio_model_qwen.is_thinking_grammar_error(error)):
                 raw_chatml = True
                 local_stop = "thinking_grammar_fallback"
                 print("    LLM: thinking-token sampler failure; retrying structured JSON with raw ChatML.", flush=True)
@@ -218,7 +196,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             if stream is not None:
                 stream.close()
             diagnostics = (
-                f"attempt={attempt + 1}, thinking={THINKING_ENABLED}, max_tokens={max_tokens}, "
+                f"attempt={attempt + 1}, thinking={settings['thinking'] if profile.NAME == 'Qwen' else False}, max_tokens={max_tokens}, "
                 f"content_chars={content_chars}, reasoning_chars={reasoning_chars}, "
                 f"finish_reason={finish_reason}, local_stop={local_stop}"
             )

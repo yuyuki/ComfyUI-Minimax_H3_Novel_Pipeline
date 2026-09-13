@@ -16,12 +16,16 @@ app.registerExtension({
             if (Array.isArray(values) && values.length === 8) {
                 values = [...values.slice(0, 2), ...values.slice(3)];
             }
-            if (Array.isArray(values) && values.length === 7) {
+            if (Array.isArray(values) && values.length === 7 && typeof values[6] !== "string") {
                 values = [...values.slice(0, 3), ...values.slice(4)];
                 info = { ...info, widgets_values: values };
             }
+            if (Array.isArray(values) && values.length === 6) {
+                info = { ...info, widgets_values: [...values, "Qwen"] };
+            }
             if (info.widgets_values_named) {
                 const named = { ...info.widgets_values_named };
+                named.model_family ??= "Qwen";
                 delete named.qwen35_max_output_tokens;
                 delete named.qwen35_safe_chunk_chars;
                 info = { ...info, widgets_values_named: named };

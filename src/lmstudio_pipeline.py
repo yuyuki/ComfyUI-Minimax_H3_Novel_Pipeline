@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
-from . import lmstudio_settings, lmstudio_json
+from . import lmstudio_settings, lmstudio_json, lmstudio_models
 
 _SCRIPT_FILES = {
     # These deliberately do not share names with the ComfyUI node modules.
@@ -35,9 +35,10 @@ def configure_qwen(*, thinking: bool,
     lmstudio_json.QWEN35_REPEAT_PENALTY = min(2.0, max(0.8, float(repeat_penalty)))
 
 
-def make_client_and_model(module: ModuleType, api_url: str) -> tuple[object, str]:
+def make_client_and_model(module: ModuleType, api_url: str, config: dict | None = None) -> tuple[object, str]:
     # Recheck here: downstream nodes can receive forged or cached configuration.
     api_url = lmstudio_settings.validate_api_url(api_url)
+    profile = lmstudio_models.get_profile(config.get("model_family", "Qwen")) if config is not None else None
     api_key = lmstudio_settings.get_api_key()
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("api_key must not be empty (LM Studio accepts 'lm-studio' by default).")
@@ -47,6 +48,10 @@ def make_client_and_model(module: ModuleType, api_url: str) -> tuple[object, str
     transport = httpx.Client(follow_redirects=False, trust_env=False, timeout=300.0)
     try:
         client = module.make_client(api_url, api_key.strip(), http_client=transport)
+        if profile is not None:
+            client._minimax_h3_profile = profile
+            client._minimax_h3_settings = profile.settings_from_config(config)
+            return client, lmstudio_models.select_family_model(client, profile.NAME)
         return client, module.select_model(client, None)
     except BaseException:
         transport.close()

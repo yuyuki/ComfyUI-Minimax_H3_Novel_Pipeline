@@ -53,8 +53,7 @@ class ConsolidateReferencesNode:
             util.require_schema(chapter, util.CHAPTER_SCHEMA)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         pipeline = lmstudio_pipeline.load("consolidate")
-        lmstudio_pipeline.configure_qwen(thinking=bool(lmstudio_config["thinking"]), length_retries=int(lmstudio_config["qwen35_length_retries"]), top_k=int(lmstudio_config["qwen35_top_k"]), min_p=float(lmstudio_config["qwen35_min_p"]), repeat_penalty=float(lmstudio_config["qwen35_repeat_penalty"]))
-        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]))
+        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
             keys = ("candidate_count", "include_all_below", "picture_threshold", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_variants", "no_audit", "audit_max_entities", "temperature", "max_tokens")
             args = argparse.Namespace(**{key: params[key] for key in keys}, audit_similarity=float(params["audit_similarity"]), audit_cluster_size=max(2, int(params["audit_cluster_size"])))

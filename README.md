@@ -32,7 +32,8 @@ by the nodes. PDF reading uses `pypdf`; text and Markdown do not need it.
    Use `lm-studio` if authentication is disabled. The current nodes read this
    setting; an environment-variable API-key selector is not exposed.
 3. Add **LM Studio Configuration**. Its default URL is
-   `http://127.0.0.1:1234/v1`. The loaded model is selected automatically.
+   `http://127.0.0.1:1234/v1`. Choose `model_family`: **Qwen** (default) or **Mistral**. Load the matching
+   model in LM Studio first; the dropdown does not load or download weights.
 4. Connect its `lmstudio_config` output to Extract, Consolidate and Generate.
 
 The API key is kept out of workflows and node outputs. ComfyUI's browser
@@ -51,6 +52,25 @@ slash is accepted. Authenticated requests disable redirects and environment
 proxies. The chapter picker and settings endpoints require direct local
 browser access to ComfyUI, such as `http://localhost:8188`; remote,
 cross-origin and forwarded proxy requests are rejected.
+
+All stages select the first model exposed by LM Studio whose identifier contains
+`qwen` or `mistral`, according to `model_family`. A missing match raises an error;
+there is no fallback to another family. If several models of the same family are
+exposed, keep only the intended one available for an unambiguous selection.
+
+For **Mistral Small 3.2 24B Instruct Q4_K_M**, select **Mistral**. Requests use
+standard system/user messages and LM Studio's model template, with `top_p=0.9`
+and one compact retry. `thinking` and all `qwen35_*` controls are ignored.
+Temperature and `max_tokens` remain controlled by each processing node.
+Existing workflows default to **Qwen**; restart ComfyUI and refresh the browser
+to see the new dropdown.
+
+Family-specific request settings live in `src/lmstudio_model_qwen.py` and
+`src/lmstudio_model_mistral.py`. To add a family, implement the same profile
+functions and register the module in `src/lmstudio_models.py`; its name appears
+in the dropdown. Streaming, schema constraints, parsing and cancellation remain
+shared in `src/lmstudio_json.py`. Qwen3.5-specific template recovery remains
+limited to Qwen3.5 model identifiers.
 
 All stages require LM Studio structured JSON output. Keep `thinking=false` for
 extraction without reasoning overhead. For Qwen3.5, requests include an assistant

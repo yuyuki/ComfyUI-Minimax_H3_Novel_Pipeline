@@ -399,7 +399,7 @@ def hierarchical_merge_candidates(
             comfy_interrupt_check()
             batch = level[start:start + batch_size]
             combined = combine_candidates(batch)
-            key = cache_fingerprint(model, args, SCHEMA_VERSION, MERGE_SYSTEM, MERGE_SCHEMA, chapter_id, combined)
+            key = cache_fingerprint(model, args, SCHEMA_VERSION, MERGE_SYSTEM, MERGE_SCHEMA, chapter_id, combined, client=client)
             cache_path = confined_path(cache_dir / f"merge_r{round_no:02d}_b{batch_no:03d}.json", cache_dir)
             merged = None
             if cache_path.exists() and not args.force:
@@ -440,7 +440,7 @@ def process_chapter(
     out_path = confined_path(out_dir / f"{chapter_id}_references.json", out_dir)
     source_hash = sha256_file(path)
     output_key = cache_fingerprint(model, args, SCHEMA_VERSION, EXTRACT_SYSTEM, MERGE_SYSTEM,
-                                   CHUNK_SCHEMA, MERGE_SCHEMA, source_hash)
+                                   CHUNK_SCHEMA, MERGE_SCHEMA, source_hash, client=client)
 
     if out_path.exists() and not args.force:
         try:
@@ -462,7 +462,7 @@ def process_chapter(
     for i, chunk in enumerate(chunks, start=1):
         cache_path = confined_path(cache_dir / f"chunk_{i:03d}.json", out_dir)
         cache_key = cache_fingerprint(model, args, SCHEMA_VERSION, EXTRACT_SYSTEM, CHUNK_SCHEMA,
-                                      chapter_id, i, len(chunks), chunk)
+                                      chapter_id, i, len(chunks), chunk, client=client)
         result = None
         if cache_path.exists() and not args.force:
             try:
@@ -494,7 +494,7 @@ def process_chapter(
             "sha256": source_hash,
             "character_count": len(text),
         },
-        "llm": {"base_url": args.base_url, "model": model, "thinking": json_backend.THINKING_ENABLED, "chat_backend": json_backend.CHAT_BACKEND},
+        "llm": {"base_url": args.base_url, "model": model, "thinking": json_backend.model_settings(client, model)[1]["thinking"], "chat_backend": json_backend.CHAT_BACKEND},
         **catalog,
     }
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

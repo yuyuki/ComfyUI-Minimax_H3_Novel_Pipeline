@@ -52,14 +52,7 @@ class ExtractChapterReferencesNode:
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         pipeline = lmstudio_pipeline.load("extract")
-        lmstudio_pipeline.configure_qwen(
-            thinking=bool(lmstudio_config["thinking"]),
-            length_retries=int(lmstudio_config["qwen35_length_retries"]),
-            top_k=int(lmstudio_config["qwen35_top_k"]),
-            min_p=float(lmstudio_config["qwen35_min_p"]),
-            repeat_penalty=float(lmstudio_config["qwen35_repeat_penalty"]),
-        )
-        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]))
+        client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
             args = argparse.Namespace(merge_batch_size=max(2, int(params["merge_batch_size"])), chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), base_url=lmstudio_config["api_url"])
             output.mkdir(parents=True, exist_ok=True)
