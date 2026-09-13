@@ -95,7 +95,8 @@ def test_blank_name_requests_correction(monkeypatch, schema_name, kind, invalid)
     client, create = client_for(first, second)
     assert lmstudio_json.chat_json(client, "qwen3.5", "system", "passage", schema, 0.2, 8192) == valid
     request = create.call_args.kwargs
-    assert "missing or blank canonical_name" in request["messages"][-1]["content"]
+    user_message = next(message for message in request["messages"] if message["role"] == "user")
+    assert "missing or blank canonical_name" in user_message["content"]
     fields = request["response_format"]["json_schema"]["schema"]["properties"][kind]["items"]["properties"]
     assert fields["canonical_name"]["minLength"] == 1
     assert first.closed and second.closed
