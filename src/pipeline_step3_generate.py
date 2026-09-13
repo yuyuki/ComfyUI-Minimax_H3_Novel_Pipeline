@@ -116,6 +116,10 @@ detailed_description:
 overall_soundscape:
 non_diegetic_music:
 
+Put each section heading on its own line, followed by its body on the next line.
+Include overall_soundscape and non_diegetic_music even when their body is N/A.
+Do not use Markdown headings, bullets, or bold around section headings.
+
 Language:
 - write all six sections in English;
 - preserve source language only for dialogue/lyrics inside <d> and text visibly
@@ -164,6 +168,9 @@ detailed_description:
 - write 1-2 visual/cinematic style sentences before [Shot 1];
 - [Shot 1] has NO timestamp;
 - every later shot starts exactly: [Shot N] At MM:SS.mmm, 
+- for example: [Shot 1] The camera frames the scene.
+  A later cut, only if it fits the duration: [Shot 2] At 00:03.000, The camera moves closer.
+- never write [Shot 1] At 00:00.000, or put a timestamp before a shot marker;
 - timestamps are cut times and must fit the requested duration;
 - describe composition/framing, referenced visible traits and positions,
   environment/lighting, actions/state changes, camera movement, current ambience/SFX,
@@ -712,7 +719,19 @@ if used. Do not vocalize internal thoughts. detailed_description normally target
 timeline. Return only the six-section H3 prompt inside prompt_text, with no Markdown.
 """
     data = chat_json(client, model, system, user, PROMPT_SCHEMA, args.temperature, args.max_tokens)
-    return re.sub(r"<think>.*?</think>", "", data["prompt_text"], flags=re.S | re.I).strip()
+    return normalize_prompt(data["prompt_text"])
+
+
+def normalize_prompt(prompt: str) -> str:
+    """Canonicalize inline section bodies without inventing or dropping content."""
+    prompt = re.sub(r"<think>.*?</think>", "", prompt, flags=re.S | re.I).strip()
+    for name in SECTIONS:
+        prompt = re.sub(
+            rf"(?mi)^[ \t]*{re.escape(name)}[ \t]*:[ \t]*(?=\S)",
+            f"{name}:\n",
+            prompt,
+        )
+    return prompt
 
 
 def section_body(prompt: str, name: str) -> str:
@@ -764,13 +783,23 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float) -> V
         errors.append("No [Shot N] markers found.")
     elif nums != list(range(1, len(nums) + 1)):
         errors.append(f"Shot numbering is not sequential: {nums}.")
-    if re.search(r"\[Shot 1\]\s+At\s+", detailed):
+    if re.search(r"\[Shot\s+1\]\s+(?:At\s+)?\d+:\d+(?:\.\d+)?", detailed, flags=re.I):
         errors.append("[Shot 1] must not have a timestamp.")
-    later = re.findall(r"\[Shot\s+(\d+)\]\s+At\s+(\d{2}):(\d{2})\.(\d{3}),", detailed)
-    if len(later) != max(0, len(nums) - 1):
+    shots = list(re.finditer(r"\[Shot\s+(\d+)\]", detailed))
+    later = []
+    for index, shot in enumerate(shots):
+        if int(shot.group(1)) == 1:
+            continue
+        end = shots[index + 1].start() if index + 1 < len(shots) else len(detailed)
+        timestamp = re.match(r" At (\d{2}):(\d{2})\.(\d{3}), ", detailed[shot.end():end])
+        if timestamp:
+            later.append((shot.group(1), *timestamp.groups()))
+    if len(later) != sum(n != 1 for n in nums):
         errors.append("Every shot after Shot 1 must begin '[Shot N] At MM:SS.mmm, '.")
     previous = -1.0
     for n, mm, ss, mmm in later:
+        if int(ss) >= 60:
+            errors.append(f"Shot {n} timestamp seconds must be less than 60.")
         t = timestamp_seconds(mm, ss, mmm)
         if t <= previous:
             errors.append("Shot cut timestamps must strictly increase.")
@@ -885,7 +914,7 @@ CURRENT PROMPT:
 {prompt}
 --- END ---"""
     data = chat_json(client, model, system, user, PROMPT_SCHEMA, min(args.temperature, 0.16), args.max_tokens)
-    return re.sub(r"<think>.*?</think>", "", data["prompt_text"], flags=re.S | re.I).strip()
+    return normalize_prompt(data["prompt_text"])
 
 
 def save_scene(
