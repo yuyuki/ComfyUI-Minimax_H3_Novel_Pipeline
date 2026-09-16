@@ -29,9 +29,9 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/yuyuki/minimax_h3_novel_pipeline"
-BugTracker = "https://github.com/yuyuki/minimax_h3_novel_pipeline/issues"
-Documentation = "https://github.com/yuyuki/minimax_h3_novel_pipeline/wiki"
+Repository = "https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline"
+BugTracker = "https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/issues"
+Documentation = "https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/wiki"
 
 [tool.comfy]
 PublisherId = "yuyuki"
@@ -39,7 +39,7 @@ DisplayName = "MiniMax H3 Novel Pipeline"
 # "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
 Icon = ""
 Tags = []
-Repository = "https://github.com/yuyuki/minimax_h3_novel_pipeline"
+Repository = "https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline"
 
 includes = []
 
