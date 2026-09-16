@@ -201,6 +201,8 @@ def test_noisy_source_is_normalized_once_and_exported_without_reappending(output
         if system == step.FACIAL_APPEARANCE_SYSTEM:
             assert data["appearance"] in (base, variant)
             return {"appearance": "Hazel eyes, a scar on the chin and dark brown hair."}
+        if system == step.VIEW_APPEARANCE_SYSTEM:
+            return {"appearance": "Dark brown hair. A backpack with a side pocket. A dark robe."}
         if schema["name"] == "reference_appearance":
             appearance_calls.append(data)
             return {"appearance": variant if data["chapter_visual_state"] else base}
@@ -217,7 +219,7 @@ def test_noisy_source_is_normalized_once_and_exported_without_reappending(output
     assert item == original
     for asset in assets:
         prompt = asset["generation_prompt"]
-        assert prompt.count("Hazel eyes") == 1
+        assert prompt.count("Hazel eyes") == (0 if asset["view_type"] == "back_view" else 1)
         facial = asset["view_type"] in step.FACIAL_VIEWS
         assert prompt.count("side pocket") == (0 if facial else 1)
         assert prompt.count("Henry Jones Jr.") == 1
@@ -325,6 +327,81 @@ def test_facial_projection_retries_invalid_results(monkeypatch, invalid):
     assert result == {specs[0]["asset_id"]: "Hazel eyes."}
     assert len(calls) == 2
     assert "Previous response was invalid" in calls[1][3]
+
+
+@pytest.mark.parametrize("kind, view, wide, canonical, cropped", [
+    ("character", "back_view", "full_body_front",
+     "Hazel eyes. Blue coat with a chest badge. Black backpack.", "Blue coat. Black backpack."),
+    ("character", "costume_detail", "three_quarter",
+     "Hazel eyes. Blue wool coat with brass buttons. Brown boots.", "Blue wool with brass buttons."),
+    ("location", "key_detail", "wide_establishing",
+     "A courtyard with a carved oak gate and a distant tower.", "Carved oak gate."),
+    ("location", "interior_zone", "secondary_angle",
+     "Red stone facade. A hall with oak benches.", "A hall with oak benches."),
+    ("location", "exterior_approach", "reverse_angle",
+     "Red stone facade and gravel path. Enclosed hall with oak benches.", "Red stone facade and gravel path."),
+    ("object", "detail_closeup", "hero_three_quarter",
+     "A long steel sword with a star engraved on its brass pommel.", "A star engraved on a brass pommel."),
+])
+def test_view_scope_filters_composition_and_final_prompt(monkeypatch, kind, view, wide, canonical, cropped):
+    step = lmstudio_pipeline.load("consolidate")
+    args = options()
+    template = step.build_picture_specs([entity(kind)], args)[0]
+    specs = [{**template, "asset_id": "crop", "view_type": view},
+             {**template, "asset_id": "wide", "view_type": wide}]
+    projection_calls = []
+
+    def chat(client, model, system, user, schema, *unused):
+        data = json.loads(user)
+        if system == step.VIEW_APPEARANCE_SYSTEM:
+            projection_calls.append(data)
+            assert data["appearance"] == canonical
+            assert data["view_type"] == view
+            assert data["view_scope"] == step.VIEW_APPEARANCE_RULES[view]
+            return {"appearance": cropped}
+        if schema["name"] == "reference_appearance":
+            return {"appearance": canonical}
+        assert {item["asset_id"]: item["appearance"] for item in data} == {"crop": cropped, "wide": canonical}
+        return {"assets": [{"asset_id": item["asset_id"], "description": "Reference.",
+                            "generation_prompt": "Soft even light."} for item in data]}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    assets = step.generate_picture_assets(None, "qwen", specs, args)
+    assert len(projection_calls) == 1
+    assert cropped in assets[0]["generation_prompt"]
+    assert canonical not in assets[0]["generation_prompt"]
+    assert canonical in assets[1]["generation_prompt"]
+    assert [asset["asset_id"] for asset in assets] == ["crop", "wide"]
+
+
+def test_view_projection_keeps_entity_state_and_detail_separate(monkeypatch):
+    step = lmstudio_pipeline.load("consolidate")
+    template = step.build_picture_specs([entity()], options())[0]
+    specs = [
+        {**template, "asset_id": "changed", "variant": "chapter", "view_type": "costume_detail",
+         "chapter_visual_state": "The blue collar is now red."},
+        {**template, "asset_id": "base", "view_type": "costume_detail"},
+        {**template, "asset_id": "other", "linked_global_id": "CHAR_002", "view_type": "costume_detail"},
+        {**template, "asset_id": "rear", "view_type": "back_view"},
+    ]
+    appearances = {("CHAR_001", "base"): "Blue collar and black boots.",
+                   ("CHAR_001", "chapter"): "Red collar and black boots.",
+                   ("CHAR_002", "base"): "Gold cuffs."}
+    responses = iter(["Blue collar.", "Gold cuffs.", "Black boots.", "Red collar."])
+
+    def chat(client, model, system, user, schema, *unused):
+        data = json.loads(user)
+        if data["variant"] == "chapter":
+            assert data["base_view_appearance"] == "Blue collar."
+            assert data["appearance"] == appearances[("CHAR_001", "chapter")]
+        else:
+            assert "base_view_appearance" not in data
+        return {"appearance": next(responses)}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    assert step.picture_view_appearances(None, "qwen", specs, options(), appearances) == {
+        "base": "Blue collar.", "other": "Gold cuffs.", "rear": "Black boots.", "changed": "Red collar.",
+    }
 
 
 def test_normalized_appearances_do_not_cross_entities(monkeypatch):
