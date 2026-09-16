@@ -124,6 +124,8 @@ def test_prompts_repeat_identity_design_style_and_variant(monkeypatch):
     seen_temperatures = []
 
     def chat(client, model, system, user, schema, temperature, max_tokens):
+        if system == step.FACIAL_APPEARANCE_SYSTEM:
+            return {"appearance": "Short copper hair."}
         if schema["name"] == "reference_appearance":
             state = json.loads(user)["chapter_visual_state"]
             return {"appearance": "A silver silhouette. A star marking. Short copper hair." + (" " + state if state else "")}
@@ -137,9 +139,11 @@ def test_prompts_repeat_identity_design_style_and_variant(monkeypatch):
     assert seen_temperatures == [args.temperature, args.temperature]
     for asset in assets:
         prompt = asset["generation_prompt"]
-        assert all(text in prompt for text in ("Aster", "A silver silhouette.", "Short copper hair.", "watercolor"))
+        facial = asset["view_type"] in step.FACIAL_VIEWS
+        assert all(text in prompt for text in ("Aster", "Short copper hair.", "watercolor"))
+        assert ("A silver silhouette." in prompt) == (not facial)
         assert step.VIEW_FRAMING[asset["view_type"]] in prompt
-        assert ("Wearing a red coat." in prompt) == (asset["variant"] == "chapter")
+        assert ("Wearing a red coat." in prompt) == (asset["variant"] == "chapter" and not facial)
         assert "<Picture" not in prompt
 
 
@@ -194,6 +198,9 @@ def test_noisy_source_is_normalized_once_and_exported_without_reappending(output
 
     def chat(client, model, system, user, schema, *unused):
         data = json.loads(user)
+        if system == step.FACIAL_APPEARANCE_SYSTEM:
+            assert data["appearance"] in (base, variant)
+            return {"appearance": "Hazel eyes, a scar on the chin and dark brown hair."}
         if schema["name"] == "reference_appearance":
             appearance_calls.append(data)
             return {"appearance": variant if data["chapter_visual_state"] else base}
@@ -211,13 +218,14 @@ def test_noisy_source_is_normalized_once_and_exported_without_reappending(output
     for asset in assets:
         prompt = asset["generation_prompt"]
         assert prompt.count("Hazel eyes") == 1
-        assert prompt.count("side pocket") == 1
+        facial = asset["view_type"] in step.FACIAL_VIEWS
+        assert prompt.count("side pocket") == (0 if facial else 1)
         assert prompt.count("Henry Jones Jr.") == 1
         assert "Jr.." not in prompt
         assert "Yeux" not in prompt and "Étudiant" not in prompt and "torch" not in prompt
         assert "Base visual design:" not in prompt
-        assert ("A dark robe." in prompt) == (asset["variant"] == "base")
-        assert ("A red coat." in prompt) == (asset["variant"] == "chapter")
+        assert ("A dark robe." in prompt) == (asset["variant"] == "base" and not facial)
+        assert ("A red coat." in prompt) == (asset["variant"] == "chapter" and not facial)
     records, _ = image_prompt_export.export_image_prompts(
         {"entities": [item], "picture_assets": assets}, output_root / "image_prompts",
     )
@@ -244,6 +252,77 @@ def test_invalid_normalized_appearance_retries(monkeypatch, appearance):
     specs = step.build_picture_specs([entity()], options())
     normalized = step.prepare_picture_appearances(None, "qwen", specs, options())
     assert normalized == {("CHAR_001", "base"): "A silver silhouette with a star marking."}
+    assert len(calls) == 2
+    assert "Previous response was invalid" in calls[1][3]
+
+
+def test_facial_crops_use_filtered_identity_for_composition_and_export(output_root, monkeypatch):
+    step = lmstudio_pipeline.load("consolidate")
+    args = options()
+    specs = step.build_picture_specs([entity()], args)
+    template = specs[0]
+    for view in ("profile", "expression_closeup"):
+        specs.append({**template, "asset_id": "PIC_CHAR_001_" + view.upper(), "view_type": view})
+    specs.append({**template, "asset_id": "PIC_CHAR_001_CHAPTER_FACE_FRONT", "variant": "chapter",
+                  "chapter_visual_state": "A fresh cut on the left cheek. Mud on the boots."})
+    face = "A young adult with hazel eyes, dark brown hair and a strong jawline."
+    body = face + " Lean forearms, cargo pants, hiking boots, backpack, hammer, pickaxe and torch holder."
+    cut = " A fresh cut on the left cheek."
+    projected = []
+
+    def chat(client, model, system, user, schema, *unused):
+        data = json.loads(user)
+        if system == step.FACIAL_APPEARANCE_SYSTEM:
+            projected.append(data)
+            assert data["appearance"].startswith(face)
+            return {"appearance": face + (cut if data["variant"] == "chapter" else "")}
+        if schema["name"] == "reference_appearance":
+            return {"appearance": body + (cut if data["chapter_visual_state"] else "")}
+        for spec in data:
+            if spec["view_type"] in step.FACIAL_VIEWS:
+                assert spec["appearance"] == face + (cut if spec["variant"] == "chapter" else "")
+                assert "added_details" not in spec
+            else:
+                assert spec["appearance"] == body
+        return {"assets": [{"asset_id": spec["asset_id"], "description": "Identity reference.",
+                            "generation_prompt": "Plain background and soft even light."} for spec in data]}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    assets = step.generate_picture_assets(None, "qwen", specs, args)
+    assert len(projected) == 2  # One facial projection per state, shared across facial views.
+    for asset in assets:
+        prompt = asset["generation_prompt"]
+        assert prompt.startswith(step.VIEW_FRAMING[asset["view_type"]])
+        assert face in prompt
+        if asset["view_type"] in step.FACIAL_VIEWS:
+            assert all(word not in prompt for word in (
+                "forearms", "cargo pants", "boots", "backpack", "hammer", "pickaxe", "torch holder",
+            ))
+            assert (cut in prompt) == (asset["variant"] == "chapter")
+        else:
+            assert body in prompt
+    records, _ = image_prompt_export.export_image_prompts(
+        {"entities": [entity()], "picture_assets": assets}, output_root / "image_prompts",
+    )
+    assert [p["generation_prompt"] for p in records[0]["prompts"]] == [a["generation_prompt"] for a in assets]
+
+
+@pytest.mark.parametrize("invalid", ["", "x" * 1601, "<Picture 1>"])
+def test_facial_projection_retries_invalid_results(monkeypatch, invalid):
+    step = lmstudio_pipeline.load("consolidate")
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    specs = step.build_picture_specs([entity()], options())[:1]
+    replies = iter([{"appearance": invalid}, {"appearance": "Hazel eyes."}])
+    calls = []
+
+    def chat(*args):
+        calls.append(args)
+        return next(replies)
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    result = step.picture_view_appearances(None, "qwen", specs, options(),
+                                           {("CHAR_001", "base"): "Hazel eyes. A backpack."})
+    assert result == {specs[0]["asset_id"]: "Hazel eyes."}
     assert len(calls) == 2
     assert "Previous response was invalid" in calls[1][3]
 
