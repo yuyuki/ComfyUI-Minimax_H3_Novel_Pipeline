@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from . import lmstudio_pipeline, util
+from . import configuration_snapshot, lmstudio_pipeline, util
 from .run_output import stage_output
 from .chapter_selection import chapter_paths as selected_chapter_paths
 
@@ -58,11 +58,18 @@ class ExtractChapterReferencesNode:
         with client:
             args = argparse.Namespace(merge_batch_size=max(2, int(params["merge_batch_size"])), chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), base_url=lmstudio_config["api_url"])
             output.mkdir(parents=True, exist_ok=True)
+            snapshot = configuration_snapshot.start(
+                output, "extract", lmstudio_config, resolved_model, args, out_dir=out_dir,
+                inputs={"chapters": [{"file": str(path), "sha256": configuration_snapshot.file_digest(path)} for path in paths]},
+            )
             _log(f"LM Studio extraction: model={resolved_model}, chapters={len(paths)}")
             results = []
+            artifacts = []
             for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
                 with progress.scope(index / len(paths), (index + 1) / len(paths)):
                     saved = pipeline.process_chapter(path, output, client, resolved_model, args)
                     results.append(util.load_json(saved))
+                    artifacts.append(saved)
+            configuration_snapshot.complete(snapshot, artifacts)
             return results, util.catalog_summary(results)

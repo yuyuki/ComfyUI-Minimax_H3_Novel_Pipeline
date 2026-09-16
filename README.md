@@ -136,6 +136,22 @@ their required `out_dir`. Every queued execution reserves one shared local-time
 unchanged. Defaults within that run are `chapter_catalogs`, `references` and
 `h3_prompts`. Timestamp collisions advance to the next free second without
 overwriting an earlier run. LM Studio Configuration shows the run folder in its status.
+Each stage also writes `extract_configuration.json`, `consolidate_configuration.json`
+or `generate_configuration.json` beside its results. These readable JSON snapshots
+record every LM Studio Configuration control, the resolved model, effective model
+controls and fallback policy, node settings (including defaults), input identifiers,
+run folder and UTC timestamps. Completed snapshots list result files with SHA-256
+hashes, so you can match settings to the files and detect later edits. API keys are
+never included. Qwen controls remain visible in the shared configuration when using
+Mistral; `model_controls` describes which controls actually apply.
+Snapshots are execution records, not configuration files to edit and reload.
+`status: started` means execution did not reach successful completion (including
+failure or cancellation); only `completed` snapshots contain the final output hashes.
+A repeated stage in the same output subfolder replaces its snapshot, just like its
+results; use different `out_dir` subfolders for multiple instances of the same stage.
+Cached results are included without changing cache behavior. These records describe
+the pipeline's configuration, not LM Studio's server-side model loading settings or
+a per-request trace of retries/fallbacks.
 Consolidation writes `consolidated_references.json`, `reference_asset_prompts.txt`,
 `visual_designs.json` and an `image_prompts/` export. Generate writes the same image
 export alongside its existing chapter/scene files. Loader nodes reuse saved inputs;
@@ -173,6 +189,18 @@ prompt for each generated angle and chapter variant. `image_prompts.json` contai
 the same records. Generate's appended `image_prompt_text` output provides these
 texts in ComfyUI; existing `prompts` and `prompt_text` sockets keep their positions.
 The `prompts` dictionary also includes `image_prompts` records.
+
+Before assembling views, LM Studio condenses overlapping source descriptions,
+feature lists and approved designs into a shared English appearance paragraph
+per entity and chapter variant. It is instructed to merge repeated facts and
+translations, omit biography and scene actions from neutral references, and
+replace conflicting base clothing with chapter clothing. Each view reuses that
+paragraph with its own framing and composition, in natural language suitable for
+Qwen-Image-2512. This adds one LM Studio request per entity/state (plus any retries).
+Source facts and editable design details remain intact. Semantic condensation
+depends on the LM Studio model; review the resulting prompts for faithful details.
+To refresh older repetitive prompts, rerun Consolidate using Load Chapter Catalogs,
+then pass the new registry to Generate. Loading an old registry keeps its old prompts.
 
 Missing visual details are designed once per entity and stored separately from
 novel facts in `references/visual_designs.json`. To change them, edit only that

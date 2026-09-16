@@ -124,6 +124,9 @@ def test_prompts_repeat_identity_design_style_and_variant(monkeypatch):
     seen_temperatures = []
 
     def chat(client, model, system, user, schema, temperature, max_tokens):
+        if schema["name"] == "reference_appearance":
+            state = json.loads(user)["chapter_visual_state"]
+            return {"appearance": "A silver silhouette. A star marking. Short copper hair." + (" " + state if state else "")}
         seen_temperatures.append(temperature)
         return {"assets": [{"asset_id": s["asset_id"], "description": "A clear reference.",
                             "generation_prompt": "Soft even lighting, plain background."} for s in json.loads(user)]}
@@ -156,6 +159,8 @@ def test_invalid_asset_batches_retry_then_succeed(monkeypatch, bad):
     calls = []
 
     def chat(*args):
+        if args[4]["name"] == "reference_appearance":
+            return {"appearance": "A silver silhouette with a star marking."}
         calls.append(args)
         return next(responses)
 
@@ -163,6 +168,96 @@ def test_invalid_asset_batches_retry_then_succeed(monkeypatch, bad):
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     assert len(step.generate_picture_assets(None, "qwen", specs, args)) == 1
     assert len(calls) == 2
+
+
+def test_noisy_source_is_normalized_once_and_exported_without_reappending(output_root, monkeypatch):
+    step = lmstudio_pipeline.load("consolidate")
+    item = entity()
+    item["canonical_name"] = "Henry Jones Jr."
+    item["stable_visual_description"] = (
+        "Yeux noisette, cicatrice sur le menton. Carries a backpack with a side pocket. "
+        "Suspended by a rope around chest and armpits."
+    )
+    item["distinguishing_features"] = [
+        "Yeux noisette", "Cicatrice sur le menton", "Carries a backpack with a side pocket",
+        "Holds torch between teeth during fall", "Étudiant en linguistique",
+    ]
+    item["chapter_variations"] = [{"chapter_id": "chapter", "variant_reference_recommended": True,
+                                    "visual_state": "Wearing a red coat."}]
+    original = copy.deepcopy(item)
+    args = options()
+    args.visual_designs = {"CHAR_001": {"added_details": {"default_outfit": "A dark robe.",
+                                                         "hair": "Dark brown hair."}}}
+    appearance_calls = []
+    base = "Hazel eyes, a scar on the chin and dark brown hair. A backpack with a side pocket. A dark robe."
+    variant = base.replace("A dark robe.", "A red coat.")
+
+    def chat(client, model, system, user, schema, *unused):
+        data = json.loads(user)
+        if schema["name"] == "reference_appearance":
+            appearance_calls.append(data)
+            return {"appearance": variant if data["chapter_visual_state"] else base}
+        assert all("stable_visual_description" not in spec for spec in data)
+        return {"assets": [{"asset_id": spec["asset_id"], "description": "A clear reference.",
+                            "generation_prompt": "Soft even lighting against a plain background."} for spec in data]}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    assets = step.generate_picture_assets(None, "qwen", step.build_picture_specs([item], args), args)
+    assert len(appearance_calls) == 2  # Four base views and two variant views share two paragraphs.
+    assert appearance_calls[0]["distinguishing_features"] == item["distinguishing_features"]
+    assert appearance_calls[0]["added_details"] == args.visual_designs["CHAR_001"]["added_details"]
+    assert appearance_calls[1]["base_appearance"] == base
+    assert item == original
+    for asset in assets:
+        prompt = asset["generation_prompt"]
+        assert prompt.count("Hazel eyes") == 1
+        assert prompt.count("side pocket") == 1
+        assert prompt.count("Henry Jones Jr.") == 1
+        assert "Jr.." not in prompt
+        assert "Yeux" not in prompt and "Étudiant" not in prompt and "torch" not in prompt
+        assert "Base visual design:" not in prompt
+        assert ("A dark robe." in prompt) == (asset["variant"] == "base")
+        assert ("A red coat." in prompt) == (asset["variant"] == "chapter")
+    records, _ = image_prompt_export.export_image_prompts(
+        {"entities": [item], "picture_assets": assets}, output_root / "image_prompts",
+    )
+    assert [p["generation_prompt"] for p in records[0]["prompts"]] == [a["generation_prompt"] for a in assets]
+    saved = json.loads((output_root / "image_prompts/image_prompts.json").read_text(encoding="utf-8"))
+    assert saved["entities"] == records
+    exported = (output_root / "image_prompts" / records[0]["text_file"]).read_text(encoding="utf-8")
+    assert "COPY-PASTE PROMPT:\n" + assets[0]["generation_prompt"] in exported
+
+
+@pytest.mark.parametrize("appearance", ["", "x" * 1601, "<Picture 1>",
+                                         "Hazel eyes and brown hair. HAZEL EYES AND BROWN HAIR!"])
+def test_invalid_normalized_appearance_retries(monkeypatch, appearance):
+    step = lmstudio_pipeline.load("consolidate")
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    responses = iter([{"appearance": appearance}, {"appearance": "A silver silhouette with a star marking."}])
+    calls = []
+
+    def chat(*args):
+        calls.append(args)
+        return next(responses)
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    specs = step.build_picture_specs([entity()], options())
+    normalized = step.prepare_picture_appearances(None, "qwen", specs, options())
+    assert normalized == {("CHAR_001", "base"): "A silver silhouette with a star marking."}
+    assert len(calls) == 2
+    assert "Previous response was invalid" in calls[1][3]
+
+
+def test_normalized_appearances_do_not_cross_entities(monkeypatch):
+    step = lmstudio_pipeline.load("consolidate")
+    args = options()
+    items = [entity(), entity("object", "OBJ_001")]
+    specs = step.build_picture_specs(items, args)
+    replies = iter([{"appearance": "A silver character."}, {"appearance": "A golden object."}])
+    monkeypatch.setattr(step, "chat_json", lambda *unused: next(replies))
+    assert step.prepare_picture_appearances(None, "qwen", specs, args) == {
+        ("CHAR_001", "base"): "A silver character.", ("OBJ_001", "base"): "A golden object.",
+    }
 
 
 def test_asset_retries_are_bounded_and_cancelable(monkeypatch):
@@ -276,6 +371,8 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
             return {"added_details": [{"trait": "hair", "description": "Copper hair."}]}
         if schema is visual_designs.CONFLICT_SCHEMA:
             return design_checks(user)
+        if schema["name"] == "reference_appearance":
+            return {"appearance": "A silver silhouette with a star marking and copper hair."}
         return {"assets": [{"asset_id": s["asset_id"], "description": "Reference.",
                             "generation_prompt": "Soft light."} for s in json.loads(user)]}
     monkeypatch.setattr(step, "chat_json", chat)

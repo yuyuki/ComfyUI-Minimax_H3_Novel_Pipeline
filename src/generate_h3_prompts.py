@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from . import lmstudio_pipeline, util
+from . import configuration_snapshot, lmstudio_pipeline, util
 from .chapter_selection import chapter_paths as selected_chapter_paths
 from .path_access import confined_path
 from .run_output import stage_output
@@ -50,6 +50,11 @@ class GenerateH3PromptsNode:
             keys = ("duration", "chunk_chars", "overlap_paragraphs", "scenes_per_chunk", "max_scenes", "max_pictures", "max_pictures_per_subject", "max_audio", "temperature", "max_tokens", "repair_attempts", "force")
             args = argparse.Namespace(**{key: params[key] for key in keys}, out_dir=output)
             args.out_dir.mkdir(parents=True, exist_ok=True)
+            snapshot = configuration_snapshot.start(
+                output, "generate", lmstudio_config, resolved_model, args, out_dir=out_dir,
+                inputs={"chapters": [str(path) for path in paths],
+                        "consolidated_references_sha256": configuration_snapshot.content_digest(consolidated_references)},
+            )
             image_records, image_text = export_image_prompts(consolidated_references, output / "image_prompts")
             manifests = []
             for index, path in enumerate(paths):
@@ -72,5 +77,8 @@ class GenerateH3PromptsNode:
                 for scene in manifest["outputs"]
                 if scene.get("prompt_text")
             )
+            configuration_snapshot.complete(snapshot, [output / "image_prompts"] + [
+                confined_path(manifest["chapter_id"], output) for manifest in manifests
+            ])
             return ({"schema_version": "minimax-h3-novel-prompts.v3", "model": resolved_model,
                      "chapters": manifests, "image_prompts": image_records}, prompt_text, image_text)

@@ -7,7 +7,7 @@ import argparse
 import hashlib
 from typing import Any, Iterable
 
-from . import lmstudio_pipeline, util
+from . import configuration_snapshot, lmstudio_pipeline, util
 from .run_output import stage_output
 from .visual_designs import IMAGE_STYLES, prepare_designs, resolve_designs_path
 from .image_prompt_export import export_image_prompts
@@ -67,6 +67,13 @@ class ConsolidateReferencesNode:
             if args.image_asset_scope not in {"all entities", "existing priority threshold"}:
                 raise ValueError("Unknown image asset scope.")
             _log(f"LM Studio consolidation: model={resolved_model}, chapters={len(chapters)}")
+            snapshot = configuration_snapshot.start(
+                output, "consolidate", lmstudio_config, resolved_model, args, out_dir=out_dir,
+                inputs={"chapter_catalogs_sha256": configuration_snapshot.content_digest(chapters),
+                        "chapter_ids": [chapter["chapter_id"] for chapter in chapters],
+                        "visual_designs_sha256": configuration_snapshot.file_digest(designs_path) if designs_path else None},
+                extra={"visual_designs_path": str(designs_path) if designs_path else ""},
+            )
             registry: list[dict[str, Any]] = []
             for chapter in progress.steps(chapters, 0, 0.3):
                 lmstudio_pipeline.comfy_interrupt_check()
@@ -93,4 +100,7 @@ class ConsolidateReferencesNode:
             util.save_json(output / "consolidated_references.json", payload)
             export_image_prompts(payload, output / "image_prompts")
             pipeline.write_asset_prompts(util.output_path(output / "reference_asset_prompts.txt"), pictures, audio)
+            configuration_snapshot.complete(snapshot, [output / name for name in (
+                "consolidated_references.json", "visual_designs.json", "reference_asset_prompts.txt", "image_prompts",
+            )])
             return payload, util.registry_summary(payload)

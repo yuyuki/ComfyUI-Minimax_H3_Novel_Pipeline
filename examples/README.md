@@ -17,6 +17,9 @@
    Copy each view's prompt from `references/image_prompts/` into your Qwen-Image-2512
    workflow, or use Generate's `image_prompt_text` output. The same export is saved
    under `h3_prompts/image_prompts/`. Generate and review one image per view.
+   Consolidate merges repeated facts into shared English appearance prose before
+   assembling the views. To fix prompts from an older run, use Load Chapter Catalogs
+   and rerun Consolidate, then Generate with the new registry.
 6. Use the desired chapter and scene entry from Generate's `prompts` payload
    with your MiniMax H3 Reference to Video node. Generate/load the media from
    the registry's briefs and attach it in the entry's image/audio asset-ID order.
@@ -45,6 +48,14 @@ under `output/minimax_h3_novel`. Output subfolders are relative to that run: use
 `catalog_path=20260911153042/chapter_catalogs` or
 `consolidated_path=20260911153042/references/consolidated_references.json`. Absolute paths
 must stay within the corresponding root; `..` and links escaping it are rejected.
+
+To compare settings with results, open `extract_configuration.json` in
+`chapter_catalogs`, `consolidate_configuration.json` in `references`, or
+`generate_configuration.json` in `h3_prompts`. Each snapshot includes the shared
+LM Studio controls, resolved model, node settings, inputs and run timestamps.
+When `status` is `completed`, `outputs` lists result paths relative to the snapshot
+and SHA-256 hashes. `started` indicates an incomplete execution. API keys are omitted.
+Change settings in the nodes; these JSON files are records, not editable presets.
 
 Extraction uses hierarchical merges (`merge_batch_size`, default 2) and caches each merge batch for resuming. The default `max_tokens` is 8192 per extraction/merge call. Update these controls in existing workflows to adopt the new defaults. The final catalog must still fit the output budget; dense catalogs may need more output tokens and a larger context window. For crowded passages, reduce `chunk_chars` to avoid the per-passage limits of 6 characters, 4 locations and 6 objects. Enable `force` to regenerate cached results.
 
