@@ -48,6 +48,22 @@ def steps(items, start=0, end=1):
     report(end)
 
 
+def _execution_result(result):
+    """Let ComfyUI emit `executed`, which its frontend counts toward Total.
+
+    ProgressBar drives the per-node bar, but tuple-only nodes do not produce
+    the UI output required for that completion event. Keep direct Python calls
+    returning their original tuples; only wrap results during graph execution.
+    """
+    try:
+        from comfy_execution.utils import get_executing_context
+    except ImportError:
+        return result
+    if get_executing_context() is None or not isinstance(result, tuple):
+        return result
+    return {"ui": {"minimax_h3_completed": [True]}, "result": result}
+
+
 def node_progress(function):
     """Report progress and completion time, keeping ComfyUI optional."""
     @wraps(function)
@@ -71,7 +87,7 @@ def node_progress(function):
                 f"[minimax_h3_novel] {function.__qualname__} complete in {hours:02d}:{minutes:02d}:{seconds:02d}",
                 flush=True,
             )
-            return result
+            return _execution_result(result)
         finally:
             if token is not None:
                 _active.reset(token)

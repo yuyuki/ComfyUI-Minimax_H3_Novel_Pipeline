@@ -135,3 +135,62 @@ def test_merge_batches_report_progress_on_fresh_and_cached_runs(bars, tmp_path, 
     assert run() == first
     assert len(calls) == 6
     assert bars[1].values == bars[0].values
+
+
+@pytest.fixture
+def execution_context(monkeypatch):
+    context = SimpleNamespace(prompt_id="workflow", node_id="extract")
+    package = ModuleType("comfy_execution")
+    utils = ModuleType("comfy_execution.utils")
+    utils.get_executing_context = lambda: context if context.node_id else None
+    package.utils = utils
+    monkeypatch.setitem(sys.modules, "comfy_execution", package)
+    monkeypatch.setitem(sys.modules, "comfy_execution.utils", utils)
+    return context
+
+
+def test_workflow_completion_metadata_preserves_socket_values(bars, execution_context):
+    completed = []
+    payload = ({"entities": []}, "summary")
+
+    @progress.node_progress
+    def run():
+        progress.report(0.55)
+        # Mid-node progress must not claim this node has completed.
+        assert execution_context.node_id not in completed
+        return payload
+
+    for stage in ("extract", "consolidate", "generate"):
+        execution_context.node_id = stage
+        response = run()
+        assert response["result"] is payload
+        # ComfyUI emits `executed` only for nonempty UI output. The frontend
+        # then marks this node completed in its workflow-total counter.
+        assert response["ui"] == {"minimax_h3_completed": [True]}
+        completed.append(stage)
+    assert len(completed) == 3
+    assert all(bar.values == [0, 55, 100] for bar in bars)
+
+
+def test_direct_calls_with_comfy_installed_keep_tuple(bars, execution_context):
+    execution_context.node_id = None
+    payload = ({"chapter_paths": "chapter.txt"},)
+
+    @progress.node_progress
+    def run():
+        return payload
+
+    assert run() is payload
+
+
+@pytest.mark.parametrize("error", [RuntimeError, KeyboardInterrupt])
+def test_graph_failure_never_returns_completion_metadata(bars, execution_context, error):
+    @progress.node_progress
+    def run():
+        progress.report(0.55)
+        raise error("stopped")
+
+    with pytest.raises(error, match="stopped"):
+        run()
+    assert bars[0].values == [0, 55]
+    assert progress._active.get() is None
