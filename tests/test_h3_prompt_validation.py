@@ -123,9 +123,9 @@ def test_rushed_shots_require_repair(cuts, duration, short_shot):
     (0.1, "[Shot 1] A scene."),
     (2, "[Shot 1] A scene."),
     (5, "[Shot 1] A scene."),
-    (6, "[Shot 1] A scene.\n[Shot 2] At 00:03.000, A reaction."),
-    (8, "[Shot 1] A scene.\n[Shot 2] At 00:04.000, A reaction."),
-    (12, "[Shot 1] A scene.\n[Shot 2] At 00:04.000, A reaction.\n[Shot 3] At 00:08.000, A pause."),
+    (6, "[Shot 1] A scene."),
+    (8, "[Shot 1] A scene."),
+    (12, "[Shot 1] A scene."),
 ])
 def test_sustained_shots_and_short_continuous_clips_pass(duration, shots):
     assert step.validate_prompt(prompt_with_shots(shots), BINDINGS, duration).ok
@@ -134,7 +134,7 @@ def test_sustained_shots_and_short_continuous_clips_pass(duration, shots):
 @pytest.mark.parametrize("first", ["At 00:00.000, ", "00:00.000, "])
 def test_first_shot_timestamp_does_not_blame_valid_later_shots(first):
     prompt = prompt_with_shots(f"[Shot 1] {first}A figure pauses.\n[Shot 2] At 00:03.000, The camera moves closer.")
-    assert step.validate_prompt(prompt, BINDINGS, 8).errors == ["[Shot 1] must not have a timestamp."]
+    assert "[Shot 1] must not have a timestamp." in step.validate_prompt(prompt, BINDINGS, 8).errors
 
 
 def test_first_shot_timestamp_cannot_mask_missing_later_timestamp():
@@ -180,8 +180,9 @@ def test_generation_and_repair_normalize_model_text(monkeypatch, repair):
     canonical = prompt_with_shots("[Shot 1] At the doorway, a figure pauses.")
     inline = canonical.replace("overall_soundscape:\n", "overall_soundscape: ")
     def chat_json(*args):
-        assert "PACING: Use at most 2 shot(s)" in args[3]
-        assert "Every shot must last at least 3s, including the final shot" in args[3]
+        assert "Exactly one continuous [Shot 1] lasting the full 8s" in args[3]
+        assert "Do not merge successive shots" in args[3]
+        assert "Visual event: Pause" in args[3]
         return {"prompt_text": inline}
     monkeypatch.setattr(step, "chat_json", chat_json)
     scene = SimpleNamespace(title="Scene", visual_event="Pause", dialogue_present=False,
@@ -194,3 +195,32 @@ def test_generation_and_repair_normalize_model_text(monkeypatch, repair):
         result = step.generate_prompt(None, "model", scene, BINDINGS, 8, args)
     assert result == canonical
     assert step.validate_prompt(result, BINDINGS, 8).ok
+
+
+def test_even_well_spaced_cuts_require_single_shot_repair():
+    prompt = prompt_with_shots("[Shot 1] Ignition.\n[Shot 2] At 00:04.000, A spoken reaction.")
+    result = step.validate_prompt(prompt, BINDINGS, 8)
+    assert not result.ok
+    assert any("exactly one continuous" in error for error in result.errors)
+
+
+def test_planning_keeps_successive_beats_with_shared_context(monkeypatch):
+    excerpt = 'She lights the wood in the hearth. She says, "Stay here."'
+    events = ["She lights the wood in the hearth.", "She speaks with a worried expression."]
+    raw = [dict(title=f"Moment {i}", source_excerpt=excerpt, visual_event=event,
+                location_global_id="", visible_entity_ids=[], speaking_entity_ids=[],
+                reference_view_requests=[], dialogue_present=bool(i),
+                adaptation_notes="Flames remain attached to the wood in the hearth.")
+           for i, event in enumerate(events)]
+
+    def chat_json(client, model, system, user, *args):
+        assert "Split successive actions" in system
+        assert "never pack leftover beats" in system
+        assert "Full duration for EACH single-shot scene: 8 seconds" in user
+        return {"scenes": raw}
+
+    monkeypatch.setattr(step, "chat_json", chat_json)
+    scenes = step.plan_scenes(None, "model", "chapter", excerpt, 1, 1, [],
+                             SimpleNamespace(duration=8, scenes_per_chunk=4))
+    assert [scene.visual_event for scene in step.dedupe_scenes(scenes + scenes)] == events
+    assert all(scene.source_excerpt == excerpt for scene in scenes)

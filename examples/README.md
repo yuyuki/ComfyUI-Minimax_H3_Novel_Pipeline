@@ -92,3 +92,7 @@ for consistency before using them as H3 references.
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 
 Only current v3 chapter catalogs and registries are accepted. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
+
+Generate gives each scene one continuous shot lasting the full `duration`.
+Increase `scenes_per_chunk` (and `max_scenes` if capped) to allow more separate
+moments. Rerun Generate to replace earlier compressed scene plans and prompts.

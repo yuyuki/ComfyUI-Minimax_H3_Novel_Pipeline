@@ -200,11 +200,13 @@ and generation requests canonical names alongside them. `*_assets.json` retains
 the binding table and adds `copy_paste_prompt` and validation status. The readable sheet is the only scene prompt text file;
 no separate `*_assets.txt` is generated. Rerun Generate to produce the new exports.
 
-Scene pacing favors sustained 4–6-second shots or longer. Validation requires at
-least 3 seconds per shot, including the final hold, and sends rushed timing through
-the existing repair process. Clips shorter than 6 seconds use one continuous shot;
-an 8-second clip allows at most two shots. Increase `duration` when the scene needs
-more time for action or dialogue. Rerun Generate to apply the revised pacing rules.
+Each scene now uses one continuous shot lasting the full `duration`. Planning
+splits successive actions and dialogue into separate scenes instead of merging
+shots to fit a clip. `scenes_per_chunk` and `max_scenes` remain selection limits;
+raise them to allow more scenes. Dialogue instructions align the speaker's voice,
+mouth movement and expression, while continuity instructions preserve physical
+contact and the source of effects. Rerun Generate to replan and regenerate prompts;
+older planning and prompt caches are invalidated automatically.
 
 Before assembling views, LM Studio condenses overlapping source descriptions,
 feature lists and approved designs into a shared English appearance paragraph
