@@ -886,7 +886,7 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float) -> V
 
     for subject in bindings["subjects"]:
         label = subject["h3_subject_label"]
-        line_match = re.search(rf"(?mi)^\s*{re.escape(label)}(?:\s|$).*$", defs)
+        line_match = re.search(rf"(?mi)^[ \t]*{re.escape(label)}(?:[ \t]|:|$)[^\r\n]*", defs)
         if not line_match:
             errors.append(f"{label} is missing from subject_definitions.")
             continue

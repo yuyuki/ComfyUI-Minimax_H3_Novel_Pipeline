@@ -68,6 +68,39 @@ def test_first_shot_can_start_with_at_in_prose():
     assert step.validate_prompt(prompt, BINDINGS, 8).ok
 
 
+@pytest.mark.parametrize("separator", [": ", " ", " = "])
+def test_subject_definitions_accept_colon_and_whitespace(separator):
+    bindings = {"subjects": [
+        {"h3_subject_label": f"<Subject {i}>",
+         "pictures": [{"h3_picture_label": f"<Picture {i}>"}]}
+        for i in (1, 2)
+    ], "audio": []}
+    definitions = "\n".join(
+        f"<Subject {i}>{separator}{name} ({kind}), defined by <Picture {i}>."
+        for i, name, kind in [(1, "The Crevasse", "location"), (2, "Indy", "character")]
+    )
+    prompt = prompt_with_shots("[Shot 1] A figure pauses.").replace(
+        "subject_definitions:\nN/A", f"subject_definitions:\n{definitions}"
+    )
+    assert step.validate_prompt(prompt, bindings, 8).ok
+
+
+@pytest.mark.parametrize("definition,error", [
+    ("N/A", "<Subject 1> is missing from subject_definitions."),
+    ("<Subject 1>extra <Picture 1>", "<Subject 1> is missing from subject_definitions."),
+    ("<Subject 1>: Indy (character).", "<Subject 1> definition must cite assigned <Picture 1>."),
+    ("<Subject 1>\n<Subject 2>: Temple from <Picture 1>.",
+     "<Subject 1> definition must cite assigned <Picture 1>."),
+])
+def test_subject_definition_checks_still_reject_missing_bindings(definition, error):
+    bindings = {"subjects": [{"h3_subject_label": "<Subject 1>",
+                              "pictures": [{"h3_picture_label": "<Picture 1>"}]}], "audio": []}
+    prompt = prompt_with_shots("[Shot 1] <Subject 1> pauses.").replace(
+        "subject_definitions:\nN/A", f"subject_definitions:\n{definition}"
+    )
+    assert error in step.validate_prompt(prompt, bindings, 8).errors
+
+
 @pytest.mark.parametrize("cuts,duration,short_shot", [
     ([2.5, 5, 7.5], 8, 4),
     ([1.5, 3.5, 5.5], 8, 1),
