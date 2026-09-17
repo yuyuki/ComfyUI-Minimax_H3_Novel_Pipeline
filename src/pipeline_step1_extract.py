@@ -244,6 +244,12 @@ Character fields:
   items, age-state or other chapter-specific visible state.
 - voice_description: only source-supported voice/delivery traits; empty if unknown.
 - speaks: true only when the character actually speaks.
+- Attribute each spoken line using its speech tag and surrounding prose. A name
+  called out in dialogue is the addressee, not necessarily the speaker. Off-screen
+  replies count as speech. Preserve explicit delivery cues such as shouting in
+  voice_description, without inventing a permanent vocal timbre.
+- For a speaking character, prefer one short evidence anchor containing their
+  actual words and attribution. Do not use only another person's call to them.
 - reference_view_hints: choose views that would materially help preserve identity
   or reproduce likely shots. Allowed: {', '.join(CHARACTER_VIEWS)}.
 
@@ -276,6 +282,10 @@ STRICT COMPACTNESS RULES:
 - stable_visual_description/chapter_appearance/chapter_state: concise; do not narrate events.
 - Keep stable_visual_description strictly persistent. Clothing, wounds, wetness, dirt, restraint state, carried gear, temporary exposure, and other scene-specific conditions belong in chapter_appearance/chapter_state, not the stable identity.
 - Return the smallest JSON that fully captures continuity-relevant information.
+- Summaries follow source event order and retain key calls and replies, including
+  brief off-screen replies. Preserve who acts, their position and the cause/result;
+  do not turn a later action into the opening state. Never infer that a character
+  is visible or performs an action merely because they are addressed nearby.
 
 Each evidence item must be a short, verbatim excerpt copied from the supplied
 passage, in its original language. Do not translate, paraphrase, or invent evidence.
@@ -294,6 +304,10 @@ source-supported name from the candidates. If unnamed, retain a short, distincti
 source-supported label. Never invent a proper name. Preserve the source language.
 Preserve selected evidence excerpts unchanged, in their original language.
 Do not translate, paraphrase, or invent evidence.
+Preserve supported speaker attribution and delivery cues, including off-screen
+speech. Retain an attributed speech anchor when available for speaking characters.
+Keep the summary's events in source order, including key calls and replies;
+do not replace an exchange with only the initiating speaker's action.
 
 Combine reference_view_hints as the union of justified views. Keep the strongest
 justified importance and reference_priority. Every output entity must list every

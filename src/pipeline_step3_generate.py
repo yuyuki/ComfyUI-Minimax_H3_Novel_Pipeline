@@ -329,9 +329,29 @@ Source excerpts may overlap for context; this does not mean their visual events 
 The scene limit is a selection budget: if it is reached, select fewer source moments,
 never pack leftover beats into the last scene.
 
+Before selecting scenes, trace the passage's physical states and dialogue turns
+in source order. The original prose governs events; entity catalog descriptions
+are reference metadata, not a timeline or evidence that an entity is on screen.
+Preserve the opening situation, spatial relationships, and causal order. Do not
+advance a later prop arrival or character action to the start of the sequence.
+When selecting a dialogue exchange, retain its short replies and calls, including
+off-screen speech. Give each turn its own scene when needed; do not silently drop
+a reply in favor of another establishing shot. Under a tight scene budget, prefer
+a shorter coherent exchange over disconnected highlights from the whole passage.
+Put the exact selected spoken words and their attributed speaker in adaptation_notes.
+Retain the prose speech tags in source_excerpt so a called name is not mistaken
+for the speaker. Describe off-screen voices as off-screen; do not invent a reverse
+shot or an unseen person's actions. A sustained shot must not contain 'cuts to'.
+
+For example, if a suspended character calls for a torch, looks into the darkness,
+then hears a companion call their name before a torch descends: preserve that order.
+Keep the companion's reply, then the torch's approach and the character's reaction;
+do not open with the torch already arriving or invent a view of who lowers it.
+
 Use global IDs only from the supplied chapter entity catalog.
 - visible_entity_ids: catalogued characters/locations/objects actually visible.
-- speaking_entity_ids: catalogued characters who actually speak in the excerpt.
+- speaking_entity_ids: catalogued characters who speak in this planned beat,
+  including off-screen speakers; exclude speakers present only in contextual prose.
 - location_global_id: catalogued main location or empty string.
 - reference_view_requests: for important visible entities, select ONLY view_type
   values actually listed in available_picture_views. Request views that materially
@@ -747,8 +767,12 @@ EXACT PER-CLIP BINDINGS
 --- END SOURCE EXCERPT ---
 
 Use one continuous shot for this planned beat, with no cuts. Fit physical actions and pauses into the actual duration, and never
-speed up dialogue merely to fit it. Preserve source dialogue exactly
-if used. Do not vocalize internal thoughts. detailed_description normally targets
+speed up dialogue merely to fit it. Include every dialogue turn selected for this
+beat in adaptation_notes, with exact source words and the correct speaker. Keep
+off-screen replies audible without inventing a view of the speaker. Dialogue from
+neighboring beats included only for context does not belong in this clip. Preserve
+the planned starting state and event order; do not bring later events forward.
+Do not vocalize internal thoughts. detailed_description normally targets
 350-500 English words; dialogue-heavy material prioritizes fitting the actual spoken
 timeline. Return only the six-section H3 prompt inside prompt_text, with no Markdown.
 """
