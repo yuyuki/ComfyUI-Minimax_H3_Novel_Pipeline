@@ -200,6 +200,12 @@ and generation requests canonical names alongside them. `*_assets.json` retains
 the binding table and adds `copy_paste_prompt` and validation status. The readable sheet is the only scene prompt text file;
 no separate `*_assets.txt` is generated. Rerun Generate to produce the new exports.
 
+Scene pacing favors sustained 4–6-second shots or longer. Validation requires at
+least 3 seconds per shot, including the final hold, and sends rushed timing through
+the existing repair process. Clips shorter than 6 seconds use one continuous shot;
+an 8-second clip allows at most two shots. Increase `duration` when the scene needs
+more time for action or dialogue. Rerun Generate to apply the revised pacing rules.
+
 Before assembling views, LM Studio condenses overlapping source descriptions,
 feature lists and approved designs into a shared English appearance paragraph
 per entity and chapter variant. It is instructed to merge repeated facts and

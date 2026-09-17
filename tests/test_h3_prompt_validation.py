@@ -68,6 +68,36 @@ def test_first_shot_can_start_with_at_in_prose():
     assert step.validate_prompt(prompt, BINDINGS, 8).ok
 
 
+@pytest.mark.parametrize("cuts,duration,short_shot", [
+    ([2.5, 5, 7.5], 8, 4),
+    ([1.5, 3.5, 5.5], 8, 1),
+    ([3, 4], 8, 2),
+    ([7.5], 8, 2),
+    ([8], 8, 2),
+    ([0], 8, 1),
+    ([2.5], 5, 1),
+])
+def test_rushed_shots_require_repair(cuts, duration, short_shot):
+    shots = "[Shot 1] A scene."
+    for index, cut in enumerate(cuts, 2):
+        shots += f"\n[Shot {index}] At 00:{cut:06.3f}, A reaction."
+    result = step.validate_prompt(prompt_with_shots(shots), BINDINGS, duration)
+    assert not result.ok
+    assert any(f"Shot {short_shot} lasts only" in error for error in result.errors)
+
+
+@pytest.mark.parametrize("duration,shots", [
+    (0.1, "[Shot 1] A scene."),
+    (2, "[Shot 1] A scene."),
+    (5, "[Shot 1] A scene."),
+    (6, "[Shot 1] A scene.\n[Shot 2] At 00:03.000, A reaction."),
+    (8, "[Shot 1] A scene.\n[Shot 2] At 00:04.000, A reaction."),
+    (12, "[Shot 1] A scene.\n[Shot 2] At 00:04.000, A reaction.\n[Shot 3] At 00:08.000, A pause."),
+])
+def test_sustained_shots_and_short_continuous_clips_pass(duration, shots):
+    assert step.validate_prompt(prompt_with_shots(shots), BINDINGS, duration).ok
+
+
 @pytest.mark.parametrize("first", ["At 00:00.000, ", "00:00.000, "])
 def test_first_shot_timestamp_does_not_blame_valid_later_shots(first):
     prompt = prompt_with_shots(f"[Shot 1] {first}A figure pauses.\n[Shot 2] At 00:03.000, The camera moves closer.")
@@ -116,7 +146,11 @@ def test_normalization_preserves_missing_and_duplicate_section_errors(body):
 def test_generation_and_repair_normalize_model_text(monkeypatch, repair):
     canonical = prompt_with_shots("[Shot 1] At the doorway, a figure pauses.")
     inline = canonical.replace("overall_soundscape:\n", "overall_soundscape: ")
-    monkeypatch.setattr(step, "chat_json", lambda *args: {"prompt_text": inline})
+    def chat_json(*args):
+        assert "PACING: Use at most 2 shot(s)" in args[3]
+        assert "Every shot must last at least 3s, including the final shot" in args[3]
+        return {"prompt_text": inline}
+    monkeypatch.setattr(step, "chat_json", chat_json)
     scene = SimpleNamespace(title="Scene", visual_event="Pause", dialogue_present=False,
                             adaptation_notes="", source_excerpt="A figure pauses.")
     args = SimpleNamespace(temperature=0.38, max_tokens=8000)

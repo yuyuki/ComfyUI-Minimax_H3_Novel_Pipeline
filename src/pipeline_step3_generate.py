@@ -174,9 +174,18 @@ detailed_description:
 - [Shot 1] has NO timestamp;
 - every later shot starts exactly: [Shot N] At MM:SS.mmm, 
 - for example: [Shot 1] The camera frames the scene.
-  A later cut, only if it fits the duration: [Shot 2] At 00:03.000, The camera moves closer.
+  A later cut, only if it leaves enough time for both shots: [Shot 2] At 00:04.000, The camera moves closer.
 - never write [Shot 1] At 00:00.000, or put a timestamp before a shot marker;
 - timestamps are cut times and must fit the requested duration;
+- prefer sustained shots of 4-6 seconds or longer for atmosphere, reactions and
+  dialogue; each shot, INCLUDING the final shot, must last at least 3 seconds;
+- for clips shorter than 6 seconds, use one continuous shot lasting the full clip;
+- use fewer shots when actions need more time. A camera push, tilt or character
+  reaction can happen within one shot without a cut or a new Shot marker;
+- do not hide additional cuts inside a shot's prose. Every cut needs a Shot marker;
+- allow time to establish the composition, perform the action and hold its result;
+- use descriptive detail for simultaneous visual qualities, not extra sequential
+  actions to fill the word target. Never rush speech or motion to fit more shots;
 - describe composition/framing, referenced visible traits and positions,
   environment/lighting, actions/state changes, camera movement, current ambience/SFX,
   and where the reference applies;
@@ -677,6 +686,19 @@ def build_bindings(
     }
 
 
+def pacing_instruction(duration: float) -> str:
+    minimum = min(3.0, duration)
+    max_shots = max(1, int((duration + 1e-6) / 3.0))
+    return (
+        f"PACING: Use at most {max_shots} shot(s); fewer is preferred. "
+        f"Every shot must last at least {minimum:g}s, including the final shot "
+        f"from its cut timestamp to the clip end at {duration:g}s. "
+        "Aim for 4-6s holds or longer where the action needs it. "
+        "Merge rushed shots into continuous action and update any prose hold durations "
+        "to agree with the timestamps; preserve the source event."
+    )
+
+
 def generate_prompt(
     client: OpenAI,
     model: str,
@@ -701,6 +723,7 @@ The caller supplies an exact per-clip binding table. Obey it exactly:
 """
     user = f"""TARGET DURATION: {duration:g} seconds.
 All cut timestamps must be <= {duration:.3f} seconds.
+{pacing_instruction(duration)}
 EXPECTED SUMMARY PREFIX: [{expected_prefix}]
 
 SCENE
@@ -801,7 +824,7 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float) -> V
             later.append((shot.group(1), *timestamp.groups()))
     if len(later) != sum(n != 1 for n in nums):
         errors.append("Every shot after Shot 1 must begin '[Shot N] At MM:SS.mmm, '.")
-    previous = -1.0
+    previous = 0.0
     for n, mm, ss, mmm in later:
         if int(ss) >= 60:
             errors.append(f"Shot {n} timestamp seconds must be less than 60.")
@@ -811,6 +834,21 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float) -> V
         if t > duration + 1e-6:
             errors.append(f"Shot {n} cut {t:.3f}s exceeds target duration {duration:.3f}s.")
         previous = t
+    # Check complete intervals, including the often-overlooked last hold.
+    # Malformed timelines retain their structural errors instead of misleading pacing errors.
+    cuts = [timestamp_seconds(mm, ss, mmm) for _, mm, ss, mmm in later]
+    boundaries = [0.0, *cuts, duration]
+    if (nums == list(range(1, len(nums) + 1)) and nums
+            and len(later) == len(nums) - 1
+            and all(int(ss) < 60 for _, _, ss, _ in later)
+            and all(a <= b for a, b in zip(boundaries, boundaries[1:]))):
+        minimum = min(3.0, duration)
+        for index, (start, end) in enumerate(zip(boundaries, boundaries[1:]), 1):
+            if end - start + 1e-6 < minimum:
+                errors.append(
+                    f"Shot {index} lasts only {end - start:.3f}s; minimum is {minimum:g}s "
+                    "including the final shot. Merge shots or rebalance cut times within the target duration."
+                )
     if word_count < 330:
         errors.append(f"detailed_description is short ({word_count} words; normal target 350-500).")
     elif word_count > 540:
@@ -902,6 +940,7 @@ belong to the same Subject; never split one entity into multiple Subjects merely
 because it has several views. Return only prompt_text JSON.
 """
     user = f"""TARGET DURATION: {duration:g}s
+{pacing_instruction(duration)}
 
 VALIDATION ERRORS:
 {chr(10).join('- ' + x for x in validation.errors)}
