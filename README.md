@@ -190,6 +190,16 @@ the same records. Generate's appended `image_prompt_text` output provides these
 texts in ComfyUI; existing `prompts` and `prompt_text` sockets keep their positions.
 The `prompts` dictionary also includes `image_prompts` records.
 
+Each scene also has an `*_prompt.txt` sheet listing named characters, objects,
+places, image views and filenames in upload order, followed by `COPY-PASTE PROMPT:`.
+`all_prompts.txt` and the node's `prompt_text` output collect these sheets.
+The structured scene entry keeps its raw `prompt_text` and adds `asset_sheet_text`.
+Copy only the prompt below that heading
+into H3; attach the listed media in order. Numbered H3 labels remain unchanged,
+and generation requests canonical names alongside them. `*_assets.json` retains
+the binding table and adds `copy_paste_prompt` and validation status. The readable sheet is the only scene prompt text file;
+no separate `*_assets.txt` is generated. Rerun Generate to produce the new exports.
+
 Before assembling views, LM Studio condenses overlapping source descriptions,
 feature lists and approved designs into a shared English appearance paragraph
 per entity and chapter variant. It is instructed to merge repeated facts and

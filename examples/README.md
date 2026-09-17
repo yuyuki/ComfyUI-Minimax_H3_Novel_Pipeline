@@ -23,6 +23,9 @@
 6. Use the desired chapter and scene entry from Generate's `prompts` payload
    with your MiniMax H3 Reference to Video node. Generate/load the media from
    the registry's briefs and attach it in the entry's image/audio asset-ID order.
+   Alternatively, open the scene's `*_prompt.txt` (or chapter `all_prompts.txt`),
+   attach the named references in the listed order, and copy the text below
+   `COPY-PASTE PROMPT:` into H3. Check any validation warnings before use.
 
 To resume, replace Extract with **Load Chapter Catalogs**, or replace
 Extract and Consolidate with **Load Consolidated References**. Generation

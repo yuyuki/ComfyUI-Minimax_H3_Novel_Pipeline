@@ -139,6 +139,11 @@ Reference semantics:
 
 subject_definitions:
 - define each supplied <Subject N> exactly once;
+- include the supplied canonical name and entity type in each subject definition
+  (character, object, or location), alongside the unchanged numbered label;
+- use canonical names alongside Subject labels in summary and action prose so
+  the reader can identify characters, objects and places without a lookup;
+- identify each Picture by its supplied view type when explaining its contribution;
 - if a subject has several pictures, cite ALL of them in that same subject definition;
 - explicitly say what each view contributes, e.g. face identity, full-body proportions,
   rear silhouette, location layout, secondary angle, or detail structure;
@@ -917,6 +922,34 @@ CURRENT PROMPT:
     return normalize_prompt(data["prompt_text"])
 
 
+def scene_asset_sheet(scene: Scene, bindings: dict[str, Any], prompt: str, validation: Validation) -> str:
+    """Human-readable upload instructions kept outside the six-section H3 prompt."""
+    lines = [f"SCENE: {scene.title}", "", "REFERENCE UPLOAD ORDER:",
+             "Attach the corresponding images and audio in the numbered order below."]
+    for subject in bindings["subjects"]:
+        lines.append(
+            f"{subject['h3_subject_label']} = {subject['canonical_name']} "
+            f"({subject['entity_type']}; {subject['global_id']})"
+        )
+        for picture in subject["pictures"]:
+            lines.append(
+                f"  {picture['h3_picture_label']} = {subject['canonical_name']} | "
+                f"{picture.get('view_type', '')} | {picture.get('variant', 'base')} | "
+                f"{picture.get('suggested_filename') or picture['asset_id']}"
+            )
+    for audio in bindings.get("audio_input_order", []):
+        lines.append(
+            f"{audio['h3_audio_label']} = {audio.get('canonical_name', '')} | "
+            f"{audio.get('suggested_filename') or audio['asset_id']}"
+        )
+    for entity in bindings.get("unreferenced_visible_entities", []):
+        lines.append(f"No image attached: {entity['canonical_name']} ({entity['entity_type']})")
+    if not validation.ok:
+        lines.extend(["", "VALIDATION WARNINGS:", *validation.errors])
+    lines.extend(["", "COPY-PASTE PROMPT:", prompt.rstrip()])
+    return "\n".join(lines) + "\n"
+
+
 def save_scene(
     chapter_dir: Path,
     index: int,
@@ -927,11 +960,13 @@ def save_scene(
 ) -> dict[str, Any]:
     chapter_dir = chapter_dir.resolve()
     stem = f"scene_{index:03d}_{slug(scene.title)}"
-    prompt_path = confined_path(chapter_dir / f"{stem}_prompt.txt", chapter_dir)
     assets_path = confined_path(chapter_dir / f"{stem}_assets.json", chapter_dir)
+    prompt_path = confined_path(chapter_dir / f"{stem}_prompt.txt", chapter_dir)
     source_path = confined_path(chapter_dir / f"{stem}_source.txt", chapter_dir)
-    prompt_path.write_text(prompt.rstrip() + "\n", encoding="utf-8")
-    assets_path.write_text(json.dumps(bindings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    assets_record = {**bindings, "copy_paste_prompt": prompt.rstrip(),
+                     "valid": validation.ok, "validation_errors": validation.errors}
+    assets_path.write_text(json.dumps(assets_record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    prompt_path.write_text(scene_asset_sheet(scene, bindings, prompt, validation), encoding="utf-8")
     source_path.write_text(
         f"TITLE: {scene.title}\n\nVISUAL EVENT:\n{scene.visual_event}\n\n"
         f"ADAPTATION NOTES:\n{scene.adaptation_notes}\n\nSOURCE EXCERPT:\n{scene.source_excerpt}\n",
@@ -940,8 +975,8 @@ def save_scene(
     return {
         "index": index,
         "title": scene.title,
-        "prompt_file": prompt_path.name,
         "assets_file": assets_path.name,
+        "prompt_file": prompt_path.name,
         "source_file": source_path.name,
         "valid": validation.ok,
         "validation_errors": validation.errors,

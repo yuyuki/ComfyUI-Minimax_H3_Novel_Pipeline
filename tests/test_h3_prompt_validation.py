@@ -1,5 +1,7 @@
 """Offline coverage for H3 text formatting and shot validation."""
 from types import SimpleNamespace
+import copy
+import json
 
 import pytest
 
@@ -7,6 +9,46 @@ from minimax_h3_novel_pipeline import pipeline_step3_generate as step
 
 
 BINDINGS = {"subjects": [], "audio": []}
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_scene_exports_named_reference_sheet_and_copyable_prompt(tmp_path, valid):
+    subjects, pictures = [], []
+    for i, (name, kind) in enumerate([( "Indy", "character"), ("Temple", "location"),
+                                     ("Lantern", "object")], 1):
+        views = []
+        for view in ("front", "rear"):
+            picture = {"h3_picture_label": f"<Picture {len(pictures) + 1}>",
+                       "asset_id": f"ASSET_{i}_{view}", "suggested_filename": f"{name}_{view}.png",
+                       "view_type": view, "variant": "base"}
+            pictures.append(picture)
+            views.append(picture)
+        subjects.append({"h3_subject_label": f"<Subject {i}>", "canonical_name": name,
+                         "entity_type": kind, "global_id": f"ENTITY_{i}", "pictures": views})
+    audio = {"h3_audio_label": "<Audio 1>", "canonical_name": "Indy",
+             "asset_id": "VOICE_1", "suggested_filename": "Indy.wav"}
+    bindings = {"subjects": subjects, "picture_input_order": pictures,
+                "audio": [audio], "audio_input_order": [audio]}
+    original = copy.deepcopy(bindings)
+    scene = SimpleNamespace(title="Arrival", visual_event="Arrival", adaptation_notes="", source_excerpt="Text")
+    prompt = prompt_with_shots("[Shot 1] A figure pauses.")
+    validation = SimpleNamespace(ok=valid, errors=[] if valid else ["Needs repair"], word_count=350)
+    entry = step.save_scene(tmp_path, 1, scene, bindings, prompt, validation)
+    sheet = (tmp_path / entry["prompt_file"]).read_text(encoding="utf-8")
+    assert sheet.split("COPY-PASTE PROMPT:\n", 1)[1] == prompt + "\n"
+    assert "<Subject 1> = Indy (character; ENTITY_1)" in sheet
+    assert "<Subject 2> = Temple (location; ENTITY_2)" in sheet
+    assert "<Subject 3> = Lantern (object; ENTITY_3)" in sheet
+    assert "<Picture 2> = Indy | rear | base | Indy_rear.png" in sheet
+    assert "<Audio 1> = Indy | Indy.wav" in sheet
+    assert ("VALIDATION WARNINGS:" in sheet) is not valid
+    record = json.loads((tmp_path / entry["assets_file"]).read_text(encoding="utf-8"))
+    assert record["copy_paste_prompt"] == prompt
+    assert record["valid"] is valid
+    assert record["picture_input_order"] == pictures
+    assert bindings == original
+    assert entry["prompt_file"].endswith("_prompt.txt")
+    assert not list(tmp_path.glob("*_assets.txt"))
 
 
 def prompt_with_shots(shots):

@@ -66,13 +66,14 @@ class GenerateH3PromptsNode:
                 for scene in manifest["outputs"]:
                     if not scene.get("prompt_file"):
                         continue
-                    scene["prompt_text"] = confined_path(scene["prompt_file"], target).read_text(encoding="utf-8").rstrip()
+                    scene["asset_sheet_text"] = confined_path(scene["prompt_file"], target).read_text(encoding="utf-8").rstrip()
                     bindings = util.load_json(confined_path(scene["assets_file"], target))
+                    scene["prompt_text"] = bindings["copy_paste_prompt"]
                     scene["bindings"] = bindings
                     scene["picture_asset_ids"] = [x["asset_id"] for x in bindings["picture_input_order"]]
                     scene["audio_asset_ids"] = [x["asset_id"] for x in bindings["audio_input_order"]]
             prompt_text = "\n\n".join(
-                f"# {manifest.get('chapter_id', 'Chapter')} — Scene {scene.get('index', '?')}\n\n{scene['prompt_text']}"
+                f"# {manifest.get('chapter_id', 'Chapter')} — Scene {scene.get('index', '?')}\n\n{scene['asset_sheet_text']}"
                 for manifest in manifests
                 for scene in manifest["outputs"]
                 if scene.get("prompt_text")

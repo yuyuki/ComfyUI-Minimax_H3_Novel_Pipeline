@@ -214,4 +214,7 @@ def test_generated_scene_files_and_manifest_stay_in_output(roots, monkeypatch):
     bindings = {"picture_input_order": [], "subjects": [], "audio": []}
     validation = SimpleNamespace(ok=True, errors=[], word_count=1)
     entry = step.save_scene(output / "chapter", 1, scene, bindings, "Prompt", validation)
-    assert (output / "chapter" / entry["prompt_file"]).read_text().strip() == "Prompt"
+    record = json.loads((output / "chapter" / entry["assets_file"]).read_text())
+    assert record["copy_paste_prompt"] == "Prompt"
+    assert (output / "chapter" / entry["prompt_file"]).read_text().endswith("COPY-PASTE PROMPT:\nPrompt\n")
+    assert not list((output / "chapter").glob("*_assets.txt"))
