@@ -416,6 +416,44 @@ def test_normalized_appearances_do_not_cross_entities(monkeypatch):
     }
 
 
+@pytest.mark.parametrize("field", ["description", "generation_prompt"])
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_audio_briefs_retry_blank_fields_with_unspecified_voice(monkeypatch, field, blank):
+    step = lmstudio_pipeline.load("consolidate")
+    args = options()
+    args.audio_threshold = "recommended"
+    character = entity(gid="CHAR_002")
+    character.update(canonical_name="Doriane", speaks=True,
+                     reference_priority="recommended", voice_description="")
+    specs = step.build_audio_specs([character], args)
+    valid = {"asset_id": "AUD_CHAR_002_VOICE",
+             "description": "A reusable voice reference for Doriane; source vocal traits are unspecified.",
+             "generation_prompt": "Record a neutral, consistent delivery without music or reverb."}
+    calls = []
+
+    def chat(client, model, system, user, schema, *unused):
+        calls.append(user)
+        assert "empty input voice_description" in system
+        assert "Both text fields must be non-empty" in system
+        properties = schema["schema"]["properties"]["assets"]["items"]["properties"]
+        assert properties[field]["minLength"] == 1
+        if len(calls) == 1:
+            assert json.loads(user)[0]["voice_description"] == ""
+            return {"assets": [{**valid, field: blank}]}
+        assert f"AUD_CHAR_002_VOICE needs non-empty {field}" in user
+        return {"assets": [valid]}
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    monkeypatch.setattr(step, "chat_json", chat)
+    assets = step.generate_audio_assets(None, "model", specs, args)
+    assert len(calls) == 2
+    assert len(assets) == 1
+    assert assets[0]["description"] == valid["description"]
+    assert assets[0]["generation_prompt"] == valid["generation_prompt"]
+    assert assets[0]["linked_global_id"] == "CHAR_002"
+    assert character["voice_description"] == ""
+
+
 def test_asset_retries_are_bounded_and_cancelable(monkeypatch):
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     calls = []

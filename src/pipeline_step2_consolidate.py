@@ -153,8 +153,8 @@ PICTURE_BRIEF_SCHEMA = {
 
 AUDIO_BRIEF_ITEM = {
     "asset_id": {"type": "string"},
-    "description": {"type": "string"},
-    "generation_prompt": {"type": "string"},
+    "description": {"type": "string", "minLength": 1},
+    "generation_prompt": {"type": "string", "minLength": 1},
 }
 AUDIO_BRIEF_SCHEMA = {
     "name": "audio_asset_briefs_v2",
@@ -908,10 +908,21 @@ def complete_image_prompt(spec, composition, appearance):
 AUDIO_BRIEF_SYSTEM = """
 Create clean reusable voice-reference briefs for speaking novel characters.
 Return exactly one brief per asset_id. Preserve only source-supported voice traits.
+Return JSON with an assets array. Each item must contain asset_id, description
+and generation_prompt. Both text fields must be non-empty:
+- description: a short English sentence explaining the voice reference's purpose.
+- generation_prompt: English instructions for producing the clean voice reference.
+An empty input voice_description means the source does not specify vocal traits;
+it does not mean either output field should be empty. Describe the reference's
+purpose without claiming unknown traits as facts.
 If the novel gives no vocal traits, request a neutral, consistent, character-
 appropriate delivery without inventing accent, precise pitch, age, ethnicity or
 other unsupported vocal characteristics. Prefer a dry recording with no music,
 reverb or environmental noise. Do not include MiniMax labels.
+Example for unspecified vocal traits (use the requested asset_id and name):
+{"assets":[{"asset_id":"AUD_CHAR_001_VOICE",
+"description":"A reusable voice reference for this character; vocal traits are unspecified in the source.",
+"generation_prompt":"Record a neutral, consistent delivery in a dry recording with no music, reverb or environmental noise. Do not impose an unsupported accent or precise pitch."}]}
 """.strip()
 
 
