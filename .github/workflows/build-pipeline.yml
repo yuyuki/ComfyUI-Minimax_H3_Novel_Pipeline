@@ -28,6 +28,8 @@ jobs:
       - name: Run Linting
         run: |
           ruff check .
+      - name: Check architecture map
+        run: python tools/generate_architecture.py --check
       - name: Run Tests
         run: |
           python -m pytest tests/
