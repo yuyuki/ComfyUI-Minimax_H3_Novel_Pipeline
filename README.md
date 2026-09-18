@@ -25,6 +25,22 @@ Runtime dependencies are `openai>=1.0,<3`, `httpx>=0.27,<1` and `pypdf`.
 The OpenAI SDK range preserves compatibility with the HTTPX transport used
 by the nodes. PDF reading uses `pypdf`; text and Markdown do not need it.
 
+## Architecture analysis
+
+The generated [architecture map](docs/architecture.md) shows the three-stage
+pipeline flow, internal Python-module dependencies and each module's public
+classes and functions. It is built with Python's standard-library AST parser,
+so it adds no ComfyUI runtime dependency or external service.
+
+Regenerate it after changing imports or public symbols:
+
+```sh
+python tools/generate_architecture.py
+```
+
+CI runs the same command with `--check` and fails when the committed map is
+stale.
+
 ## LM Studio setup
 
 1. Start LM Studio's local API server and load a model.

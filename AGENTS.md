@@ -72,6 +72,8 @@ Preserve existing node IDs and socket types for workflow compatibility.
   documentation, examples and browser JavaScript in the source distribution.
 - Update root `README.md` and `examples/README.md` when setup or wiring changes.
 - Install development tools with `python -m pip install -e ".[dev]"`.
+- Keep `docs/architecture.md` synchronized with active package imports by
+  running `python tools/generate_architecture.py` after architecture changes.
 - Run `python -m pytest`, `ruff check .`, and `python -m build` for layout or
   packaging changes. Pytest configuration lives only in `pyproject.toml`.
 - Add focused regression coverage for affected behavior; mock network work.
