@@ -1,0 +1,14 @@
+# Development-only files; runtime source, frontend, docs and examples remain.
+/tests/
+/tools/
+/external source/
+/.github/
+/.agents/
+/.codex/
+/AGENTS.md
+/.pre-commit-config.yaml
+**/__pycache__/
+*.pyc
+/build/
+/dist/
+/*.egg-info/

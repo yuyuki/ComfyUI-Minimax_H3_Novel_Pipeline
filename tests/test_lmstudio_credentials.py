@@ -1,5 +1,4 @@
 """Credential destination regressions; no ComfyUI or live LM Studio required."""
-import ast
 import importlib
 import json
 import os
@@ -114,18 +113,13 @@ class CredentialTests(unittest.TestCase):
         self.assertEqual(requests[0].headers["Authorization"], "Bearer operator-secret")
 
     def test_all_bundled_factories_forward_secure_transport(self):
-        # Execute the actual factories without importing optional pipeline dependencies.
-        for name in self.pipeline._SCRIPT_FILES.values():
-            with self.subTest(step=name):
-                tree = ast.parse((ROOT / name).read_text(encoding="utf-8"))
-                factory = next(node for node in tree.body
-                               if isinstance(node, ast.FunctionDef) and node.name == "make_client")
-                constructor = Mock()
-                namespace = {"OpenAI": constructor}
-                exec(compile(ast.Module(body=[factory], type_ignores=[]), name, "exec"), namespace)  # noqa: S102
-                transport = object()
-                namespace["make_client"](DEFAULT_URL, "test-key", http_client=transport)
-                self.assertIs(constructor.call_args.kwargs["http_client"], transport)
+        for step in self.pipeline._SCRIPT_FILES:
+            with self.subTest(step=step):
+                module = self.pipeline.load(step)
+                with patch.object(module, "OpenAI") as constructor:
+                    transport = object()
+                    module.make_client(DEFAULT_URL, "test-key", http_client=transport)
+                    self.assertIs(constructor.call_args.kwargs["http_client"], transport)
 
 
 if __name__ == "__main__":

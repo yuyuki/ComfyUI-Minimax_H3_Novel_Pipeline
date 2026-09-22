@@ -303,6 +303,17 @@ interrupts a running request.
 
 License: [GNU GPL v3](LICENSE).
 
+Registry releases use `.comfyignore` to omit tests, development tools and historical
+sources while retaining runtime code, browser assets, documentation and examples.
+The publish workflow checks the uploaded version for up to roughly ten minutes.
+Only an active, non-deprecated version passes; flagged releases include the registry's
+findings and a manual-review issue draft in the Actions summary. The workflow does
+not submit issues or grant approval. If scanning is still pending, rerun it with
+`check_only` enabled to check the current `pyproject.toml` version without uploading
+again. Locally, use `python tools/check_registry_status.py` with Python 3.11 or newer.
+The trusted endpoint environment setting is intentional security configuration;
+if it is flagged, request review rather than removing that validation.
+
 Extraction uses hierarchical merges (`merge_batch_size`, default 2) and caches each merge batch for resuming. The default `max_tokens` is 8192 per extraction/merge call. This limits partial catalogs per call; the final catalog must still fit the output budget, and dense catalogs can require more output tokens and a larger context window. Existing workflows retain their saved settings; update these controls to adopt the new defaults. Enable `force` to regenerate cached results.
 
 Compact retries retain the original entity capacities, six distinguishing features of up to 120 characters each, and justified reference views. They allow 500 characters for stable visual descriptions and 350 for chapter appearance/state, shortening summaries and evidence instead. Retry-policy changes invalidate cached outputs. Extraction still selects continuity-relevant entities within the passage schema's limits (6 characters, 4 locations, 6 objects); reduce `chunk_chars` for crowded passages. These limits are character counts, not token counts, and unknown source traits remain unknown.

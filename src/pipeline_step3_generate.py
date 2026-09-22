@@ -520,7 +520,7 @@ def build_bindings(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     entities = entity_index(refs)
-    requests = request_map(scene)
+    view_requests_by_id = request_map(scene)
 
     ordered_visible = list(dict.fromkeys(
         ([scene.location_global_id] if scene.location_global_id else []) + scene.visible_entity_ids
@@ -544,7 +544,7 @@ def build_bindings(
             )
             continue
 
-        req = requests.get(gid)
+        req = view_requests_by_id.get(gid)
         requested_views = req.view_types if req else []
         if not requested_views:
             available_view_set = {a.get("view_type") for a in available}
