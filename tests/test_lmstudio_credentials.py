@@ -1,7 +1,6 @@
 """Credential destination regressions; no ComfyUI or live LM Studio required."""
 import importlib
 import json
-import os
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -25,10 +24,7 @@ class CredentialTests(unittest.TestCase):
         self.settings = importlib.import_module("credential_test_plugin.lmstudio_settings")
         self.pipeline = importlib.import_module("credential_test_plugin.lmstudio_pipeline")
         self.config = importlib.import_module("credential_test_plugin.lmstudio_config")
-        env = patch.dict(os.environ, {}, clear=True)
-        env.start()
-        self.addCleanup(env.stop)
-        self.settings.set_api_key("operator-secret")
+        self.settings.set_connection_settings(DEFAULT_URL, "operator-secret")
 
     def test_untrusted_urls_rejected_before_secret_lookup_or_client_creation(self):
         urls = ["https://attacker.example/v1", "http://127.0.0.1:4321/v1",
@@ -65,7 +61,7 @@ class CredentialTests(unittest.TestCase):
 
     def test_operator_can_authorize_remote_endpoint(self):
         url = "https://trusted.example/lm/v1"
-        os.environ["MINIMAX_H3_LMSTUDIO_BASE_URL"] = url
+        self.settings.set_connection_settings(url, "operator-secret")
         self.assertEqual(self.settings.validate_api_url(url + "/"), url)
         with self.assertRaises(ValueError):
             self.settings.validate_api_url(DEFAULT_URL)
@@ -74,11 +70,27 @@ class CredentialTests(unittest.TestCase):
 
     def test_cached_configuration_is_revalidated(self):
         config, _ = self.config.LMStudioConfigurationNode().run(DEFAULT_URL)
-        os.environ["MINIMAX_H3_LMSTUDIO_BASE_URL"] = "https://new.example/v1"
+        self.settings.set_connection_settings("https://new.example/v1", "new-secret")
         module = SimpleNamespace(make_client=Mock())
         with self.assertRaises(ValueError):
             self.pipeline.make_client_and_model(module, config["api_url"])
         module.make_client.assert_not_called()
+
+    def test_invalid_settings_preserve_endpoint_and_key(self):
+        for url in (None, "", "file:///tmp/model", "http://user:secret@host/v1", "http://host/v1?key=x"):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                self.settings.set_connection_settings(url, "replacement")
+        with self.assertRaises(ValueError):
+            self.settings.set_connection_settings("https://new.example/v1", None)
+        self.assertEqual(self.settings.validate_api_url(DEFAULT_URL), DEFAULT_URL)
+        self.assertEqual(self.settings.get_api_key(), "operator-secret")
+
+    def test_endpoint_change_before_key_lookup_rejects_old_destination(self):
+        self.settings.validate_api_url(DEFAULT_URL)
+        self.settings.set_connection_settings("https://new.example/v1", "new-secret")
+        with self.assertRaises(ValueError):
+            self.settings.get_api_key(DEFAULT_URL)
+        self.assertEqual(self.settings.get_api_key("https://new.example/v1"), "new-secret")
 
     def test_authenticated_request_does_not_follow_redirects(self):
         requests = []

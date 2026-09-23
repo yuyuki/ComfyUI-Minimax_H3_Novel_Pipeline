@@ -1,7 +1,8 @@
 # Example workflow
 
 1. Add **LM Studio Configuration**, enter the server URL, and set the
-   API key in ComfyUI Settings → MiniMax H3 Novel → LM Studio.
+   matching **Trusted API URL** and **API Key** in
+   ComfyUI Settings → MiniMax H3 Novel → LM Studio.
 2. Add **Select Chapters**, **Extract Chapter References**, **Consolidate
    References** and **Generate H3 Prompts**. Connect configuration to all three.
 3. Choose the chapters once in Select Chapters, then connect its

@@ -56,15 +56,13 @@ The API key is kept out of workflows and node outputs. ComfyUI's browser
 settings store the value locally in plain text and send it to the backend
 before queuing; the backend holds it in memory.
 
-To authorize another LM Studio endpoint, set the following before starting
-ComfyUI, then enter exactly the same URL in the configuration node:
+To authorize another LM Studio endpoint, set **Trusted API URL** beside **API Key**
+in **ComfyUI Settings → MiniMax H3 Novel → LM Studio**, then enter the same URL
+in the configuration node. The default is `http://127.0.0.1:1234/v1`.
+The former `MINIMAX_H3_LMSTUDIO_BASE_URL` environment variable is no longer read;
+copy any custom endpoint into this setting after updating.
 
-```powershell
-$env:MINIMAX_H3_LMSTUDIO_BASE_URL = "http://127.0.0.1:1235/v1"
-```
-
-The default endpoint remains trusted unless this variable is set. A trailing
-slash is accepted. Authenticated requests disable redirects and environment
+A trailing slash is accepted. Authenticated requests disable redirects and environment
 proxies. The chapter picker and settings endpoints require direct local
 browser access to ComfyUI, such as `http://localhost:8188`; remote,
 cross-origin and forwarded proxy requests are rejected.

@@ -39,7 +39,7 @@ def make_client_and_model(module: ModuleType, api_url: str, config: dict | None 
     # Recheck here: downstream nodes can receive forged or cached configuration.
     api_url = lmstudio_settings.validate_api_url(api_url)
     profile = lmstudio_models.get_profile(config.get("model_family", "Qwen")) if config is not None else None
-    api_key = lmstudio_settings.get_api_key()
+    api_key = lmstudio_settings.get_api_key(api_url)
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("api_key must not be empty (LM Studio accepts 'lm-studio' by default).")
     import httpx

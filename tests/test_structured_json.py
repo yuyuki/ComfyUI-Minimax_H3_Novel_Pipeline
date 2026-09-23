@@ -438,7 +438,7 @@ def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, famil
             super().__init__(transport=httpx.MockTransport(respond), **kwargs)
 
     monkeypatch.setattr(httpx, "Client", MockClient)
-    monkeypatch.setattr(lmstudio_settings, "get_api_key", lambda: "test-key")
+    monkeypatch.setattr(lmstudio_settings, "get_api_key", lambda api_url=None: "test-key")
     config = {"model_family": family, "thinking": False, "qwen35_top_k": 37}
     client, model = lmstudio_pipeline.make_client_and_model(
         lmstudio_pipeline.load(stage), "http://127.0.0.1:1234/v1", config)

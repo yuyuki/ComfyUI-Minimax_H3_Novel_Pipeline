@@ -362,6 +362,8 @@ app.registerExtension({
     },
 });
 
+const LMSTUDIO_API_URL_SETTING = "MiniMaxH3Novel.LMStudio.ApiUrl";
+const DEFAULT_LMSTUDIO_API_URL = "http://127.0.0.1:1234/v1";
 const LMSTUDIO_API_KEY_SETTING = "MiniMaxH3Novel.LMStudio.ApiKey";
 
 function ensureLmStudioApiKeyFieldWidth() {
@@ -380,49 +382,58 @@ function ensureLmStudioApiKeyFieldWidth() {
     document.head.appendChild(style);
 }
 
-async function sendLMStudioApiKey() {
+async function sendLMStudioSettings() {
     try {
+        const apiUrl = app.ui.settings.getSettingValue(LMSTUDIO_API_URL_SETTING) ?? DEFAULT_LMSTUDIO_API_URL;
         const apiKey = app.ui.settings.getSettingValue(LMSTUDIO_API_KEY_SETTING) || "";
         const response = await localFetch("/minimax_h3_novel/lmstudio-settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ api_key: apiKey }),
+            body: JSON.stringify({ api_url: apiUrl, api_key: apiKey }),
         });
         if (!response.ok) {
-            console.error("MiniMax H3 Novel: could not save the LM Studio API-key setting.");
+            console.error("MiniMax H3 Novel: could not save the LM Studio connection settings.");
         }
     } catch (error) {
-        console.error("MiniMax H3 Novel: failed to send the LM Studio API-key setting.", error);
+        console.error("MiniMax H3 Novel: failed to send the LM Studio connection settings.", error);
     }
 }
 
 // This follows ComfyUI's normal global Settings integration. The key is saved
 // by ComfyUI in the local browser profile, never embedded in a workflow, and
-// is passed to the backend only immediately before a workflow is queued.
+// is sent with the trusted URL on setup, settings changes, and before queuing.
 app.registerExtension({
     name: "minimax_h3_novel.lmstudio_settings",
     settings: [
+        {
+            id: LMSTUDIO_API_URL_SETTING,
+            name: "Trusted API URL",
+            type: "text",
+            default: DEFAULT_LMSTUDIO_API_URL,
+            category: ["MiniMax H3 Novel", "LM Studio"],
+            tooltip: "Authorize the LM Studio endpoint that may receive your API key. Use the same URL in LM Studio Configuration.",
+        },
         {
             id: LMSTUDIO_API_KEY_SETTING,
             name: "LM Studio API Key",
             type: "text",
             default: "",
             category: ["MiniMax H3 Novel", "LM Studio"],
-            tooltip: "Stored locally in ComfyUI settings, not in workflow JSON. Leave blank to use the environment-variable fallback.",
+            tooltip: "Stored locally in ComfyUI settings, not in workflow JSON. Use lm-studio if authentication is disabled.",
         },
     ],
     async setup() {
         ensureLmStudioApiKeyFieldWidth();
         // Settings are loaded after extensions; sync once they are available.
-        setTimeout(() => { sendLMStudioApiKey(); }, 500);
+        setTimeout(() => { sendLMStudioSettings(); }, 500);
         const originalSetSettingValue = app.ui.settings.setSettingValue;
         app.ui.settings.setSettingValue = function(id, value) {
             originalSetSettingValue.call(this, id, value);
-            if (id === LMSTUDIO_API_KEY_SETTING) sendLMStudioApiKey();
+            if (id === LMSTUDIO_API_KEY_SETTING || id === LMSTUDIO_API_URL_SETTING) sendLMStudioSettings();
         };
     },
     async beforeQueuing() {
-        await sendLMStudioApiKey();
+        await sendLMStudioSettings();
         return null;
     },
 });

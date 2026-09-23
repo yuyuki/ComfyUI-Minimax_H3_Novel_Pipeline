@@ -16,7 +16,7 @@ class LMStudioConfigurationNode:
 Share LM Studio settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
-Set the API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio → API Key`.
+Set the trusted API URL and API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio`.
 The key is not saved in the workflow. Choose Qwen or Mistral and configure the URL here. Thinking and qwen35 controls apply only to Qwen. Set max_tokens on each processing node.
 """
 
@@ -26,7 +26,7 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
             "required": {
                 "api_url": ("STRING", {
                     "default": "http://127.0.0.1:1234/v1",
-                    "tooltip": "Must match the server's MINIMAX_H3_LMSTUDIO_BASE_URL (default: http://127.0.0.1:1234/v1).",
+                    "tooltip": "Must match Trusted API URL in ComfyUI Settings → MiniMax H3 Novel → LM Studio.",
                 }),
                 "thinking": ("BOOLEAN", {
                     "default": False,
@@ -82,7 +82,7 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
 
         lmstudio_models.get_profile(model_family)
 
-        api_key = lmstudio_settings.get_api_key()
+        api_key = lmstudio_settings.get_api_key(api_url)
         if not api_key:
             raise RuntimeError(
                 "No API key in ComfyUI settings. Open Settings → "

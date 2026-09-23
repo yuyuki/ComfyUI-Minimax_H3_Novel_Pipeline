@@ -158,7 +158,9 @@ def _register_upload_route() -> None:
                 api_key = data.get("api_key", "")
                 if not isinstance(api_key, str):
                     raise ValueError("api_key must be a string")
-                lmstudio_settings.set_api_key(api_key)
+                lmstudio_settings.set_connection_settings(
+                    data.get("api_url", lmstudio_settings.DEFAULT_API_URL), api_key
+                )
                 return web.json_response({"configured": bool(api_key.strip())})
             except (ValueError, json.JSONDecodeError) as exc:
                 return web.json_response({"error": str(exc)}, status=400)

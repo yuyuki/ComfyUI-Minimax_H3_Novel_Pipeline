@@ -148,7 +148,7 @@ flowchart TD
 | `src/lmstudio_model_qwen.py` | — | `allows_chatml`, `completion_options`, `is_qwen35`, `is_thinking_grammar_error`, `matches`, `request_settings`, `retries`, `settings_from_config`, `supports_thinking_prefill` |
 | `src/lmstudio_models.py` | `lmstudio_model_mistral`, `lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
 | `src/lmstudio_pipeline.py` | `lmstudio_json`, `lmstudio_models`, `lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
-| `src/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `validate_api_url` |
+| `src/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `set_connection_settings`, `validate_api_url` |
 | `src/load_chapter_catalogs.py` | `progress`, `util` | `LoadChapterCatalogsNode` |
 | `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
 | `src/nodes.py` | `chapter_selection`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_consolidated_references` | — |

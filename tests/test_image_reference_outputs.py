@@ -73,7 +73,7 @@ def test_runs_share_queue_and_advance_on_collision(output_root, monkeypatch):
 
 def test_configuration_nodes_share_run_and_repeat_queues(output_root, monkeypatch):
     from minimax_h3_novel_pipeline import lmstudio_settings
-    monkeypatch.setattr(lmstudio_settings, "get_api_key", lambda: "test-secret")
+    monkeypatch.setattr(lmstudio_settings, "get_api_key", lambda api_url=None: "test-secret")
     monkeypatch.setattr(lmstudio_settings, "validate_api_url", lambda url: url)
     first, _ = LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1")
     other, _ = LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1")

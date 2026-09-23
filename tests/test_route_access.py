@@ -126,6 +126,23 @@ class RouteAccessTests(unittest.TestCase):
         self.assertEqual(settings.get_api_key(), "test-only")
         settings.set_api_key("")
 
+    def test_connection_settings_update_together_and_reject_invalid_url(self):
+        request = self.request(Origin="http://localhost:8188")
+        handler = self.routes["post", "/minimax_h3_novel/lmstudio-settings"]
+        url = "https://trusted.example/v1"
+        request.json = AsyncMock(return_value={"api_url": url + "/", "api_key": "test-only"})
+        self.assertEqual(asyncio.run(handler(request)), {"configured": True})
+        settings = sys.modules["access_test_plugin.lmstudio_settings"]
+        self.addCleanup(settings.set_connection_settings, settings.DEFAULT_API_URL, "")
+        self.assertEqual(settings.get_api_key(url), "test-only")
+        request.json = AsyncMock(return_value={"api_url": "file:///tmp/invalid", "api_key": "replacement"})
+        result = asyncio.run(handler(request))
+        self.assertIn("error", result)
+        self.assertNotIn("replacement", str(result))
+        self.assertEqual(settings.get_api_key(url), "test-only")
+        with self.assertRaises(ValueError):
+            settings.validate_api_url(settings.DEFAULT_API_URL)
+
     def test_upload_collision_preserves_existing_file(self):
         chapter = Path(self.temp.name) / "minimax_h3_novel" / "chapter.txt"
         chapter.write_bytes(b"original")

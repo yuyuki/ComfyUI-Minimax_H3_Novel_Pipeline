@@ -52,7 +52,8 @@ Preserve existing node IDs and socket types for workflow compatibility.
   do not document an environment-key selector unless it is implemented.
 - Keep API keys out of workflow JSON, saved outputs, logs and source code.
 - Validate the endpoint before retrieving credentials. Only the operator's
-  `MINIMAX_H3_LMSTUDIO_BASE_URL` (default `http://127.0.0.1:1234/v1`) is trusted.
+  Trusted API URL in ComfyUI settings (default `http://127.0.0.1:1234/v1`) is trusted.
+  Receive it together with the API key through the protected local settings route.
   Keep redirects and ambient proxies disabled for authenticated requests.
 - Preserve local-route checks before body parsing or filesystem mutations.
 - Pass dictionaries/lists between nodes. The current three stages also require
