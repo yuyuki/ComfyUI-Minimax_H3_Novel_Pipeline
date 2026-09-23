@@ -8,6 +8,28 @@
 - Ask for clarification only when necessary for safety or a material choice.
 - Preserve existing user edits and the scaffold's `src/` layout.
 
+## Changelog maintenance
+
+- Before every push to `master` (or `main`, the current default branch), update
+  root `CHANGELOG.md` in the same push with concise summaries of all newly
+  included commit messages. Read commit bodies as well as subjects.
+- Keep dated entries newest first, group related changes and retain their
+  short commit hashes for traceability. Include fixes, features, refactors,
+  tests, documentation, workflow changes and version bumps; account for merge
+  commits without duplicating the description of their changes.
+- Record changes not yet committed under `Unreleased`. On the next update,
+  move committed entries to their commit-date sections and add their hashes.
+  Check Git history against the existing entries so no commits are omitted
+  or summarized twice. A changelog-maintenance commit can be covered on the
+  next update; do not amend repeatedly just to record its own hash.
+- Do not infer registry publication dates or versions from commit dates.
+  This is a required pre-push maintenance step, not an automatic Git hook.
+- Preserve the publishing workflow's explicit `--changelog-file CHANGELOG.md`
+  argument: a local changelog file alone does not populate registry metadata.
+  Each new published version receives the complete changelog snapshot. Bump
+  `project.version` in `pyproject.toml` for a new release; publishing does not
+  backfill changelogs on existing registry versions.
+
 ## Current architecture
 
 - Root `__init__.py` is the ComfyUI checkout entrypoint. It re-exports mappings

@@ -6,6 +6,14 @@ All language-model work runs through LM Studio's OpenAI-compatible API.
 The nodes produce text, JSON and media briefs; images and audio are generated
 or loaded separately in ComfyUI.
 
+See [CHANGELOG.md](CHANGELOG.md) for the summarized commit history.
+
+The registry publishing workflow sends this file as the new version's
+`changelog` using Comfy CLI's `--changelog-file` option. To release, update the
+changelog and bump `project.version` in `pyproject.toml`, then push to `main`.
+Each release receives the complete changelog snapshot; previously published
+versions are not updated.
+
 ## Installation
 
 Requires Python 3.10 or newer, ComfyUI, and an LM Studio server with a loaded
