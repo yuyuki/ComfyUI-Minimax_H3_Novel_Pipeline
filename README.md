@@ -149,6 +149,12 @@ the camera axis, subject placement, starting composition, movement and ending
 composition. It is passed to the continuity pass when connected and to prompt
 generation and repair.
 
+Enable `refine_camera` to run a final LM Studio camera pass after a scene prompt
+passes validation. It adds one request per scene and inserts one concise camera
+instruction inside each existing `[Shot N]`, preserving the other H3 sections,
+events, dialogue and reference labels. Invalid camera notes are discarded with a
+`camera_warnings` entry in the scene output; the original validated prompt is kept.
+
 | Node | Inputs and result |
 |---|---|
 | LM Studio Configuration | URL and Qwen controls → shared non-secret configuration |

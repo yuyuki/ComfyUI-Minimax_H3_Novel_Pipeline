@@ -104,6 +104,12 @@ PROMPT_SCHEMA = {
         "additionalProperties": False,
     },
 }
+CAMERA_SCHEMA = {
+    "name": "camera_notes_v1", "strict": True,
+    "schema": {"type": "object", "properties": {
+        "shot_cameras": {"type": "array", "items": {"type": "string"}},
+    }, "required": ["shot_cameras"], "additionalProperties": False},
+}
 
 CONTINUITY_FIELDS = {
     "source_facts": {"type": "array", "items": {"type": "string"}},
@@ -872,6 +878,56 @@ def section_body(prompt: str, name: str) -> str:
     return prompt[start:end].strip()
 
 
+SHOT_HEADING = re.compile(r"\[Shot\s+(\d+)\](?: At \d{2}:\d{2}\.\d{3}, )?")
+
+
+def refine_camera_prompt(client: OpenAI, model: str, prompt: str, scene: Scene,
+                         continuity: dict[str, Any] | None, args: argparse.Namespace,
+                         bindings: dict[str, Any]) -> tuple[str, list[str]]:
+    """Add camera-only directions without letting the LLM rewrite plot or H3 bindings."""
+    detailed = section_body(prompt, "detailed_description")
+    headings = list(SHOT_HEADING.finditer(detailed))
+    if not headings or [int(h.group(1)) for h in headings] != list(range(1, len(headings) + 1)):
+        return prompt, ["Camera refinement skipped: shot headings are invalid."]
+    system = (
+        "You are a cinematographer doing a camera-only post-processing pass. "
+        "Return one brief English camera direction per supplied shot in shot_cameras order. "
+        "Describe initial framing, viewing axis, screen position of relevant anchors, "
+        "camera movement and end framing. Keep geometry compatible with operator anchors "
+        "and previous/final states. Never introduce a cut, a new shot, prop, character, "
+        "action, dialogue, audio, reference label or change in chronology. "
+        "A fixed world-side wall is not automatically screen-right after a camera rotation. "
+        "Each note must be one sentence of at most 160 characters, with no tags or headings."
+    )
+    user = json.dumps({
+        "scene": scene_to_dict(scene), "duration_seconds": args.duration,
+        "camera_direction": getattr(args, "camera_direction", ""),
+        "spatial_continuity": continuity, "h3_prompt": prompt,
+        "shot_count": len(headings),
+    }, ensure_ascii=False)
+    result = chat_json(client, model, system, user, CAMERA_SCHEMA, 0.12, 1400)
+    notes = result.get("shot_cameras") if isinstance(result, dict) else None
+    if (not isinstance(notes, list) or len(notes) != len(headings)
+            or any(not isinstance(n, str) or not n.strip() or len(n) > 160 or
+                   re.search(r"[\r\n<>\[\]]|(?:^|\s)(?:cut|shot)\s+\d+", n, re.I)
+                   for n in notes)):
+        return prompt, ["Camera refinement rejected: LM Studio returned invalid camera notes. Retry or clarify camera_direction."]
+    # Replace only the shot headings inside detailed_description. All existing
+    # action, dialogue, sound and binding text remains byte-for-byte intact.
+    updated = detailed
+    for heading, note in reversed(list(zip(headings, notes))):
+        updated = updated[:heading.end()] + " Camera: " + note.strip() + " " + updated[heading.end():]
+    start_match = re.search(r"(?mi)^\s*detailed_description\s*:\s*$", prompt)
+    end_match = re.search(r"(?mi)^\s*overall_soundscape\s*:\s*$", prompt)
+    if not start_match or not end_match or end_match.start() <= start_match.end():
+        return prompt, ["Camera refinement skipped: detailed_description section is malformed."]
+    candidate = prompt[:start_match.end()] + "\n" + updated + "\n" + prompt[end_match.start():]
+    validation = validate_prompt(candidate, bindings, args.duration, getattr(args, "max_shots", 1))
+    if not validation.ok:
+        return prompt, ["Camera refinement rejected: " + "; ".join(validation.errors[:3])]
+    return candidate, []
+
+
 def timestamp_seconds(mm: str, ss: str, mmm: str) -> float:
     return int(mm) * 60 + int(ss) + int(mmm) / 1000.0
 
@@ -1243,14 +1299,18 @@ def process_chapter(
             continue
 
         prompt_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, H3_RULES, PROMPT_SCHEMA,
-                                       "single-shot-scenes.v2", scene_to_dict(scene), bindings, continuity, client=client)
+                                       "camera-postprocess.v1", CAMERA_SCHEMA, scene_to_dict(scene), bindings, continuity, client=client)
         prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", chapter_dir)
         prompt = None
+        camera_warnings: list[str] = []
+        from_cache = False
         if prompt_cache.exists() and not args.force:
             try:
                 cached = json.loads(prompt_cache.read_text(encoding="utf-8"))
                 if cached.get("cache_key") == prompt_key:
                     prompt = cached["prompt"]
+                    camera_warnings = cached.get("camera_warnings", [])
+                    from_cache = True
             except Exception:
                 pass
 
@@ -1265,14 +1325,22 @@ def process_chapter(
             prompt = repair_prompt(client, model, prompt, scene, bindings, validation, args.duration, args, continuity)
             validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
 
+        if getattr(args, "refine_camera", False) and validation.ok and not from_cache:
+            prompt, camera_warnings = refine_camera_prompt(client, model, prompt, scene, continuity, args, bindings)
+            validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
+            for warning in camera_warnings:
+                print(f"    {warning}")
+
         prompt_cache.write_text(
-            json.dumps({"cache_key": prompt_key, "prompt": prompt}, ensure_ascii=False, indent=2) + "\n",
+            json.dumps({"cache_key": prompt_key, "prompt": prompt, "camera_warnings": camera_warnings}, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         entry = save_scene(chapter_dir, i, scene, bindings, prompt, validation)
         if continuity is not None:
             entry["spatial_continuity"] = continuity
         entry["repair_attempts_used"] = repairs
+        if camera_warnings:
+            entry["camera_warnings"] = camera_warnings
         entries.append(entry)
         if validation.ok:
             print(

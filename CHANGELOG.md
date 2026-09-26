@@ -8,6 +8,8 @@ by later entries.
 
 ## Unreleased
 
+- Add optional camera-only post-processing after H3 prompt validation, preserving
+  existing shot structure and reporting rejected camera notes.
 - Add scene-duration guidance, a configurable maximum shot count with pacing
   checks, and optional camera direction in H3 generation.
 - Add operator-defined spatial anchors and per-scene LM Studio continuity

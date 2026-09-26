@@ -10,6 +10,8 @@
    Set `duration` in Generate H3 Prompts to the length of each scene. Set
    `max_shots` to your desired limit (1 by default; a shot needs at least 2.5s).
    Optionally describe the camera axis and movement in `camera_direction`.
+   Enable `refine_camera` for a final LM Studio camera-only pass after prompt
+   validation. Check `camera_warnings` if the extra description is rejected.
 3. Choose the chapters once in Select Chapters, then connect its
    `chapter_selection` output to Extract and Generate. Connect Extract's
    `chapter_catalogs` to Consolidate, then

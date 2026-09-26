@@ -29,6 +29,7 @@ class GenerateH3PromptsNode:
             "chunk_chars": ("INT", {"default": 14000, "min": 3000, "max": 1000000}), "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}), "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000}),
             "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 10}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8000, "min": 256, "max": 100000}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
+            "refine_camera": ("BOOLEAN", {"default": False, "tooltip": "After prompt validation, ask LM Studio for camera-only descriptions for each shot. Adds one request per scene."}),
         }, "optional": {
             "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY",),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
@@ -58,6 +59,7 @@ class GenerateH3PromptsNode:
             if not 1 <= args.max_shots <= 12:
                 raise ValueError("max_shots must be between 1 and 12. Set it on Generate H3 Prompts.")
             args.camera_direction = str(params.get("camera_direction", "")).strip()
+            args.refine_camera = bool(params.get("refine_camera", False))
             continuity = params.get("spatial_continuity")
             if continuity is not None:
                 if (not isinstance(continuity, dict) or continuity.get("schema_version") != "minimax-spatial-continuity.v1"
