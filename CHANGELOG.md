@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Add operator-defined spatial anchors and per-scene LM Studio continuity
+  resolution, using future scenes and prior final states when generating H3
+  prompts; include offline regression tests.
 - Add this changelog and require updates before each push to `master` or `main`.
 - Pass the complete changelog to Comfy CLI when publishing so new registry
   versions include it in their `changelog` field.

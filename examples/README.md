@@ -5,6 +5,8 @@
    ComfyUI Settings → MiniMax H3 Novel → LM Studio.
 2. Add **Select Chapters**, **Extract Chapter References**, **Consolidate
    References** and **Generate H3 Prompts**. Connect configuration to all three.
+   Optionally connect **Spatial Continuity** to **Generate H3 Prompts** and enter
+   fixed geometry in its JSON field (for example `{"tablet.wall":"right wall"}`).
 3. Choose the chapters once in Select Chapters, then connect its
    `chapter_selection` output to Extract and Generate. Connect Extract's
    `chapter_catalogs` to Consolidate, then

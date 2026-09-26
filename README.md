@@ -131,6 +131,15 @@ Select Chapters ─────────► Extract / Generate
 Extract Chapter References → Consolidate References → Generate H3 Prompts
 ```
 
+For spatial continuity, connect **Spatial Continuity** to the optional
+`spatial_continuity` input of **Generate H3 Prompts**. Enter stable, operator-approved
+relations as a JSON object, for example `{"tablet.wall":"right wall",
+"main_rope.side":"right side of crevasse"}`. The generator asks LM Studio
+to resolve each planned scene using these anchors, the previous scene's final
+state and up to five upcoming scenes. It saves `spatial_continuity.json` in each
+chapter output folder. Review inferred staging and warnings there; check the
+actual generated video before treating a position as visually established.
+
 | Node | Inputs and result |
 |---|---|
 | LM Studio Configuration | URL and Qwen controls → shared non-secret configuration |
@@ -140,6 +149,7 @@ Extract Chapter References → Consolidate References → Generate H3 Prompts
 | Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs, plus a text summary |
 | Load Consolidated References | Saved registry JSON → registry object |
 | Generate H3 Prompts | Registry and shared chapter selection → chapter/scene prompt payload and save-ready text |
+| Spatial Continuity | Fixed spatial anchors → optional generation context and readable summary |
 
 Add **Select Chapters**, then connect its `chapter_selection` output to both
 Extract and Generate. Use its picker or enter one file/folder per line in its

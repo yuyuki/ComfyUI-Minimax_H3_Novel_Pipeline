@@ -27,7 +27,7 @@ class GenerateH3PromptsNode:
             "chunk_chars": ("INT", {"default": 14000, "min": 3000, "max": 1000000}), "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}), "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000}),
             "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 10}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8000, "min": 256, "max": 100000}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
-        }}
+        }, "optional": {"spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY",)}}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING", "STRING")
     RETURN_NAMES = ("prompts", "prompt_text", "image_prompt_text")
@@ -49,6 +49,14 @@ class GenerateH3PromptsNode:
         with client:
             keys = ("duration", "chunk_chars", "overlap_paragraphs", "scenes_per_chunk", "max_scenes", "max_pictures", "max_pictures_per_subject", "max_audio", "temperature", "max_tokens", "repair_attempts", "force")
             args = argparse.Namespace(**{key: params[key] for key in keys}, out_dir=output)
+            continuity = params.get("spatial_continuity")
+            if continuity is not None:
+                if (not isinstance(continuity, dict) or continuity.get("schema_version") != "minimax-spatial-continuity.v1"
+                        or not isinstance(continuity.get("anchors"), dict)
+                        or any(not isinstance(k, str) or not k.strip() or not isinstance(v, str) or not v.strip()
+                               for k, v in continuity["anchors"].items())):
+                    raise ValueError("Invalid spatial_continuity. Connect Spatial Continuity and enter non-empty JSON string anchors.")
+                args.spatial_anchors = continuity["anchors"]
             args.out_dir.mkdir(parents=True, exist_ok=True)
             snapshot = configuration_snapshot.start(
                 output, "generate", lmstudio_config, resolved_model, args, out_dir=out_dir,
