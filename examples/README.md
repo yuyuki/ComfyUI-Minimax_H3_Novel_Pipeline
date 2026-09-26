@@ -12,6 +12,7 @@
    Optionally describe the camera axis and movement in `camera_direction`.
    Enable `refine_camera` for a final LM Studio camera-only pass after prompt
    validation. Check `camera_warnings` if the extra description is rejected.
+   `repair_attempts` also limits camera-only correction retries after a rejection.
 3. Choose the chapters once in Select Chapters, then connect its
    `chapter_selection` output to Extract and Generate. Connect Extract's
    `chapter_catalogs` to Consolidate, then

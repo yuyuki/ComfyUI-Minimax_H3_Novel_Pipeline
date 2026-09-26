@@ -899,33 +899,57 @@ def refine_camera_prompt(client: OpenAI, model: str, prompt: str, scene: Scene,
         "A fixed world-side wall is not automatically screen-right after a camera rotation. "
         "Each note must be one sentence of at most 160 characters, with no tags or headings."
     )
-    user = json.dumps({
+    request = {
         "scene": scene_to_dict(scene), "duration_seconds": args.duration,
         "camera_direction": getattr(args, "camera_direction", ""),
         "spatial_continuity": continuity, "h3_prompt": prompt,
         "shot_count": len(headings),
-    }, ensure_ascii=False)
-    result = chat_json(client, model, system, user, CAMERA_SCHEMA, 0.12, 1400)
-    notes = result.get("shot_cameras") if isinstance(result, dict) else None
-    if (not isinstance(notes, list) or len(notes) != len(headings)
-            or any(not isinstance(n, str) or not n.strip() or len(n) > 160 or
-                   re.search(r"[\r\n<>\[\]]|(?:^|\s)(?:cut|shot)\s+\d+", n, re.I)
-                   for n in notes)):
-        return prompt, ["Camera refinement rejected: LM Studio returned invalid camera notes. Retry or clarify camera_direction."]
-    # Replace only the shot headings inside detailed_description. All existing
-    # action, dialogue, sound and binding text remains byte-for-byte intact.
-    updated = detailed
-    for heading, note in reversed(list(zip(headings, notes))):
-        updated = updated[:heading.end()] + " Camera: " + note.strip() + " " + updated[heading.end():]
+    }
     start_match = re.search(r"(?mi)^\s*detailed_description\s*:\s*$", prompt)
     end_match = re.search(r"(?mi)^\s*overall_soundscape\s*:\s*$", prompt)
     if not start_match or not end_match or end_match.start() <= start_match.end():
         return prompt, ["Camera refinement skipped: detailed_description section is malformed."]
-    candidate = prompt[:start_match.end()] + "\n" + updated + "\n" + prompt[end_match.start():]
-    validation = validate_prompt(candidate, bindings, args.duration, getattr(args, "max_shots", 1))
-    if not validation.ok:
-        return prompt, ["Camera refinement rejected: " + "; ".join(validation.errors[:3])]
-    return candidate, []
+
+    retries = max(0, min(10, int(getattr(args, "repair_attempts", 0))))
+    feedback = ""
+    for attempt in range(retries + 1):
+        request["previous_error"] = feedback
+        if feedback:
+            request["instruction"] = "Correct the camera notes using previous_error; preserve the original shot count and every other prompt detail."
+        try:
+            result = chat_json(client, model, system, json.dumps(request, ensure_ascii=False),
+                               CAMERA_SCHEMA, 0.12, 1400)
+        except ValueError as exc:
+            feedback = f"Invalid structured camera response: {exc}"
+            continue
+        notes = result.get("shot_cameras") if isinstance(result, dict) else None
+        if not isinstance(notes, list) or len(notes) != len(headings):
+            feedback = f"Expected exactly {len(headings)} camera notes, one for each existing shot."
+            continue
+        invalid = [index for index, note in enumerate(notes, 1)
+                   if not isinstance(note, str) or not note.strip() or len(note) > 160 or
+                   re.search(r"[\r\n<>\[\]]|(?:^|\s)(?:cut|shot)\s+\d+", note, re.I)]
+        if invalid:
+            feedback = (f"Camera notes {invalid} contain a new shot, tag, line break, empty text "
+                        "or exceed 160 characters. Return short camera-only sentences.")
+            request["rejected_camera_notes"] = notes
+            continue
+
+        # Replace only the shot headings inside detailed_description. The model
+        # cannot rewrite existing action, dialogue, sound or binding text.
+        updated = detailed
+        for heading, note in reversed(list(zip(headings, notes))):
+            updated = updated[:heading.end()] + " Camera: " + note.strip() + " " + updated[heading.end():]
+        candidate = prompt[:start_match.end()] + "\n" + updated + "\n" + prompt[end_match.start():]
+        validation = validate_prompt(candidate, bindings, args.duration, getattr(args, "max_shots", 1))
+        if validation.ok:
+            if attempt:
+                print(f"    camera refinement corrected on attempt {attempt + 1}/{retries + 1}")
+            return candidate, []
+        feedback = "Camera notes made the H3 prompt invalid: " + "; ".join(validation.errors[:5])
+        request["rejected_camera_notes"] = notes
+    return prompt, [f"Camera refinement rejected after {retries + 1} attempt(s): {feedback} "
+                    "Clarify camera_direction or increase repair_attempts."]
 
 
 def timestamp_seconds(mm: str, ss: str, mmm: str) -> float:

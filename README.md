@@ -154,6 +154,9 @@ passes validation. It adds one request per scene and inserts one concise camera
 instruction inside each existing `[Shot N]`, preserving the other H3 sections,
 events, dialogue and reference labels. Invalid camera notes are discarded with a
 `camera_warnings` entry in the scene output; the original validated prompt is kept.
+When a camera note fails its checks, Qwen receives the failed notes and specific
+validation errors and may correct them up to `repair_attempts` additional times.
+The final warning includes the last reason if every attempt fails.
 
 | Node | Inputs and result |
 |---|---|

@@ -8,6 +8,8 @@ by later entries.
 
 ## Unreleased
 
+- Let Qwen correct invalid camera post-processing notes using precise validation
+  feedback, bounded by `repair_attempts`, before falling back to the original prompt.
 - Add optional camera-only post-processing after H3 prompt validation, preserving
   existing shot structure and reporting rejected camera notes.
 - Add scene-duration guidance, a configurable maximum shot count with pacing
