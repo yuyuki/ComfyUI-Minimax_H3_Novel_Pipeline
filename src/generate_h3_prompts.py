@@ -23,11 +23,16 @@ class GenerateH3PromptsNode:
     def INPUT_TYPES(cls):
         return {"required": {
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}), "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0}),
+            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
+            "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0, "tooltip": "Duration in seconds of EACH generated scene, not the entire chapter."}),
+            "max_shots": ("INT", {"default": 1, "min": 1, "max": 12, "tooltip": "Maximum camera shots per scene. Qwen may use fewer; a shot needs at least 2.5 seconds. Default 1 preserves existing workflows."}),
             "chunk_chars": ("INT", {"default": 14000, "min": 3000, "max": 1000000}), "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}), "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000}),
             "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 10}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8000, "min": 256, "max": 100000}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
-        }, "optional": {"spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY",)}}
+        }, "optional": {
+            "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY",),
+            "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
+        }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING", "STRING")
     RETURN_NAMES = ("prompts", "prompt_text", "image_prompt_text")
@@ -48,7 +53,11 @@ class GenerateH3PromptsNode:
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
             keys = ("duration", "chunk_chars", "overlap_paragraphs", "scenes_per_chunk", "max_scenes", "max_pictures", "max_pictures_per_subject", "max_audio", "temperature", "max_tokens", "repair_attempts", "force")
-            args = argparse.Namespace(**{key: params[key] for key in keys}, out_dir=output)
+            args = argparse.Namespace(**{key: params[key] for key in keys}, out_dir=output,
+                                      max_shots=int(params.get("max_shots", 1)))
+            if not 1 <= args.max_shots <= 12:
+                raise ValueError("max_shots must be between 1 and 12. Set it on Generate H3 Prompts.")
+            args.camera_direction = str(params.get("camera_direction", "")).strip()
             continuity = params.get("spatial_continuity")
             if continuity is not None:
                 if (not isinstance(continuity, dict) or continuity.get("schema_version") != "minimax-spatial-continuity.v1"

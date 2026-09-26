@@ -140,6 +140,15 @@ state and up to five upcoming scenes. It saves `spatial_continuity.json` in each
 chapter output folder. Review inferred staging and warnings there; check the
 actual generated video before treating a position as visually established.
 
+In **Generate H3 Prompts**, `duration` is the length of **each scene** in seconds.
+`max_shots` limits camera shots inside that scene (default 1); the generator may
+choose fewer and requires at least 2.5 seconds per shot. For example, 5 seconds
+permits at most 2 shots even if `max_shots` is set to 3. Camera travel without a
+cut remains a single shot. Use the optional `camera_direction` field to specify
+the camera axis, subject placement, starting composition, movement and ending
+composition. It is passed to the continuity pass when connected and to prompt
+generation and repair.
+
 | Node | Inputs and result |
 |---|---|
 | LM Studio Configuration | URL and Qwen controls → shared non-secret configuration |

@@ -8,6 +8,8 @@ by later entries.
 
 ## Unreleased
 
+- Add scene-duration guidance, a configurable maximum shot count with pacing
+  checks, and optional camera direction in H3 generation.
 - Add operator-defined spatial anchors and per-scene LM Studio continuity
   resolution, using future scenes and prior final states when generating H3
   prompts; include offline regression tests.

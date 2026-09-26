@@ -7,6 +7,9 @@
    References** and **Generate H3 Prompts**. Connect configuration to all three.
    Optionally connect **Spatial Continuity** to **Generate H3 Prompts** and enter
    fixed geometry in its JSON field (for example `{"tablet.wall":"right wall"}`).
+   Set `duration` in Generate H3 Prompts to the length of each scene. Set
+   `max_shots` to your desired limit (1 by default; a shot needs at least 2.5s).
+   Optionally describe the camera axis and movement in `camera_direction`.
 3. Choose the chapters once in Select Chapters, then connect its
    `chapter_selection` output to Extract and Generate. Connect Extract's
    `chapter_catalogs` to Consolidate, then

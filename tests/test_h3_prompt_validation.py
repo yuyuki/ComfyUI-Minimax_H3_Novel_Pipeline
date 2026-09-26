@@ -108,7 +108,7 @@ def test_subject_definition_checks_still_reject_missing_bindings(definition, err
     ([7.5], 8, 2),
     ([8], 8, 2),
     ([0], 8, 1),
-    ([2.5], 5, 1),
+    ([2.4], 5, 1),
 ])
 def test_rushed_shots_require_repair(cuts, duration, short_shot):
     shots = "[Shot 1] A scene."
@@ -129,6 +129,15 @@ def test_rushed_shots_require_repair(cuts, duration, short_shot):
 ])
 def test_sustained_shots_and_short_continuous_clips_pass(duration, shots):
     assert step.validate_prompt(prompt_with_shots(shots), BINDINGS, duration).ok
+
+
+def test_five_second_scene_allows_two_readable_shots_only_when_requested():
+    two = prompt_with_shots("[Shot 1] The camera follows the rope.\n[Shot 2] At 00:02.500, Indy enters frame.")
+    three = prompt_with_shots("[Shot 1] Wall.\n[Shot 2] At 00:01.500, Rope.\n[Shot 3] At 00:03.000, Indy.")
+    assert step.validate_prompt(two, BINDINGS, 5, max_shots=2).ok
+    assert any("maximum is 1" in e for e in step.validate_prompt(two, BINDINGS, 5).errors)
+    assert any("maximum is 2" in e for e in step.validate_prompt(three, BINDINGS, 5, max_shots=3).errors)
+    assert "At most 2 shots" in step.pacing_instruction(5, 3)
 
 
 @pytest.mark.parametrize("first", ["At 00:00.000, ", "00:00.000, "])
