@@ -146,7 +146,11 @@ def validate_contract(contract, current_state=None, source=""):
                 errors.append(issue(key, "no physical state before introduction", entity, event))
             owner = entity["owner"]
             if owner is not None and (owner not in state or entity["location"] != owner or state[owner]["status"] == "not_introduced"):
-                errors.append(issue(key, "one existing owner; location equals owner ID", entity, event))
+                errors.append(issue(key, "one existing owner; location equals owner ID", entity, event,
+                                    correction="Use a declared, already introduced owner ID. For an owned prop set location "
+                                    "to that exact owner ID; keep spatial descriptions in position. Correct opening_entities "
+                                    "for an initial-state error, or update owner and location together in the introducing "
+                                    "event. Do not invent an owner or change carried current_state."))
             if entity["relationship"] in {"held", "in_mouth", "worn"} and owner is None:
                 errors.append(issue(key, "owner for held/in_mouth/worn object", entity, event))
             visited = {key}
@@ -358,6 +362,20 @@ def compile_contract(extraction, source, current_state=None):
     if current_state is not None and extraction["opening_entities"]:
         raise ValueError("opening_entities must be empty when carrying current_state; use events for changes.")
     before = deepcopy(current_state) if current_state is not None else {"entities": deepcopy(extraction["opening_entities"])}
+    if current_state is None:
+        opening = state_map(before)
+        for entity in opening.values():
+            owner = opening.get(entity["owner"])
+            if (entity["kind"] == "object" and owner is not None
+                    and owner["status"] != "not_introduced"
+                    and entity["status"] not in {"not_introduced", "lost_below"}
+                    and entity["location"] != entity["owner"]):
+                # Ownership already establishes the canonical location. Preserve the
+                # model's physical placement without inventing a narrative transition.
+                location = entity["location"]
+                if location:
+                    entity["position"] = "; ".join(filter(None, (entity["position"], location)))
+                entity["location"] = entity["owner"]
     for entity in extraction["new_entities"]:
         before["entities"].append({**entity, **dict.fromkeys(FIELDS), "status": "not_introduced", "visible": False})
     replay = deepcopy(state_map(before))

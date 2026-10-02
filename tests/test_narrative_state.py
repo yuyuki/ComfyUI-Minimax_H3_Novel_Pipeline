@@ -129,6 +129,56 @@ def test_one_location_and_existing_owner():
     assert any("existing owner" in e["expected_state"] for e in ns.validate_contract(beat))
 
 
+def test_owned_opening_prop_location_is_compiled_without_correction(monkeypatch):
+    source = "Doriane holds a torch above the crevasse opening."
+    state = {"entities": [
+        entity("doriane", "character", location="above crevasse opening"),
+        entity("torch_2", owner="doriane", location="above crevasse opening", position="held by doriane"),
+    ]}
+    response = extraction(contract(state, source), source)
+    original_response = deepcopy(response)
+    calls = []
+
+    def chat(*args):
+        calls.append(args[4])
+        return response if args[4] == ns.EXTRACTION_SCHEMA else {"errors": []}
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.track_scene(None, "mock", source, source, attempts=0)
+    torch = ns.state_map(result["state_before"])["torch_2"]
+    assert torch["location"] == "doriane"
+    assert torch["position"] == "held by doriane; above crevasse opening"
+    assert torch["owner"] == "doriane" and torch["visible"] is False
+    assert result["state_after"] == result["state_before"]
+    assert response == original_response
+    assert report["valid"] and ns.validate_contract(result, source=source) == []
+    assert calls == [ns.EXTRACTION_SCHEMA, ns.REVIEW_SCHEMA]
+
+
+@pytest.mark.parametrize("fault", ["missing_owner", "unintroduced_owner", "unintroduced_prop", "lost_prop", "cycle", "carried_state"])
+def test_opening_location_compilation_preserves_ownership_constraints(fault):
+    source = "Doriane calls out."
+    owner = entity("doriane", "character")
+    prop = entity("torch_2", owner="doriane", location="above crevasse opening")
+    state = {"entities": [owner, prop]}
+    if fault == "missing_owner":
+        prop["owner"] = "missing"
+    elif fault == "unintroduced_owner":
+        owner["status"] = "not_introduced"
+    elif fault == "unintroduced_prop":
+        prop["status"] = "not_introduced"
+    elif fault == "lost_prop":
+        prop["status"] = "lost_below"
+    elif fault == "cycle":
+        owner.update(owner="torch_2", location="torch_2")
+    current = state if fault == "carried_state" else None
+    response = extraction(contract(state, source), source, current)
+    compiled = ns.compile_contract(response, source, current)
+    assert ns.validate_contract(compiled, current, source)
+    if current is not None:
+        assert compiled["state_before"] == current
+
+
 @pytest.mark.parametrize("status", ["broken", "damaged"])
 def test_restoration_needs_explicit_repair(status):
     state = opening()
