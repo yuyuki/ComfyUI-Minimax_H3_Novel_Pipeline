@@ -143,6 +143,63 @@ def test_wrong_preconditions_duplicate_ids_and_invented_evidence():
         ns.validate_contract(beat)
 
 
+def test_state_retry_corrects_translated_evidence_and_stale_preconditions(monkeypatch):
+    source = "Indy se redresse. Il descend ensuite."
+    first = contract(opening(), "Indy se redresse.", [("indy", "position", "raised")])
+    second = contract(first["state_after"], "Il descend ensuite.", [("indy", "position", "lowered")])
+    fixed = deepcopy(first)
+    second["events"][0]["id"] = "event_2"
+    fixed["events"] += second["events"]
+    fixed["state_after"] = second["state_after"]
+    invalid = deepcopy(fixed)
+    invalid["events"][0]["source_evidence"] = "Indy pulls himself up."
+    invalid["events"][1]["changes"][0]["before"] = "suspended_on_rope"
+    requests, reviews = [], []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == ns.REVIEW_SCHEMA:
+            reviews.append(payload)
+            return {"errors": []}
+        assert "substring of original_scene" in system
+        assert "after ALL preceding events" in system
+        requests.append(payload)
+        return deepcopy(invalid if len(requests) == 1 else fixed)
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.track_scene(None, "mock", source, "Indy pulls himself up. He descends.", attempts=1)
+    assert result == fixed and report["valid"]
+    retry = requests[1]
+    assert retry["candidate"] == invalid
+    assert retry["original_scene"] == source
+    evidence_error, precondition_error = retry["validation_errors"]
+    assert evidence_error["introducing_event"] == "event_1"
+    assert "original_scene" in evidence_error["suggested_correction"]
+    assert "original language" in evidence_error["suggested_correction"]
+    assert precondition_error["introducing_event"] == "event_2"
+    assert precondition_error["expected_state"] == "position=raised"
+    assert '"raised"' in precondition_error["suggested_correction"]
+    assert "preceding events" in precondition_error["suggested_correction"]
+    assert len(reviews) == 1 and reviews[0]["candidate"] == fixed
+    assert "validation_errors" not in reviews[0]
+
+
+@pytest.mark.parametrize("evidence", ["Indy calls Doriane.", "Indy appelle...", "Indy appelle Doriane!"])
+def test_state_retry_never_accepts_nonverbatim_evidence(monkeypatch, evidence):
+    beat = contract(opening())
+    beat["events"][0]["source_evidence"] = evidence
+    calls = []
+
+    def chat(*args):
+        calls.append(args[4])
+        return deepcopy(beat)
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(ValueError, match="Narrative validation failed after correction budget"):
+        ns.track_scene(None, "mock", "Indy appelle Doriane.", evidence, attempts=1)
+    assert calls == [ns.CONTRACT_SCHEMA, ns.CONTRACT_SCHEMA]
+
+
 def test_metaphor_normalization_and_dialogue_prompt(monkeypatch):
     source = 'Indy se balançait, suspendu tel un croissant de lune à une corde qui lui meurtrissait le torse et les aisselles. « Doriane ! »'
     normalized = 'Indy hangs by a rope passing tightly under his arms and around his torso. He sways. « Doriane ! »'

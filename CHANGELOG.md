@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Clarify original-language evidence and sequential state replay in narrative
+  extraction; give targeted correction feedback and test bounded retries without
+  accepting translated quotations or stale event preconditions.
+
 - Verify cinematic review complaints against source and candidate evidence before
   rewriting prose; cover false complaints, genuine conflicts and invalid verification.
 

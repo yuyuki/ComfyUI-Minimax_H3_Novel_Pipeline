@@ -86,6 +86,11 @@ Events carry a unique ID, description, verbatim source evidence, kind (`action`,
 The illustrative evidence must be replaced with an exact excerpt from the actual
 scene. Evidence alone cannot prove the interpretation; the separate semantic review
 must verify it supports the change.
+Evidence is copied from `original_scene`, never from the cinematic rewrite or a
+translation; it must be one contiguous excerpt with unchanged punctuation and
+whitespace. Each change's `before` value refers to the running state after preceding
+events, not the passage's opening state. Evidence and precondition failures receive
+specific correction instructions; invalid contracts still stop after the retry budget.
 
 Deterministic checks enforce schema/types, unique identities, chronological evidence,
 event preconditions, unchanged carried state, introduction before visibility/ownership,

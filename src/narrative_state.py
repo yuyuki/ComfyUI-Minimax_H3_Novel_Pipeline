@@ -61,7 +61,18 @@ current_state exists start new entities not_introduced, invisible, with null own
 an introduction event establishes them. For the first scene infer ONLY its opening state.
 initial_frame is a subset of state_before containing only visible entities with identical fields.
 Every event has an ID, a verbatim source_evidence excerpt, and atomic changes with exact before
-and after values. Apply changes in strict story order to produce state_after. Even dialogue or
+and after values. source_evidence must be one exact contiguous substring of original_scene,
+in its original language, spelling, punctuation and whitespace. Never quote cinematic_version
+or translate, paraphrase, join excerpts or insert ellipses. Descriptions may restate the action;
+evidence must be copied from original_scene. Select excerpts in source order.
+Maintain a running state starting at state_before. Each change.before must equal that field
+in the running state after ALL preceding events, not its opening value. Null is valid only
+when the running value is null. Apply each change.after before constructing the next event.
+state_after must be the resulting running state, with unchanged fields copied exactly.
+Use status for persistent condition (alive, damaged, broken), position for spatial placement,
+and posture for bodily pose. Shouting or looking alone need not change any of these fields;
+record such actions in description with an empty changes array unless a state really changes.
+Apply changes in strict story order to produce state_after. Even dialogue or
 looks with no state change are events. Movement, acquisition, posture changes and rope damage
 must be events. Never place a late torch-in-mouth action in state_before. Lost and unintroduced
 objects are invisible. A broken object needs an explicit repair event before restoration.
@@ -144,11 +155,15 @@ def validate_contract(contract, current_state=None, source=""):
             errors.append(issue("events", "unique nonempty IDs", eid))
         seen.add(eid)
         if not event["source_evidence"].strip() or (source and event["source_evidence"] not in source):
-            errors.append(issue("events", "verbatim evidence from source", event["source_evidence"], eid))
+            errors.append(issue("events", "verbatim evidence from source", event["source_evidence"], eid,
+                                correction="Replace this event's source_evidence with an exact contiguous excerpt from original_scene, "
+                                "in the original language and punctuation. Do not quote cinematic_version, translate, "
+                                "paraphrase or insert ellipses. Preserve the source-supported event."))
         elif source:
             position = source.find(event["source_evidence"], evidence_position)
             if position < 0:
-                errors.append(issue("events", "source evidence in chronological order", event["source_evidence"], eid))
+                errors.append(issue("events", "source evidence in chronological order", event["source_evidence"], eid,
+                                    correction="Order events by their excerpts in original_scene; replay all changes in that order."))
             else:
                 evidence_position = position
         changed = set()
@@ -165,7 +180,11 @@ def validate_contract(contract, current_state=None, source=""):
                 errors.append(issue(key, f"valid {field} type", new, eid))
                 continue
             if replay[key][field] != old:
-                errors.append(issue(key, f"{field}={replay[key][field]}", f"{field}={old}", eid))
+                errors.append(issue(key, f"{field}={replay[key][field]}", f"{field}={old}", eid,
+                                    correction=f"Set this change.before to the running {field} value "
+                                    f"{json.dumps(replay[key][field], ensure_ascii=False)} after preceding events. "
+                                    "If a preceding change is unsupported, correct it against original_scene instead. "
+                                    "Replay all events and recompute state_after; do not reset to the opening state."))
             if field == "status":
                 if old == "not_introduced" and new != old and event["kind"] != "introduction":
                     errors.append(issue(key, "introduction event", event["kind"], eid))
