@@ -47,6 +47,8 @@ EXTRACTION_SYSTEM = """Extract narrative continuity, without rewriting prose or 
 Return opening_entities ONLY for the first passage (current_state is null); otherwise return [].
 Opening entities contain only facts already true before the first action, never later states.
 Declare entities first encountered during events in new_entities with a stable ID and kind.
+Every changes[].entity must exactly match an ID in current_state.entities, opening_entities,
+or new_entities. Declare every referenced entity before returning, including separate prop instances.
 They start absent, invisible and unowned; establish them with an introduction event.
 Reuse current_state and authoritative_contract IDs. Distinguish separate instances of props.
 Previously lost props remain tracked, invisible and unowned; mentioning them does not reacquire
@@ -324,6 +326,14 @@ def _validate_review_decisions(result, payload, errors):
     return confirmed
 
 
+class ExtractionValidationError(ValueError):
+    """Compilation failures with actionable feedback in the extraction schema."""
+
+    def __init__(self, errors):
+        self.errors = errors
+        super().__init__(json.dumps(errors, ensure_ascii=False))
+
+
 def checked_pass(client, model, system, schema, payload, attempts, validator, compile_result=None):
     if not isinstance(attempts, int) or not 0 <= attempts <= 10:
         raise ValueError("Correction attempts must be between 0 and 10.")
@@ -350,6 +360,8 @@ def checked_pass(client, model, system, schema, payload, attempts, validator, co
                 # Previous review feedback belongs only in the correction request. Passing it
                 # to the reviewer anchors fresh assessments to stale or mistaken complaints.
                 errors = review(client, model, {**source_payload, "candidate": result})
+        except ExtractionValidationError as exc:
+            errors = exc.errors
         except ValueError as exc:
             errors = [issue("schema", "valid structured JSON", str(exc))]
         except RuntimeError as exc:
@@ -406,6 +418,24 @@ def compile_contract(extraction, source, current_state=None):
     for entity in extraction["new_entities"]:
         before["entities"].append({**entity, **dict.fromkeys(FIELDS), "status": "not_introduced", "visible": False})
     replay = deepcopy(state_map(before))
+    missing = {}
+    for event in extraction["events"]:
+        for change in event["changes"]:
+            if change["entity"] not in replay:
+                missing.setdefault(change["entity"], event["id"])
+    if missing:
+        raise ExtractionValidationError([
+            issue(key, "entity ID declared in current_state, opening_entities or new_entities",
+                  f"Event {event_id}: undeclared entity {key}.", event_id,
+                  correction=f"Declare {json.dumps(key, ensure_ascii=False)} with its source-supported kind. "
+                  "If present before the first action and current_state is null, add its full opening "
+                  "state to opening_entities. Otherwise add its id and kind to new_entities and establish "
+                  "its state through a source-supported introduction event (including status changing "
+                  "from not_introduced). If this is a typo for an existing entity, use that exact ID "
+                  "consistently instead. Keep distinct props separate, preserve all source-supported "
+                  "events, and never modify current_state. Return the complete corrected extraction.")
+            for key, event_id in missing.items()
+        ])
     units = {unit["id"]: unit for unit in source_units(source)}
     events = []
     last_start = -1
@@ -421,8 +451,6 @@ def compile_contract(extraction, source, current_state=None):
         changes = []
         for change in event["changes"]:
             key, field = change["entity"], change["field"]
-            if key not in replay:
-                raise ValueError(f"Event {event['id']}: undeclared entity {key}.")
             changes.append({**change, "before": deepcopy(replay[key][field])})
             replay[key][field] = change["after"]
         events.append({"id": event["id"], "description": event["description"], "kind": event["kind"],
