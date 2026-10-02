@@ -30,7 +30,9 @@ relationships explicit. Normalization is not summarization. The state pass sees 
 prose, normalized text and the preceding passage's ending state.
 
 Semantic complaints about both prose and state contracts are verified before they
-trigger corrections. Confirmed complaints require exact source and candidate evidence.
+trigger corrections. Reviewers select indexed source IDs; Python supplies their exact
+source text, avoiding failures caused by the model retyping quotations. Confirmed
+complaints require existing source IDs and exact candidate evidence.
 Contract evidence can quote exact decoded string content or a complete existing JSON
 object/array regardless of JSON whitespace, key order or Unicode escaping; prose is
 never normalized and separate values are not joined to manufacture a quote.
@@ -53,6 +55,16 @@ events. `max_scenes` deliberately limits generation; it does not require reachin
 chapter's final state when truncating a passage.
 
 ## Nodes and debugging
+
+With Qwen thinking enabled, reasoning and JSON share the request's token budget.
+If a response includes reasoning and reaches the length limit before returning valid
+JSON, structured-JSON retries increase the budget to at least 16,384 tokens, then
+double it up to 32,768 (an already larger requested budget is preserved). Thinking
+stays enabled and the existing retry count still applies. LM Studio needs enough
+context space for the input plus this output budget. If it still runs out, reduce
+`chunk_chars`, increase LM Studio's output/context limit, or disable thinking in
+LM Studio Configuration. Increasing `correction_attempts` alone does not give
+the reviewer more tokens.
 
 | Node | Inputs | Outputs |
 |---|---|---|
@@ -133,7 +145,7 @@ Errors identify entity, expected state, conflicting state, introducing event and
 suggested correction. When normalization review reports errors, a separate verification
 request checks each complaint against the full original and candidate before correction.
 Equivalent attribution, combined actions and actions already present are not errors.
-Confirmed complaints require exact source and candidate excerpts. Incomplete or malformed
+Confirmed complaints require valid source IDs and exact candidate excerpts. Incomplete or malformed
 verification responses receive up to two verification retries with specific feedback,
 keeping the candidate and proposed findings unchanged. These retries do not consume
 `correction_attempts` or trigger prose rewrites. If verification still fails, execution
@@ -154,7 +166,10 @@ Deterministic replay validates the declared facts, not arbitrary natural languag
 Literary interpretation, completeness and final-prompt leakage detection still rely
 on the configured model's semantic review. Multiple structured calls cost additional
 time and context; reduce passage size for small models. State grows with the chapter.
-State resets for each chapter. There is no dedicated loader for saved preprocessing
+State resets for each chapter and every node execution, including executions after a
+failure. Review findings and verification retries belong only to the current candidate;
+neither node resumes state from saved output or a previous execution. Errors identify
+the chapter, passage and stage (simplification or continuity). There is no dedicated loader for saved preprocessing
 bundles yet.
 
 Offline tests mock LM Studio. `tests/fixtures/00_PROLOGUE.md` contains the supplied

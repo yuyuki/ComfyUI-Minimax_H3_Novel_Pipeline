@@ -153,6 +153,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     raw_chatml = allow_chatml and backend_key in successful_chatml
     attempt = 0
     correction = ""
+    request_max_tokens = max_tokens
     while attempt <= retries:
         comfy_interrupt_check()
         request_schema = _qwen35_compact_schema(schema) if attempt else schema
@@ -171,7 +172,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             options = dict(
                 model=model,
                 temperature=min(temperature, 0.12) if attempt else temperature,
-                top_p=top_p, max_tokens=max_tokens, stream=True,
+                top_p=top_p, max_tokens=request_max_tokens, stream=True,
             )
             response_format = {"type": "json_schema", "json_schema": request_schema}
             if raw_chatml:
@@ -223,7 +224,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             if stream is not None:
                 stream.close()
             diagnostics = (
-                f"attempt={attempt + 1}, thinking={settings['thinking'] if profile.NAME == 'Qwen' else False}, max_tokens={max_tokens}, "
+                f"attempt={attempt + 1}, thinking={settings['thinking'] if profile.NAME == 'Qwen' else False}, max_tokens={request_max_tokens}, "
                 f"content_chars={content_chars}, reasoning_chars={reasoning_chars}, "
                 f"finish_reason={finish_reason}, local_stop={local_stop}"
             )
@@ -250,9 +251,25 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             print(f"    LLM: structured JSON, {time.perf_counter() - started:.1f}s, attempt={attempt + 1}")
             return result
         except (ValueError, TypeError) as error:
+            reasoning_truncated = (
+                profile.NAME == "Qwen" and settings["thinking"]
+                and reasoning_chars > 0 and finish_reason == "length"
+            )
             if attempt == retries:
+                hint = (
+                    " Thinking exhausted the output budget. Increase the output/context limit "
+                    "in LM Studio, reduce passage size, or disable thinking in LM Studio Configuration."
+                ) if reasoning_truncated else ""
                 raise RuntimeError(
-                    f"Invalid structured JSON after {attempt + 1} attempt(s). {diagnostics}"
+                    f"Invalid structured JSON after {attempt + 1} attempt(s). {diagnostics}{hint}"
                 ) from error
+            if reasoning_truncated:
+                # Reasoning shares the completion budget with JSON. Compact prose
+                # alone cannot fix an answer that never gets past reasoning.
+                # Keep thinking enabled and growth bounded, including for small
+                # internal review requests without a node-level token control.
+                request_max_tokens = min(
+                    max(max_tokens, 32768), max(16384, request_max_tokens * 2),
+                )
             attempt += 1
     raise AssertionError("Unreachable")

@@ -9,6 +9,49 @@ from minimax_h3_novel_pipeline import narrative_nodes as nodes, narrative_state 
 from .test_narrative_state import confirmed_review, contract, entity, extraction, opening, prologue
 
 
+@pytest.mark.parametrize("node_class", [nodes.NarrativeContinuityNode, nodes.NovelCinematicSimplifierNode])
+def test_new_execution_after_verification_failure_has_no_prior_state_or_feedback(tmp_path, monkeypatch, node_class):
+    from minimax_h3_novel_pipeline import path_access
+
+    chapter = tmp_path / "chapter.txt"
+    chapter.write_text("Indy calls Doriane. " * 8, encoding="utf-8")
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(nodes, "stage_output", lambda *a: tmp_path / "output")
+    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
+    fail = True
+    requests = []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        requests.append((schema, payload))
+        source = payload["original_scene"]
+        if schema == ns.SIMPLIFY_SCHEMA:
+            return {"cinematic_text": source}
+        if schema == ns.EXTRACTION_SCHEMA:
+            return extraction(contract(opening(), source), source)
+        if schema == ns.REVIEW_SCHEMA:
+            return {"errors": [ns.issue("indy", "calls", "silent")] if fail else []}
+        return {"decisions": []}
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    node = node_class()
+    stage = "simplification" if node.simplify_prose else "continuity"
+    with pytest.raises(ns.ReviewVerificationError, match=f"Narrative {stage} failed for chapter.txt, passage 1/1"):
+        node.run(str(chapter), {"api_url": "unused"})
+    fail = False
+    for source in ["Doriane waits.", "Indy climbs."]:
+        source = " ".join([source] * 10)
+        chapter.write_text(source, encoding="utf-8")
+        requests.clear()
+        bundle = node.run(str(chapter), {"api_url": "unused"})[0]
+        for schema, payload in requests:
+            assert payload["original_scene"] == source
+            assert "validation_errors" not in payload and "previous_verification" not in payload
+            if schema == ns.EXTRACTION_SCHEMA:
+                assert payload["current_state"] is None
+        assert bundle["chapters"][str(chapter.resolve())]["cinematic_text"] == source
+
+
 def test_declarations_are_absent_until_introduction_and_carry_is_immutable():
     current = {"entities": [entity("indy", "character", visible=True)]}
     snapshot = deepcopy(current)
@@ -132,7 +175,7 @@ def test_contract_evidence_rejects_invented_changed_or_joined_content(evidence):
     assert not ns._candidate_contains_evidence(candidate, evidence)
 
 
-@pytest.mark.parametrize("fault", ["decisions", "source_evidence", "candidate_evidence"])
+@pytest.mark.parametrize("fault", ["decisions", "source_ids", "candidate_evidence"])
 def test_contract_verification_failure_never_spends_state_correction_budget(monkeypatch, fault):
     source = "Indy calls Doriane."
     good = contract(opening(), source)

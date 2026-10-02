@@ -73,20 +73,23 @@ class NarrativeContinuityNode:
         with client:
             for path, original, passages in progress.steps(prepared):
                 texts, reports, segments = [], [], []
+                # Execution-local state: never resume from node attributes or saved output.
                 current = None
                 for passage_number, passage in enumerate(passages, start=1):
                     chunk = passage["original_text"]
-                    if self.simplify_prose:
-                        result, report = narrative_state.simplify(client, model, chunk, correction_attempts)
-                    else:
-                        result = {"cinematic_text": passage["cinematic_text"]}
-                        report = {"valid": True, "skipped": True}
+                    stage = "simplification" if self.simplify_prose else "continuity"
                     try:
+                        if self.simplify_prose:
+                            result, report = narrative_state.simplify(client, model, chunk, correction_attempts)
+                        else:
+                            result = {"cinematic_text": passage["cinematic_text"]}
+                            report = {"valid": True, "skipped": True}
+                        stage = "continuity"
                         contract, state_report = narrative_state.track_scene(
                             client, model, chunk, result["cinematic_text"], current, correction_attempts)
-                    except ValueError as exc:
-                        raise ValueError(
-                            f"Narrative continuity failed for {path.name}, passage "
+                    except (ValueError, narrative_state.ReviewVerificationError) as exc:
+                        raise type(exc)(
+                            f"Narrative {stage} failed for {path.name}, passage "
                             f"{passage_number}/{len(passages)}: {exc}"
                         ) from exc
                     current = contract["state_after"]

@@ -262,6 +262,57 @@ def test_reasoning_only_length_failure_has_safe_diagnostics(monkeypatch, capsys)
     assert stream.closed
 
 
+@pytest.mark.parametrize("model", ["qwen3.5", "Qwen3.8-9B"])
+@pytest.mark.parametrize("content", [None, '{"value":'])
+@pytest.mark.parametrize("field", ["reasoning_content", "reasoning"])
+def test_thinking_length_retry_reserves_room_for_json(monkeypatch, model, content, field):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", True)
+    first = Stream([SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=content, **{field: "private reasoning"}),
+        finish_reason="length",
+    )])])
+    second = Stream(['{"value":"ok"}'])
+    client, create = client_for(first, second)
+    assert lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.1, 3000) == {"value": "ok"}
+    assert [call.kwargs["max_tokens"] for call in create.call_args_list] == [3000, 16384]
+    for call in create.call_args_list:
+        assert call.kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+        assert call.kwargs["response_format"]["json_schema"] == SCHEMA
+    assert first.closed and second.closed
+
+
+@pytest.mark.parametrize("budget,expected", [
+    (3000, [3000, 16384, 32768, 32768]),
+    (40000, [40000, 40000, 40000, 40000]),
+])
+def test_thinking_budget_growth_and_retries_are_bounded(monkeypatch, budget, expected):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", True)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 3)
+    event = SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=None, reasoning_content="private reasoning"), finish_reason="length",
+    )])
+    streams = [Stream([event]) for _ in expected]
+    client, create = client_for(*streams)
+    with pytest.raises(RuntimeError, match="Thinking exhausted the output budget"):
+        lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.1, budget)
+    assert [call.kwargs["max_tokens"] for call in create.call_args_list] == expected
+    assert all(stream.closed for stream in streams)
+
+
+@pytest.mark.parametrize("thinking,reasoning,finish", [
+    (False, "private reasoning", "length"), (True, None, "length"),
+    (True, "private reasoning", "stop"),
+])
+def test_other_invalid_json_does_not_grow_budget(monkeypatch, thinking, reasoning, finish):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", thinking)
+    event = SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=None, reasoning_content=reasoning), finish_reason=finish,
+    )])
+    client, create = client_for(Stream([event]), Stream(['{"value":"ok"}']))
+    lmstudio_json.chat_json(client, "qwen3", "system", "user", SCHEMA, 0.1, 3000)
+    assert [call.kwargs["max_tokens"] for call in create.call_args_list] == [3000, 3000]
+
+
 def test_complete_json_reports_client_stop_without_consuming_finish(capsys):
     client, _ = client_for(Stream(['{"value":"private"}', "unused"]))
     lmstudio_json.chat_json(client, "model", "system", "user", SCHEMA, 0.2, 500)

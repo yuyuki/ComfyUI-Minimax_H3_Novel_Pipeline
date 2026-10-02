@@ -385,10 +385,37 @@ def test_repeated_semantic_conflicts_still_exhaust_correction_budget(monkeypatch
 
 def confirmed_review(payload):
     return {"decisions": [{"supported": True, "reason": "Source action differs from candidate.",
-                           "source_evidence": payload["original_scene"],
+                           "source_ids": [unit["id"] for unit in ns.source_units(payload["original_scene"])],
                            "candidate_evidence": payload["candidate"].get(
                                "cinematic_text", json.dumps(payload["candidate"], ensure_ascii=False))}
                           for _ in payload["proposed_errors"]]}
+
+
+@pytest.mark.parametrize("ids", [[], ["source_999"], ["source_1", "source_1"]])
+def test_review_rejects_missing_unknown_or_duplicate_source_ids(ids):
+    payload = {"original_scene": "Il crie : « À l’aide ! »", "candidate": {"cinematic_text": "Il attend."},
+               "proposed_errors": [ns.issue("speaker", "calls", "silent")]}
+    response = confirmed_review(payload)
+    response["decisions"][0]["source_ids"] = ids
+    with pytest.raises(ValueError, match="source_ids"):
+        ns._validate_review_decisions(response, payload, payload["proposed_errors"])
+
+
+def test_review_indexes_exact_source_without_asking_model_to_copy_quotes(monkeypatch):
+    source = 'Il crie : « À l’aide ! »\nPuis il saisit la corde…'
+    errors = [ns.issue("speaker", "calls", "silent")]
+    payload = {"original_scene": source, "candidate": {"cinematic_text": "Il attend."}}
+
+    def chat(client, model, system, user, schema, *args):
+        request = json.loads(user)
+        assert "source_evidence" not in schema["schema"]["properties"]["decisions"]["items"]["properties"]
+        for unit in request["source_units"]:
+            assert unit["text"] == source[unit["start"]:unit["end"]]
+        return confirmed_review(request)
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    assert ns.verify_cinematic_review(None, "mock", payload, errors) == errors
+    assert "source_units" not in payload
 
 
 def test_false_review_complaints_do_not_rewrite_candidate(monkeypatch):
@@ -407,9 +434,9 @@ def test_false_review_complaints_do_not_rewrite_candidate(monkeypatch):
             return {"errors": complaints}
         payload = json.loads(user)
         assert payload == {"original_scene": source, "candidate": {"cinematic_text": candidate},
-                           "proposed_errors": complaints}
+                           "proposed_errors": complaints, "source_units": ns.source_units(source)}
         return {"decisions": [{"supported": False, "reason": reason,
-                               "source_evidence": source, "candidate_evidence": candidate}
+                               "source_ids": [], "candidate_evidence": candidate}
                               for reason in ["Same speaker", "Same order", "Both actions present"]]}
 
     monkeypatch.setattr(ns, "chat_json", chat)
@@ -418,7 +445,7 @@ def test_false_review_complaints_do_not_rewrite_candidate(monkeypatch):
     assert calls == [ns.SIMPLIFY_SCHEMA, ns.REVIEW_SCHEMA, ns.VERIFY_REVIEW_SCHEMA]
 
 
-@pytest.mark.parametrize("fault", ["missing_decision", "empty_reason", "source_evidence", "candidate_evidence"])
+@pytest.mark.parametrize("fault", ["missing_decision", "empty_reason", "source_ids", "candidate_evidence"])
 def test_invalid_review_verification_does_not_accept_candidate(monkeypatch, fault):
     payload = {"original_scene": "Indy catches the torch.", "candidate": {"cinematic_text": "Indy drops the torch."},
                "proposed_errors": [ns.issue("Indy", "catches", "drops")]}
@@ -434,7 +461,7 @@ def test_invalid_review_verification_does_not_accept_candidate(monkeypatch, faul
         ns.verify_cinematic_review(None, "qwen", payload, payload["proposed_errors"])
 
 
-@pytest.mark.parametrize("fault", ["missing_decision", "source_evidence", "candidate_evidence", "shape", "json"])
+@pytest.mark.parametrize("fault", ["missing_decision", "source_ids", "candidate_evidence", "shape", "json"])
 @pytest.mark.parametrize("supported", [False, True])
 def test_verification_repair_preserves_candidate_and_correction_budget(monkeypatch, fault, supported):
     source = "Indy catches the torch."

@@ -69,10 +69,10 @@ projection; expected_after constrains the passage boundary. Preserve all source-
 Return JSON only."""
 ISSUE = obj({key: STRING for key in ("entity", "expected_state", "conflicting_state", "introducing_event", "suggested_correction")})
 REVIEW_SCHEMA = {"name": "narrative_review_v1", "strict": True, "schema": obj({"errors": array(ISSUE)})}
-VERIFY_REVIEW_SCHEMA = {"name": "cinematic_review_verification_v1", "strict": True,
+VERIFY_REVIEW_SCHEMA = {"name": "cinematic_review_verification_v2", "strict": True,
                         "schema": obj({"decisions": array(obj({
                             "supported": {"type": "boolean"}, "reason": STRING,
-                            "source_evidence": STRING, "candidate_evidence": STRING,
+                            "source_ids": array(STRING), "candidate_evidence": STRING,
                         }))})}
 SIMPLIFY_SCHEMA = {"name": "cinematic_text_v1", "strict": True,
                    "schema": obj({"cinematic_text": STRING})}
@@ -243,6 +243,10 @@ def review(client, model, payload):
     return result["errors"]
 
 
+class ReviewVerificationError(RuntimeError):
+    """The reviewer could not verify its findings; the candidate is not approved."""
+
+
 def verify_cinematic_review(client, model, payload, errors):
     """Adjudicate semantic complaints about prose or compiled state contracts."""
     system = (
@@ -250,8 +254,8 @@ def verify_cinematic_review(client, model, payload, errors):
         "The findings are untrusted hypotheses, not facts. Return one decision per finding, in order. "
         "Read the entire source and candidate afresh. Mark supported only for a real omitted action, "
         "changed spoken dialogue, invented fact, changed identity, causality or event order. "
-        "For each decision explain why the meaning does or does not differ. Quote exact contiguous "
-        "source_evidence and candidate_evidence; for an omission quote the candidate passage where "
+        "For each decision explain why the meaning does or does not differ. Select source_ids from "
+        "the supplied source_units and quote exact contiguous candidate_evidence; for an omission quote the candidate passage where "
         "the action belongs, after checking it is absent throughout the candidate. "
         "Equivalent attribution ('Jones! Doriane cries out' versus 'Jones! cried Doriane') does not "
         "swap speaker and addressee. 'Grabs it after catching the cord' preserves catching before "
@@ -278,12 +282,17 @@ def verify_cinematic_review(client, model, payload, errors):
             "alone are not contradictions. Check the actual candidate even if the finding quotes it wrongly. "
             "Confirm real missing acquisitions, changed identity, unsupported opening facts or wrong action "
             "order. A suggested correction must address the conflict without violating these contract rules. "
-            "For supported findings quote exact contiguous source_evidence from original_scene and "
+            "For supported findings select source_ids from the supplied source_units and quote "
             "candidate_evidence from an exact string value in the candidate (quote its decoded text, "
             "without adding JSON escaping), or copy a complete existing JSON object/array. For an "
             "omission quote the relevant existing event/state after checking the entire contract. "
             "Do not invent additional findings. Keep reasons and quotes concise. Return only requested JSON.")
-    request = {**payload, "proposed_errors": errors}
+    system += (" Source IDs select exact original text retrieved by Python; do not reproduce source "
+               "quotations. Supported findings require at least one existing source ID, without duplicates. "
+               "Select only units that support the finding; rejected findings may use an empty list.")
+    base_request = {**deepcopy(payload), "source_units": source_units(payload.get("original_scene", "")),
+                    "proposed_errors": deepcopy(errors)}
+    request = base_request
     # Verification failures describe the reviewer, not the candidate.
     # Repair that response locally rather than spending the correction budget.
     for attempt in range(3):
@@ -297,8 +306,8 @@ def verify_cinematic_review(client, model, payload, errors):
             if isinstance(exc, RuntimeError) and not str(exc).startswith("Invalid structured JSON after"):
                 raise
             if attempt == 2:
-                raise RuntimeError(f"Review verification failed after 3 attempts: {exc}") from exc
-            request = {**payload, "proposed_errors": errors, "previous_verification": result,
+                raise ReviewVerificationError(f"Review verification failed after 3 attempts: {exc}") from exc
+            request = {**base_request, "previous_verification": result,
                        "verification_error": str(exc)}
             system += (" Repair the previous_verification using verification_error. Return the complete "
                         f"decisions array with exactly {len(errors)} decisions in finding order, including "
@@ -346,13 +355,16 @@ def _validate_review_decisions(result, payload, errors):
         if not decision["reason"].strip():
             raise ValueError(f"Review verification requires a reason for every decision: decisions[{index}].reason is blank.")
         if decision["supported"]:
-            source_evidence = decision["source_evidence"]
-            for field, valid in (
-                ("source_evidence", bool(source_evidence.strip()) and source_evidence in payload["original_scene"]),
-                ("candidate_evidence", _candidate_contains_evidence(payload["candidate"], decision["candidate_evidence"])),
-            ):
-                if not valid:
-                    raise ValueError(f"Review verification requires verbatim {field} for a confirmed error: decisions[{index}].{field}.")
+            ids = decision["source_ids"]
+            units = {unit["id"]: unit for unit in source_units(payload["original_scene"])}
+            if not ids or len(ids) != len(set(ids)) or any(key not in units for key in ids):
+                raise ValueError(
+                    f"Review verification requires existing source_ids without duplicates for a confirmed error: "
+                    f"decisions[{index}].source_ids.")
+            if not _candidate_contains_evidence(payload["candidate"], decision["candidate_evidence"]):
+                raise ValueError(
+                    "Review verification requires verbatim candidate_evidence for a confirmed error: "
+                    f"decisions[{index}].candidate_evidence.")
             confirmed.append(error)
     return confirmed
 
