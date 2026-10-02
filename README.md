@@ -131,9 +131,10 @@ Select Chapters ─────────► Extract / Generate
 Extract Chapter References → Consolidate References → Generate H3 Prompts
 ```
 
-For spatial continuity, connect **Spatial Continuity** to the optional
-`spatial_continuity` input of **Generate H3 Prompts**. The node has no settings to
-fill in; `anchor_summary` reports that the check is enabled. The existing
+For spatial continuity, turn on `enable_spatial_continuity` in **Generate H3 Prompts**
+(off by default). Existing **Spatial Continuity** node connections also enable
+the pass, even when the toggle is off; disconnect the node to disable it.
+The existing
 `visual_designs.json` choices arrive automatically through
 the consolidated references and are reused for scene staging; no extra design
 file needs to be supplied. The model's review is included in the existing chapter
@@ -158,7 +159,7 @@ choose fewer and requires at least 2.5 seconds per shot. For example, 5 seconds
 permits at most 2 shots even if `max_shots` is set to 3. Camera travel without a
 cut remains a single shot. Use the optional `camera_direction` field to specify
 the camera axis, subject placement, starting composition, movement and ending
-composition. It is passed to the continuity pass when connected and to prompt
+composition. It is passed to the continuity pass when enabled and to prompt
 generation and repair.
 
 Enable `refine_camera` to run a final LM Studio camera pass after a scene prompt
@@ -179,7 +180,7 @@ The final warning includes the last reason if every attempt fails.
 | Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs, plus a text summary |
 | Load Consolidated References | Saved registry JSON → registry object |
 | Generate H3 Prompts | Registry and shared chapter selection → chapter/scene prompt payload and save-ready text |
-| Spatial Continuity | Enable scene consistency checks using consolidated visual designs |
+| Spatial Continuity | Compatibility node; new workflows can use Generate's `enable_spatial_continuity` toggle |
 
 Add **Select Chapters**, then connect its `chapter_selection` output to both
 Extract and Generate. Use its picker or enter one file/folder per line in its

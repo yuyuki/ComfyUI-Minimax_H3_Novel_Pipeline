@@ -87,6 +87,38 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     assert record["model_controls"]["top_p"] == 0.8
 
 
+@pytest.mark.parametrize("toggle,legacy,expected", [
+    (None, None, None),
+    (False, None, None),
+    (True, None, {}),
+    (False, {}, {}),
+    (False, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
+    (True, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
+])
+def test_generate_continuity_toggle_and_legacy_connection(setup, monkeypatch, toggle, legacy, expected):
+    root, config, _ = setup
+    pipeline = lmstudio_pipeline.load("generate")
+    captured = []
+
+    def process(path, registry, client, model, args):
+        captured.append(getattr(args, "spatial_anchors", None))
+        return {"chapter_id": "chapter", "outputs": []}
+
+    monkeypatch.setattr(pipeline, "process_chapter", process)
+    params = defaults(generate.GenerateH3PromptsNode)
+    if toggle is None:
+        params.pop("enable_spatial_continuity")  # Existing workflows omit the new widget.
+    else:
+        params["enable_spatial_continuity"] = toggle
+    if legacy is not None:
+        params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v1", "anchors": legacy}
+    registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "picture_assets": [], "audio_assets": []}
+    generate.GenerateH3PromptsNode().run(registry, config, {}, **params)
+    assert captured == [expected]
+    record = util.load_json(root / config["run_folder"] / params["out_dir"] / "generate_configuration.json")
+    assert record["node_settings"]["enable_spatial_continuity"] is (expected is not None)
+
+
 def test_failed_execution_does_not_claim_completed_results(setup, monkeypatch):
     root, config, _ = setup
     pipeline = lmstudio_pipeline.load("extract")
