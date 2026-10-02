@@ -30,8 +30,11 @@ relationships explicit. Normalization is not summarization. The state pass sees 
 prose, normalized text and the preceding passage's ending state.
 
 Semantic complaints about both prose and state contracts are verified before they
-trigger corrections. Confirmed complaints require exact source and candidate evidence;
-malformed verification responses receive up to three attempts without spending the
+trigger corrections. Confirmed complaints require exact source and candidate evidence.
+Contract evidence can quote exact decoded string content or a complete existing JSON
+object/array regardless of JSON whitespace, key order or Unicode escaping; prose is
+never normalized and separate values are not joined to manufacture a quote.
+Malformed verification responses receive up to three attempts without spending the
 candidate correction budget. Structural continuity errors still block immediately or
 enter the bounded correction loop. Lost props remain tracked in ending states and stay
 out of the visible opening frame; references to them do not imply reacquisition.

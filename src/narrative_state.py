@@ -279,7 +279,8 @@ def verify_cinematic_review(client, model, payload, errors):
             "Confirm real missing acquisitions, changed identity, unsupported opening facts or wrong action "
             "order. A suggested correction must address the conflict without violating these contract rules. "
             "For supported findings quote exact contiguous source_evidence from original_scene and "
-            "candidate_evidence from the candidate's JSON as supplied (including JSON escaping). For an "
+            "candidate_evidence from an exact string value in the candidate (quote its decoded text, "
+            "without adding JSON escaping), or copy a complete existing JSON object/array. For an "
             "omission quote the relevant existing event/state after checking the entire contract. "
             "Do not invent additional findings. Keep reasons and quotes concise. Return only requested JSON.")
     request = {**payload, "proposed_errors": errors}
@@ -304,6 +305,37 @@ def verify_cinematic_review(client, model, payload, errors):
                         "rejected findings. Do not rewrite the candidate or change the findings.")
 
 
+def _candidate_contains_evidence(candidate, evidence):
+    """Match exact prose or contract content without depending on JSON presentation."""
+    if not evidence.strip():
+        return False
+    if "cinematic_text" in candidate:
+        return evidence in candidate["cinematic_text"]
+    if evidence in json.dumps(candidate, ensure_ascii=False):
+        return True
+
+    # A model may quote decoded dialogue/newlines or pretty-print a whole event.
+    # Never join separate values, normalize prose, or accept a partial object.
+    try:
+        excerpt = json.loads(evidence)
+    except ValueError:
+        excerpt = None
+    structured = isinstance(excerpt, (dict, list))
+    canonical = json.dumps(excerpt, ensure_ascii=False, sort_keys=True) if structured else None
+
+    def contains(value):
+        if isinstance(value, str):
+            return evidence in value
+        if isinstance(value, (dict, list)):
+            if structured and json.dumps(value, ensure_ascii=False, sort_keys=True) == canonical:
+                return True
+            children = value.values() if isinstance(value, dict) else value
+            return any(contains(child) for child in children)
+        return False
+
+    return contains(candidate)
+
+
 def _validate_review_decisions(result, payload, errors):
     check_shape(result, VERIFY_REVIEW_SCHEMA["schema"])
     decisions = result["decisions"]
@@ -314,13 +346,12 @@ def _validate_review_decisions(result, payload, errors):
         if not decision["reason"].strip():
             raise ValueError(f"Review verification requires a reason for every decision: decisions[{index}].reason is blank.")
         if decision["supported"]:
-            candidate = payload["candidate"]
-            candidate_text = (candidate["cinematic_text"] if "cinematic_text" in candidate
-                              else json.dumps(candidate, ensure_ascii=False))
-            for field, text in (("source_evidence", payload["original_scene"]),
-                                ("candidate_evidence", candidate_text)):
-                evidence = decision[field]
-                if not evidence.strip() or evidence not in text:
+            source_evidence = decision["source_evidence"]
+            for field, valid in (
+                ("source_evidence", bool(source_evidence.strip()) and source_evidence in payload["original_scene"]),
+                ("candidate_evidence", _candidate_contains_evidence(payload["candidate"], decision["candidate_evidence"])),
+            ):
+                if not valid:
                     raise ValueError(f"Review verification requires verbatim {field} for a confirmed error: decisions[{index}].{field}.")
             confirmed.append(error)
     return confirmed

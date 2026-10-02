@@ -88,6 +88,50 @@ def test_lost_torch_review_is_verified_without_losing_real_acquisition_errors(mo
         assert generations[1]["candidate"] == extraction(bad, source, current)
 
 
+@pytest.mark.parametrize("quote_style", ["decoded", "serialized", "pretty_event", "compact_event"])
+def test_contract_review_accepts_exact_evidence_independent_of_json_format(monkeypatch, quote_style):
+    source = 'Indy calls "Doriane!"\nIl attend près du câble.'
+    good = contract(opening(), source)
+    conflict = ns.issue("indy", "calls Doriane", "silent")
+    calls = []
+
+    def chat(*args):
+        calls.append(args[4])
+        if args[4] == ns.EXTRACTION_SCHEMA:
+            return extraction(good, source)
+        if args[4] == ns.REVIEW_SCHEMA:
+            return {"errors": [conflict]}
+        payload = json.loads(args[3])
+        response = confirmed_review(payload)
+        event = payload["candidate"]["events"][0]
+        quotes = {
+            "decoded": event["description"],
+            "serialized": json.dumps(event, ensure_ascii=False),
+            "pretty_event": json.dumps(event, ensure_ascii=True, indent=2, sort_keys=True),
+            "compact_event": json.dumps(event, separators=(",", ":")),
+        }
+        response["decisions"][0]["candidate_evidence"] = quotes[quote_style]
+        return response
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    # Confirmed findings reach the correction budget instead of failing verification.
+    with pytest.raises(ValueError, match="correction budget"):
+        ns.track_scene(None, "mock", source, source, attempts=0)
+    assert calls == [ns.EXTRACTION_SCHEMA, ns.REVIEW_SCHEMA, ns.VERIFY_REVIEW_SCHEMA]
+
+
+@pytest.mark.parametrize("evidence", [
+    "", "   ", "Indy drops the torch.", "Indy catches ... torch.",
+    "Indy catches the torch. He waits.",
+    '{"description": "Indy catches the torch.", "visible": 1}',
+    '{"description": "Indy catches the torch."}',
+])
+def test_contract_evidence_rejects_invented_changed_or_joined_content(evidence):
+    candidate = {"events": [{"description": "Indy catches the torch.", "visible": True}],
+                 "context": "He waits."}
+    assert not ns._candidate_contains_evidence(candidate, evidence)
+
+
 @pytest.mark.parametrize("fault", ["decisions", "source_evidence", "candidate_evidence"])
 def test_contract_verification_failure_never_spends_state_correction_budget(monkeypatch, fault):
     source = "Indy calls Doriane."

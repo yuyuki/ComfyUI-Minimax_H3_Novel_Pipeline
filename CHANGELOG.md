@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Fix narrative contract review evidence matching for decoded dialogue, line breaks
+  and reformatted complete JSON excerpts; retain strict rejection of unsupported
+  quotes and cover evidence matching with offline regression tests.
+
 - Rework narrative extraction around indexed source evidence and deterministic event
   replay; add a prose-preserving Narrative Continuity node, retain existing Simplifier
   wiring, and cover continuity compilation and downstream integration offline.
