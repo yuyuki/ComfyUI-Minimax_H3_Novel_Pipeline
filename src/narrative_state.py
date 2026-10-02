@@ -179,6 +179,14 @@ def review(client, model, payload):
     result = chat_json(client, model,
         "Review cinematic normalization/state for fidelity to original prose, chronology and future-state leakage. "
         "Check every action, dialogue, prop identity and causal link is preserved, without invented actions. "
+        "Compare only the supplied candidate against the original scene and authoritative state, afresh. "
+        "Report concrete source-supported contradictions or omissions, not speculative interpretations. "
+        "For cinematic normalization, allow removal of unfilmable thoughts and nonvisual metaphors and "
+        "explicit restatement of source-supported physical relationships. Preserve spoken dialogue verbatim; "
+        "attribution may use present tense or a different word order if the speaker stays the same. "
+        "A reference to a previously lost object does not imply that it is currently held or nearby. "
+        "Verify each claimed conflict actually differs from the expected meaning and that the suggested "
+        "correction fixes that difference; do not flag equivalent wording or suggest the existing wording. "
         "For contracts check opening frame vs first state and verbatim event evidence supports every change. "
         "A late torch-in-mouth, posture, acquisition or rope break must not appear initially. "
         "Return actionable errors with entity, expected/conflicting state, introducing event and correction; "
@@ -190,16 +198,25 @@ def review(client, model, payload):
 def checked_pass(client, model, system, schema, payload, attempts, validator):
     if not isinstance(attempts, int) or not 0 <= attempts <= 10:
         raise ValueError("Correction attempts must be between 0 and 10.")
+    source_payload = deepcopy(payload)
     history = []
     for attempt in range(attempts + 1):
         comfy_interrupt_check()
         result = None
         try:
-            result = chat_json(client, model, system, json.dumps(payload, ensure_ascii=False), schema, 0.15, 8000)
+            correction = (
+                " Revise the supplied candidate using validation_errors as feedback, checking each claim "
+                "against the original scene and authoritative state. Fix supported errors without deleting "
+                "source facts or changing dialogue. Return the complete corrected JSON in the requested "
+                "schema, not a patch or the review."
+            ) if attempt else ""
+            result = chat_json(client, model, system + correction, json.dumps(payload, ensure_ascii=False), schema, 0.15, 8000)
             check_shape(result, schema["schema"])
             errors = validator(result)
             if not errors:
-                errors = review(client, model, {**payload, "candidate": result})
+                # Previous review feedback belongs only in the correction request. Passing it
+                # to the reviewer anchors fresh assessments to stale or mistaken complaints.
+                errors = review(client, model, {**source_payload, "candidate": result})
         except ValueError as exc:
             errors = [issue("schema", "valid structured JSON", str(exc))]
         except RuntimeError as exc:
@@ -209,7 +226,7 @@ def checked_pass(client, model, system, schema, payload, attempts, validator):
         history.append({"attempt": attempt, "errors": errors})
         if not errors:
             return result, {"valid": True, "attempts": history}
-        payload = {**payload, "candidate": result, "validation_errors": errors}
+        payload = {**source_payload, "candidate": result, "validation_errors": errors}
     raise ValueError("Narrative validation failed after correction budget: " + json.dumps(history, ensure_ascii=False))
 
 

@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Review corrected narrative candidates independently of previous validation errors
+  and give explicit correction instructions with source-grounded fidelity checks.
+
 - Remove the standalone Narrative State Tracker node; retain integrated narrative
   state tracking and continuity validation in cinematic preprocessing and H3 generation.
 

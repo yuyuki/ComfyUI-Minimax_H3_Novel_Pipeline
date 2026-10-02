@@ -217,6 +217,64 @@ def test_semantic_review_can_reject_well_formed_normalization(monkeypatch):
         ns.simplify(None, "qwen", "source", 0)
 
 
+@pytest.mark.parametrize("stage", ["simplify", "track_scene"])
+def test_correction_feedback_is_kept_out_of_fresh_reviews(monkeypatch, stage):
+    source = "Indy calls Doriane."
+    good = {"cinematic_text": source} if stage == "simplify" else contract(opening(), source)
+    first_error = ns.issue("Doriane", "Doriane shouts", "wrong attribution")
+    second_error = ns.issue("torch_1", "lost below", "held")
+    feedback = [first_error, second_error]
+    generations, reviews = [], []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == ns.REVIEW_SCHEMA:
+            reviews.append(payload)
+            # A reviewer exposed to earlier complaints repeats them even after correction.
+            if "validation_errors" in payload:
+                return {"errors": payload["validation_errors"]}
+            return {"errors": [feedback[len(reviews) - 1]] if len(reviews) <= 2 else []}
+        generations.append((system, payload))
+        return deepcopy(good)
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    if stage == "simplify":
+        result, report = ns.simplify(None, "qwen", source, attempts=2)
+        expected_source = {"original_scene": source}
+    else:
+        state = opening()
+        result, report = ns.track_scene(None, "qwen", source, source, state, attempts=2,
+                                        authoritative_contract=good, expected_after=good["state_after"])
+        expected_source = {"original_scene": source, "cinematic_version": source, "current_state": state,
+                           "authoritative_contract": good, "expected_after": good["state_after"]}
+    assert result == good and report["valid"]
+    assert [entry["errors"] for entry in report["attempts"]] == [[first_error], [second_error], []]
+    assert len(generations) == len(reviews) == 3
+    for review_payload in reviews:
+        assert review_payload == {**expected_source, "candidate": good}
+    assert generations[0][1] == expected_source
+    for (system, payload), error in zip(generations[1:], feedback):
+        assert "Revise the supplied candidate" in system
+        assert payload == {**expected_source, "candidate": good, "validation_errors": [error]}
+
+
+def test_repeated_semantic_conflicts_still_exhaust_correction_budget(monkeypatch):
+    conflict = ns.issue("torch_2", "not introduced until descent", "already in mouth")
+    reviews = []
+
+    def chat(client, model, system, user, schema, *args):
+        if schema == ns.REVIEW_SCHEMA:
+            reviews.append(json.loads(user))
+            return {"errors": [conflict]}
+        return {"cinematic_text": "Indy already holds the second torch in his mouth."}
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(ValueError, match="correction budget"):
+        ns.simplify(None, "qwen", "A second torch descends. Indy catches it.", attempts=2)
+    assert len(reviews) == 3
+    assert all("validation_errors" not in payload for payload in reviews)
+
+
 def test_generation_uses_contract_after_camera_and_on_cache_hits(tmp_path, monkeypatch):
     from minimax_h3_novel_pipeline import path_access
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
