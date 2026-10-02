@@ -29,6 +29,7 @@ def test_root_registration_and_frontend(plugin):
         "LMStudioConfigurationNode", "SelectChaptersNode", "ExtractChapterReferencesNode",
         "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
         "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SpatialContinuityNode",
+        "NovelCinematicSimplifierNode", "NarrativeStateTrackerNode",
     }
     assert set(plugin.NODE_DISPLAY_NAME_MAPPINGS) == set(plugin.NODE_CLASS_MAPPINGS)
     assert (ROOT / plugin.WEB_DIRECTORY / "minimax_h3_novel.js").is_file()
@@ -53,7 +54,7 @@ def test_installed_package_import_outside_checkout(tmp_path):
     result = subprocess.run(
         [sys.executable, "-c",
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
-         "assert len(p.NODE_CLASS_MAPPINGS) == 8; "
+         "assert len(p.NODE_CLASS_MAPPINGS) == 10; "
          "assert (Path(p.WEB_DIRECTORY) / 'minimax_h3_novel.js').is_file(); "
          "from minimax_h3_novel_pipeline.lmstudio_pipeline import load; "
          "[load(s) for s in ('extract', 'consolidate', 'generate')]"],

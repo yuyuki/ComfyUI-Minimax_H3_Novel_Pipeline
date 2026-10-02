@@ -367,3 +367,18 @@ Compact retries retain the original entity capacities, six distinguishing featur
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 
 Only current v3 chapter catalogs and registries are accepted. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
+
+## Optional cinematic preprocessing
+
+Connect **Select Chapters** and **LM Studio Configuration** to **Novel Cinematic
+Simplifier**, then connect `cinematic_narrative` to **Generate H3 Prompts**. This
+normalizes literary prose without summarizing, tracks ordered state transitions,
+and checks that later actions do not appear in initial frames. Existing workflows
+work without this connection; reference extraction, H3 bindings and camera processing
+retain their existing roles.
+
+**Narrative State Tracker** also works independently for inspecting scenes and
+passing `state_after_json` into the next scene's `current_state_json`. Both nodes
+provide text/JSON previews and bounded model correction. See
+[schemas, outputs, validation and limitations](docs/narrative_preprocessing.md) and
+[example wiring](examples/README.md#cinematic-preprocessing).

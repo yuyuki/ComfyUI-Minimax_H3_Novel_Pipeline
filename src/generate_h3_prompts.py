@@ -33,6 +33,7 @@ class GenerateH3PromptsNode:
         }, "optional": {
             "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY",),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
+            "cinematic_narrative": ("MINIMAX_CINEMATIC_NARRATIVE",),
         }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING", "STRING")
@@ -72,8 +73,11 @@ class GenerateH3PromptsNode:
             snapshot = configuration_snapshot.start(
                 output, "generate", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapters": [str(path) for path in paths],
-                        "consolidated_references_sha256": configuration_snapshot.content_digest(consolidated_references)},
+                        "consolidated_references_sha256": configuration_snapshot.content_digest(consolidated_references),
+                        **({"cinematic_narrative_sha256": configuration_snapshot.content_digest(params["cinematic_narrative"])}
+                           if params.get("cinematic_narrative") is not None else {})},
             )
+            args.cinematic_narrative = params.get("cinematic_narrative")
             image_records, image_text = export_image_prompts(consolidated_references, output / "image_prompts")
             manifests = []
             for index, path in enumerate(paths):

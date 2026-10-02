@@ -114,3 +114,22 @@ Only current v3 chapter catalogs and registries are accepted. Regenerate older o
 Generate gives each scene one continuous shot lasting the full `duration`.
 Increase `scenes_per_chunk` (and `max_scenes` if capped) to allow more separate
 moments. Rerun Generate to replace earlier compressed scene plans and prompts.
+
+## Cinematic preprocessing
+
+Add **Novel Cinematic Simplifier** to the workflow above. Share the existing chapter
+selection and LM Studio configuration with it; connect its first output to Generate's
+optional `cinematic_narrative` input. Keep the original chapter selection and registry
+connections on Generate. Connect the simplifier's other outputs to Preview Text nodes
+to inspect normalized prose, state before/after, ordered events and validation reports.
+
+Start with `chunk_chars=6000` and `correction_attempts=2`. Increase Generate's
+`scenes_per_chunk` if a passage needs more scenes to retain every action. Preprocessed
+passages have no overlap, so state transitions are not repeated at chunk boundaries.
+The existing example workflow remains valid without preprocessing.
+
+To debug the torch-in-mouth scene alone, add **Narrative State Tracker**, enter its
+original and cinematic text, and optionally connect the preceding tracker's
+`state_after_json` to `current_state_json`. The opening frame should have the torch
+held in a hand; only the mouth-placement event changes its relationship to `in_mouth`.
+See [the detailed contract documentation](../docs/narrative_preprocessing.md).

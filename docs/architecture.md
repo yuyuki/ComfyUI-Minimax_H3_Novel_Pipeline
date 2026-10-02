@@ -13,6 +13,11 @@ flowchart TD
     consolidate --> designs["Prepare visual designs"]
     designs --> generate["3. Generate H3 prompts"]
     consolidate --> generate
+    novel["Novel prose"] --> normalize["Optional cinematic normalization"]
+    config --> normalize
+    normalize --> state["Validated ordered state transitions"]
+    state --> generate
+    generate --> review["H3 validation, camera processing, temporal review/repair"]
 ```
 
 The node wrappers coordinate filesystem access, configuration snapshots and run outputs. The three `pipeline_step*` modules contain the LLM-facing stage implementations.
@@ -37,6 +42,8 @@ flowchart TD
     m_lmstudio_settings["lmstudio_settings"]
     m_load_chapter_catalogs["load_chapter_catalogs"]
     m_load_consolidated_references["load_consolidated_references"]
+    m_narrative_nodes["narrative_nodes"]
+    m_narrative_state["narrative_state"]
     m_nodes["nodes"]
     m_path_access["path_access"]
     m_pipeline_step1_extract["pipeline_step1_extract"]
@@ -99,6 +106,14 @@ flowchart TD
     m_load_chapter_catalogs --> m_util
     m_load_consolidated_references --> m_progress
     m_load_consolidated_references --> m_util
+    m_narrative_nodes --> m_chapter_selection
+    m_narrative_nodes --> m_lmstudio_pipeline
+    m_narrative_nodes --> m_narrative_state
+    m_narrative_nodes --> m_progress
+    m_narrative_nodes --> m_run_output
+    m_narrative_nodes --> m_util
+    m_narrative_state --> m_lmstudio_json
+    m_narrative_state --> m_lmstudio_pipeline
     m_nodes --> m_chapter_selection
     m_nodes --> m_consolidate_references
     m_nodes --> m_extract_chapter_references
@@ -106,6 +121,7 @@ flowchart TD
     m_nodes --> m_lmstudio_config
     m_nodes --> m_load_chapter_catalogs
     m_nodes --> m_load_consolidated_references
+    m_nodes --> m_narrative_nodes
     m_nodes --> m_spatial_continuity
     m_pipeline_step1_extract --> m_lmstudio_json
     m_pipeline_step1_extract --> m_lmstudio_pipeline
@@ -118,6 +134,7 @@ flowchart TD
     m_pipeline_step2_consolidate --> m_progress
     m_pipeline_step2_consolidate --> m_reference_requests
     m_pipeline_step3_generate --> m_lmstudio_json
+    m_pipeline_step3_generate --> m_narrative_state
     m_pipeline_step3_generate --> m_path_access
     m_pipeline_step3_generate --> m_progress
     m_pipeline_step3_generate --> m_prompt_cache
@@ -154,11 +171,13 @@ flowchart TD
 | `src/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `set_connection_settings`, `validate_api_url` |
 | `src/load_chapter_catalogs.py` | `progress`, `util` | `LoadChapterCatalogsNode` |
 | `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
-| `src/nodes.py` | `chapter_selection`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_consolidated_references`, `spatial_continuity` | — |
+| `src/narrative_nodes.py` | `chapter_selection`, `lmstudio_pipeline`, `narrative_state`, `progress`, `run_output`, `util` | `NarrativeStateTrackerNode`, `NovelCinematicSimplifierNode` |
+| `src/narrative_state.py` | `lmstudio_json`, `lmstudio_pipeline` | `array`, `check_shape`, `checked_pass`, `issue`, `obj`, `review`, `simplify`, `source_digest`, `state_map`, `track_scene`, `validate_contract` |
+| `src/nodes.py` | `chapter_selection`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_consolidated_references`, `narrative_nodes`, `spatial_continuity` | — |
 | `src/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
 | `src/pipeline_step1_extract.py` | `lmstudio_json`, `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |
 | `src/pipeline_step2_consolidate.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress`, `reference_requests` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `similarity`, `stronger`, `threshold`, `variant_views`, `write_asset_prompts` |
-| `src/pipeline_step3_generate.py` | `lmstudio_json`, `path_access`, `progress`, `prompt_cache`, `util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `dedupe_scenes`, `default_view_order`, `entity_index`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `resolve_continuity`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `slug`, `timestamp_seconds`, `validate_prompt` |
+| `src/pipeline_step3_generate.py` | `lmstudio_json`, `narrative_state`, `path_access`, `progress`, `prompt_cache`, `util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `dedupe_scenes`, `default_view_order`, `entity_index`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `resolve_continuity`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/prompt_cache.py` | `lmstudio_json` | `fingerprint` |
 | `src/reference_requests.py` | `lmstudio_json`, `lmstudio_pipeline` | `validate_assets`, `validated_request` |
@@ -168,4 +187,4 @@ flowchart TD
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **29**. Internal dependency edges: **82**.
+Modules: **31**. Internal dependency edges: **92**.

@@ -18,6 +18,7 @@ from .lmstudio_json import chat_json, select_model as select_model
 from .path_access import confined_path
 from .prompt_cache import fingerprint as cache_fingerprint
 from .util import read_chapter, split_chunks
+from . import narrative_state
 
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
@@ -190,6 +191,12 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
         "local to each scene. Earlier generated staging takes precedence over conflicting "
         "inferred plans, but never over explicit novel facts or operator constraints. "
         "Do not advance future events or invent story actions to conceal contradictions. "
+        "If narrative_state is supplied, it is the authoritative temporal contract. Compare "
+        "ALL sections, including subject definitions and summary, against state_before and "
+        "initial_frame. Later actions must not leak into the opening image. Check each ordered "
+        "event and state_after, object introductions, ownership, location, posture and damage. "
+        "For each conflict name the entity, expected state, conflicting state, introducing "
+        "event ID and suggested correction. Do not override this contract with inferred staging. "
         "Return actionable errors describing corrections needed in the CURRENT prompt. "
         "If constraints cannot be reconciled, report the conflict explicitly. Return an empty "
         "errors list only if the current prompt is consistent."
@@ -885,6 +892,10 @@ The caller supplies an exact per-clip binding table. Obey it exactly:
 - state what each picture contributes to that one subject;
 - unreferenced visible entities may appear as ordinary prose without Subject labels;
 - do not claim an audio reference exists unless it is in the audio bindings.
+- when narrative_state is supplied, start from its initial_frame/state_before, then
+  describe events in order and finish in state_after. Subject definitions and summary
+  must not imply that later props or postures already exist at the start. Do not
+  serialize internal state fields as new H3 sections.
 """
     user = f"""TARGET DURATION: {duration:g} seconds.
 All cut timestamps must be <= {duration:.3f} seconds.
@@ -1327,11 +1338,46 @@ def process_chapter(
 ) -> dict[str, Any]:
     chapter_id = slug(path.stem)
     text = read_chapter(path)
+    narrative = getattr(args, "cinematic_narrative", None)
+    narrative_attempts = 0
+    if narrative is not None:
+        if not isinstance(narrative, dict) or narrative.get("schema_version") != "minimax-cinematic-narrative.v1":
+            raise ValueError("Invalid cinematic_narrative; connect Novel Cinematic Simplifier.")
+        chapters = narrative.get("chapters")
+        if not isinstance(chapters, dict):
+            raise ValueError("Invalid cinematic narrative chapters; rerun preprocessing.")
+        record = chapters.get(str(path.resolve()))
+        if not isinstance(record, dict) or record.get("source_digest") != narrative_state.source_digest(text):
+            raise ValueError("Cinematic narrative is missing or stale for this chapter. Rerun Novel Cinematic Simplifier.")
+        if not isinstance(record.get("cinematic_text"), str) or not record["cinematic_text"].strip():
+            raise ValueError("Cinematic narrative contains no cinematic text.")
+        text = record["cinematic_text"]
+        narrative_attempts = narrative.get("correction_attempts", 2)
+        if not isinstance(narrative_attempts, int) or not 0 <= narrative_attempts <= 10:
+            raise ValueError("Narrative correction_attempts must be between 0 and 10.")
+        segments = record.get("segments")
+        if not isinstance(segments, list) or not segments:
+            raise ValueError("Cinematic narrative has no state segments. Rerun preprocessing.")
+        previous_state = None
+        for segment in segments:
+            if (not isinstance(segment, dict) or not isinstance(segment.get("original_text"), str)
+                    or not isinstance(segment.get("cinematic_text"), str)):
+                raise ValueError("Invalid narrative segment.")
+            errors = narrative_state.validate_contract(segment.get("contract"), previous_state, segment["original_text"])
+            if errors:
+                raise ValueError("Invalid narrative segment: " + json.dumps(errors))
+            previous_state = segment["contract"]["state_after"]
     catalog = chapter_catalog(refs, chapter_id)
     if not catalog:
         print(f"WARNING: no consolidated entity mapping for {chapter_id}.", file=sys.stderr)
 
-    chunks = split_chunks(text, max(3000, args.chunk_chars), max(0, args.overlap_paragraphs))
+    chunks = split_chunks(text, max(3000, args.chunk_chars), 0 if narrative is not None else max(0, args.overlap_paragraphs))
+    if narrative is not None:
+        chunks = [s["cinematic_text"] + "\n\nAUTHORITATIVE TEMPORAL CONTRACT (internal planning data, not prose):\n" +
+                  json.dumps(s["contract"], ensure_ascii=False) +
+                  "\nPreserve all events in order across scenes. Opening frames must precede their events. "
+                  "Use cinematic prose for source_excerpt; never quote this contract as prose."
+                  for s in segments]
     chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = confined_path(chapter_dir / ".cache", chapter_dir)
@@ -1339,6 +1385,7 @@ def process_chapter(
 
     print(f"{path.name}: {len(chunks)} planning chunk(s)")
     scenes: list[Scene] = []
+    scene_segments: list[int] = []
     for i, chunk in enumerate(progress.steps(chunks, 0, 0.3), start=1):
         cache_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, PLAN_SYSTEM, SCENE_SCHEMA,
                                       refs.get("source_digest", ""), catalog, i, len(chunks), chunk, client=client)
@@ -1354,6 +1401,22 @@ def process_chapter(
         if chunk_scenes is None:
             print(f"  planning chunk {i}/{len(chunks)}")
             chunk_scenes = plan_scenes(client, model, chapter_id, chunk, i, len(chunks), catalog, args)
+            if narrative is not None:
+                for attempt in range(narrative_attempts + 1):
+                    errors = narrative_state.review(client, model, {
+                        "original_scene": segments[i - 1]["original_text"],
+                        "temporal_contract": segments[i - 1]["contract"],
+                        "candidate_scene_plan": [scene_to_dict(s) for s in chunk_scenes],
+                    })
+                    if not chunk_scenes:
+                        errors.append(narrative_state.issue("scene plan", "at least one scene", "empty scene plan"))
+                    if not errors:
+                        break
+                    if attempt == narrative_attempts:
+                        raise ValueError("Scene planning lost narrative events: " + json.dumps(errors, ensure_ascii=False))
+                    chunk_scenes = plan_scenes(client, model, chapter_id,
+                        chunk + "\nCorrect these validation errors:\n" + json.dumps(errors, ensure_ascii=False),
+                        i, len(chunks), catalog, args)
             cache_path.write_text(
                 json.dumps({"cache_key": cache_key, "scenes": [scene_to_dict(x) for x in chunk_scenes]}, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
@@ -1361,8 +1424,9 @@ def process_chapter(
         else:
             print(f"  planning chunk {i}/{len(chunks)}: cached")
         scenes.extend(chunk_scenes)
+        scene_segments.extend([i - 1] * len(chunk_scenes))
 
-    scenes = dedupe_scenes(scenes)
+    scenes = dedupe_scenes(scenes) if narrative is None else scenes
     if args.max_scenes > 0:
         scenes = scenes[:args.max_scenes]
     print(f"  selected {len(scenes)} scene(s)")
@@ -1370,6 +1434,18 @@ def process_chapter(
     anchors = getattr(args, "spatial_anchors", None)
     visual_designs = refs.get("visual_designs", {})
     continuity_states: list[dict[str, Any]] = []
+    narrative_contracts = []
+    if narrative is not None:
+        current_state = segments[0]["contract"]["state_before"]
+        for index, scene in enumerate(progress.steps(scenes, 0.3, 0.4)):
+            segment_index = scene_segments[index]
+            boundary = index + 1 == len(scene_segments) or scene_segments[index + 1] != segment_index
+            contract, report = narrative_state.track_scene(
+                client, model, scene.source_excerpt, scene.visual_event, current_state, narrative_attempts,
+                segments[segment_index]["contract"],
+                segments[segment_index]["contract"]["state_after"] if boundary else None)
+            narrative_contracts.append({**contract, "validation_report": report})
+            current_state = contract["state_after"]
     if anchors is not None:
         previous: dict[str, Any] = {}
         for index, scene in enumerate(progress.steps(scenes, 0.3, 0.45)):
@@ -1382,10 +1458,14 @@ def process_chapter(
     for i, scene in enumerate(progress.steps(scenes, 0.45 if anchors is not None else 0.3, 0.98), start=1):
         continuity = ({"operator_anchors": anchors, "visual_designs": visual_designs, **continuity_states[i - 1]}
                       if anchors is not None else None)
+        if narrative is not None:
+            continuity = {**(continuity or {}), "narrative_state": narrative_contracts[i - 1]}
         print(f"  [{i}/{len(scenes)}] {scene.title}")
         bindings = build_bindings(refs, scene, chapter_id, args)
         if not bindings["subjects"] and not bindings["audio"]:
             reason = "No reference asset available for this full-reference scene."
+            if narrative is not None:
+                raise ValueError(f"Scene {i}: {reason} Cannot skip ordered narrative events; update the registry or scene plan.")
             entries.append({"index": i, "title": scene.title, "skipped": True, "reason": reason})
             print(f"    skipped: {reason}")
             continue
@@ -1430,10 +1510,12 @@ def process_chapter(
             )
             previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
                                      "bindings": bindings, "continuity_errors": continuity_errors})
-            continuity_states[i - 1]["prompt_review"] = {
+            prompt_review = {
                 "errors": continuity_errors, "repair_attempts_used": continuity_repairs,
                 "valid": validation.ok,
             }
+            if anchors is not None:
+                continuity_states[i - 1]["prompt_review"] = prompt_review
 
         prompt_cache.write_text(
             json.dumps({"cache_key": prompt_key, "prompt": prompt, "camera_warnings": camera_warnings}, ensure_ascii=False, indent=2) + "\n",
@@ -1442,7 +1524,9 @@ def process_chapter(
         entry = save_scene(chapter_dir, i, scene, bindings, prompt, validation)
         if continuity is not None:
             entry["spatial_continuity"] = continuity
-            entry["continuity_review"] = continuity_states[i - 1]["prompt_review"]
+            entry["continuity_review"] = prompt_review
+        if narrative is not None:
+            entry["narrative_state"] = narrative_contracts[i - 1]
         entry["repair_attempts_used"] = repairs
         if camera_warnings:
             entry["camera_warnings"] = camera_warnings

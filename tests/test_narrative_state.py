@@ -1,0 +1,368 @@
+"""Synthetic narrative tests; test_prologue_source.py covers the actual French source."""
+from copy import deepcopy
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from minimax_h3_novel_pipeline import narrative_state as ns
+from minimax_h3_novel_pipeline import pipeline_step3_generate as generate
+from minimax_h3_novel_pipeline.narrative_nodes import NovelCinematicSimplifierNode, NarrativeStateTrackerNode
+from minimax_h3_novel_pipeline.narrative_state import source_digest
+
+
+def entity(id, kind="object", **fields):
+    return {"id": id, "kind": kind, **dict.fromkeys(ns.FIELDS), "visible": False, **fields}
+
+
+def opening():
+    return {"entities": [
+        entity("indy", "character", location="crevasse", position="suspended_on_rope", posture="hanging", visible=True),
+        entity("torch_1", status="lost_below"), entity("torch_2", status="not_introduced"),
+        entity("main_rope", status="intact", visible=True, location="crevasse"),
+        entity("holder", location="crevasse", visible=True),
+        entity("crevasse", "location", environment="dark", visible=True),
+    ]}
+
+
+def contract(state, description="Indy calls Doriane.", changes=(), kind="action"):
+    before = deepcopy(state)
+    after = deepcopy(state)
+    index = ns.state_map(after)
+    edits = []
+    for key, field, value in changes:
+        edits.append({"entity": key, "field": field, "before": index[key][field], "after": value})
+        index[key][field] = value
+    return {"state_before": before, "initial_frame": {"entities": [deepcopy(e) for e in before["entities"] if e["visible"]]},
+            "events": [{"id": "event_1", "description": description, "source_evidence": description, "kind": kind, "changes": edits}],
+            "state_after": after}
+
+
+def prologue():
+    # These beats reproduce the user's supplied sequence; they are not a quotation of the full prologue.
+    specs = [
+        ("Indy asks Doriane for another torch.", [], "action"),
+        ("A second torch descends.", [("torch_2", "status", "lit"), ("torch_2", "visible", True), ("torch_2", "location", "crevasse")], "introduction"),
+        ("Indy catches it.", [("torch_2", "owner", "indy"), ("torch_2", "location", "indy"), ("torch_2", "relationship", "held")], "action"),
+        ("He places it in a holder.", [("torch_2", "owner", "holder"), ("torch_2", "location", "holder"), ("torch_2", "relationship", "stored")], "action"),
+        ("He retrieves it again.", [("torch_2", "owner", "indy"), ("torch_2", "location", "indy"), ("torch_2", "relationship", "held")], "action"),
+        ("The main rope begins to fail.", [("main_rope", "status", "damaged")], "action"),
+        ("He puts the torch between his teeth.", [("torch_2", "relationship", "in_mouth")], "action"),
+        ("The rope breaks and Indy falls.", [("main_rope", "status", "broken"), ("indy", "position", "falling"), ("indy", "posture", "falling")], "action"),
+    ]
+    state = opening()
+    result = []
+    for text, edits, kind in specs:
+        beat = contract(state, text, edits, kind)
+        result.append(beat)
+        state = beat["state_after"]
+    return result
+
+
+def test_prologue_state_propagation_and_no_premature_torch_or_rope_break():
+    current = None
+    for i, beat in enumerate(prologue()):
+        assert ns.validate_contract(beat, current, beat["events"][0]["description"]) == []
+        state = ns.state_map(beat["state_before"])
+        if i <= 1:
+            assert state["torch_2"]["status"] == "not_introduced"
+        if i <= 6:
+            assert state["torch_2"]["relationship"] != "in_mouth"
+        assert state["main_rope"]["status"] != "broken"
+        current = beat["state_after"]
+    assert ns.state_map(current)["indy"]["position"] == "falling"
+
+
+@pytest.mark.parametrize("key,field,value", [
+    ("indy", "location", "surface"), ("indy", "position", "standing"),
+    ("indy", "posture", "standing"), ("torch_2", "owner", "indy"),
+    ("main_rope", "status", "broken"),
+])
+def test_no_silent_state_change(key, field, value):
+    beat = contract(opening())
+    ns.state_map(beat["state_after"])[key][field] = value
+    assert any(e["entity"] == key for e in ns.validate_contract(beat))
+
+
+def test_torch_in_mouth_initial_frame_leak_reports_introducing_event():
+    beat = prologue()[6]
+    ns.state_map(beat["initial_frame"])["torch_2"]["relationship"] = "in_mouth"
+    errors = ns.validate_contract(beat)
+    assert errors[0]["entity"] == "torch_2"
+    assert errors[0]["introducing_event"] == "event_1"
+    assert "held" in errors[0]["expected_state"]
+    assert "in_mouth" in errors[0]["conflicting_state"]
+
+
+def test_unintroduced_object_cannot_be_visible_or_owned():
+    beat = contract(opening(), changes=[("torch_2", "visible", True), ("torch_2", "owner", "indy")])
+    assert ns.validate_contract(beat)
+
+
+def test_object_introduction_requires_introduction_event():
+    beat = prologue()[1]
+    beat["events"][0]["kind"] = "action"
+    assert any("introduction" in e["expected_state"] for e in ns.validate_contract(beat))
+
+
+def test_one_location_and_existing_owner():
+    beat = prologue()[2]
+    ns.state_map(beat["state_after"])["torch_2"]["location"] = ["indy", "holder"]
+    with pytest.raises(ValueError, match="expected"):
+        ns.validate_contract(beat)
+    beat = contract(opening(), changes=[("torch_1", "owner", "nobody"), ("torch_1", "location", "nobody")])
+    assert any("existing owner" in e["expected_state"] for e in ns.validate_contract(beat))
+
+
+@pytest.mark.parametrize("status", ["broken", "damaged"])
+def test_restoration_needs_explicit_repair(status):
+    state = opening()
+    ns.state_map(state)["main_rope"]["status"] = status
+    beat = contract(state, "Doriane repairs the rope.", [("main_rope", "status", "intact")])
+    assert ns.validate_contract(beat)
+    beat["events"][0]["kind"] = "repair"
+    assert not ns.validate_contract(beat)
+
+
+def test_previous_state_cannot_be_rewritten_and_new_entities_start_absent():
+    previous = opening()
+    state = deepcopy(previous)
+    ns.state_map(state)["indy"]["location"] = "surface"
+    state["entities"].append(entity("new_prop", visible=True))
+    errors = ns.validate_contract(contract(state), previous)
+    assert {e["entity"] for e in errors} == {"indy", "new_prop"}
+
+
+def test_wrong_preconditions_duplicate_ids_and_invented_evidence():
+    beat = prologue()[6]
+    beat["events"][0]["changes"][0]["before"] = "in_mouth"
+    assert ns.validate_contract(beat)
+    assert ns.validate_contract(prologue()[6], source="No such event.")
+    beat["state_before"]["entities"].append(deepcopy(beat["state_before"]["entities"][0]))
+    with pytest.raises(ValueError, match="unique"):
+        ns.validate_contract(beat)
+
+
+def test_metaphor_normalization_and_dialogue_prompt(monkeypatch):
+    source = 'Indy se balançait, suspendu tel un croissant de lune à une corde qui lui meurtrissait le torse et les aisselles. « Doriane ! »'
+    normalized = 'Indy hangs by a rope passing tightly under his arms and around his torso. He sways. « Doriane ! »'
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        calls.append((system, json.loads(user)))
+        return {"cinematic_text": normalized} if schema == ns.SIMPLIFY_SCHEMA else {"errors": []}
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.simplify(None, "qwen", source)
+    assert result["cinematic_text"] == normalized and report["valid"]
+    assert "never summarize" in calls[0][0] and "dialogue verbatim" in calls[0][0]
+    assert calls[1][1]["original_scene"] == source
+
+
+@pytest.mark.parametrize("bad", [{}, {"state_before": "bad"}, None])
+def test_malformed_model_json_corrected_and_revalidated(monkeypatch, bad):
+    good = contract(opening())
+    results = iter([bad, good, {"errors": []}])
+    calls = []
+
+    def chat(*args):
+        calls.append(json.loads(args[3]))
+        return next(results)
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.track_scene(None, "qwen", "Indy calls Doriane.", "Indy calls Doriane.", attempts=1)
+    assert result == good and len(report["attempts"]) == 2
+    assert calls[1]["current_state"] is None
+    assert calls[1]["validation_errors"]
+
+
+def test_automatic_correction_receives_expected_state_and_is_bounded(monkeypatch):
+    good = prologue()[6]
+    bad = deepcopy(good)
+    ns.state_map(bad["initial_frame"])["torch_2"]["relationship"] = "in_mouth"
+    results = iter([bad, good, {"errors": []}])
+    monkeypatch.setattr(ns, "chat_json", lambda *args: next(results))
+    result, report = ns.track_scene(None, "qwen", good["events"][0]["description"], "Torch moves into mouth.", good["state_before"], 1)
+    assert result == good and len(report["attempts"]) == 2
+    calls = []
+    monkeypatch.setattr(ns, "chat_json", lambda *args: calls.append(True) or bad)
+    with pytest.raises(ValueError, match="correction budget"):
+        ns.track_scene(None, "qwen", "text", "text", attempts=1)
+    assert len(calls) == 2
+
+
+def test_missing_optional_state_and_null_attributes(monkeypatch):
+    good = contract({"entities": [entity("indy", "character")]})
+    monkeypatch.setattr(ns, "chat_json", lambda *a: good if a[4] == ns.CONTRACT_SCHEMA else {"errors": []})
+    assert ns.track_scene(None, "qwen", "Indy calls Doriane.", "Indy calls Doriane.")[0] == good
+    assert "current_state_json" in NarrativeStateTrackerNode.INPUT_TYPES()["optional"]
+
+
+def test_malformed_json_runtime_error_and_interruption(monkeypatch):
+    def malformed(*args):
+        raise RuntimeError("Invalid structured JSON after 1 attempt(s).")
+    monkeypatch.setattr(ns, "chat_json", malformed)
+    with pytest.raises(ValueError, match="correction budget"):
+        ns.simplify(None, "qwen", "source", 0)
+    def interrupted():
+        raise RuntimeError("interrupted")
+    monkeypatch.setattr(ns, "comfy_interrupt_check", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        ns.simplify(None, "qwen", "source", 2)
+
+
+def test_semantic_review_can_reject_well_formed_normalization(monkeypatch):
+    monkeypatch.setattr(ns, "chat_json", lambda *a: {"cinematic_text": "Lost all actions"} if a[4] == ns.SIMPLIFY_SCHEMA
+                        else {"errors": [ns.issue("indy", "all actions", "omitted actions")]})
+    with pytest.raises(ValueError, match="omitted actions"):
+        ns.simplify(None, "qwen", "source", 0)
+
+
+def test_generation_uses_contract_after_camera_and_on_cache_hits(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline import path_access
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    beat = prologue()[6]
+    source = beat["events"][0]["description"] + " Indy is still suspended in the dark crevasse. The damaged main rope supports him."
+    chapter = tmp_path / "chapter.txt"
+    chapter.write_text(source, encoding="utf-8")
+    bundle = {"schema_version": "minimax-cinematic-narrative.v1", "correction_attempts": 1, "chapters": {
+        str(chapter.resolve()): {"source_digest": source_digest(source), "cinematic_text": source,
+            "segments": [{"original_text": source, "cinematic_text": source, "contract": beat}]}}}
+    args = SimpleNamespace(out_dir=tmp_path / "output", force=False, chunk_chars=3000, overlap_paragraphs=2,
+                           max_scenes=0, duration=8, max_shots=1, repair_attempts=1, refine_camera=True,
+                           cinematic_narrative=bundle)
+    scene = generate.Scene("Torch", source, source, "", [], [], [], False, "")
+    planning = []
+    def plan(*a):
+        planning.append(a[3])
+        return [scene]
+    monkeypatch.setattr(generate, "plan_scenes", plan)
+    monkeypatch.setattr(ns, "review", lambda *a: [])
+    monkeypatch.setattr(ns, "track_scene", lambda *a: (deepcopy(beat), {"valid": True}))
+    bindings = {"subjects": [{"h3_subject_label": "<Subject 1>", "canonical_name": "Indy", "pictures": [],
+                              "entity_type": "character", "global_id": "indy"}],
+                "picture_input_order": [], "audio": []}
+    monkeypatch.setattr(generate, "build_bindings", lambda *a: bindings)
+    def prompt(*a):
+        assert a[-1]["narrative_state"]["state_before"] == beat["state_before"]
+        return "draft"
+    monkeypatch.setattr(generate, "generate_prompt", prompt)
+    monkeypatch.setattr(generate, "validate_prompt", lambda *a: generate.Validation(True, [], 100))
+    monkeypatch.setattr(generate, "refine_camera_prompt", lambda *a: ("premature torch in mouth", []))
+    reviews = []
+    def review(*a):
+        reviews.append(a[3])
+        return [] if a[3] == "corrected" else ["torch_2: expected held; in_mouth starts at event_1; correct opening."]
+    monkeypatch.setattr(generate, "check_prompt_continuity", review)
+    monkeypatch.setattr(generate, "repair_prompt", lambda *a: "corrected")
+    for _ in range(2):
+        manifest = generate.process_chapter(chapter, {}, None, "qwen", args)
+        entry = manifest["outputs"][0]
+        assert entry["valid"] and entry["narrative_state"]["state_after"] == beat["state_after"]
+    assert reviews == ["premature torch in mouth", "corrected", "corrected"]
+    assert len(planning) == 1 and "AUTHORITATIVE TEMPORAL CONTRACT" in planning[0]
+    monkeypatch.setattr(generate, "build_bindings", lambda *a: {"subjects": [], "audio": []})
+    with pytest.raises(ValueError, match="Cannot skip ordered narrative events"):
+        generate.process_chapter(chapter, {}, None, "qwen", args)
+    chapter.write_text("changed " * 20, encoding="utf-8")
+    with pytest.raises(ValueError, match="stale"):
+        generate.process_chapter(chapter, {}, None, "qwen", args)
+
+
+def test_new_nodes_are_optional_and_preview_outputs_are_strings():
+    from minimax_h3_novel_pipeline.generate_h3_prompts import GenerateH3PromptsNode
+    assert "cinematic_narrative" in GenerateH3PromptsNode.INPUT_TYPES()["optional"]
+    assert list(GenerateH3PromptsNode.INPUT_TYPES()["optional"])[:2] == ["spatial_continuity", "camera_direction"]
+    assert GenerateH3PromptsNode.RETURN_TYPES == ("MINIMAX_PROMPTS", "STRING", "STRING")
+    assert all(t == "STRING" for t in NovelCinematicSimplifierNode.RETURN_TYPES[1:])
+
+
+def test_scene_boundary_cannot_drop_actions(monkeypatch):
+    beat = prologue()[6]
+    monkeypatch.setattr(ns, "chat_json", lambda *a: beat)
+    with pytest.raises(ValueError, match="scene boundary"):
+        ns.track_scene(None, "qwen", beat["events"][0]["description"], "Torch moves.",
+                       beat["state_before"], 0, expected_after=prologue()[-1]["state_after"])
+
+
+def test_out_of_order_events_rejected():
+    first, second = prologue()[:2]
+    beat = deepcopy(first)
+    beat["events"] = [deepcopy(second["events"][0]), deepcopy(first["events"][0])]
+    beat["events"][1]["id"] = "ask"
+    beat["state_after"] = second["state_after"]
+    source = first["events"][0]["description"] + " " + second["events"][0]["description"]
+    assert any("chronological" in e["expected_state"] for e in ns.validate_contract(beat, source=source))
+
+
+def test_preprocessing_node_persists_prologue_and_passes_state_between_passages(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from minimax_h3_novel_pipeline import narrative_nodes as nodes, path_access
+    beats = prologue()
+    sources = [beat["events"][0]["description"] for beat in beats]
+    chapter = tmp_path / "prologue_sequence.txt"
+    chapter.write_text("\n\n".join(sources), encoding="utf-8")
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(nodes, "stage_output", lambda *a: tmp_path / "output")
+    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock-qwen"))
+    monkeypatch.setattr(nodes.util, "split_chunks", lambda *a: sources)
+    tracked = []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == ns.REVIEW_SCHEMA:
+            return {"errors": []}
+        index = sources.index(payload["original_scene"])
+        if schema == ns.SIMPLIFY_SCHEMA:
+            return {"cinematic_text": sources[index]}
+        tracked.append(payload["current_state"])
+        return deepcopy(beats[index])
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    outputs = NovelCinematicSimplifierNode().run(str(chapter), {"api_url": "unused"})
+    assert len(outputs) == 6
+    bundle = outputs[0]
+    saved = json.loads((tmp_path / "output/cinematic_narrative.json").read_text(encoding="utf-8"))
+    assert saved == bundle
+    assert tracked == [None] + [b["state_after"] for b in beats[:-1]]
+    record = bundle["chapters"][str(chapter.resolve())]
+    assert len(record["segments"]) == 8
+    assert ns.state_map(record["segments"][-1]["contract"]["state_after"])["main_rope"]["status"] == "broken"
+    for preview in outputs[2:]:
+        assert isinstance(json.loads(preview), dict)
+
+    # Run the persisted preprocessing result through all eight generated scenes.
+    def plan(client, model, chapter_id, chunk, index, *args):
+        source = sources[index - 1]
+        return [generate.Scene(f"Beat {index}", source, source, "", [], [], [], False, "")]
+    monkeypatch.setattr(generate, "plan_scenes", plan)
+    bindings = {"subjects": [{"h3_subject_label": "<Subject 1>", "canonical_name": "Indy",
+                              "entity_type": "character", "global_id": "indy", "pictures": []}],
+                "picture_input_order": [], "audio": []}
+    monkeypatch.setattr(generate, "build_bindings", lambda *a: bindings)
+    openings = []
+    def prompt(*a):
+        state = a[-1]["narrative_state"]["state_before"]
+        openings.append(state)
+        return "mock H3 prompt"
+    monkeypatch.setattr(generate, "generate_prompt", prompt)
+    monkeypatch.setattr(generate, "validate_prompt", lambda *a: generate.Validation(True, [], 100))
+    monkeypatch.setattr(generate, "check_prompt_continuity", lambda *a: [])
+    args = SimpleNamespace(out_dir=tmp_path / "generated", force=False, chunk_chars=3000, overlap_paragraphs=2,
+                           max_scenes=0, duration=8, repair_attempts=1, cinematic_narrative=bundle)
+    manifest = generate.process_chapter(chapter, {}, None, "mock-qwen", args)
+    assert manifest["saved_prompt_count"] == 8
+    assert openings == [beat["state_before"] for beat in beats]
+    assert all(entry["valid"] for entry in manifest["outputs"])
+
+
+def test_tracker_node_outputs_can_chain(monkeypatch):
+    from contextlib import nullcontext
+    from minimax_h3_novel_pipeline import narrative_nodes as nodes
+    beat = prologue()[6]
+    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock-qwen"))
+    monkeypatch.setattr(ns, "chat_json", lambda *a: deepcopy(beat) if a[4] == ns.CONTRACT_SCHEMA else {"errors": []})
+    output = NarrativeStateTrackerNode().run(beat["events"][0]["description"], "He moves the torch.",
+                                             {"api_url": "unused"}, current_state_json=json.dumps(beat["state_before"]))
+    assert json.loads(output[3]) == beat["state_after"]
+    assert output[0]["schema_version"] == "minimax-narrative-state.v1"
