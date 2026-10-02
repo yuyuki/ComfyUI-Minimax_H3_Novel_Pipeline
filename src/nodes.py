@@ -9,10 +9,11 @@ from .load_chapter_catalogs import LoadChapterCatalogsNode
 from .load_consolidated_references import LoadConsolidatedReferencesNode
 from .lmstudio_config import LMStudioConfigurationNode
 from .spatial_continuity import SpatialContinuityNode
-from .narrative_nodes import NovelCinematicSimplifierNode
+from .narrative_nodes import NarrativeContinuityNode, NovelCinematicSimplifierNode
 
 
 NODE_CLASS_MAPPINGS = {
+    "NarrativeContinuityNode": NarrativeContinuityNode,
     "NovelCinematicSimplifierNode": NovelCinematicSimplifierNode,
     "LMStudioConfigurationNode": LMStudioConfigurationNode,
     "SelectChaptersNode": SelectChaptersNode,
@@ -25,6 +26,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 __all__ = [
+    "NarrativeContinuityNode",
     "NovelCinematicSimplifierNode",
     "ExtractChapterReferencesNode",
     "LMStudioConfigurationNode",

@@ -38,6 +38,21 @@ def contract(state, description="Indy calls Doriane.", changes=(), kind="action"
             "state_after": after}
 
 
+def extraction(beat, source, current=None):
+    """Mock the event-only LM response using independently authored contract fixtures."""
+    events = []
+    units = ns.source_units(source)
+    for event in beat["events"]:
+        start = source.index(event["source_evidence"])
+        end = start + len(event["source_evidence"])
+        ids = [u["id"] for u in units if u["start"] < end and u["end"] > start]
+        events.append({"id": event["id"], "description": event["description"], "kind": event["kind"],
+                       "source_ids": ids, "changes": [{k: v for k, v in c.items() if k != "before"}
+                                                      for c in event["changes"]]})
+    return {"opening_entities": deepcopy(beat["state_before"]["entities"]) if current is None else [],
+            "new_entities": [], "events": events}
+
+
 def prologue():
     # These beats reproduce the user's supplied sequence; they are not a quotation of the full prologue.
     specs = [
@@ -143,61 +158,36 @@ def test_wrong_preconditions_duplicate_ids_and_invented_evidence():
         ns.validate_contract(beat)
 
 
-def test_state_retry_corrects_translated_evidence_and_stale_preconditions(monkeypatch):
+def test_indexed_evidence_and_replay_avoid_quote_and_precondition_retries(monkeypatch):
     source = "Indy se redresse. Il descend ensuite."
     first = contract(opening(), "Indy se redresse.", [("indy", "position", "raised")])
     second = contract(first["state_after"], "Il descend ensuite.", [("indy", "position", "lowered")])
-    fixed = deepcopy(first)
     second["events"][0]["id"] = "event_2"
-    fixed["events"] += second["events"]
-    fixed["state_after"] = second["state_after"]
-    invalid = deepcopy(fixed)
-    invalid["events"][0]["source_evidence"] = "Indy pulls himself up."
-    invalid["events"][1]["changes"][0]["before"] = "suspended_on_rope"
-    requests, reviews = [], []
-
-    def chat(client, model, system, user, schema, *args):
-        payload = json.loads(user)
-        if schema == ns.REVIEW_SCHEMA:
-            reviews.append(payload)
-            return {"errors": []}
-        assert "substring of original_scene" in system
-        assert "after ALL preceding events" in system
-        requests.append(payload)
-        return deepcopy(invalid if len(requests) == 1 else fixed)
-
-    monkeypatch.setattr(ns, "chat_json", chat)
-    result, report = ns.track_scene(None, "mock", source, "Indy pulls himself up. He descends.", attempts=1)
-    assert result == fixed and report["valid"]
-    retry = requests[1]
-    assert retry["candidate"] == invalid
-    assert retry["original_scene"] == source
-    evidence_error, precondition_error = retry["validation_errors"]
-    assert evidence_error["introducing_event"] == "event_1"
-    assert "original_scene" in evidence_error["suggested_correction"]
-    assert "original language" in evidence_error["suggested_correction"]
-    assert precondition_error["introducing_event"] == "event_2"
-    assert precondition_error["expected_state"] == "position=raised"
-    assert '"raised"' in precondition_error["suggested_correction"]
-    assert "preceding events" in precondition_error["suggested_correction"]
-    assert len(reviews) == 1 and reviews[0]["candidate"] == fixed
-    assert "validation_errors" not in reviews[0]
-
-
-@pytest.mark.parametrize("evidence", ["Indy calls Doriane.", "Indy appelle...", "Indy appelle Doriane!"])
-def test_state_retry_never_accepts_nonverbatim_evidence(monkeypatch, evidence):
-    beat = contract(opening())
-    beat["events"][0]["source_evidence"] = evidence
+    fixed = {**first, "events": first["events"] + second["events"], "state_after": second["state_after"]}
+    response = extraction(fixed, source)
     calls = []
-
     def chat(*args):
         calls.append(args[4])
-        return deepcopy(beat)
-
+        return deepcopy(response) if args[4] == ns.EXTRACTION_SCHEMA else {"errors": []}
     monkeypatch.setattr(ns, "chat_json", chat)
-    with pytest.raises(ValueError, match="Narrative validation failed after correction budget"):
-        ns.track_scene(None, "mock", "Indy appelle Doriane.", evidence, attempts=1)
-    assert calls == [ns.CONTRACT_SCHEMA, ns.CONTRACT_SCHEMA]
+    result, report = ns.track_scene(None, "mock", source, "Indy rises. Then descends.", attempts=0)
+    assert result == fixed and report["valid"]
+    assert result["events"][1]["changes"][0]["before"] == "raised"
+    assert calls == [ns.EXTRACTION_SCHEMA, ns.REVIEW_SCHEMA]
+
+
+@pytest.mark.parametrize("ids", [[], ["invented"], ["source_2", "source_1"]])
+def test_invalid_evidence_ids_exhaust_budget(monkeypatch, ids):
+    response = extraction(contract(opening()), "Indy calls Doriane.")
+    response["events"][0]["source_ids"] = ids
+    calls = []
+    def chat(*args):
+        calls.append(args[4])
+        return deepcopy(response)
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(ValueError, match="source_ids"):
+        ns.track_scene(None, "mock", "Indy calls Doriane.", "Indy calls Doriane.", attempts=1)
+    assert calls == [ns.EXTRACTION_SCHEMA, ns.EXTRACTION_SCHEMA]
 
 
 def test_metaphor_normalization_and_dialogue_prompt(monkeypatch):
@@ -219,7 +209,7 @@ def test_metaphor_normalization_and_dialogue_prompt(monkeypatch):
 @pytest.mark.parametrize("bad", [{}, {"state_before": "bad"}, None])
 def test_malformed_model_json_corrected_and_revalidated(monkeypatch, bad):
     good = contract(opening())
-    results = iter([bad, good, {"errors": []}])
+    results = iter([bad, extraction(good, "Indy calls Doriane."), {"errors": []}])
     calls = []
 
     def chat(*args):
@@ -235,22 +225,25 @@ def test_malformed_model_json_corrected_and_revalidated(monkeypatch, bad):
 
 def test_automatic_correction_receives_expected_state_and_is_bounded(monkeypatch):
     good = prologue()[6]
-    bad = deepcopy(good)
-    ns.state_map(bad["initial_frame"])["torch_2"]["relationship"] = "in_mouth"
-    results = iter([bad, good, {"errors": []}])
+    source = good["events"][0]["description"]
+    response = extraction(good, source, good["state_before"])
+    bad = deepcopy(response)
+    bad["events"][0]["changes"].append({"entity": "torch_2", "field": "location", "after": "surface"})
+    results = iter([bad, response, {"errors": []}])
     monkeypatch.setattr(ns, "chat_json", lambda *args: next(results))
-    result, report = ns.track_scene(None, "qwen", good["events"][0]["description"], "Torch moves into mouth.", good["state_before"], 1)
+    result, report = ns.track_scene(None, "qwen", source, source, good["state_before"], 1)
     assert result == good and len(report["attempts"]) == 2
     calls = []
     monkeypatch.setattr(ns, "chat_json", lambda *args: calls.append(True) or bad)
     with pytest.raises(ValueError, match="correction budget"):
-        ns.track_scene(None, "qwen", "text", "text", attempts=1)
+        ns.track_scene(None, "qwen", source, source, good["state_before"], attempts=1)
     assert len(calls) == 2
 
 
 def test_missing_optional_state_and_null_attributes(monkeypatch):
     good = contract({"entities": [entity("indy", "character")]})
-    monkeypatch.setattr(ns, "chat_json", lambda *a: good if a[4] == ns.CONTRACT_SCHEMA else {"errors": []})
+    response = extraction(good, "Indy calls Doriane.")
+    monkeypatch.setattr(ns, "chat_json", lambda *a: response if a[4] == ns.EXTRACTION_SCHEMA else {"errors": []})
     assert ns.track_scene(None, "qwen", "Indy calls Doriane.", "Indy calls Doriane.")[0] == good
 
 
@@ -298,7 +291,7 @@ def test_correction_feedback_is_kept_out_of_fresh_reviews(monkeypatch, stage):
                 return {"errors": payload["validation_errors"]}
             return {"errors": [feedback[len(reviews) - 1]] if len(reviews) <= 2 else []}
         generations.append((system, payload))
-        return deepcopy(good)
+        return deepcopy(good) if stage == "simplify" else extraction(good, source, opening())
 
     monkeypatch.setattr(ns, "chat_json", chat)
     if stage == "simplify":
@@ -309,7 +302,7 @@ def test_correction_feedback_is_kept_out_of_fresh_reviews(monkeypatch, stage):
         result, report = ns.track_scene(None, "qwen", source, source, state, attempts=2,
                                         authoritative_contract=good, expected_after=good["state_after"])
         expected_source = {"original_scene": source, "cinematic_version": source, "current_state": state,
-                           "authoritative_contract": good, "expected_after": good["state_after"]}
+                           "authoritative_contract": good, "expected_after": good["state_after"], "source_units": ns.source_units(source)}
     assert result == good and report["valid"]
     assert [entry["errors"] for entry in report["attempts"]] == [[first_error], [second_error], []]
     assert len(generations) == len(reviews) == 3
@@ -318,7 +311,7 @@ def test_correction_feedback_is_kept_out_of_fresh_reviews(monkeypatch, stage):
     assert generations[0][1] == expected_source
     for (system, payload), error in zip(generations[1:], feedback):
         assert "Revise the supplied candidate" in system
-        assert payload == {**expected_source, "candidate": good, "validation_errors": [error]}
+        assert payload == {**expected_source, "candidate": good if stage == "simplify" else extraction(good, source, state), "validation_errors": [error]}
 
 
 def test_repeated_semantic_conflicts_still_exhaust_correction_budget(monkeypatch):
@@ -561,7 +554,7 @@ def test_new_nodes_are_optional_and_preview_outputs_are_strings():
 
 def test_scene_boundary_cannot_drop_actions(monkeypatch):
     beat = prologue()[6]
-    monkeypatch.setattr(ns, "chat_json", lambda *a: beat)
+    monkeypatch.setattr(ns, "chat_json", lambda *a: extraction(beat, beat["events"][0]["description"], beat["state_before"]))
     with pytest.raises(ValueError, match="scene boundary"):
         ns.track_scene(None, "qwen", beat["events"][0]["description"], "Torch moves.",
                        beat["state_before"], 0, expected_after=prologue()[-1]["state_after"])
@@ -598,7 +591,7 @@ def test_preprocessing_node_persists_prologue_and_passes_state_between_passages(
         if schema == ns.SIMPLIFY_SCHEMA:
             return {"cinematic_text": sources[index]}
         tracked.append(payload["current_state"])
-        return deepcopy(beats[index])
+        return extraction(beats[index], payload["original_scene"], payload["current_state"])
 
     monkeypatch.setattr(ns, "chat_json", chat)
     outputs = NovelCinematicSimplifierNode().run(str(chapter), {"api_url": "unused"})

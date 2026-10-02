@@ -118,6 +118,13 @@ moments. Rerun Generate to replace earlier compressed scene plans and prompts.
 
 ## Cinematic preprocessing
 
+For an already cinematic chapter or scene saved as a selected text file, use
+**Select Chapters -> Narrative Continuity -> Generate H3 Prompts**, sharing the
+LM Studio configuration and keeping Generate's chapter selection and registry inputs.
+Narrative Continuity does not rewrite prose. It optionally accepts a Simplifier bundle;
+select the same original chapters when using that input. Existing Simplifier workflows
+still run the shared continuity layer automatically.
+
 Add **Novel Cinematic Simplifier** to the workflow above. Share the existing chapter
 selection and LM Studio configuration with it; connect its first output to Generate's
 optional `cinematic_narrative` input. Keep the original chapter selection and registry

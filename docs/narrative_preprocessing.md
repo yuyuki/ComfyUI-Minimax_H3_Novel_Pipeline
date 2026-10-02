@@ -6,6 +6,17 @@ add fields or sections to the MiniMax H3 prompt format.
 
 ## Wiring
 
+**Narrative Continuity** reads selected text without rewriting it. Use this node for
+already simplified chapters/scenes, or optionally supply `cinematic_narrative` from
+Novel Cinematic Simplifier along with the same original chapter selection. Connect
+the resulting bundle to Generate. Incoming source digests and passage coverage are
+checked before model requests; continuity is rebuilt from the supplied prose.
+
+Extract Chapter References continues identifying catalog assets from original prose;
+Consolidate References owns global identity merging and asset briefs. Narrative IDs
+are temporal tracking IDs, not replacement registry IDs. Scene generation still plans
+shots and resolves registry bindings; this layer supplies ordered facts and boundaries.
+
 Connect **Select Chapters** and **LM Studio Configuration** to **Novel Cinematic
 Simplifier**. Connect its `cinematic_narrative` output to the optional input of the
 same name on **Generate H3 Prompts**. Continue to feed the original chapter selection
@@ -35,6 +46,7 @@ chapter's final state when truncating a passage.
 
 | Node | Inputs | Outputs |
 |---|---|---|
+| Narrative Continuity | chapter_selection, lmstudio_config, out_dir, chunk_chars, correction_attempts; optional cinematic_narrative | cinematic_narrative, cinematic_text, validation_report, state_before_json, events_json, state_after_json |
 | Novel Cinematic Simplifier | chapter_selection, lmstudio_config, out_dir, chunk_chars, correction_attempts | cinematic_narrative, cinematic_text, validation_report, state_before_json, events_json, state_after_json |
 
 All outputs except the first are strings suitable for Preview Text. The simplifier
@@ -86,11 +98,20 @@ Events carry a unique ID, description, verbatim source evidence, kind (`action`,
 The illustrative evidence must be replaced with an exact excerpt from the actual
 scene. Evidence alone cannot prove the interpretation; the separate semantic review
 must verify it supports the change.
-Evidence is copied from `original_scene`, never from the cinematic rewrite or a
-translation; it must be one contiguous excerpt with unchanged punctuation and
-whitespace. Each change's `before` value refers to the running state after preceding
-events, not the passage's opening state. Evidence and precondition failures receive
-specific correction instructions; invalid contracts still stop after the retry budget.
+The model returns an event-only extraction schema (`narrative_events_v2`): opening
+entities for the first passage, declarations of later entities, and ordered events
+with `source_ids` and field `after` values. It does not generate quotations,
+`change.before`, `initial_frame` or `state_after`. Python slices evidence directly
+from indexed original sentences/lines and derives all redundant state by replay.
+Unknown source IDs, reversed source order and undeclared entities remain errors.
+Events within the same source unit retain their supplied order; semantic review
+checks within-sentence chronology, introductions and whether evidence supports changes.
+For subsequent passages the opening comes exclusively from the previous ending.
+New entities start with null physical attributes, `not_introduced` and invisible.
+Duplicate IDs, ownership cycles and unsupported transitions are rejected.
+The public persisted contract remains v1 for downstream and existing bundle compatibility.
+State carries across passages/scenes within each chapter; each selected chapter starts
+independently because chapter boundaries can contain time jumps or viewpoint changes.
 
 Deterministic checks enforce schema/types, unique identities, chronological evidence,
 event preconditions, unchanged carried state, introduction before visibility/ownership,

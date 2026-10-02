@@ -39,6 +39,7 @@ def _build_mappings() -> None:
                 "GenerateH3PromptsNode": _nodes.GenerateH3PromptsNode,
                 "SpatialContinuityNode": _nodes.SpatialContinuityNode,
                 "NovelCinematicSimplifierNode": _nodes.NovelCinematicSimplifierNode,
+                "NarrativeContinuityNode": _nodes.NarrativeContinuityNode,
             }
         )
         NODE_DISPLAY_NAME_MAPPINGS.update(
@@ -52,6 +53,7 @@ def _build_mappings() -> None:
                 "GenerateH3PromptsNode": "Generate H3 Prompts",
                 "SpatialContinuityNode": "Spatial Continuity",
                 "NovelCinematicSimplifierNode": "Novel Cinematic Simplifier",
+                "NarrativeContinuityNode": "Narrative Continuity",
             }
         )
     except Exception as e:

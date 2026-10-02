@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Rework narrative extraction around indexed source evidence and deterministic event
+  replay; add a prose-preserving Narrative Continuity node, retain existing Simplifier
+  wiring, and cover continuity compilation and downstream integration offline.
+
 - Clarify original-language evidence and sequential state replay in narrative
   extraction; give targeted correction feedback and test bounded retries without
   accepting translated quotations or stale event preconditions.

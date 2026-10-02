@@ -4,6 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
+import re
 
 from .lmstudio_json import chat_json
 from .lmstudio_pipeline import comfy_interrupt_check
@@ -35,6 +36,33 @@ EVENT = obj({"id": STRING, "description": STRING, "source_evidence": STRING,
 CONTRACT_SCHEMA = {"name": "narrative_contract_v1", "strict": True, "schema": obj({
     "state_before": STATE, "initial_frame": STATE, "events": array(EVENT), "state_after": STATE,
 })}
+EXTRACTION_SCHEMA = {"name": "narrative_events_v2", "strict": True, "schema": obj({
+    "opening_entities": array(ENTITY),
+    "new_entities": array(obj({"id": STRING, "kind": ENTITY["properties"]["kind"]})),
+    "events": array(obj({"id": STRING, "description": STRING,
+        "source_ids": array(STRING), "kind": EVENT["properties"]["kind"],
+        "changes": array(obj({"entity": STRING, "field": CHANGE["properties"]["field"], "after": VALUE}))})),
+})}
+EXTRACTION_SYSTEM = """Extract narrative continuity, without rewriting prose or designing shots.
+Return opening_entities ONLY for the first passage (current_state is null); otherwise return [].
+Opening entities contain only facts already true before the first action, never later states.
+Declare entities first encountered during events in new_entities with a stable ID and kind.
+They start absent, invisible and unowned; establish them with an introduction event.
+Reuse current_state and authoritative_contract IDs. Distinguish separate instances of props.
+Record every action/dialogue in chronological order, including actions with no state changes.
+For evidence select source_ids from supplied source_units; never reproduce or rewrite quotations.
+Multiple events may cite the same unit; respect action order within it (including 'after' clauses).
+Each event lists only changed fields and their resulting after values. Python computes all before
+values, opening frames and final states. Use one change per entity/field per event.
+Track character location/posture, prop ownership/position/visibility and environment conditions.
+Owned props have location equal to the owner ID. Use relationship held, in_mouth, worn or stored
+for possession, not redundant holding claims on characters. Never put a torch in a mouth until
+the source action. A transfer updates owner, location and relationship together. Use status for
+condition and position for placement. Unknown attributes are null. No invented movement or props.
+Broken/damaged props require a source-supported repair event before restoration.
+original_scene is evidence; cinematic_version is context. authoritative_contract constrains scene
+projection; expected_after constrains the passage boundary. Preserve all source-supported events.
+Return JSON only."""
 ISSUE = obj({key: STRING for key in ("entity", "expected_state", "conflicting_state", "introducing_event", "suggested_correction")})
 REVIEW_SCHEMA = {"name": "narrative_review_v1", "strict": True, "schema": obj({"errors": array(ISSUE)})}
 VERIFY_REVIEW_SCHEMA = {"name": "cinematic_review_verification_v1", "strict": True,
@@ -51,32 +79,7 @@ the arms. Preserve identity, locations, every important prop, atmosphere, causal
 in order and dialogue verbatim in its original language. Do not invent actions to replace
 thoughts; omit unfilmable thoughts while retaining any stated visible behavior. Do not add
 future objects or postures to the opening description. Preserve paragraph order. Output JSON."""
-STATE_SYSTEM = """Extract a chronological film state contract from the supplied scene.
-Use stable entity IDs, distinguish multiple instances (torch_1 and torch_2). Track characters,
-locations and objects, their location, position, posture, owner, relationship, status, visibility
-and environment. Null means unknown, not permission to invent. An owned object's location is
-its owner's ID; relationship describes held, in_mouth, worn or stored. No duplicate entities.
-Copy current_state exactly into state_before. You may add newly encountered entities, but when
-current_state exists start new entities not_introduced, invisible, with null owner and location;
-an introduction event establishes them. For the first scene infer ONLY its opening state.
-initial_frame is a subset of state_before containing only visible entities with identical fields.
-Every event has an ID, a verbatim source_evidence excerpt, and atomic changes with exact before
-and after values. source_evidence must be one exact contiguous substring of original_scene,
-in its original language, spelling, punctuation and whitespace. Never quote cinematic_version
-or translate, paraphrase, join excerpts or insert ellipses. Descriptions may restate the action;
-evidence must be copied from original_scene. Select excerpts in source order.
-Maintain a running state starting at state_before. Each change.before must equal that field
-in the running state after ALL preceding events, not its opening value. Null is valid only
-when the running value is null. Apply each change.after before constructing the next event.
-state_after must be the resulting running state, with unchanged fields copied exactly.
-Use status for persistent condition (alive, damaged, broken), position for spatial placement,
-and posture for bodily pose. Shouting or looking alone need not change any of these fields;
-record such actions in description with an empty changes array unless a state really changes.
-Apply changes in strict story order to produce state_after. Even dialogue or
-looks with no state change are events. Movement, acquisition, posture changes and rope damage
-must be events. Never place a late torch-in-mouth action in state_before. Lost and unintroduced
-objects are invisible. A broken object needs an explicit repair event before restoration.
-Do not skip or invent actions; preserve dialogue. Return only the requested JSON contract."""
+
 
 
 def check_shape(value, schema, path="result"):
@@ -139,11 +142,20 @@ def validate_contract(contract, current_state=None, source=""):
                 errors.append(issue(key, "invisible and unowned", entity, event))
             if entity["status"] == "not_introduced" and entity["location"] is not None:
                 errors.append(issue(key, "no location before introduction", entity["location"], event))
+            if entity["status"] == "not_introduced" and any(entity[f] is not None for f in FIELDS if f != "status"):
+                errors.append(issue(key, "no physical state before introduction", entity, event))
             owner = entity["owner"]
             if owner is not None and (owner not in state or entity["location"] != owner or state[owner]["status"] == "not_introduced"):
                 errors.append(issue(key, "one existing owner; location equals owner ID", entity, event))
             if entity["relationship"] in {"held", "in_mouth", "worn"} and owner is None:
                 errors.append(issue(key, "owner for held/in_mouth/worn object", entity, event))
+            visited = {key}
+            while owner in state:
+                if owner in visited:
+                    errors.append(issue(key, "acyclic ownership", owner, event))
+                    break
+                visited.add(owner)
+                owner = state[owner]["owner"]
 
     replay = deepcopy(before)
     invariants(replay, "initial state")
@@ -281,7 +293,7 @@ def _validate_review_decisions(result, payload, errors):
     return confirmed
 
 
-def checked_pass(client, model, system, schema, payload, attempts, validator):
+def checked_pass(client, model, system, schema, payload, attempts, validator, compile_result=None):
     if not isinstance(attempts, int) or not 0 <= attempts <= 10:
         raise ValueError("Correction attempts must be between 0 and 10.")
     source_payload = deepcopy(payload)
@@ -289,6 +301,7 @@ def checked_pass(client, model, system, schema, payload, attempts, validator):
     for attempt in range(attempts + 1):
         comfy_interrupt_check()
         result = None
+        candidate = None
         try:
             correction = (
                 " Revise the supplied candidate using validation_errors as feedback, checking each claim "
@@ -298,6 +311,9 @@ def checked_pass(client, model, system, schema, payload, attempts, validator):
             ) if attempt else ""
             result = chat_json(client, model, system + correction, json.dumps(payload, ensure_ascii=False), schema, 0.15, 8000)
             check_shape(result, schema["schema"])
+            candidate = deepcopy(result)
+            if compile_result is not None:
+                result = compile_result(result)
             errors = validator(result)
             if not errors:
                 # Previous review feedback belongs only in the correction request. Passing it
@@ -312,13 +328,63 @@ def checked_pass(client, model, system, schema, payload, attempts, validator):
         history.append({"attempt": attempt, "errors": errors})
         if not errors:
             return result, {"valid": True, "attempts": history}
-        payload = {**source_payload, "candidate": result, "validation_errors": errors}
+        payload = {**source_payload, "candidate": candidate if candidate is not None else result, "validation_errors": errors}
     raise ValueError("Narrative validation failed after correction budget: " + json.dumps(history, ensure_ascii=False))
 
 
 def simplify(client, model, original, attempts=2):
     return checked_pass(client, model, SIMPLIFY_SYSTEM, SIMPLIFY_SCHEMA, {"original_scene": original}, attempts,
                         lambda result: [] if result["cinematic_text"].strip() else [issue("text", "nonempty cinematic text", "empty")])
+
+
+def source_units(source):
+    """Index exact source slices; IDs remove quotation reproduction from model work."""
+    units = []
+    start = 0
+    for match in re.finditer(r"(?<=[.!?])\s+|\n+", source):
+        end = match.start()
+        if source[start:end].strip():
+            units.append({"id": f"source_{len(units) + 1}", "start": start, "end": end,
+                          "text": source[start:end]})
+        start = match.end()
+    if source[start:].strip():
+        units.append({"id": f"source_{len(units) + 1}", "start": start, "end": len(source), "text": source[start:]})
+    return units
+
+
+def compile_contract(extraction, source, current_state=None):
+    """Build the public v1 contract from model facts plus deterministic event replay."""
+    check_shape(extraction, EXTRACTION_SCHEMA["schema"])
+    if current_state is not None and extraction["opening_entities"]:
+        raise ValueError("opening_entities must be empty when carrying current_state; use events for changes.")
+    before = deepcopy(current_state) if current_state is not None else {"entities": deepcopy(extraction["opening_entities"])}
+    for entity in extraction["new_entities"]:
+        before["entities"].append({**entity, **dict.fromkeys(FIELDS), "status": "not_introduced", "visible": False})
+    replay = deepcopy(state_map(before))
+    units = {unit["id"]: unit for unit in source_units(source)}
+    events = []
+    last_start = -1
+    for event in extraction["events"]:
+        ids = event["source_ids"]
+        if not ids or any(key not in units for key in ids):
+            raise ValueError(f"Event {event['id']}: source_ids must select existing source units.")
+        selected = [units[key] for key in ids]
+        starts = [unit["start"] for unit in selected]
+        if starts != sorted(set(starts)) or starts[0] < last_start:
+            raise ValueError(f"Event {event['id']}: source_ids must follow chronological source order.")
+        last_start = starts[0]
+        changes = []
+        for change in event["changes"]:
+            key, field = change["entity"], change["field"]
+            if key not in replay:
+                raise ValueError(f"Event {event['id']}: undeclared entity {key}.")
+            changes.append({**change, "before": deepcopy(replay[key][field])})
+            replay[key][field] = change["after"]
+        events.append({"id": event["id"], "description": event["description"], "kind": event["kind"],
+                       "source_evidence": source[selected[0]["start"]:selected[-1]["end"]], "changes": changes})
+    return {"state_before": before,
+            "initial_frame": {"entities": [deepcopy(e) for e in before["entities"] if e["visible"]]},
+            "events": events, "state_after": {"entities": list(replay.values())}}
 
 
 def track_scene(client, model, original, cinematic, current_state=None, attempts=2, authoritative_contract=None, expected_after=None):
@@ -330,8 +396,8 @@ def track_scene(client, model, original, cinematic, current_state=None, attempts
             errors.append(issue("scene boundary", expected_after, result["state_after"],
                                 correction="Preserve all planned events and stable IDs to reach the authoritative ending state."))
         return errors
-    return checked_pass(client, model, STATE_SYSTEM +
-                        " Reuse IDs and facts from authoritative_contract when supplied, but apply only the "
-                        "current scene's events. Reach expected_after at this segment boundary if supplied.", CONTRACT_SCHEMA,
+    return checked_pass(client, model, EXTRACTION_SYSTEM, EXTRACTION_SCHEMA,
                         {"original_scene": original, "cinematic_version": cinematic, "current_state": current_state,
-                         "authoritative_contract": authoritative_contract, "expected_after": expected_after}, attempts, validate)
+                         "source_units": source_units(original),
+                         "authoritative_contract": authoritative_contract, "expected_after": expected_after}, attempts, validate,
+                        lambda result: compile_contract(result, original, current_state))

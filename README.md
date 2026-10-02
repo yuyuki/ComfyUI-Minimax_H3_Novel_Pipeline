@@ -371,6 +371,13 @@ Only current v3 chapter catalogs and registries are accepted. Regenerate older o
 
 ## Optional cinematic preprocessing
 
+For text already simplified, connect **Select Chapters** and **LM Studio Configuration**
+to **Narrative Continuity**, then its `cinematic_narrative` output to **Generate H3 Prompts**.
+This node preserves the prose and tracks entities and events. It can also read the
+simplifier's bundle through its optional `cinematic_narrative` input.
+State preconditions and ending states are computed by Python; the model selects
+indexed source passages instead of copying quotations.
+
 Connect **Select Chapters** and **LM Studio Configuration** to **Novel Cinematic
 Simplifier**, then connect `cinematic_narrative` to **Generate H3 Prompts**. This
 normalizes literary prose without summarizing, tracks ordered state transitions,

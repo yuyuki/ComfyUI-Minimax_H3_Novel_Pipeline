@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from minimax_h3_novel_pipeline import narrative_nodes as nodes, narrative_state as ns, path_access
-from .test_narrative_state import contract, entity
+from .test_narrative_state import contract, entity, extraction
 
 
 SOURCE = Path(__file__).parent / "fixtures" / "00_PROLOGUE.md"
@@ -132,8 +132,8 @@ def test_actual_prologue_preprocessing_with_mocked_lmstudio(tmp_path, monkeypatc
         calls.append(json.loads(user))
         if schema == ns.SIMPLIFY_SCHEMA:
             return {"cinematic_text": cinematic}
-        if schema == ns.CONTRACT_SCHEMA:
-            return deepcopy(combined)
+        if schema == ns.EXTRACTION_SCHEMA:
+            return extraction(combined, source)
         return {"errors": []}
     monkeypatch.setattr(ns, "chat_json", chat)
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
@@ -146,4 +146,4 @@ def test_actual_prologue_preprocessing_with_mocked_lmstudio(tmp_path, monkeypatc
     saved = json.loads((tmp_path / "output/cinematic_narrative.json").read_text(encoding="utf-8"))
     record = saved["chapters"][str(chapter.resolve())]
     assert record["segments"][0]["original_text"] == source
-    assert record["segments"][0]["contract"] == combined
+    assert record["segments"][0]["contract"] == ns.compile_contract(extraction(combined, source), source)
