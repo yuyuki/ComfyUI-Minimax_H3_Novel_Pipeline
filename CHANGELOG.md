@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Verify cinematic review complaints against source and candidate evidence before
+  rewriting prose; cover false complaints, genuine conflicts and invalid verification.
+
 - Review corrected narrative candidates independently of previous validation errors
   and give explicit correction instructions with source-grounded fidelity checks.
 

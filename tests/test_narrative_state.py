@@ -211,8 +211,12 @@ def test_malformed_json_runtime_error_and_interruption(monkeypatch):
 
 
 def test_semantic_review_can_reject_well_formed_normalization(monkeypatch):
-    monkeypatch.setattr(ns, "chat_json", lambda *a: {"cinematic_text": "Lost all actions"} if a[4] == ns.SIMPLIFY_SCHEMA
-                        else {"errors": [ns.issue("indy", "all actions", "omitted actions")]})
+    def chat(*args):
+        if args[4] == ns.VERIFY_REVIEW_SCHEMA:
+            return confirmed_review(json.loads(args[3]))
+        return ({"cinematic_text": "Lost all actions"} if args[4] == ns.SIMPLIFY_SCHEMA
+                else {"errors": [ns.issue("indy", "all actions", "omitted actions")]})
+    monkeypatch.setattr(ns, "chat_json", chat)
     with pytest.raises(ValueError, match="omitted actions"):
         ns.simplify(None, "qwen", "source", 0)
 
@@ -228,6 +232,8 @@ def test_correction_feedback_is_kept_out_of_fresh_reviews(monkeypatch, stage):
 
     def chat(client, model, system, user, schema, *args):
         payload = json.loads(user)
+        if schema == ns.VERIFY_REVIEW_SCHEMA:
+            return confirmed_review(payload)
         if schema == ns.REVIEW_SCHEMA:
             reviews.append(payload)
             # A reviewer exposed to earlier complaints repeats them even after correction.
@@ -263,6 +269,8 @@ def test_repeated_semantic_conflicts_still_exhaust_correction_budget(monkeypatch
     reviews = []
 
     def chat(client, model, system, user, schema, *args):
+        if schema == ns.VERIFY_REVIEW_SCHEMA:
+            return confirmed_review(json.loads(user))
         if schema == ns.REVIEW_SCHEMA:
             reviews.append(json.loads(user))
             return {"errors": [conflict]}
@@ -273,6 +281,70 @@ def test_repeated_semantic_conflicts_still_exhaust_correction_budget(monkeypatch
         ns.simplify(None, "qwen", "A second torch descends. Indy catches it.", attempts=2)
     assert len(reviews) == 3
     assert all("validation_errors" not in payload for payload in reviews)
+
+
+def confirmed_review(payload):
+    return {"decisions": [{"supported": True, "reason": "Source action differs from candidate.",
+                           "source_evidence": payload["original_scene"],
+                           "candidate_evidence": payload["candidate"]["cinematic_text"]}
+                          for _ in payload["proposed_errors"]]}
+
+
+def test_false_review_complaints_do_not_rewrite_candidate(monkeypatch):
+    source = '"Jones!" cried Doriane. Indy catches the cord, then grabs the torch. He closes his eyes. He pulls himself up.'
+    candidate = '"Jones!" Doriane cries out. Indy grabs the torch after catching the cord. He closes his eyes and pulls himself up.'
+    complaints = [ns.issue("Doriane", "Doriane speaks", "speaker reversed"),
+                  ns.issue("Indy", "catch before grab", "actions compressed"),
+                  ns.issue("Indy", "closes eyes", "missing eye closing")]
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        calls.append(schema)
+        if schema == ns.SIMPLIFY_SCHEMA:
+            return {"cinematic_text": candidate}
+        if schema == ns.REVIEW_SCHEMA:
+            return {"errors": complaints}
+        payload = json.loads(user)
+        assert payload == {"original_scene": source, "candidate": {"cinematic_text": candidate},
+                           "proposed_errors": complaints}
+        return {"decisions": [{"supported": False, "reason": reason,
+                               "source_evidence": source, "candidate_evidence": candidate}
+                              for reason in ["Same speaker", "Same order", "Both actions present"]]}
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.simplify(None, "qwen", source, attempts=0)
+    assert result["cinematic_text"] == candidate and report["valid"]
+    assert calls == [ns.SIMPLIFY_SCHEMA, ns.REVIEW_SCHEMA, ns.VERIFY_REVIEW_SCHEMA]
+
+
+@pytest.mark.parametrize("fault", ["missing_decision", "empty_reason", "source_evidence", "candidate_evidence"])
+def test_invalid_review_verification_does_not_accept_candidate(monkeypatch, fault):
+    payload = {"original_scene": "Indy catches the torch.", "candidate": {"cinematic_text": "Indy drops the torch."},
+               "proposed_errors": [ns.issue("Indy", "catches", "drops")]}
+    response = confirmed_review(payload)
+    if fault == "missing_decision":
+        response["decisions"] = []
+    elif fault == "empty_reason":
+        response["decisions"][0]["reason"] = ""
+    else:
+        response["decisions"][0][fault] = "invented quote"
+    monkeypatch.setattr(ns, "chat_json", lambda *args: response)
+    with pytest.raises(ValueError, match="Review verification"):
+        ns.verify_cinematic_review(None, "qwen", payload, payload["proposed_errors"])
+
+
+def test_review_verification_preserves_only_confirmed_errors_and_cancellation(monkeypatch):
+    payload = {"original_scene": "Indy catches the torch.", "candidate": {"cinematic_text": "Indy drops the torch."},
+               "proposed_errors": [ns.issue("style", "present", "past"), ns.issue("Indy", "catches", "drops")]}
+    response = confirmed_review(payload)
+    response["decisions"][0]["supported"] = False
+    monkeypatch.setattr(ns, "chat_json", lambda *args: response)
+    assert ns.verify_cinematic_review(None, "qwen", payload, payload["proposed_errors"]) == payload["proposed_errors"][1:]
+    def interrupted():
+        raise RuntimeError("interrupted")
+    monkeypatch.setattr(ns, "comfy_interrupt_check", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        ns.verify_cinematic_review(None, "qwen", payload, payload["proposed_errors"])
 
 
 def test_generation_uses_contract_after_camera_and_on_cache_hits(tmp_path, monkeypatch):

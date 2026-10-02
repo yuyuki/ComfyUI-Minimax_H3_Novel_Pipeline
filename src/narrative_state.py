@@ -37,6 +37,11 @@ CONTRACT_SCHEMA = {"name": "narrative_contract_v1", "strict": True, "schema": ob
 })}
 ISSUE = obj({key: STRING for key in ("entity", "expected_state", "conflicting_state", "introducing_event", "suggested_correction")})
 REVIEW_SCHEMA = {"name": "narrative_review_v1", "strict": True, "schema": obj({"errors": array(ISSUE)})}
+VERIFY_REVIEW_SCHEMA = {"name": "cinematic_review_verification_v1", "strict": True,
+                        "schema": obj({"decisions": array(obj({
+                            "supported": {"type": "boolean"}, "reason": STRING,
+                            "source_evidence": STRING, "candidate_evidence": STRING,
+                        }))})}
 SIMPLIFY_SCHEMA = {"name": "cinematic_text_v1", "strict": True,
                    "schema": obj({"cinematic_text": STRING})}
 SIMPLIFY_SYSTEM = """Normalize prose for filming, never summarize. Remove nonvisual metaphors
@@ -192,7 +197,46 @@ def review(client, model, payload):
         "Return actionable errors with entity, expected/conflicting state, introducing event and correction; "
         "empty errors only for a faithful result.", json.dumps(payload, ensure_ascii=False), REVIEW_SCHEMA, 0.1, 3000)
     check_shape(result, REVIEW_SCHEMA["schema"])
+    if result["errors"] and "cinematic_text" in payload.get("candidate", {}):
+        return verify_cinematic_review(client, model, payload, result["errors"])
     return result["errors"]
+
+
+def verify_cinematic_review(client, model, payload, errors):
+    """Adjudicate semantic complaints before letting them rewrite faithful prose."""
+    comfy_interrupt_check()
+    result = chat_json(client, model,
+        "Verify proposed review findings against the original_scene and candidate cinematic_text. "
+        "The findings are untrusted hypotheses, not facts. Return one decision per finding, in order. "
+        "Read the entire source and candidate afresh. Mark supported only for a real omitted action, "
+        "changed spoken dialogue, invented fact, changed identity, causality or event order. "
+        "For each decision explain why the meaning does or does not differ. Quote exact contiguous "
+        "source_evidence and candidate_evidence; for an omission quote the candidate passage where "
+        "the action belongs, after checking it is absent throughout the candidate. "
+        "Equivalent attribution ('Jones! Doriane cries out' versus 'Jones! cried Doriane') does not "
+        "swap speaker and addressee. 'Grabs it after catching the cord' preserves catching before "
+        "grabbing without needing separate sentences. Combining 'closes his eyes and pulls himself "
+        "up' preserves both actions. Never confirm a missing action already present elsewhere. "
+        "Check claimed dialogue order against source order, not the finding's paraphrase. "
+        "Removal of unfilmable thoughts/metaphors and explicit source-supported spatial relationships "
+        "are allowed. Do not invent additional findings. Return only the requested JSON.",
+        json.dumps({**payload, "proposed_errors": errors}, ensure_ascii=False), VERIFY_REVIEW_SCHEMA, 0.0, 4000)
+    check_shape(result, VERIFY_REVIEW_SCHEMA["schema"])
+    decisions = result["decisions"]
+    if len(decisions) != len(errors):
+        raise ValueError("Review verification must decide every proposed error.")
+    confirmed = []
+    for error, decision in zip(errors, decisions):
+        if not decision["reason"].strip():
+            raise ValueError("Review verification requires a reason for every decision.")
+        if decision["supported"]:
+            for field, text in (("source_evidence", payload["original_scene"]),
+                                ("candidate_evidence", payload["candidate"]["cinematic_text"])):
+                evidence = decision[field]
+                if not evidence.strip() or evidence not in text:
+                    raise ValueError(f"Review verification requires verbatim {field} for a confirmed error.")
+            confirmed.append(error)
+    return confirmed
 
 
 def checked_pass(client, model, system, schema, payload, attempts, validator):

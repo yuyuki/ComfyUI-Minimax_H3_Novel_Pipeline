@@ -172,7 +172,7 @@ flowchart TD
 | `src/load_chapter_catalogs.py` | `progress`, `util` | `LoadChapterCatalogsNode` |
 | `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
 | `src/narrative_nodes.py` | `chapter_selection`, `lmstudio_pipeline`, `narrative_state`, `progress`, `run_output`, `util` | `NovelCinematicSimplifierNode` |
-| `src/narrative_state.py` | `lmstudio_json`, `lmstudio_pipeline` | `array`, `check_shape`, `checked_pass`, `issue`, `obj`, `review`, `simplify`, `source_digest`, `state_map`, `track_scene`, `validate_contract` |
+| `src/narrative_state.py` | `lmstudio_json`, `lmstudio_pipeline` | `array`, `check_shape`, `checked_pass`, `issue`, `obj`, `review`, `simplify`, `source_digest`, `state_map`, `track_scene`, `validate_contract`, `verify_cinematic_review` |
 | `src/nodes.py` | `chapter_selection`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_consolidated_references`, `narrative_nodes`, `spatial_continuity` | — |
 | `src/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
 | `src/pipeline_step1_extract.py` | `lmstudio_json`, `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |

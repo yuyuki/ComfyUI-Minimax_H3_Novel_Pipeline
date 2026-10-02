@@ -94,7 +94,14 @@ event-replayed ending state. `intact → damaged → broken` is allowed. Restori
 or broken objects requires an explicit repair event supported by the source.
 
 Errors identify entity, expected state, conflicting state, introducing event and
-suggested correction. Corrections receive original text, cinematic text, current state,
+suggested correction. When normalization review reports errors, a separate verification
+request checks each complaint against the full original and candidate before correction.
+Equivalent attribution, combined actions and actions already present are not errors.
+Confirmed complaints require exact source and candidate excerpts; incomplete or malformed
+verification responses fail validation. This adds one model call per flagged normalization
+candidate and still relies on model interpretation. Confirmed errors retain the normal
+correction budget and can stop execution.
+Corrections receive original text, cinematic text, current state,
 the previous candidate and errors. Every candidate is revalidated. `correction_attempts`
 (0–10, default 2) bounds preprocessing/scene-contract corrections; existing Generate
 `repair_attempts` bounds final H3 corrections. Invalid contracts stop before H3
