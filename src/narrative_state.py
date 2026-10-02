@@ -49,6 +49,8 @@ Opening entities contain only facts already true before the first action, never 
 Declare entities first encountered during events in new_entities with a stable ID and kind.
 They start absent, invisible and unowned; establish them with an introduction event.
 Reuse current_state and authoritative_contract IDs. Distinguish separate instances of props.
+Previously lost props remain tracked, invisible and unowned; mentioning them does not reacquire
+them. If the loss predates this passage, preserve it as opening/carried state, not a new action.
 Record every action/dialogue in chronological order, including actions with no state changes.
 For evidence select source_ids from supplied source_units; never reproduce or rewrite quotations.
 Multiple events may cite the same unit; respect action order within it (including 'after' clauses).
@@ -228,17 +230,19 @@ def review(client, model, payload):
         "Verify each claimed conflict actually differs from the expected meaning and that the suggested "
         "correction fixes that difference; do not flag equivalent wording or suggest the existing wording. "
         "For contracts check opening frame vs first state and verbatim event evidence supports every change. "
+        "initial_frame contains only visible opening entities; state_after retains invisible/lost entities. "
+        "A loss before this passage belongs in opening/carried state, not an invented event. "
         "A late torch-in-mouth, posture, acquisition or rope break must not appear initially. "
         "Return actionable errors with entity, expected/conflicting state, introducing event and correction; "
         "empty errors only for a faithful result.", json.dumps(payload, ensure_ascii=False), REVIEW_SCHEMA, 0.1, 3000)
     check_shape(result, REVIEW_SCHEMA["schema"])
-    if result["errors"] and "cinematic_text" in payload.get("candidate", {}):
+    if result["errors"]:
         return verify_cinematic_review(client, model, payload, result["errors"])
     return result["errors"]
 
 
 def verify_cinematic_review(client, model, payload, errors):
-    """Adjudicate semantic complaints before letting them rewrite faithful prose."""
+    """Adjudicate semantic complaints about prose or compiled state contracts."""
     system = (
         "Verify proposed review findings against the original_scene and candidate cinematic_text. "
         "The findings are untrusted hypotheses, not facts. Return one decision per finding, in order. "
@@ -256,9 +260,29 @@ def verify_cinematic_review(client, model, payload, errors):
         "are allowed. Do not invent additional findings. Keep reasons and quotes concise. "
         "Copy quotes directly from the supplied text, without paraphrasing, ellipses or altered punctuation. "
         "Return only the requested JSON.")
+    if "state_before" in payload.get("candidate", {}):
+        system = (
+            "Verify proposed review findings against original_scene and the candidate state contract. "
+            "Findings are untrusted hypotheses. Return one decision per finding in order, with a reason. "
+            "Mark supported only for a concrete source-supported contradiction or omitted action/state change. "
+            "Read the entire contract and source afresh, including current_state, authoritative_contract "
+            "and expected_after when supplied. cinematic_version is context, not evidence. "
+            "Python derives initial_frame from visible state_before entities and state_after by replaying "
+            "events. Lost/invisible entities remain tracked in state_after; do not remove them or add "
+            "invisible entities to initial_frame. Mentioning a previously lost prop does not make it held "
+            "or nearby. A loss predating the passage belongs in opening/carried state; never demand an "
+            "invented loss event. Different props keep separate IDs. Read owner, location, relationship, "
+            "status and visible together. Equivalent wording or identical expected/conflicting meanings "
+            "alone are not contradictions. Check the actual candidate even if the finding quotes it wrongly. "
+            "Confirm real missing acquisitions, changed identity, unsupported opening facts or wrong action "
+            "order. A suggested correction must address the conflict without violating these contract rules. "
+            "For supported findings quote exact contiguous source_evidence from original_scene and "
+            "candidate_evidence from the candidate's JSON as supplied (including JSON escaping). For an "
+            "omission quote the relevant existing event/state after checking the entire contract. "
+            "Do not invent additional findings. Keep reasons and quotes concise. Return only requested JSON.")
     request = {**payload, "proposed_errors": errors}
-    # Verification failures describe the reviewer, not the cinematic candidate.
-    # Repair that response locally rather than spending the prose correction budget.
+    # Verification failures describe the reviewer, not the candidate.
+    # Repair that response locally rather than spending the correction budget.
     for attempt in range(3):
         comfy_interrupt_check()
         result = None
@@ -275,7 +299,7 @@ def verify_cinematic_review(client, model, payload, errors):
                        "verification_error": str(exc)}
             system += (" Repair the previous_verification using verification_error. Return the complete "
                         f"decisions array with exactly {len(errors)} decisions in finding order, including "
-                        "rejected findings. Do not rewrite the cinematic candidate or change the findings.")
+                        "rejected findings. Do not rewrite the candidate or change the findings.")
 
 
 def _validate_review_decisions(result, payload, errors):
@@ -288,8 +312,11 @@ def _validate_review_decisions(result, payload, errors):
         if not decision["reason"].strip():
             raise ValueError(f"Review verification requires a reason for every decision: decisions[{index}].reason is blank.")
         if decision["supported"]:
+            candidate = payload["candidate"]
+            candidate_text = (candidate["cinematic_text"] if "cinematic_text" in candidate
+                              else json.dumps(candidate, ensure_ascii=False))
             for field, text in (("source_evidence", payload["original_scene"]),
-                                ("candidate_evidence", payload["candidate"]["cinematic_text"])):
+                                ("candidate_evidence", candidate_text)):
                 evidence = decision[field]
                 if not evidence.strip() or evidence not in text:
                     raise ValueError(f"Review verification requires verbatim {field} for a confirmed error: decisions[{index}].{field}.")

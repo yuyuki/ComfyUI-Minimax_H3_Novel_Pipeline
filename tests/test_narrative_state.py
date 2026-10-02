@@ -386,7 +386,8 @@ def test_repeated_semantic_conflicts_still_exhaust_correction_budget(monkeypatch
 def confirmed_review(payload):
     return {"decisions": [{"supported": True, "reason": "Source action differs from candidate.",
                            "source_evidence": payload["original_scene"],
-                           "candidate_evidence": payload["candidate"]["cinematic_text"]}
+                           "candidate_evidence": payload["candidate"].get(
+                               "cinematic_text", json.dumps(payload["candidate"], ensure_ascii=False))}
                           for _ in payload["proposed_errors"]]}
 
 

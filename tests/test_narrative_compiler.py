@@ -6,7 +6,7 @@ import json
 import pytest
 
 from minimax_h3_novel_pipeline import narrative_nodes as nodes, narrative_state as ns
-from .test_narrative_state import contract, entity, extraction, opening, prologue
+from .test_narrative_state import confirmed_review, contract, entity, extraction, opening, prologue
 
 
 def test_declarations_are_absent_until_introduction_and_carry_is_immutable():
@@ -33,13 +33,84 @@ def test_declarations_are_absent_until_introduction_and_carry_is_immutable():
 
 
 def test_review_still_rejects_source_unsupported_initial_state(monkeypatch):
-    source = "Indy receives a torch. Then he puts it in his mouth."
+    source = "Indy hangs suspended on a rope."
     response = extraction(contract(opening(), source), source)
     response["opening_entities"][0]["posture"] = "standing"
     conflict = ns.issue("indy", "suspended", "standing", correction="Preserve the source opening posture.")
-    monkeypatch.setattr(ns, "chat_json", lambda *a: response if a[4] == ns.EXTRACTION_SCHEMA else {"errors": [conflict]})
+    def chat(*args):
+        if args[4] == ns.VERIFY_REVIEW_SCHEMA:
+            return confirmed_review(json.loads(args[3]))
+        return response if args[4] == ns.EXTRACTION_SCHEMA else {"errors": [conflict]}
+    monkeypatch.setattr(ns, "chat_json", chat)
     with pytest.raises(ValueError, match="standing"):
         ns.track_scene(None, "mock", source, source, attempts=0)
+
+
+@pytest.mark.parametrize("missing_acquisition", [False, True])
+def test_lost_torch_review_is_verified_without_losing_real_acquisition_errors(monkeypatch, missing_acquisition):
+    source = "His first torch is lost in the abyss. Indy catches the second torch."
+    current = deepcopy(prologue()[2]["state_before"])
+    ns.state_map(current)["torch_1"]["location"] = "abyssal dark"
+    good = contract(current, source, [("torch_2", "owner", "indy"),
+                                    ("torch_2", "location", "indy"), ("torch_2", "relationship", "held")])
+    bad = contract(current, source)
+    complaints = [
+        ns.issue("torch_1", "lost in abyss", "lost in abyss", correction="Invent a prior loss event."),
+        ns.issue("torch_1", "invisible", "invisible", correction="Add to initial_frame and remove from state_after."),
+    ]
+    acquisition = ns.issue("torch_2", "held by indy", "unowned", correction="Record the second torch acquisition.")
+    generations, verifications = [], []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == ns.EXTRACTION_SCHEMA:
+            generations.append(payload)
+            beat = bad if missing_acquisition and len(generations) == 1 else good
+            return extraction(beat, source, current)
+        if schema == ns.REVIEW_SCHEMA:
+            return {"errors": complaints + ([acquisition] if missing_acquisition and len(generations) == 1 else [])}
+        verifications.append(payload)
+        assert "state_after" in payload["candidate"]
+        assert "Lost/invisible entities remain tracked" in system
+        result = confirmed_review(payload)
+        for decision in result["decisions"][:2]:
+            decision.update(supported=False, reason="Lost torch is already tracked, invisible and unowned.")
+        return result
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.track_scene(None, "mock", source, source, current, attempts=int(missing_acquisition))
+    assert result == good and report["valid"]
+    assert len(generations) == len(verifications) == 1 + int(missing_acquisition)
+    assert "torch_1" not in ns.state_map(result["initial_frame"])
+    assert ns.state_map(result["state_after"])["torch_1"] == ns.state_map(current)["torch_1"]
+    if missing_acquisition:
+        assert generations[1]["validation_errors"] == [acquisition]
+        assert generations[1]["candidate"] == extraction(bad, source, current)
+
+
+@pytest.mark.parametrize("fault", ["decisions", "source_evidence", "candidate_evidence"])
+def test_contract_verification_failure_never_spends_state_correction_budget(monkeypatch, fault):
+    source = "Indy calls Doriane."
+    good = contract(opening(), source)
+    calls = []
+
+    def chat(*args):
+        calls.append(args[4])
+        if args[4] == ns.EXTRACTION_SCHEMA:
+            return extraction(good, source)
+        if args[4] == ns.REVIEW_SCHEMA:
+            return {"errors": [ns.issue("indy", "calls", "silent")]}
+        result = confirmed_review(json.loads(args[3]))
+        if fault == "decisions":
+            result["decisions"] = []
+        else:
+            result["decisions"][0][fault] = "invented evidence"
+        return result
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(RuntimeError, match="Review verification failed after 3 attempts"):
+        ns.track_scene(None, "mock", source, source, attempts=2)
+    assert calls == [ns.EXTRACTION_SCHEMA, ns.REVIEW_SCHEMA] + [ns.VERIFY_REVIEW_SCHEMA] * 3
 
 
 @pytest.mark.parametrize("fault", ["duplicate", "undeclared", "chronology", "carry"])

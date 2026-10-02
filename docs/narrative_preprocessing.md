@@ -29,6 +29,13 @@ props, identity and causality; it removes nonvisual metaphors and makes physical
 relationships explicit. Normalization is not summarization. The state pass sees original
 prose, normalized text and the preceding passage's ending state.
 
+Semantic complaints about both prose and state contracts are verified before they
+trigger corrections. Confirmed complaints require exact source and candidate evidence;
+malformed verification responses receive up to three attempts without spending the
+candidate correction budget. Structural continuity errors still block immediately or
+enter the bounded correction loop. Lost props remain tracked in ending states and stay
+out of the visible opening frame; references to them do not imply reacquisition.
+
 Generate plans scenes using those contracts, reviews event coverage, then projects
 them into per-scene contracts. It propagates ending states and verifies passage-ending
 states. The existing H3 generator and repairer receive these contracts. Final wording
