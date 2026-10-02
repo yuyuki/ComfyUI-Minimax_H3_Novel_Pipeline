@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update MiniMax Architecture"
+  short_description: "Refresh and verify the MiniMax architecture map"
+  default_prompt: "Use $update-minimax-architecture to update docs/architecture.md from the current MiniMax repository and verify it."
