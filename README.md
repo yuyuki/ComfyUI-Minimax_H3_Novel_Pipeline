@@ -132,13 +132,25 @@ Extract Chapter References → Consolidate References → Generate H3 Prompts
 ```
 
 For spatial continuity, connect **Spatial Continuity** to the optional
-`spatial_continuity` input of **Generate H3 Prompts**. Enter stable, operator-approved
-relations as a JSON object, for example `{"tablet.wall":"right wall",
-"main_rope.side":"right side of crevasse"}`. The generator asks LM Studio
-to resolve each planned scene using these anchors, the previous scene's final
-state and up to five upcoming scenes. It saves `spatial_continuity.json` in each
-chapter output folder. Review inferred staging and warnings there; check the
-actual generated video before treating a position as visually established.
+`spatial_continuity` input of **Generate H3 Prompts**. The node has no settings to
+fill in; `anchor_summary` reports that the check is enabled. The existing
+`visual_designs.json` choices arrive automatically through
+the consolidated references and are reused for scene staging; no extra design
+file needs to be supplied. The model's review is included in the existing chapter
+`manifest.json` under `spatial_continuity` and in each scene's `continuity_review`.
+The former `anchors_json` widget is removed. If an older workflow contained real
+layout constraints, move them into the relevant location's `added_details.layout`
+in `visual_designs.json`, then import that file through Consolidate before generating.
+Using the configured LM Studio model, Generate plans missing film details against
+the previous state and all later scenes in the chapter. After prompt generation
+and camera refinement, it checks the actual prompt against earlier final prompts
+and future source requirements, including positions, eyelines and camera axes.
+Added staging must remain consistent even when the novel does not describe it.
+It corrects contradictions with up to `repair_attempts` retries and rechecks each
+correction. Unresolved issues appear in the continuity report and prompt validation
+warnings. Cached prompts are also reviewed. This adds model requests and chapter
+context; continuity currently covers scenes within each chapter. Review the actual
+generated video separately: this pass checks text, not rendered images.
 
 In **Generate H3 Prompts**, `duration` is the length of **each scene** in seconds.
 `max_shots` limits camera shots inside that scene (default 1); the generator may
@@ -167,7 +179,7 @@ The final warning includes the last reason if every attempt fails.
 | Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs, plus a text summary |
 | Load Consolidated References | Saved registry JSON → registry object |
 | Generate H3 Prompts | Registry and shared chapter selection → chapter/scene prompt payload and save-ready text |
-| Spatial Continuity | Fixed spatial anchors → optional generation context and readable summary |
+| Spatial Continuity | Enable scene consistency checks using consolidated visual designs |
 
 Add **Select Chapters**, then connect its `chapter_selection` output to both
 Extract and Generate. Use its picker or enter one file/folder per line in its

@@ -5,8 +5,17 @@
    ComfyUI Settings → MiniMax H3 Novel → LM Studio.
 2. Add **Select Chapters**, **Extract Chapter References**, **Consolidate
    References** and **Generate H3 Prompts**. Connect configuration to all three.
-   Optionally connect **Spatial Continuity** to **Generate H3 Prompts** and enter
-   fixed geometry in its JSON field (for example `{"tablet.wall":"right wall"}`).
+   Optionally connect **Spatial Continuity** to **Generate H3 Prompts** to enable
+   automatic staging and model checks of consistency between scenes. No JSON input
+   is needed. To keep real layout constraints from the old `anchors_json` widget,
+   add them to the location's `added_details.layout` in `visual_designs.json` and
+   import that file through Consolidate.
+   Generate checks final prompts after camera refinement, corrects contradictions
+   within `repair_attempts`, and records unresolved issues as validation warnings.
+   The existing visual designs are carried by `consolidated_references` and reused
+   automatically. Review `spatial_continuity` in the chapter's existing
+   `manifest.json` for inferred staging and prompt checks; no extra JSON file
+   is created. `anchor_summary` only reports that the check is enabled.
    Set `duration` in Generate H3 Prompts to the length of each scene. Set
    `max_shots` to your desired limit (1 by default; a shot needs at least 2.5s).
    Optionally describe the camera axis and movement in `camera_direction`.

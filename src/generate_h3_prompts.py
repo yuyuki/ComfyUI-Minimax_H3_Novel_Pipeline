@@ -66,7 +66,7 @@ class GenerateH3PromptsNode:
                         or not isinstance(continuity.get("anchors"), dict)
                         or any(not isinstance(k, str) or not k.strip() or not isinstance(v, str) or not v.strip()
                                for k, v in continuity["anchors"].items())):
-                    raise ValueError("Invalid spatial_continuity. Connect Spatial Continuity and enter non-empty JSON string anchors.")
+                    raise ValueError("Invalid spatial_continuity. Connect the output of Spatial Continuity.")
                 args.spatial_anchors = continuity["anchors"]
             args.out_dir.mkdir(parents=True, exist_ok=True)
             snapshot = configuration_snapshot.start(

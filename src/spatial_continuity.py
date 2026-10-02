@@ -1,4 +1,4 @@
-"""Operator-approved spatial anchors for the scene continuity pass."""
+"""Enable model-driven continuity using the consolidated visual designs."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from . import progress
 class SpatialContinuityNode:
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"anchors_json": ("STRING", {"multiline": True, "default": "{\n  \"tablet.wall\": \"right wall\",\n  \"main_rope.side\": \"right side of crevasse\"\n}"})}}
+        return {"required": {}}
 
     RETURN_TYPES = ("MINIMAX_SPATIAL_CONTINUITY", "STRING")
     RETURN_NAMES = ("spatial_continuity", "anchor_summary")
@@ -18,7 +18,8 @@ class SpatialContinuityNode:
     CATEGORY = "MiniMax H3 Novel"
 
     @progress.node_progress
-    def run(self, anchors_json: str) -> tuple[dict[str, Any], str]:
+    def run(self, anchors_json: str = "{}") -> tuple[dict[str, Any], str]:
+        # Retain direct-call compatibility; new workflows need no JSON settings.
         try:
             anchors = json.loads(anchors_json)
         except (TypeError, json.JSONDecodeError) as exc:
@@ -28,4 +29,5 @@ class SpatialContinuityNode:
             for key, value in anchors.items()
         ):
             raise ValueError("Spatial anchors must be a JSON object with non-empty string keys and values.")
-        return {"schema_version": "minimax-spatial-continuity.v1", "anchors": anchors}, "\n".join(f"{k}: {v}" for k, v in anchors.items())
+        summary = "\n".join(f"{k}: {v}" for k, v in anchors.items())
+        return {"schema_version": "minimax-spatial-continuity.v1", "anchors": anchors}, summary or "Automatic scene continuity enabled using consolidated visual designs."
