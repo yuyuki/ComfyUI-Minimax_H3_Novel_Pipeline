@@ -36,13 +36,10 @@ chapter's final state when truncating a passage.
 | Node | Inputs | Outputs |
 |---|---|---|
 | Novel Cinematic Simplifier | chapter_selection, lmstudio_config, out_dir, chunk_chars, correction_attempts | cinematic_narrative, cinematic_text, validation_report, state_before_json, events_json, state_after_json |
-| Narrative State Tracker | original_scene, cinematic_text, lmstudio_config, correction_attempts; optional current_state_json | narrative_state, state_before_json, events_json, state_after_json, continuity_report |
 
-All outputs except the first on each node are strings suitable for Preview Text.
-The standalone tracker lets you inspect a passage or connect its `state_after_json`
-to the next tracker's `current_state_json`. Empty input means infer the first scene's
-opening state. Explicit `{"entities": []}` means an established empty state: new
-entities must be introduced by events. Null attributes mean unknown.
+All outputs except the first are strings suitable for Preview Text. The simplifier
+infers the first passage's opening state and carries ending states between passages
+automatically. Null attributes mean unknown.
 
 The simplifier saves `cinematic_narrative.json` beneath its timestamped run `out_dir`.
 It contains original and normalized passages, contracts and review history. Generate
@@ -54,7 +51,6 @@ include the contract and previous final prompts. Existing result sockets are unc
 
 `minimax-cinematic-narrative.v1` contains chapters keyed by resolved source path;
 each chapter has a source digest, cinematic text, reports and ordered segments.
-`minimax-narrative-state.v1` is the standalone tracker socket wrapper.
 The strict LM Studio schemas and their runtime validators live in `src/narrative_state.py`.
 They are internal pipeline contracts, not H3 API schemas.
 
@@ -111,8 +107,8 @@ Deterministic replay validates the declared facts, not arbitrary natural languag
 Literary interpretation, completeness and final-prompt leakage detection still rely
 on the configured model's semantic review. Multiple structured calls cost additional
 time and context; reduce passage size for small models. State grows with the chapter.
-State resets for each chapter; the standalone tracker can carry state manually across
-chapter boundaries. There is no dedicated loader for saved preprocessing bundles yet.
+State resets for each chapter. There is no dedicated loader for saved preprocessing
+bundles yet.
 
 Offline tests mock LM Studio. `tests/fixtures/00_PROLOGUE.md` contains the supplied
 French source, copied from the operator's ComfyUI input directory. Source-backed tests

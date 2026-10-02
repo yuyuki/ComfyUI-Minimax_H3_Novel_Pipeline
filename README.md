@@ -378,8 +378,7 @@ and checks that later actions do not appear in initial frames. Existing workflow
 work without this connection; reference extraction, H3 bindings and camera processing
 retain their existing roles.
 
-**Narrative State Tracker** also works independently for inspecting scenes and
-passing `state_after_json` into the next scene's `current_state_json`. Both nodes
-provide text/JSON previews and bounded model correction. See
+The simplifier provides text/JSON previews and bounded model correction. State
+tracking and continuity validation are integrated into preprocessing and generation. See
 [schemas, outputs, validation and limitations](docs/narrative_preprocessing.md) and
 [example wiring](examples/README.md#cinematic-preprocessing).

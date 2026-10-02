@@ -129,8 +129,8 @@ Start with `chunk_chars=6000` and `correction_attempts=2`. Increase Generate's
 passages have no overlap, so state transitions are not repeated at chunk boundaries.
 The existing example workflow remains valid without preprocessing.
 
-To debug the torch-in-mouth scene alone, add **Narrative State Tracker**, enter its
-original and cinematic text, and optionally connect the preceding tracker's
-`state_after_json` to `current_state_json`. The opening frame should have the torch
-held in a hand; only the mouth-placement event changes its relationship to `in_mouth`.
+To inspect the torch-in-mouth transition, preview the simplifier's state and event
+outputs and inspect Generate's per-scene `narrative_state` in `manifest.json`. The
+opening frame should have the torch held in a hand; only the mouth-placement event
+changes its relationship to `in_mouth`.
 See [the detailed contract documentation](../docs/narrative_preprocessing.md).

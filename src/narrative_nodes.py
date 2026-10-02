@@ -1,4 +1,4 @@
-"""Optional cinematic preprocessing and inspectable narrative state nodes."""
+"""Optional cinematic preprocessing with inspectable narrative state outputs."""
 from __future__ import annotations
 
 import json
@@ -57,32 +57,3 @@ class NovelCinematicSimplifierNode:
             {key: r["validation_report"] for key, r in records.items()}, ensure_ascii=False, indent=2), *[
                 json.dumps({key: [s["contract"][field] for s in r["segments"]] for key, r in records.items()}, ensure_ascii=False, indent=2)
                 for field in ("state_before", "events", "state_after")])
-
-
-class NarrativeStateTrackerNode:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {
-            "original_scene": ("STRING", {"multiline": True}),
-            "cinematic_text": ("STRING", {"multiline": True}),
-            "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
-        }, "optional": {"current_state_json": ("STRING", {"multiline": True, "default": ""})}}
-
-    RETURN_TYPES = ("MINIMAX_NARRATIVE_STATE", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("narrative_state", "state_before_json", "events_json", "state_after_json", "continuity_report")
-    FUNCTION = "run"
-    CATEGORY = "MiniMax H3 Novel"
-
-    @progress.node_progress
-    def run(self, original_scene, cinematic_text, lmstudio_config, correction_attempts=2, current_state_json=""):
-        current = json.loads(current_state_json) if current_state_json.strip() else None
-        if current is not None:
-            narrative_state.state_map(current)
-        pipeline = lmstudio_pipeline.load("generate")
-        client, model = lmstudio_pipeline.make_client_and_model(pipeline, lmstudio_config["api_url"], lmstudio_config)
-        with client:
-            contract, report = narrative_state.track_scene(client, model, original_scene, cinematic_text, current, correction_attempts)
-        return ({"schema_version": "minimax-narrative-state.v1", **contract}, *[
-            json.dumps(value, ensure_ascii=False, indent=2) for value in
-            (contract["state_before"], contract["events"], contract["state_after"], report)])

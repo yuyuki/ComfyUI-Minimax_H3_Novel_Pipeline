@@ -7,7 +7,7 @@ import pytest
 
 from minimax_h3_novel_pipeline import narrative_state as ns
 from minimax_h3_novel_pipeline import pipeline_step3_generate as generate
-from minimax_h3_novel_pipeline.narrative_nodes import NovelCinematicSimplifierNode, NarrativeStateTrackerNode
+from minimax_h3_novel_pipeline.narrative_nodes import NovelCinematicSimplifierNode
 from minimax_h3_novel_pipeline.narrative_state import source_digest
 
 
@@ -195,7 +195,6 @@ def test_missing_optional_state_and_null_attributes(monkeypatch):
     good = contract({"entities": [entity("indy", "character")]})
     monkeypatch.setattr(ns, "chat_json", lambda *a: good if a[4] == ns.CONTRACT_SCHEMA else {"errors": []})
     assert ns.track_scene(None, "qwen", "Indy calls Doriane.", "Indy calls Doriane.")[0] == good
-    assert "current_state_json" in NarrativeStateTrackerNode.INPUT_TYPES()["optional"]
 
 
 def test_malformed_json_runtime_error_and_interruption(monkeypatch):
@@ -354,15 +353,3 @@ def test_preprocessing_node_persists_prologue_and_passes_state_between_passages(
     assert manifest["saved_prompt_count"] == 8
     assert openings == [beat["state_before"] for beat in beats]
     assert all(entry["valid"] for entry in manifest["outputs"])
-
-
-def test_tracker_node_outputs_can_chain(monkeypatch):
-    from contextlib import nullcontext
-    from minimax_h3_novel_pipeline import narrative_nodes as nodes
-    beat = prologue()[6]
-    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock-qwen"))
-    monkeypatch.setattr(ns, "chat_json", lambda *a: deepcopy(beat) if a[4] == ns.CONTRACT_SCHEMA else {"errors": []})
-    output = NarrativeStateTrackerNode().run(beat["events"][0]["description"], "He moves the torch.",
-                                             {"api_url": "unused"}, current_state_json=json.dumps(beat["state_before"]))
-    assert json.loads(output[3]) == beat["state_after"]
-    assert output[0]["schema_version"] == "minimax-narrative-state.v1"

@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Remove the standalone Narrative State Tracker node; retain integrated narrative
+  state tracking and continuity validation in cinematic preprocessing and H3 generation.
+
 - Let Qwen correct invalid camera post-processing notes using precise validation
   feedback, bounded by `repair_attempts`, before falling back to the original prompt.
 - Add optional camera-only post-processing after H3 prompt validation, preserving

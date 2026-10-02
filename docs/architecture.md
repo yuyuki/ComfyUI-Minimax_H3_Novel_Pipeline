@@ -171,7 +171,7 @@ flowchart TD
 | `src/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `set_connection_settings`, `validate_api_url` |
 | `src/load_chapter_catalogs.py` | `progress`, `util` | `LoadChapterCatalogsNode` |
 | `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
-| `src/narrative_nodes.py` | `chapter_selection`, `lmstudio_pipeline`, `narrative_state`, `progress`, `run_output`, `util` | `NarrativeStateTrackerNode`, `NovelCinematicSimplifierNode` |
+| `src/narrative_nodes.py` | `chapter_selection`, `lmstudio_pipeline`, `narrative_state`, `progress`, `run_output`, `util` | `NovelCinematicSimplifierNode` |
 | `src/narrative_state.py` | `lmstudio_json`, `lmstudio_pipeline` | `array`, `check_shape`, `checked_pass`, `issue`, `obj`, `review`, `simplify`, `source_digest`, `state_map`, `track_scene`, `validate_contract` |
 | `src/nodes.py` | `chapter_selection`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_consolidated_references`, `narrative_nodes`, `spatial_continuity` | — |
 | `src/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
