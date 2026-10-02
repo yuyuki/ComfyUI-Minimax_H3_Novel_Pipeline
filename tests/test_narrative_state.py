@@ -329,8 +329,104 @@ def test_invalid_review_verification_does_not_accept_candidate(monkeypatch, faul
     else:
         response["decisions"][0][fault] = "invented quote"
     monkeypatch.setattr(ns, "chat_json", lambda *args: response)
-    with pytest.raises(ValueError, match="Review verification"):
+    with pytest.raises(RuntimeError, match="Review verification failed after 3 attempts"):
         ns.verify_cinematic_review(None, "qwen", payload, payload["proposed_errors"])
+
+
+@pytest.mark.parametrize("fault", ["missing_decision", "source_evidence", "candidate_evidence", "shape", "json"])
+@pytest.mark.parametrize("supported", [False, True])
+def test_verification_repair_preserves_candidate_and_correction_budget(monkeypatch, fault, supported):
+    source = "Indy catches the torch."
+    candidate = {"cinematic_text": "Indy drops the torch."}
+    conflict = ns.issue("Indy", "catches", "drops")
+    generations, verifications = [], []
+    invalid = None
+
+    def chat(client, model, system, user, schema, *args):
+        nonlocal invalid
+        payload = json.loads(user)
+        if schema == ns.SIMPLIFY_SCHEMA:
+            generations.append(payload)
+            return candidate if len(generations) == 1 else {"cinematic_text": source}
+        if schema == ns.REVIEW_SCHEMA:
+            return {"errors": [conflict] if len(generations) == 1 else []}
+        verifications.append(payload)
+        response = confirmed_review(payload)
+        if len(verifications) == 1:
+            if fault == "missing_decision":
+                response["decisions"] = []
+            elif fault == "shape":
+                response = {}
+            elif fault == "json":
+                raise RuntimeError("Invalid structured JSON after 2 attempt(s).")
+            else:
+                response["decisions"][0][fault] = "invented quote"
+            invalid = deepcopy(response)
+        else:
+            response["decisions"][0]["supported"] = supported
+            assert "Repair the previous_verification" in system
+        return response
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.simplify(None, "qwen", source, attempts=int(supported))
+    assert result == ({"cinematic_text": source} if supported else candidate)
+    assert report["valid"]
+    assert len(generations) == 1 + int(supported)
+    assert len(verifications) == 2
+    assert verifications[1]["candidate"] == verifications[0]["candidate"] == candidate
+    assert verifications[1]["proposed_errors"] == [conflict]
+    assert verifications[1]["previous_verification"] == invalid
+    assert verifications[1]["verification_error"]
+    if supported:
+        assert generations[1]["validation_errors"] == [conflict]
+
+
+def test_verification_exhaustion_does_not_rewrite_candidate(monkeypatch):
+    calls = []
+
+    def chat(*args):
+        calls.append(args[4])
+        if args[4] == ns.SIMPLIFY_SCHEMA:
+            return {"cinematic_text": "Indy drops the torch."}
+        if args[4] == ns.REVIEW_SCHEMA:
+            return {"errors": [ns.issue("Indy", "catches", "drops")]}
+        return {"decisions": []}
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(RuntimeError, match="Review verification failed after 3 attempts"):
+        ns.simplify(None, "qwen", "Indy catches the torch.", attempts=2)
+    assert calls == [ns.SIMPLIFY_SCHEMA, ns.REVIEW_SCHEMA] + [ns.VERIFY_REVIEW_SCHEMA] * 3
+
+
+def test_verification_retry_checks_cancellation(monkeypatch):
+    calls = []
+
+    def chat(*args):
+        calls.append(True)
+        return {"decisions": []}
+
+    def interrupt():
+        if calls:
+            raise RuntimeError("interrupted")
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    monkeypatch.setattr(ns, "comfy_interrupt_check", interrupt)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        ns.verify_cinematic_review(None, "qwen", {}, [ns.issue("Indy", "catches", "drops")])
+    assert len(calls) == 1
+
+
+def test_verification_does_not_retry_unrelated_runtime_errors(monkeypatch):
+    calls = []
+
+    def chat(*args):
+        calls.append(True)
+        raise RuntimeError("connection failed")
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(RuntimeError, match="connection failed"):
+        ns.verify_cinematic_review(None, "qwen", {}, [])
+    assert len(calls) == 1
 
 
 def test_review_verification_preserves_only_confirmed_errors_and_cancellation(monkeypatch):

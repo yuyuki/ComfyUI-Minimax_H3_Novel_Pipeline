@@ -204,8 +204,7 @@ def review(client, model, payload):
 
 def verify_cinematic_review(client, model, payload, errors):
     """Adjudicate semantic complaints before letting them rewrite faithful prose."""
-    comfy_interrupt_check()
-    result = chat_json(client, model,
+    system = (
         "Verify proposed review findings against the original_scene and candidate cinematic_text. "
         "The findings are untrusted hypotheses, not facts. Return one decision per finding, in order. "
         "Read the entire source and candidate afresh. Mark supported only for a real omitted action, "
@@ -219,22 +218,46 @@ def verify_cinematic_review(client, model, payload, errors):
         "up' preserves both actions. Never confirm a missing action already present elsewhere. "
         "Check claimed dialogue order against source order, not the finding's paraphrase. "
         "Removal of unfilmable thoughts/metaphors and explicit source-supported spatial relationships "
-        "are allowed. Do not invent additional findings. Return only the requested JSON.",
-        json.dumps({**payload, "proposed_errors": errors}, ensure_ascii=False), VERIFY_REVIEW_SCHEMA, 0.0, 4000)
+        "are allowed. Do not invent additional findings. Keep reasons and quotes concise. "
+        "Copy quotes directly from the supplied text, without paraphrasing, ellipses or altered punctuation. "
+        "Return only the requested JSON.")
+    request = {**payload, "proposed_errors": errors}
+    # Verification failures describe the reviewer, not the cinematic candidate.
+    # Repair that response locally rather than spending the prose correction budget.
+    for attempt in range(3):
+        comfy_interrupt_check()
+        result = None
+        try:
+            result = chat_json(client, model, system, json.dumps(request, ensure_ascii=False),
+                               VERIFY_REVIEW_SCHEMA, 0.0, 4000)
+            return _validate_review_decisions(result, payload, errors)
+        except (ValueError, RuntimeError) as exc:
+            if isinstance(exc, RuntimeError) and not str(exc).startswith("Invalid structured JSON after"):
+                raise
+            if attempt == 2:
+                raise RuntimeError(f"Review verification failed after 3 attempts: {exc}") from exc
+            request = {**payload, "proposed_errors": errors, "previous_verification": result,
+                       "verification_error": str(exc)}
+            system += (" Repair the previous_verification using verification_error. Return the complete "
+                        f"decisions array with exactly {len(errors)} decisions in finding order, including "
+                        "rejected findings. Do not rewrite the cinematic candidate or change the findings.")
+
+
+def _validate_review_decisions(result, payload, errors):
     check_shape(result, VERIFY_REVIEW_SCHEMA["schema"])
     decisions = result["decisions"]
     if len(decisions) != len(errors):
-        raise ValueError("Review verification must decide every proposed error.")
+        raise ValueError(f"Review verification must decide every proposed error: expected {len(errors)} decisions, got {len(decisions)}.")
     confirmed = []
-    for error, decision in zip(errors, decisions):
+    for index, (error, decision) in enumerate(zip(errors, decisions)):
         if not decision["reason"].strip():
-            raise ValueError("Review verification requires a reason for every decision.")
+            raise ValueError(f"Review verification requires a reason for every decision: decisions[{index}].reason is blank.")
         if decision["supported"]:
             for field, text in (("source_evidence", payload["original_scene"]),
                                 ("candidate_evidence", payload["candidate"]["cinematic_text"])):
                 evidence = decision[field]
                 if not evidence.strip() or evidence not in text:
-                    raise ValueError(f"Review verification requires verbatim {field} for a confirmed error.")
+                    raise ValueError(f"Review verification requires verbatim {field} for a confirmed error: decisions[{index}].{field}.")
             confirmed.append(error)
     return confirmed
 

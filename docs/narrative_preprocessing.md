@@ -97,10 +97,14 @@ Errors identify entity, expected state, conflicting state, introducing event and
 suggested correction. When normalization review reports errors, a separate verification
 request checks each complaint against the full original and candidate before correction.
 Equivalent attribution, combined actions and actions already present are not errors.
-Confirmed complaints require exact source and candidate excerpts; incomplete or malformed
-verification responses fail validation. This adds one model call per flagged normalization
-candidate and still relies on model interpretation. Confirmed errors retain the normal
-correction budget and can stop execution.
+Confirmed complaints require exact source and candidate excerpts. Incomplete or malformed
+verification responses receive up to two verification retries with specific feedback,
+keeping the candidate and proposed findings unchanged. These retries do not consume
+`correction_attempts` or trigger prose rewrites. If verification still fails, execution
+stops with a separate `Review verification failed` error; unverified text is not accepted.
+This adds one to three verification calls per flagged normalization candidate and still
+relies on model interpretation. Confirmed errors retain the normal correction budget
+and can stop execution.
 Corrections receive original text, cinematic text, current state,
 the previous candidate and errors. Every candidate is revalidated. `correction_attempts`
 (0–10, default 2) bounds preprocessing/scene-contract corrections; existing Generate
