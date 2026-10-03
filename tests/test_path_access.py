@@ -13,6 +13,7 @@ from minimax_h3_novel_pipeline.consolidate_references import ConsolidateReferenc
 from minimax_h3_novel_pipeline.extract_chapter_references import ExtractChapterReferencesNode
 from minimax_h3_novel_pipeline.generate_h3_prompts import GenerateH3PromptsNode
 from minimax_h3_novel_pipeline.load_chapter_catalogs import LoadChapterCatalogsNode
+from minimax_h3_novel_pipeline.load_cinematic_chapters import LoadCinematicChaptersNode
 from minimax_h3_novel_pipeline.load_consolidated_references import LoadConsolidatedReferencesNode
 
 
@@ -119,7 +120,7 @@ def test_loaders_resume_from_confined_outputs(roots, tmp_path):
     util.save_json(Path("references/consolidated_references.json"), registry)
     assert LoadConsolidatedReferencesNode().run("references")[0] == registry
     assert LoadConsolidatedReferencesNode().run(str(output / "references/consolidated_references.json"))[0] == registry
-    for loader in (LoadChapterCatalogsNode(), LoadConsolidatedReferencesNode()):
+    for loader in (LoadChapterCatalogsNode(), LoadCinematicChaptersNode(), LoadConsolidatedReferencesNode()):
         with pytest.raises(ValueError):
             loader.run(str(tmp_path))
 
@@ -137,11 +138,23 @@ def test_directory_links_cannot_escape_input_output_or_loader_roots(roots, tmp_p
         lambda: util.read_chapter(source / "linked/chapter.txt"),
         lambda: util.save_json(Path("linked/new.json"), {}),
         lambda: LoadChapterCatalogsNode().run("linked"),
+        lambda: LoadCinematicChaptersNode().run("linked"),
         lambda: LoadConsolidatedReferencesNode().run("linked"),
     ):
         with pytest.raises(ValueError, match="inside"):
             operation()
     assert not (outside / "new.json").exists()
+
+
+def test_cinematic_loader_rejects_discovered_external_file_link(roots, tmp_path, monkeypatch):
+    _, output = roots
+    output.mkdir()
+    outside = tmp_path / "private.cinematic.json"
+    outside.write_text("{}", encoding="utf-8")
+    link_to(output / "001_linked.cinematic.json", outside)
+    monkeypatch.setattr(util, "load_json", Mock(side_effect=AssertionError("External files must not be read")))
+    with pytest.raises(ValueError, match="inside"):
+        LoadCinematicChaptersNode().run(str(output))
 
 
 def test_output_plugin_root_cannot_itself_escape(roots, tmp_path):

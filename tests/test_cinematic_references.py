@@ -7,6 +7,7 @@ import pytest
 
 from minimax_h3_novel_pipeline import cinematic_references as cr, lmstudio_pipeline, path_access, run_output, util
 from minimax_h3_novel_pipeline.extract_chapter_references import ExtractChapterReferencesNode
+from minimax_h3_novel_pipeline.load_cinematic_chapters import LoadCinematicChaptersNode
 
 
 def chapter(name="chapter"):
@@ -104,3 +105,15 @@ def test_duplicate_chapter_names_have_separate_files(execution):
     results, _ = ExtractChapterReferencesNode().run(config, [chapter(), chapter()], **params)
     assert [c["chapter_id"] for c in results] == ["chapter_001", "chapter_002"]
     assert all(c["schema_version"] == util.CHAPTER_SCHEMA for c in results)
+
+
+def test_extraction_resumes_from_saved_cinematic_chapter(execution, tmp_path):
+    calls, params, config = execution
+    value = chapter()
+    value.pop("source_file")
+    util.save_json(tmp_path / "previous/001_chapter.cinematic.json", value)
+    loaded, _ = LoadCinematicChaptersNode().run("previous")
+    results, _ = ExtractChapterReferencesNode().run(config, loaded, **params)
+    assert results[0]["sequences"] == value["sequences"]
+    assert [(c["sequence"], c["phase"]) for c in calls] == [
+        (i, phase) for i in (1, 2, 3) for phase in cr.PHASES]

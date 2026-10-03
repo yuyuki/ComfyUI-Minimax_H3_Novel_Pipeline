@@ -14,6 +14,14 @@ and separated by newlines. Its `saved_files` output lists the files;
 Review the generated adaptations, then connect `cinematic_chapters` to
 **Extract Chapter References** (replacing its former `chapter_selection` input).
 
+To resume from those saved adaptations, replace the adapter with **Load Cinematic
+Chapters**. Set `cinematic_path=20260911153042/cinematic_chapters` (using your
+previous run's timestamp), or select a single `*.cinematic.json` file in that
+folder. Connect the loader's `cinematic_chapters` output to Extract's
+`cinematic_chapters` input and keep LM Studio Configuration connected to Extract.
+The loader validates saved chapters and loads folders in natural filename order.
+Its paths start at `output/minimax_h3_novel` and must stay within that root.
+
 1. Add **LM Studio Configuration**, enter the server URL, and set the
    matching **Trusted API URL** and **API Key** in
    ComfyUI Settings â†’ MiniMax H3 Novel â†’ LM Studio.

@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Add Load Cinematic Chapters to resume extraction from saved cinematic chapter
+  JSON files or folders, with shared validation, confined paths and natural ordering.
+
 - Return and save cinematic chapters as objects with a single top-level
   `chapter_name` (the source filename without its extension) and a `sequences`
   array; cover the chapter structure and saved output with offline regressions.

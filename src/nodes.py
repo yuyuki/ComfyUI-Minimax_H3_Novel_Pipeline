@@ -7,6 +7,7 @@ from .cinematic_chapter_adapter import CinematicChapterAdapterNode
 from .extract_chapter_references import ExtractChapterReferencesNode
 from .generate_h3_prompts import GenerateH3PromptsNode
 from .load_chapter_catalogs import LoadChapterCatalogsNode
+from .load_cinematic_chapters import LoadCinematicChaptersNode
 from .load_consolidated_references import LoadConsolidatedReferencesNode
 from .lmstudio_config import LMStudioConfigurationNode
 from .spatial_continuity import SpatialContinuityNode
@@ -21,6 +22,7 @@ NODE_CLASS_MAPPINGS = {
     "SelectChaptersNode": SelectChaptersNode,
     "ExtractChapterReferencesNode": ExtractChapterReferencesNode,
     "LoadChapterCatalogsNode": LoadChapterCatalogsNode,
+    "LoadCinematicChaptersNode": LoadCinematicChaptersNode,
     "LoadConsolidatedReferencesNode": LoadConsolidatedReferencesNode,
     "ConsolidateReferencesNode": ConsolidateReferencesNode,
     "GenerateH3PromptsNode": GenerateH3PromptsNode,
@@ -35,6 +37,7 @@ __all__ = [
     "LMStudioConfigurationNode",
     "SelectChaptersNode",
     "LoadChapterCatalogsNode",
+    "LoadCinematicChaptersNode",
     "LoadConsolidatedReferencesNode",
     "ConsolidateReferencesNode",
     "GenerateH3PromptsNode",

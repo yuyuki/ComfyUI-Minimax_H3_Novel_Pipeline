@@ -24,7 +24,7 @@ class ExtractChapterReferencesNode:
     def INPUT_TYPES(cls):
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "cinematic_chapters": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Ordered chapter timelines from Cinematic Chapter Adapter."}),
+            "cinematic_chapters": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Ordered chapter timelines from Cinematic Chapter Adapter or Load Cinematic Chapters."}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 2.0, "step": 0.05}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768, "tooltip": "JSON output budget per sequence-phase extraction call. Dense catalogs may need more tokens."}),

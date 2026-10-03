@@ -82,6 +82,8 @@ def render_architecture(modules: list[ModuleInfo]) -> str:
         '    config --> adapter',
         '    adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]',
         '    adapted --> extract',
+        '    adapted --> loader["Load Cinematic Chapters"]',
+        '    loader --> extract',
         '    config["LM Studio configuration"] --> extract["1. Extract chapter references"]',
         '    extract --> consolidate["2. Consolidate references"]',
         '    consolidate --> designs["Prepare visual designs"]',

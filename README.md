@@ -52,6 +52,14 @@ A separate `cinematic_adapter_configuration.json` records non-secret run setting
 Connect `cinematic_chapters` to **Extract Chapter References**. Extraction no longer accepts
 `chapter_selection`; reconnect existing workflows through the adapter.
 
+To reuse saved adaptations, add **Load Cinematic Chapters**, set `cinematic_path`
+to a previous run's folder (for example `20260911153042/cinematic_chapters`) or
+one `*.cinematic.json` file, and connect its `cinematic_chapters` output to
+Extract's `cinematic_chapters` input. Folder loading uses natural filename order
+and validates the saved chapter structure. Paths are relative to
+`output/minimax_h3_novel`; absolute paths must stay inside that root.
+The loader needs no LM Studio configuration; keep configuration connected to Extract.
+
 ## Installation
 
 Requires Python 3.10 or newer, ComfyUI, and an LM Studio server with a loaded
