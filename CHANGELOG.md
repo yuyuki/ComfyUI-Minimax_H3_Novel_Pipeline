@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Return cinematic sequence adaptations as objects with `initialState`, `event`
+  and `endingState` strings; preserve ordered events and chapter continuity.
+
 - Fix narrative contract review evidence matching for decoded dialogue, line breaks
   and reformatted complete JSON excerpts; retain strict rejection of unsupported
   quotes and cover evidence matching with offline regression tests.

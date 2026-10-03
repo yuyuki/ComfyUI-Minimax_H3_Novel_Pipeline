@@ -9,6 +9,148 @@ from minimax_h3_novel_pipeline import narrative_nodes as nodes, narrative_state 
 from .test_narrative_state import confirmed_review, contract, entity, extraction, opening, prologue
 
 
+def test_length_failure_extracts_one_event_at_a_time_and_reviews_whole_contract(monkeypatch):
+    source = "Indy stands. Indy sits."
+    current = {"entities": [entity("indy", "character", posture="standing", visible=True)]}
+    snapshot = deepcopy(current)
+    requests = []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        requests.append((schema, payload))
+        if schema == ns.EXTRACTION_SCHEMA:
+            raise RuntimeError("Invalid structured JSON after 2 attempt(s). finish_reason=length")
+        if schema == ns.REVIEW_SCHEMA:
+            assert len(payload["candidate"]["events"]) == 2
+            assert payload["original_scene"] == source
+            return {"errors": []}
+        assert schema == ns.EVENT_PAGE_SCHEMA
+        index = payload["page_number"]
+        assert len(payload["accepted_extraction"]["events"]) == index - 1
+        assert ns.state_map(payload["running_state"])["indy"]["posture"] == "standing"
+        return {"opening_entities": [], "new_entities": [], "done": index == 2, "events": [{
+            "id": f"event_{index}", "description": "Stands" if index == 1 else "Sits",
+            "source_ids": [f"source_{index}"], "kind": "action",
+            "changes": [] if index == 1 else [{"entity": "indy", "field": "posture", "after": "sitting"}],
+        }]}
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    result, report = ns.track_scene(None, "mock", source, source, current, attempts=0)
+    assert report["extraction_mode"] == "per_event"
+    assert ns.state_map(result["state_after"])["indy"]["posture"] == "sitting"
+    assert result["events"][1]["changes"][0]["before"] == "standing"
+    assert not ns.validate_contract(result, current, source)
+    assert current == snapshot
+    assert [s for s, _ in requests] == [ns.EXTRACTION_SCHEMA, ns.EVENT_PAGE_SCHEMA, ns.EVENT_PAGE_SCHEMA, ns.REVIEW_SCHEMA]
+
+
+@pytest.mark.parametrize("fault", ["empty", "multiple", "opening", "duplicate", "unknown_source"])
+def test_event_pages_reject_invalid_or_nonprogressing_output(monkeypatch, fault):
+    source = "Indy calls. Indy waits."
+    calls = 0
+
+    def chat(client, model, system, user, schema, *args):
+        nonlocal calls
+        if schema == ns.EXTRACTION_SCHEMA:
+            raise RuntimeError("Invalid structured JSON after 2 attempt(s). finish_reason=length")
+        assert schema == ns.EVENT_PAGE_SCHEMA  # Invalid pages must never reach semantic review.
+        calls += 1
+        event = {"id": f"event_{calls}", "description": "Calls", "source_ids": [f"source_{calls}"],
+                 "kind": "action", "changes": []}
+        page = {"opening_entities": [], "new_entities": [], "events": [event], "done": calls == 2}
+        if calls == 2:
+            if fault == "empty":
+                page.update(events=[], done=False)
+            elif fault == "multiple":
+                page["events"].append(deepcopy(event))
+            elif fault == "opening":
+                page["opening_entities"] = [entity("indy", "character")]
+            elif fault == "duplicate":
+                event["id"] = "event_1"
+            else:
+                event["source_ids"] = ["missing"]
+        return page
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(ValueError, match="Narrative validation failed"):
+        ns.track_scene(None, "mock", source, source, attempts=0)
+    assert calls == 2
+
+
+@pytest.mark.parametrize("message", ["Network failed", "Invalid structured JSON after 2 attempt(s). finish_reason=stop"])
+def test_event_fallback_only_handles_length_failures(monkeypatch, message):
+    def chat(*args):
+        assert args[4] == ns.EXTRACTION_SCHEMA
+        raise RuntimeError(message)
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises((ValueError, RuntimeError), match="Network failed|Narrative validation failed"):
+        ns.track_scene(None, "mock", "Indy waits.", "Indy waits.", attempts=0)
+
+
+def test_event_pages_restart_after_review_and_keep_authoritative_boundary(monkeypatch):
+    source = "Indy waits. Indy takes a torch."
+    expected = {"entities": [entity("indy", "character", visible=True),
+                             entity("torch", "object", status="lit", visible=True)]}
+    starts = []
+    reviews = []
+    authoritative = {"marker": "authoritative context"}
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == ns.EXTRACTION_SCHEMA:
+            raise RuntimeError("Invalid structured JSON after 2 attempt(s). finish_reason=length")
+        assert schema == ns.EVENT_PAGE_SCHEMA
+        assert payload["authoritative_contract"] == authoritative
+        assert payload["expected_after"] == expected
+        index = payload["page_number"]
+        if index == 1:
+            starts.append(payload)
+            assert payload["accepted_extraction"]["events"] == []
+            assert payload["running_state"] is None
+        return {"opening_entities": [expected["entities"][0]] if index == 1 else [],
+                "new_entities": [{"id": "torch", "kind": "object"}] if index == 2 else [],
+                "done": index == 2, "events": [{
+                    "id": f"event_{index}", "description": "Waits" if index == 1 else "Takes torch",
+                    "source_ids": [f"source_{index}"], "kind": "action" if index == 1 else "introduction",
+                    "changes": [] if index == 1 else [
+                        {"entity": "torch", "field": "status", "after": "lit"},
+                        {"entity": "torch", "field": "visible", "after": True}],
+                }]}
+
+    def review(client, model, payload):
+        reviews.append(payload)
+        return [ns.issue("indy", "faithful event", "incorrect description")] if len(reviews) == 1 else []
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    monkeypatch.setattr(ns, "review", review)
+    result, report = ns.track_scene(None, "mock", source, source, attempts=1,
+                                    authoritative_contract=authoritative, expected_after=expected)
+    assert len(starts) == len(reviews) == 2
+    assert "validation_errors" in starts[1]
+    assert all("validation_errors" not in payload for payload in reviews)
+    assert report["extraction_mode"] == "per_event"
+    assert result["state_after"] == expected
+    assert ns.state_map(result["state_before"])["torch"]["status"] == "not_introduced"
+    assert result["initial_frame"] == {"entities": [expected["entities"][0]]}
+
+
+def test_event_page_cancellation_propagates_without_retry(monkeypatch):
+    class InterruptProcessingException(RuntimeError):
+        pass
+
+    calls = []
+    def chat(*args):
+        calls.append(args[4])
+        if args[4] == ns.EXTRACTION_SCHEMA:
+            raise RuntimeError("Invalid structured JSON after 2 attempt(s). finish_reason=length")
+        raise InterruptProcessingException("Stopped")
+
+    monkeypatch.setattr(ns, "chat_json", chat)
+    with pytest.raises(InterruptProcessingException):
+        ns.track_scene(None, "mock", "Indy waits.", "Indy waits.", attempts=2)
+    assert calls == [ns.EXTRACTION_SCHEMA, ns.EVENT_PAGE_SCHEMA]
+
+
 @pytest.mark.parametrize("node_class", [nodes.NarrativeContinuityNode, nodes.NovelCinematicSimplifierNode])
 def test_new_execution_after_verification_failure_has_no_prior_state_or_feedback(tmp_path, monkeypatch, node_class):
     from minimax_h3_novel_pipeline import path_access

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .consolidate_references import ConsolidateReferencesNode
 from .chapter_selection import SelectChaptersNode
+from .cinematic_chapter_adapter import CinematicChapterAdapterNode
 from .extract_chapter_references import ExtractChapterReferencesNode
 from .generate_h3_prompts import GenerateH3PromptsNode
 from .load_chapter_catalogs import LoadChapterCatalogsNode
@@ -13,6 +14,7 @@ from .narrative_nodes import NarrativeContinuityNode, NovelCinematicSimplifierNo
 
 
 NODE_CLASS_MAPPINGS = {
+    "CinematicChapterAdapterNode": CinematicChapterAdapterNode,
     "NarrativeContinuityNode": NarrativeContinuityNode,
     "NovelCinematicSimplifierNode": NovelCinematicSimplifierNode,
     "LMStudioConfigurationNode": LMStudioConfigurationNode,
@@ -26,6 +28,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 __all__ = [
+    "CinematicChapterAdapterNode",
     "NarrativeContinuityNode",
     "NovelCinematicSimplifierNode",
     "ExtractChapterReferencesNode",

@@ -1,5 +1,17 @@
 # Example workflow
 
+To try the standalone **Cinematic Chapter Adapter**, connect **Select Chapters**
+to its `chapter_selection` input and **LM Studio Configuration** to its
+`lmstudio_config` input, then queue. The adapter is an output node, so it needs
+no downstream connection. It saves one `NNN_<chapter>.cinematic.json` array per
+chapter under the run's `cinematic_chapters/` directory. Each entry has
+`sequence`, `source`, and an `adaptation` object containing `initialState`,
+`event`, and `endingState` strings. `event` preserves all ordered events, numbered
+and separated by newlines. Its `saved_files` output lists the files;
+`cinematic_chapters` exposes the chapter records and sequence arrays in memory.
+Review the generated adaptations before use. Connecting this new output to
+**Extract Chapter References** is reserved for a later change.
+
 1. Add **LM Studio Configuration**, enter the server URL, and set the
    matching **Trusted API URL** and **API Key** in
    ComfyUI Settings → MiniMax H3 Novel → LM Studio.

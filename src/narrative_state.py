@@ -43,6 +43,11 @@ EXTRACTION_SCHEMA = {"name": "narrative_events_v2", "strict": True, "schema": ob
         "source_ids": array(STRING), "kind": EVENT["properties"]["kind"],
         "changes": array(obj({"entity": STRING, "field": CHANGE["properties"]["field"], "after": VALUE}))})),
 })}
+EVENT_PAGE_SCHEMA = {"name": "narrative_event_page_v1", "strict": True, "schema": obj({
+    **deepcopy(EXTRACTION_SCHEMA["schema"]["properties"]),
+    "done": {"type": "boolean"},
+})}
+EVENT_PAGE_SCHEMA["schema"]["properties"]["events"]["maxItems"] = 1
 EXTRACTION_SYSTEM = """Extract narrative continuity, without rewriting prose or designing shots.
 Return opening_entities ONLY for the first passage (current_state is null); otherwise return [].
 Opening entities contain only facts already true before the first action, never later states.
@@ -377,11 +382,12 @@ class ExtractionValidationError(ValueError):
         super().__init__(json.dumps(errors, ensure_ascii=False))
 
 
-def checked_pass(client, model, system, schema, payload, attempts, validator, compile_result=None):
+def checked_pass(client, model, system, schema, payload, attempts, validator, compile_result=None, event_fallback=False):
     if not isinstance(attempts, int) or not 0 <= attempts <= 10:
         raise ValueError("Correction attempts must be between 0 and 10.")
     source_payload = deepcopy(payload)
     history = []
+    paged = False
     for attempt in range(attempts + 1):
         comfy_interrupt_check()
         result = None
@@ -393,7 +399,16 @@ def checked_pass(client, model, system, schema, payload, attempts, validator, co
                 "source facts or changing dialogue. Return the complete corrected JSON in the requested "
                 "schema, not a patch or the review."
             ) if attempt else ""
-            result = chat_json(client, model, system + correction, json.dumps(payload, ensure_ascii=False), schema, 0.15, 8000)
+            if not paged:
+                try:
+                    result = chat_json(client, model, system + correction, json.dumps(payload, ensure_ascii=False), schema, 0.15, 8000)
+                except RuntimeError as exc:
+                    if not (event_fallback and str(exc).startswith("Invalid structured JSON after")
+                            and "finish_reason=length" in str(exc)):
+                        raise
+                    paged = True
+            if paged:
+                result = _extract_event_pages(client, model, system + correction, payload)
             check_shape(result, schema["schema"])
             candidate = deepcopy(result)
             if compile_result is not None:
@@ -413,9 +428,53 @@ def checked_pass(client, model, system, schema, payload, attempts, validator, co
             errors = [issue("schema", "valid structured JSON", str(exc))]
         history.append({"attempt": attempt, "errors": errors})
         if not errors:
-            return result, {"valid": True, "attempts": history}
+            report = {"valid": True, "attempts": history}
+            if paged:
+                report["extraction_mode"] = "per_event"
+            return result, report
         payload = {**source_payload, "candidate": candidate if candidate is not None else result, "validation_errors": errors}
     raise ValueError("Narrative validation failed after correction budget: " + json.dumps(history, ensure_ascii=False))
+
+
+def _extract_event_pages(client, model, system, payload):
+    """Bound each response to one event; review the complete contract afterward."""
+    extraction = {"opening_entities": [], "new_entities": [], "events": []}
+    source = payload["original_scene"]
+    current = payload["current_state"]
+    running = deepcopy(current)
+    system += (
+        " Extract incrementally: return at most ONE next chronological event per response. "
+        "accepted_extraction contains events already accepted; do not repeat them. "
+        "running_state is their computed ending state. Keep stable entity IDs and unique event IDs. "
+        "Return opening_entities only on page 1 when current_state is null. Declare only new IDs "
+        "needed by this event in new_entities. Include actions/dialogue without state changes. "
+        "Set done=true only after every source-supported event has been extracted; otherwise "
+        "return exactly one event and done=false. Never summarize remaining actions to fit a page."
+    )
+    # Bound a faulty model that endlessly invents more events. Exceeding this limit
+    # fails validation, never returns a silently truncated contract.
+    for page_number in range(1, max(32, len(source_units(source)) * 16) + 1):
+        comfy_interrupt_check()
+        request = {**payload, "page_number": page_number,
+                   "accepted_extraction": extraction, "running_state": running}
+        page = chat_json(client, model, system, json.dumps(request, ensure_ascii=False), EVENT_PAGE_SCHEMA, 0.15, 8000)
+        check_shape(page, EVENT_PAGE_SCHEMA["schema"])
+        if len(page["events"]) > 1 or (not page["events"] and not page["done"]):
+            raise ValueError("Event page must contain one next event, or mark extraction done.")
+        if page_number > 1 and page["opening_entities"]:
+            raise ValueError("Only the first event page may supply opening_entities.")
+        if not page["events"] and page["new_entities"]:
+            raise ValueError("New entities require an introducing event on the same page.")
+        for key in extraction:
+            extraction[key].extend(page[key])
+        contract = compile_contract(extraction, source, current)
+        errors = validate_contract(contract, current, source)
+        if errors:
+            raise ExtractionValidationError(errors)
+        running = contract["state_after"]
+        if page["done"]:
+            return extraction
+    raise ValueError("Per-event extraction exceeded its page limit without finishing.")
 
 
 def simplify(client, model, original, attempts=2):
@@ -516,4 +575,4 @@ def track_scene(client, model, original, cinematic, current_state=None, attempts
                         {"original_scene": original, "cinematic_version": cinematic, "current_state": current_state,
                          "source_units": source_units(original),
                          "authoritative_contract": authoritative_contract, "expected_after": expected_after}, attempts, validate,
-                        lambda result: compile_contract(result, original, current_state))
+                        lambda result: compile_contract(result, original, current_state), event_fallback=True)

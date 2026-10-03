@@ -78,7 +78,7 @@ def test_node_completion_time(bars, monkeypatch, capsys, with_comfy, elapsed, ex
     ticks = iter([100, 100 + elapsed])
     monkeypatch.setattr(progress.time, "perf_counter", lambda: next(ticks))
     node = NODE_CLASS_MAPPINGS["SelectChaptersNode"]()
-    assert node.run("chapter.txt", "") == ({"chapter_paths": "chapter.txt"},)
+    assert node.run("chapter.txt", "") == ({"chapter_paths": ["chapter.txt"]},)
     assert capsys.readouterr().out == (
         f"[minimax_h3_novel] SelectChaptersNode.run complete in {expected}\n"
     )
@@ -99,7 +99,7 @@ def test_all_registered_nodes_have_progress_and_picker_reports(bars):
     for node in NODE_CLASS_MAPPINGS.values():
         assert hasattr(getattr(node, node.FUNCTION), "__wrapped__")
     result = NODE_CLASS_MAPPINGS["SelectChaptersNode"]().run("chapter.txt", "")
-    assert result == ({"chapter_paths": "chapter.txt"},)
+    assert result == ({"chapter_paths": ["chapter.txt"]},)
     assert bars[0].values == [0, 100]
 
 

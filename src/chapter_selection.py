@@ -50,5 +50,9 @@ class SelectChaptersNode:
     CATEGORY = "MiniMax H3 Novel"
 
     @progress.node_progress
-    def run(self, chapter_paths: str, saved_chapter: str) -> tuple[dict[str, str]]:
-        return ({"chapter_paths": chapter_paths or saved_chapter or ""},)
+    def run(self, chapter_paths: str, saved_chapter: str) -> tuple[dict[str, list[str]]]:
+        """Return a structured chapter-path list for downstream nodes."""
+        paths = [path.strip() for path in chapter_paths.splitlines() if path.strip()]
+        if not paths and saved_chapter.strip():
+            paths = [saved_chapter.strip()]
+        return ({"chapter_paths": paths},)

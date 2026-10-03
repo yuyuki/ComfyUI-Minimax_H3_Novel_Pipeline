@@ -30,6 +30,7 @@ def _build_mappings() -> None:
     try:
         NODE_CLASS_MAPPINGS.update(
             {
+                "CinematicChapterAdapterNode": _nodes.CinematicChapterAdapterNode,
                 "ExtractChapterReferencesNode": _nodes.ExtractChapterReferencesNode,
                 "SelectChaptersNode": _nodes.SelectChaptersNode,
                 "LMStudioConfigurationNode": _nodes.LMStudioConfigurationNode,
@@ -44,6 +45,7 @@ def _build_mappings() -> None:
         )
         NODE_DISPLAY_NAME_MAPPINGS.update(
             {
+                "CinematicChapterAdapterNode": "Cinematic Chapter Adapter",
                 "ExtractChapterReferencesNode": "Extract Chapter References",
                 "SelectChaptersNode": "Select Chapters",
                 "LMStudioConfigurationNode": "LM Studio Configuration",

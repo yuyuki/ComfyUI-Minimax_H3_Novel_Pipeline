@@ -8,6 +8,10 @@ This map covers the active Python package in `src/`. Historical reference bundle
 
 ```mermaid
 flowchart TD
+    selector["Select Chapters"] --> adapter["Cinematic Chapter Adapter"]
+    config --> adapter
+    adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]
+    selector --> extract
     config["LM Studio configuration"] --> extract["1. Extract chapter references"]
     extract --> consolidate["2. Consolidate references"]
     consolidate --> designs["Prepare visual designs"]
@@ -23,6 +27,7 @@ flowchart TD
 ```
 
 The node wrappers coordinate filesystem access, configuration snapshots and run outputs. The three `pipeline_step*` modules contain the LLM-facing stage implementations.
+The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its output is not yet connected to extraction.
 
 ## Internal module dependencies
 
@@ -30,6 +35,8 @@ The node wrappers coordinate filesystem access, configuration snapshots and run 
 flowchart TD
     m_package_init["package_init"]
     m_chapter_selection["chapter_selection"]
+    m_cinematic_adaptation["cinematic_adaptation"]
+    m_cinematic_chapter_adapter["cinematic_chapter_adapter"]
     m_configuration_snapshot["configuration_snapshot"]
     m_consolidate_references["consolidate_references"]
     m_extract_chapter_references["extract_chapter_references"]
@@ -65,6 +72,16 @@ flowchart TD
     m_package_init --> m_route_access
     m_chapter_selection --> m_progress
     m_chapter_selection --> m_util
+    m_cinematic_adaptation --> m_lmstudio_json
+    m_cinematic_adaptation --> m_lmstudio_pipeline
+    m_cinematic_adaptation --> m_progress
+    m_cinematic_chapter_adapter --> m_chapter_selection
+    m_cinematic_chapter_adapter --> m_cinematic_adaptation
+    m_cinematic_chapter_adapter --> m_configuration_snapshot
+    m_cinematic_chapter_adapter --> m_lmstudio_pipeline
+    m_cinematic_chapter_adapter --> m_progress
+    m_cinematic_chapter_adapter --> m_run_output
+    m_cinematic_chapter_adapter --> m_util
     m_configuration_snapshot --> m_lmstudio_config
     m_configuration_snapshot --> m_lmstudio_json
     m_configuration_snapshot --> m_lmstudio_models
@@ -117,6 +134,7 @@ flowchart TD
     m_narrative_state --> m_lmstudio_json
     m_narrative_state --> m_lmstudio_pipeline
     m_nodes --> m_chapter_selection
+    m_nodes --> m_cinematic_chapter_adapter
     m_nodes --> m_consolidate_references
     m_nodes --> m_extract_chapter_references
     m_nodes --> m_generate_h3_prompts
@@ -159,6 +177,8 @@ flowchart TD
 |---|---|---|
 | `src/__init__.py` | `lmstudio_settings`, `nodes`, `path_access`, `route_access` | — |
 | `src/chapter_selection.py` | `progress`, `util` | `SelectChaptersNode`, `chapter_paths`, `saved_chapter_choices` |
+| `src/cinematic_adaptation.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress` | `adapt_chapter`, `source_chunks` |
+| `src/cinematic_chapter_adapter.py` | `chapter_selection`, `cinematic_adaptation`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `CinematicChapterAdapterNode` |
 | `src/configuration_snapshot.py` | `lmstudio_config`, `lmstudio_json`, `lmstudio_models`, `util` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/consolidate_references.py` | `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
 | `src/extract_chapter_references.py` | `chapter_selection`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
@@ -175,7 +195,7 @@ flowchart TD
 | `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
 | `src/narrative_nodes.py` | `chapter_selection`, `lmstudio_pipeline`, `narrative_state`, `progress`, `run_output`, `util` | `NarrativeContinuityNode`, `NovelCinematicSimplifierNode` |
 | `src/narrative_state.py` | `lmstudio_json`, `lmstudio_pipeline` | `ExtractionValidationError`, `ReviewVerificationError`, `array`, `check_shape`, `checked_pass`, `compile_contract`, `issue`, `obj`, `review`, `simplify`, `source_digest`, `source_units`, `state_map`, `track_scene`, `validate_contract`, `verify_cinematic_review` |
-| `src/nodes.py` | `chapter_selection`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_consolidated_references`, `narrative_nodes`, `spatial_continuity` | — |
+| `src/nodes.py` | `chapter_selection`, `cinematic_chapter_adapter`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_consolidated_references`, `narrative_nodes`, `spatial_continuity` | — |
 | `src/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
 | `src/pipeline_step1_extract.py` | `lmstudio_json`, `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |
 | `src/pipeline_step2_consolidate.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress`, `reference_requests` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `similarity`, `stronger`, `threshold`, `variant_views`, `write_asset_prompts` |
@@ -189,4 +209,4 @@ flowchart TD
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **31**. Internal dependency edges: **92**.
+Modules: **33**. Internal dependency edges: **103**.

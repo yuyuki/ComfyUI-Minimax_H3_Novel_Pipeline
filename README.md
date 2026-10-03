@@ -14,6 +14,39 @@ changelog and bump `project.version` in `pyproject.toml`, then push to `main`.
 Each release receives the complete changelog snapshot; previously published
 versions are not updated.
 
+## Cinematic Chapter Adapter
+
+Connect **Select Chapters → Cinematic Chapter Adapter** and connect
+**LM Studio Configuration** to the adapter. Queue this standalone output node
+to adapt the selected chapters using the Qwen or Mistral model selected by the
+shared configuration. No image/video model is loaded or configured by this node.
+
+Each chapter is saved to
+`output/minimax_h3_novel/<timestamp>/cinematic_chapters/NNN_<chapter>.cinematic.json`
+as an array of
+`{ "sequence": 1, "source": "...", "adaptation": { "initialState": "...", "event": "...", "endingState": "..." } }`.
+Numbering restarts at 1 for each chapter. `source` preserves the text returned
+by the existing chapter reader (PDF text extraction and whitespace cleanup still
+apply). `adaptation` contains three strings: `initialState`, `event` (all ordered
+events, numbered and separated by newlines), and `endingState`.
+Descriptions stay in the source language if supported
+by the LM Studio model; the prompt requires dialogue to remain verbatim.
+
+The adapter requests cinematic normalization, preserving story, visual details,
+identities, props, places and causality without excessive summarization. It
+separates future actions from the initial state and passes the preceding final
+state into the next passage. Source coverage and response fields are checked;
+semantic fidelity and temporal correctness still require reviewing model output.
+`chunk_chars` bounds each input passage; `max_tokens` controls its output budget.
+If responses are truncated, reduce `chunk_chars` or increase `max_tokens`.
+`correction_attempts` retries invalid fields or missing/rewritten source excerpts.
+
+`cinematic_chapters` returns a list of chapter records with `source_file`,
+`saved_file` and `sequences`; `saved_files` lists the JSON paths for inspection.
+A separate `cinematic_adapter_configuration.json` records non-secret run settings.
+The adapter currently runs independently: **Extract Chapter References** does
+not yet accept this output. Existing extraction and narrative nodes are unchanged.
+
 ## Installation
 
 Requires Python 3.10 or newer, ComfyUI, and an LM Studio server with a loaded

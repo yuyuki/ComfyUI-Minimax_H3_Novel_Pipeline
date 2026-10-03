@@ -66,6 +66,20 @@ context space for the input plus this output budget. If it still runs out, reduc
 LM Studio Configuration. Increasing `correction_attempts` alone does not give
 the reviewer more tokens.
 
+If continuity event extraction still ends at the output length limit after those
+retries, it automatically switches to one event per JSON response. Each request
+retains the full passage and accepted events; Python carries the running state,
+checks each page and assembles the existing v1 contract. Opening entities appear
+only on the first page, and later pages declare only newly encountered entities.
+The assembled contract still receives full validation and semantic review;
+corrections restart event extraction and remain in per-event mode. The validation
+report records `extraction_mode: per_event`. Both narrative nodes and Generate's
+scene-contract projection share this fallback; node sockets and saved bundle
+formats remain unchanged. This costs more requests and reduces event output size,
+but opening entities, input context, prose simplification and review responses
+can still exceed model limits. An unfinished page sequence fails rather than
+silently dropping remaining events.
+
 | Node | Inputs | Outputs |
 |---|---|---|
 | Narrative Continuity | chapter_selection, lmstudio_config, out_dir, chunk_chars, correction_attempts; optional cinematic_narrative | cinematic_narrative, cinematic_text, validation_report, state_before_json, events_json, state_after_json |
