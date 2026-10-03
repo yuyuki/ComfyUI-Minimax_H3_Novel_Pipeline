@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Include the source chapter filename without its extension as `chapter_name`
+  in every cinematic sequence, both in saved JSON and node output.
+
 - Save completed cinematic chapter JSON before progress updates or cancellation
   checks; verify saved chapters survive later failures and cancellation offline.
 

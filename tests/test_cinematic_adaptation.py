@@ -138,10 +138,12 @@ def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monk
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=20,
-                                      temperature=0.15, max_tokens=8192, correction_attempts=0)
+                                      temperature=0.15, max_tokens=8192, correction_attempts=0,
+                                      chapter_name="Chapitre 1 — Le départ")
     assert [item["sequence"] for item in result] == [1, 2, 3]
     assert "".join(item["source"] for item in result) == source
-    assert all(set(item) == {"sequence", "source", "adaptation"} for item in result)
+    assert all(set(item) == {"chapter_name", "sequence", "source", "adaptation"} for item in result)
+    assert all(item["chapter_name"] == "Chapitre 1 — Le départ" for item in result)
     assert result[1]["adaptation"] == {
         "initialState": "Il reste debout.",
         "event": "1. Il inspire.\n2. Il crie : « À l’aide ! »",
@@ -173,7 +175,7 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
     )
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
     assert saved == chapters[0]["sequences"] == [{
-        "sequence": 1, "source": source, "adaptation": {
+        "chapter_name": "chapter", "sequence": 1, "source": source, "adaptation": {
             "initialState": "Il est ici.", "event": "1. Il part.", "endingState": "Il est parti.",
         },
     }]

@@ -5,7 +5,8 @@ to its `chapter_selection` input and **LM Studio Configuration** to its
 `lmstudio_config` input, then queue. The adapter is an output node, so it needs
 no downstream connection. It saves one `NNN_<chapter>.cinematic.json` array per
 chapter under the run's `cinematic_chapters/` directory. Each entry has
-`sequence`, `source`, and an `adaptation` object containing `initialState`,
+`chapter_name` (the source filename without its extension), `sequence`, `source`,
+and an `adaptation` object containing `initialState`,
 `event`, and `endingState` strings. `event` preserves all ordered events, numbered
 and separated by newlines. Its `saved_files` output lists the files;
 `cinematic_chapters` exposes the chapter records and sequence arrays in memory.

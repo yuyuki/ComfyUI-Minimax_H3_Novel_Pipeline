@@ -24,8 +24,9 @@ shared configuration. No image/video model is loaded or configured by this node.
 Each chapter is saved to
 `output/minimax_h3_novel/<timestamp>/cinematic_chapters/NNN_<chapter>.cinematic.json`
 as an array of
-`{ "sequence": 1, "source": "...", "adaptation": { "initialState": "...", "event": "...", "endingState": "..." } }`.
-Numbering restarts at 1 for each chapter. `source` preserves the text returned
+`{ "chapter_name": "chapter", "sequence": 1, "source": "...", "adaptation": { "initialState": "...", "event": "...", "endingState": "..." } }`.
+`chapter_name` is the source filename without its extension and appears in every
+sequence. Numbering restarts at 1 for each chapter. `source` preserves the text returned
 by the existing chapter reader (PDF text extraction and whitespace cleanup still
 apply). `adaptation` contains three strings: `initialState`, `event` (all ordered
 events, numbered and separated by newlines), and `endingState`.

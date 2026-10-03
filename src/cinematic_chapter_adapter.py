@@ -58,7 +58,9 @@ class CinematicChapterAdapterNode:
             for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
                 with progress.scope(index / len(paths), (index + 1) / len(paths)):
-                    sequences = cinematic_adaptation.adapt_chapter(client, model, util.read_chapter(path), **settings)
+                    sequences = cinematic_adaptation.adapt_chapter(
+                        client, model, util.read_chapter(path), chapter_name=path.stem, **settings,
+                    )
                     # Persist completed work before progress or cancellation can interrupt it.
                     # The index distinguishes identically named chapters from separate folders.
                     saved = output / f"{index + 1:03d}_{path.stem}.cinematic.json"
