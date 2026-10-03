@@ -179,13 +179,13 @@ def test_new_execution_after_verification_failure_has_no_prior_state_or_feedback
     node = node_class()
     stage = "simplification" if node.simplify_prose else "continuity"
     with pytest.raises(ns.ReviewVerificationError, match=f"Narrative {stage} failed for chapter.txt, passage 1/1"):
-        node.run(str(chapter), {"api_url": "unused"})
+        node.run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})
     fail = False
     for source in ["Doriane waits.", "Indy climbs."]:
         source = " ".join([source] * 10)
         chapter.write_text(source, encoding="utf-8")
         requests.clear()
-        bundle = node.run(str(chapter), {"api_url": "unused"})[0]
+        bundle = node.run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})[0]
         for schema, payload in requests:
             assert payload["original_scene"] == source
             assert "validation_errors" not in payload and "previous_verification" not in payload
@@ -391,14 +391,14 @@ def test_continuity_node_preserves_prose_and_propagates_state(tmp_path, monkeypa
     monkeypatch.setattr(ns, "chat_json", chat)
     bundle = {"schema_version": "minimax-cinematic-narrative.v1", "chapters": {str(chapter.resolve()): {
         "source_digest": ns.source_digest(source), "segments": [{"original_text": t, "cinematic_text": t} for t in texts]}}}
-    result = nodes.NarrativeContinuityNode().run(str(chapter), {"api_url": "unused"}, cinematic_narrative=bundle if use_bundle else None)
+    result = nodes.NarrativeContinuityNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"}, cinematic_narrative=bundle if use_bundle else None)
     assert result[1] == source
     assert current_states == [None] + [b["state_after"] for b in beats[:-1]]
     assert json.loads((tmp_path / "output/cinematic_narrative.json").read_text(encoding="utf-8")) == result[0]
     if use_bundle:
         bundle["chapters"][str(chapter.resolve())]["segments"].pop()
         with pytest.raises(ValueError, match="cover the original chapter"):
-            nodes.NarrativeContinuityNode().run(str(chapter), {"api_url": "unused"}, cinematic_narrative=bundle)
+            nodes.NarrativeContinuityNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"}, cinematic_narrative=bundle)
 
 
 def test_evidence_preserves_french_punctuation_and_unicode():

@@ -52,7 +52,7 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch):
     }]})
 
     chapters, saved_files = adapter.CinematicChapterAdapterNode().run(
-        {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": str(chapter)},
+        {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(chapter)]},
     )
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
     assert saved == chapters[0]["sequences"] == [{

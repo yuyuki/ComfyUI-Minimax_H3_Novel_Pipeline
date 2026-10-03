@@ -672,7 +672,7 @@ def test_preprocessing_node_persists_prologue_and_passes_state_between_passages(
         return extraction(beats[index], payload["original_scene"], payload["current_state"])
 
     monkeypatch.setattr(ns, "chat_json", chat)
-    outputs = NovelCinematicSimplifierNode().run(str(chapter), {"api_url": "unused"})
+    outputs = NovelCinematicSimplifierNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})
     assert len(outputs) == 6
     bundle = outputs[0]
     saved = json.loads((tmp_path / "output/cinematic_narrative.json").read_text(encoding="utf-8"))

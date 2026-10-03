@@ -9,7 +9,7 @@ from typing import Any
 
 from . import configuration_snapshot, lmstudio_pipeline, util
 from .run_output import stage_output
-from .chapter_selection import chapter_paths as selected_chapter_paths
+from .chapter_selection import chapter_path_list as selected_chapter_paths
 
 def _default_output_dir() -> str:
     return "chapter_catalogs"
@@ -46,9 +46,7 @@ class ExtractChapterReferencesNode:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         output = stage_output(lmstudio_config, out_dir.strip())
-        raw_paths = selected_chapter_paths(chapter_selection)
-        items = [Path(x.strip()) for x in raw_paths.splitlines() if x.strip()] if isinstance(raw_paths, str) else [Path(x) for x in raw_paths]
-        paths = util.discover_inputs(items)
+        paths = util.discover_inputs([Path(path) for path in selected_chapter_paths(chapter_selection)])
         if not paths:
             raise ValueError("No supported chapter files found.")
         if not isinstance(lmstudio_config, dict):

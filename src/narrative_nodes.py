@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from . import lmstudio_pipeline, narrative_state, progress, util
-from .chapter_selection import chapter_paths
+from .chapter_selection import chapter_path_list
 from .run_output import stage_output
 
 
@@ -32,7 +32,7 @@ class NarrativeContinuityNode:
     @progress.node_progress
     def run(self, chapter_selection, lmstudio_config, out_dir="cinematic_narrative", chunk_chars=6000, correction_attempts=2,
             cinematic_narrative=None):
-        paths = util.discover_inputs([Path(p.strip()) for p in chapter_paths(chapter_selection).splitlines() if p.strip()])
+        paths = util.discover_inputs([Path(path) for path in chapter_path_list(chapter_selection)])
         if not paths:
             raise ValueError("No supported chapter files found.")
         # Validate supplied preprocessing before opening the client or making requests.

@@ -1,6 +1,8 @@
 """Tests for the shared Select Chapters node payload."""
 
-from minimax_h3_novel_pipeline.chapter_selection import SelectChaptersNode, chapter_paths
+import pytest
+
+from minimax_h3_novel_pipeline.chapter_selection import SelectChaptersNode, chapter_path_list
 
 
 def test_selection_output_contains_a_trimmed_path_list():
@@ -16,4 +18,10 @@ def test_saved_chapter_is_returned_as_a_single_item_list():
 
 
 def test_consumers_accept_the_structured_selection():
-    assert chapter_paths({"chapter_paths": ["first.md", "second.md"]}) == "first.md\nsecond.md"
+    assert chapter_path_list({"chapter_paths": ["first.md", "second.md"]}) == ["first.md", "second.md"]
+
+
+@pytest.mark.parametrize("selection", ["first.md", {"chapter_paths": "first.md"}, {"chapter_paths": ["first.md", ""]}])
+def test_list_accessor_rejects_legacy_or_invalid_payloads(selection):
+    with pytest.raises((TypeError, ValueError)):
+        chapter_path_list(selection)

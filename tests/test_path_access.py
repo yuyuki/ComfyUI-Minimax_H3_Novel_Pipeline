@@ -104,7 +104,7 @@ def test_chapter_selection_rejects_external_reads(roots, monkeypatch, tmp_path, 
     monkeypatch.setattr(lmstudio_pipeline, "load", load)
     outside = tmp_path / "private.txt"
     outside.write_text("Private text. " * 20, encoding="utf-8")
-    fields = {"chapter_selection": {"chapter_paths": str(outside)}}
+    fields = {"chapter_selection": {"chapter_paths": [str(outside)]}}
     with pytest.raises(ValueError):
         node().run(lmstudio_config={}, out_dir="safe", **fields, **extra)
     load.assert_not_called()

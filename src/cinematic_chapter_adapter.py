@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 
 from . import cinematic_adaptation, configuration_snapshot, lmstudio_pipeline, progress, util
-from .chapter_selection import chapter_paths
+from .chapter_selection import chapter_path_list
 from .run_output import stage_output
 
 
@@ -40,7 +40,7 @@ class CinematicChapterAdapterNode:
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         if chunk_chars < 1 or correction_attempts < 0 or max_tokens < 1:
             raise ValueError("Invalid adaptation size, token budget or correction attempts.")
-        paths = util.discover_inputs([Path(p.strip()) for p in chapter_paths(chapter_selection).splitlines() if p.strip()])
+        paths = util.discover_inputs([Path(path) for path in chapter_path_list(chapter_selection)])
         if not paths:
             raise ValueError("No supported chapter files found.")
         output = stage_output(lmstudio_config, out_dir.strip())

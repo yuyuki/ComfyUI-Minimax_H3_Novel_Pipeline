@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import configuration_snapshot, lmstudio_pipeline, util
-from .chapter_selection import chapter_paths as selected_chapter_paths
+from .chapter_selection import chapter_path_list as selected_chapter_paths
 from .path_access import confined_path
 from .run_output import stage_output
 from .image_prompt_export import export_image_prompts
@@ -49,8 +49,7 @@ class GenerateH3PromptsNode:
         output = stage_output(lmstudio_config, out_dir.strip())
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
-        selected_paths = selected_chapter_paths(chapter_selection)
-        paths = util.discover_inputs([Path(p.strip()) for p in selected_paths.splitlines() if p.strip()])
+        paths = util.discover_inputs([Path(path) for path in selected_chapter_paths(chapter_selection)])
         if not paths: raise ValueError("No supported chapter files found.")
         pipeline = lmstudio_pipeline.load("generate")
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)

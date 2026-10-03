@@ -23,15 +23,14 @@ def saved_chapter_choices() -> list[str]:
         return [""]
 
 
-def chapter_paths(selection: Any, saved_chapter: str = "") -> str:
-    """Return paths from the shared selection or a single saved-chapter fallback."""
-    if isinstance(selection, dict):
-        selection = selection.get("chapter_paths", "")
-    if isinstance(selection, (list, tuple)):
-        selection = "\n".join(str(path) for path in selection)
-    if isinstance(selection, str) and selection.strip():
-        return selection
-    return str(saved_chapter or "")
+def chapter_path_list(selection: Any) -> list[str]:
+    """Return paths from the structured Select Chapters payload."""
+    if not isinstance(selection, dict):
+        raise TypeError("chapter_selection must come from Select Chapters.")
+    paths = selection.get("chapter_paths")
+    if not isinstance(paths, list) or any(not isinstance(path, str) or not path.strip() for path in paths):
+        raise ValueError("chapter_selection requires a chapter_paths list of non-empty strings.")
+    return paths
 
 
 class SelectChaptersNode:

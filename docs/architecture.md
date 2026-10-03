@@ -176,7 +176,7 @@ flowchart TD
 | Module | Internal dependencies | Public classes/functions |
 |---|---|---|
 | `src/__init__.py` | `lmstudio_settings`, `nodes`, `path_access`, `route_access` | — |
-| `src/chapter_selection.py` | `progress`, `util` | `SelectChaptersNode`, `chapter_paths`, `saved_chapter_choices` |
+| `src/chapter_selection.py` | `progress`, `util` | `SelectChaptersNode`, `chapter_path_list`, `saved_chapter_choices` |
 | `src/cinematic_adaptation.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress` | `adapt_chapter`, `source_chunks` |
 | `src/cinematic_chapter_adapter.py` | `chapter_selection`, `cinematic_adaptation`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `CinematicChapterAdapterNode` |
 | `src/configuration_snapshot.py` | `lmstudio_config`, `lmstudio_json`, `lmstudio_models`, `util` | `complete`, `content_digest`, `file_digest`, `start` |

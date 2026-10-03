@@ -592,7 +592,7 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
     generate = lmstudio_pipeline.load("generate")
     monkeypatch.setattr(generate, "process_chapter", lambda *a: {"chapter_id": "chapter", "outputs": []})
     from minimax_h3_novel_pipeline import generate_h3_prompts as wrapper
-    monkeypatch.setattr(wrapper, "selected_chapter_paths", lambda value: "chapter.txt")
+    monkeypatch.setattr(wrapper, "selected_chapter_paths", lambda value: ["chapter.txt"])
     monkeypatch.setattr(util, "discover_inputs", lambda paths: paths)
     prompts, scene_text, image_text = GenerateH3PromptsNode().run(
         loaded, next_config, {}, **node_defaults(GenerateH3PromptsNode))

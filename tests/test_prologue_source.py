@@ -139,7 +139,7 @@ def test_actual_prologue_preprocessing_with_mocked_lmstudio(tmp_path, monkeypatc
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(nodes, "stage_output", lambda *a: tmp_path / "output")
     monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock-qwen"))
-    result = nodes.NovelCinematicSimplifierNode().run(str(chapter), {"api_url": "unused"})
+    result = nodes.NovelCinematicSimplifierNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})
     assert calls[0]["original_scene"] == source
     assert "croissant de lune" not in result[1]
     assert "— Doriane ! hurla-t-il. Envoyez une autre torche !" in result[1]

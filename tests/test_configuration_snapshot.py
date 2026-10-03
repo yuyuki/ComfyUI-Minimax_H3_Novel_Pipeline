@@ -28,7 +28,7 @@ def setup(tmp_path, monkeypatch):
     chapter = tmp_path / "chapter.txt"
     chapter.write_text("A chapter with a character and a location.\n" * 10, encoding="utf-8")
     for module in (extract, generate):
-        monkeypatch.setattr(module, "selected_chapter_paths", lambda selection: str(chapter))
+        monkeypatch.setattr(module, "selected_chapter_paths", lambda selection: [str(chapter)])
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen3.5-test"))
     return tmp_path, config, chapter
 
