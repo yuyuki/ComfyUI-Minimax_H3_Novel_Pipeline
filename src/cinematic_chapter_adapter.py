@@ -10,7 +10,7 @@ from .run_output import stage_output
 
 
 class CinematicChapterAdapterNode:
-    """Save one sequence array per chapter, independently of reference extraction."""
+    """Save one chapter object, independently of reference extraction."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -53,20 +53,20 @@ class CinematicChapterAdapterNode:
             snapshot = configuration_snapshot.start(
                 output, "cinematic_adapter", lmstudio_config, model, argparse.Namespace(**settings), out_dir=out_dir,
                 inputs={"chapters": [{"file": str(p), "sha256": configuration_snapshot.file_digest(p)} for p in paths]},
-                extra={"schema_version": "minimax-cinematic-chapters.v1"},
+                extra={"schema_version": "minimax-cinematic-chapters.v2"},
             )
             for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
                 with progress.scope(index / len(paths), (index + 1) / len(paths)):
-                    sequences = cinematic_adaptation.adapt_chapter(
+                    chapter = cinematic_adaptation.adapt_chapter(
                         client, model, util.read_chapter(path), chapter_name=path.stem, **settings,
                     )
                     # Persist completed work before progress or cancellation can interrupt it.
                     # The index distinguishes identically named chapters from separate folders.
                     saved = output / f"{index + 1:03d}_{path.stem}.cinematic.json"
-                    util.save_json(saved, sequences)
+                    util.save_json(saved, chapter)
                 artifacts.append(saved)
-                chapters.append({"source_file": str(path), "saved_file": str(saved), "sequences": sequences})
+                chapters.append({"source_file": str(path), "saved_file": str(saved), **chapter})
                 lmstudio_pipeline.comfy_interrupt_check()
             configuration_snapshot.complete(snapshot, artifacts)
         return chapters, "\n".join(str(path) for path in artifacts)

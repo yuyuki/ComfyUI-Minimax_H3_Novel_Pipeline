@@ -3,9 +3,10 @@
 To try the standalone **Cinematic Chapter Adapter**, connect **Select Chapters**
 to its `chapter_selection` input and **LM Studio Configuration** to its
 `lmstudio_config` input, then queue. The adapter is an output node, so it needs
-no downstream connection. It saves one `NNN_<chapter>.cinematic.json` array per
-chapter under the run's `cinematic_chapters/` directory. Each entry has
-`chapter_name` (the source filename without its extension), `sequence`, `source`,
+no downstream connection. It saves one `NNN_<chapter>.cinematic.json` object per
+chapter under the run's `cinematic_chapters/` directory, with top-level
+`chapter_name` (the source filename without its extension) and `sequences`.
+Each sequence has `sequence`, `source`,
 and an `adaptation` object containing `initialState`,
 `event`, and `endingState` strings. `event` preserves all ordered events, numbered
 and separated by newlines. Its `saved_files` output lists the files;

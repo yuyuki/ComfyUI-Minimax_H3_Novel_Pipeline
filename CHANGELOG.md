@@ -8,8 +8,9 @@ by later entries.
 
 ## Unreleased
 
-- Include the source chapter filename without its extension as `chapter_name`
-  in every cinematic sequence, both in saved JSON and node output.
+- Return and save cinematic chapters as objects with a single top-level
+  `chapter_name` (the source filename without its extension) and a `sequences`
+  array; cover the chapter structure and saved output with offline regressions.
 
 - Save completed cinematic chapter JSON before progress updates or cancellation
   checks; verify saved chapters survive later failures and cancellation offline.

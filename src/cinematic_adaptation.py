@@ -141,8 +141,8 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
 
 def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                   temperature: float, max_tokens: int, correction_attempts: int,
-                  chapter_name: str = "") -> list[dict]:
-    """Return sequences with caller-supplied chapter identity and local state."""
+                  chapter_name: str = "") -> dict:
+    """Return a chapter object with its identity and ordered sequence states."""
     if not text.strip():
         raise ValueError("Cannot adapt an empty chapter.")
     chunks = source_chunks(text, chunk_chars)
@@ -213,7 +213,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 "event": events,
                 "endingState": item["final_state"],
             }
-            results.append({"chapter_name": chapter_name, "sequence": len(results) + 1,
+            results.append({"sequence": len(results) + 1,
                             "source": item["source"], "adaptation": adaptation})
         previous_state = sequences[-1]["final_state"]
-    return results
+    return {"chapter_name": chapter_name, "sequences": results}

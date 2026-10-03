@@ -31,8 +31,8 @@ def test_long_passage_recovers_after_corrections_with_lossless_continuity(monkey
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
                                       temperature=0.15, max_tokens=8192, correction_attempts=1)
-    assert "".join(item["source"] for item in result) == source
-    assert [item["sequence"] for item in result] == list(range(1, len(result) + 1))
+    assert "".join(item["source"] for item in result["sequences"]) == source
+    assert [item["sequence"] for item in result["sequences"]] == list(range(1, len(result["sequences"]) + 1))
     assert len(accepted) > 2
     assert requests[0][0] == requests[1][0]
     assert "Previous response rejected:" in requests[1][1]
@@ -53,8 +53,8 @@ def test_correction_success_does_not_split_passage(monkeypatch):
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
                                       temperature=0.15, max_tokens=8192, correction_attempts=1)
     assert len(prompts) == 2
-    assert len(result) == 1
-    assert result[0]["source"] == source
+    assert len(result["sequences"]) == 1
+    assert result["sequences"][0]["source"] == source
 
 
 @pytest.mark.parametrize("invalid_source", ["Il part.", "Il attend."])
@@ -95,9 +95,9 @@ def test_copy_failure_regenerates_whole_passage_and_preserves_continuity(monkeyp
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=20,
                                       temperature=0.15, max_tokens=8192, correction_attempts=1)
-    assert "".join(item["source"] for item in result) == source
-    assert [item["sequence"] for item in result] == [1, 2]
-    assert result[0]["adaptation"]["event"] == "1. Il attend.\n2. Il crie."
+    assert "".join(item["source"] for item in result["sequences"]) == source
+    assert [item["sequence"] for item in result["sequences"]] == [1, 2]
+    assert result["sequences"][0]["adaptation"]["event"] == "1. Il attend.\n2. Il crie."
     assert [name for name, _ in requests] == [
         "cinematic_chapter_adaptation", "cinematic_chapter_adaptation",
         "cinematic_single_passage", "cinematic_chapter_adaptation",
@@ -140,18 +140,19 @@ def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monk
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=20,
                                       temperature=0.15, max_tokens=8192, correction_attempts=0,
                                       chapter_name="Chapitre 1 — Le départ")
-    assert [item["sequence"] for item in result] == [1, 2, 3]
-    assert "".join(item["source"] for item in result) == source
-    assert all(set(item) == {"chapter_name", "sequence", "source", "adaptation"} for item in result)
-    assert all(item["chapter_name"] == "Chapitre 1 — Le départ" for item in result)
-    assert result[1]["adaptation"] == {
+    assert [item["sequence"] for item in result["sequences"]] == [1, 2, 3]
+    assert "".join(item["source"] for item in result["sequences"]) == source
+    assert set(result) == {"chapter_name", "sequences"}
+    assert result["chapter_name"] == "Chapitre 1 — Le départ"
+    assert all(set(item) == {"sequence", "source", "adaptation"} for item in result["sequences"])
+    assert result["sequences"][1]["adaptation"] == {
         "initialState": "Il reste debout.",
         "event": "1. Il inspire.\n2. Il crie : « À l’aide ! »",
         "endingState": "Il a crié.",
     }
     assert requests[0]["previous_final_state"] == ""
     assert requests[1]["previous_final_state"] == "Il a crié."
-    assert all(set(item["adaptation"]) == {"initialState", "event", "endingState"} for item in result)
+    assert all(set(item["adaptation"]) == {"initialState", "event", "endingState"} for item in result["sequences"])
 
 
 @pytest.mark.parametrize("copy_failure", [False, True])
@@ -174,8 +175,10 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
         {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(chapter)]},
     )
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
-    assert saved == chapters[0]["sequences"] == [{
-        "chapter_name": "chapter", "sequence": 1, "source": source, "adaptation": {
+    assert saved == {"chapter_name": "chapter", "sequences": chapters[0]["sequences"]}
+    assert chapters[0]["chapter_name"] == "chapter"
+    assert saved["sequences"] == [{
+        "sequence": 1, "source": source, "adaptation": {
             "initialState": "Il est ici.", "event": "1. Il part.", "endingState": "Il est parti.",
         },
     }]
@@ -192,6 +195,7 @@ def test_completed_chapter_saved_before_later_failure_or_cancellation(tmp_path, 
     sequences = [{"sequence": 1, "source": "Il part.", "adaptation": {
         "initialState": "Before.", "event": "1. Action.", "endingState": "After.",
     }}]
+    chapter = {"chapter_name": "chapter1", "sequences": sequences}
     completed = False
     calls = []
 
@@ -199,14 +203,14 @@ def test_completed_chapter_saved_before_later_failure_or_cancellation(tmp_path, 
         nonlocal completed
         calls.append(args[2])
         if len(calls) == 2:
-            assert json.loads(saved.read_text(encoding="utf-8")) == sequences
+            assert json.loads(saved.read_text(encoding="utf-8")) == chapter
             raise RuntimeError("second chapter failed")
         completed = True
-        return sequences
+        return chapter
 
     def interrupt_check():
         if cancel_after_first and completed:
-            assert json.loads(saved.read_text(encoding="utf-8")) == sequences
+            assert json.loads(saved.read_text(encoding="utf-8")) == chapter
             raise KeyboardInterrupt()
 
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
@@ -219,6 +223,6 @@ def test_completed_chapter_saved_before_later_failure_or_cancellation(tmp_path, 
         adapter.CinematicChapterAdapterNode().run(
             {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(path) for path in paths]},
         )
-    assert json.loads(saved.read_text(encoding="utf-8")) == sequences
+    assert json.loads(saved.read_text(encoding="utf-8")) == chapter
     assert not (output / "002_chapter2.cinematic.json").exists()
     assert len(calls) == (1 if cancel_after_first else 2)

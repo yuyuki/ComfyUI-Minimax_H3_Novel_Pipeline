@@ -23,10 +23,10 @@ shared configuration. No image/video model is loaded or configured by this node.
 
 Each chapter is saved to
 `output/minimax_h3_novel/<timestamp>/cinematic_chapters/NNN_<chapter>.cinematic.json`
-as an array of
-`{ "chapter_name": "chapter", "sequence": 1, "source": "...", "adaptation": { "initialState": "...", "event": "...", "endingState": "..." } }`.
-`chapter_name` is the source filename without its extension and appears in every
-sequence. Numbering restarts at 1 for each chapter. `source` preserves the text returned
+as a chapter object:
+`{ "chapter_name": "chapter", "sequences": [{ "sequence": 1, "source": "...", "adaptation": { "initialState": "...", "event": "...", "endingState": "..." } }] }`.
+`chapter_name` is the source filename without its extension and appears once at
+the top level. Numbering restarts at 1 for each chapter. `source` preserves the text returned
 by the existing chapter reader (PDF text extraction and whitespace cleanup still
 apply). `adaptation` contains three strings: `initialState`, `event` (all ordered
 events, numbered and separated by newlines), and `endingState`.
@@ -47,7 +47,7 @@ preserves exact source coverage and carries final state through each smaller
 passage; invalid responses at 1000 characters or fewer still stop the run.
 
 `cinematic_chapters` returns a list of chapter records with `source_file`,
-`saved_file` and `sequences`; `saved_files` lists the JSON paths for inspection.
+`saved_file`, `chapter_name` and `sequences`; `saved_files` lists the JSON paths for inspection.
 A separate `cinematic_adapter_configuration.json` records non-secret run settings.
 The adapter currently runs independently: **Extract Chapter References** does
 not yet accept this output. Existing extraction and narrative nodes are unchanged.
