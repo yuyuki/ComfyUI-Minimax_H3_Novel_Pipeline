@@ -16,7 +16,7 @@ versions are not updated.
 
 ## Cinematic Chapter Adapter
 
-Connect **Select Chapters → Cinematic Chapter Adapter** and connect
+Connect **Select Chapters â†’ Cinematic Chapter Adapter** and connect
 **LM Studio Configuration** to the adapter. Queue this standalone output node
 to adapt the selected chapters using the Qwen or Mistral model selected by the
 shared configuration. No image/video model is loaded or configured by this node.
@@ -49,8 +49,8 @@ passage; invalid responses at 1000 characters or fewer still stop the run.
 `cinematic_chapters` returns a list of chapter records with `source_file`,
 `saved_file`, `chapter_name` and `sequences`; `saved_files` lists the JSON paths for inspection.
 A separate `cinematic_adapter_configuration.json` records non-secret run settings.
-The adapter currently runs independently: **Extract Chapter References** does
-not yet accept this output. Existing extraction and narrative nodes are unchanged.
+Connect `cinematic_chapters` to **Extract Chapter References**. Extraction no longer accepts
+`chapter_selection`; reconnect existing workflows through the adapter.
 
 ## Installation
 
@@ -90,7 +90,7 @@ stale.
 ## LM Studio setup
 
 1. Start LM Studio's local API server and load a model.
-2. In **ComfyUI Settings → MiniMax H3 Novel → LM Studio**, enter the API key.
+2. In **ComfyUI Settings â†’ MiniMax H3 Novel â†’ LM Studio**, enter the API key.
    Use `lm-studio` if authentication is disabled. The current nodes read this
    setting; an environment-variable API-key selector is not exposed.
 3. Add **LM Studio Configuration**. Its default URL is
@@ -103,7 +103,7 @@ settings store the value locally in plain text and send it to the backend
 before queuing; the backend holds it in memory.
 
 To authorize another LM Studio endpoint, set **Trusted API URL** beside **API Key**
-in **ComfyUI Settings → MiniMax H3 Novel → LM Studio**, then enter the same URL
+in **ComfyUI Settings â†’ MiniMax H3 Novel â†’ LM Studio**, then enter the same URL
 in the configuration node. The default is `http://127.0.0.1:1234/v1`.
 The former `MINIMAX_H3_LMSTUDIO_BASE_URL` environment variable is no longer read;
 copy any custom endpoint into this setting after updating.
@@ -164,9 +164,9 @@ No generated text is logged. `finish_reason=not_received` with
 JSON object completed, before receiving the server's final event.
 
 ```text
-LM Studio Configuration ──► Extract / Consolidate / Generate
-Select Chapters ─────────► Extract / Generate
-Extract Chapter References → Consolidate References → Generate H3 Prompts
+LM Studio Configuration â”€â”€â–º Extract / Consolidate / Generate
+Select Chapters â”€â”€â”€â”€â”€â”€â”€â”€â”€â–º Extract / Generate
+Extract Chapter References â†’ Consolidate References â†’ Generate H3 Prompts
 ```
 
 For spatial continuity, turn on `enable_spatial_continuity` in **Generate H3 Prompts**
@@ -211,17 +211,17 @@ The final warning includes the last reason if every attempt fails.
 
 | Node | Inputs and result |
 |---|---|
-| LM Studio Configuration | URL and Qwen controls → shared non-secret configuration |
-| Select Chapters | Chapter files or folder → shared chapter selection |
-| Extract Chapter References | Shared chapter selection → chapter catalog list and summary |
-| Load Chapter Catalogs | Saved `*_references.json` files → chapter catalog list |
-| Consolidate References | Catalogs → registry with entities, picture briefs and audio briefs, plus a text summary |
-| Load Consolidated References | Saved registry JSON → registry object |
-| Generate H3 Prompts | Registry and shared chapter selection → chapter/scene prompt payload and save-ready text |
+| LM Studio Configuration | URL and Qwen controls â†’ shared non-secret configuration |
+| Select Chapters | Chapter files or folder â†’ shared chapter selection |
+| Extract Chapter References | Shared chapter selection â†’ chapter catalog list and summary |
+| Load Chapter Catalogs | Saved `*_references.json` files â†’ chapter catalog list |
+| Consolidate References | Catalogs â†’ registry with entities, picture briefs and audio briefs, plus a text summary |
+| Load Consolidated References | Saved registry JSON â†’ registry object |
+| Generate H3 Prompts | Registry and shared chapter selection â†’ chapter/scene prompt payload and save-ready text |
 | Spatial Continuity | Compatibility node; new workflows can use Generate's `enable_spatial_continuity` toggle |
 
 Add **Select Chapters**, then connect its `chapter_selection` output to both
-Extract and Generate. Use its picker or enter one file/folder per line in its
+Cinematic Chapter Adapter and Generate. Connect the adapter to Extract. Use its picker or enter one file/folder per line in its
 `chapter_paths` field.
 Connect Consolidate's `registry_summary` output to a Preview Text node to inspect
 chapter, entity and asset-brief counts.
@@ -383,7 +383,7 @@ Windows and builds source/wheel distributions. Lint excludes historical
 
 For a live smoke test, restart ComfyUI, confirm all seven nodes appear under
 **MiniMax H3 Novel**, upload a short chapter, configure LM Studio, and run
-Extract → Consolidate → Generate. Check the saved JSON and confirm Stop
+Extract â†’ Consolidate â†’ Generate. Check the saved JSON and confirm Stop
 interrupts a running request.
 
 License: [GNU GPL v3](LICENSE).
@@ -399,7 +399,6 @@ again. Locally, use `python tools/check_registry_status.py` with Python 3.11 or 
 The trusted endpoint environment setting is intentional security configuration;
 if it is flagged, request review rather than removing that validation.
 
-Extraction uses hierarchical merges (`merge_batch_size`, default 2) and caches each merge batch for resuming. The default `max_tokens` is 8192 per extraction/merge call. This limits partial catalogs per call; the final catalog must still fit the output budget, and dense catalogs can require more output tokens and a larger context window. Existing workflows retain their saved settings; update these controls to adopt the new defaults. Enable `force` to regenerate cached results.
 
 Compact retries retain the original entity capacities, six distinguishing features of up to 120 characters each, and justified reference views. They allow 500 characters for stable visual descriptions and 350 for chapter appearance/state, shortening summaries and evidence instead. Retry-policy changes invalidate cached outputs. Extraction still selects continuity-relevant entities within the passage schema's limits (6 characters, 4 locations, 6 objects); reduce `chunk_chars` for crowded passages. These limits are character counts, not token counts, and unknown source traits remain unknown.
 
@@ -427,3 +426,26 @@ The simplifier provides text/JSON previews and bounded model correction. State
 tracking and continuity validation are integrated into preprocessing and generation. See
 [schemas, outputs, validation and limitations](docs/narrative_preprocessing.md) and
 [example wiring](examples/README.md#cinematic-preprocessing).
+
+### Extraction timeline contract
+
+Each chapter is independent. Sequence IDs must be positive and strictly increasing
+in the supplied array; extraction never sorts them. `initialState` is true at the
+start, `event` describes changes during the sequence, and `endingState` is true
+only after completion. Each phase is extracted separately without future text.
+`source` is retained as supporting evidence, never used to override adaptation.
+
+Catalogs retain the complete ordered `sequences`, plus each reference's
+`first_sequence`, `first_phase`, and `state_by_sequence`. Each sequence entry maps
+phase names to lists of observations (including descriptions, states and evidence).
+Missing phases mean no observation, not absence or automatic state inheritance.
+Repeated unambiguous names/aliases share an identity; uncertain identities stay separate.
+Changing state is never merged into an unqualified chapter appearance/state.
+Consolidated registries retain these records in `chapter_timelines`, indexed by
+chapter ID and linked through existing local/global entity mappings.
+
+Extraction's `chunk_chars` divides paragraphs only within a phase. The obsolete
+`overlap_paragraphs` and `merge_batch_size` controls are removed. Phase calls use
+`max_tokens` and the shared JSON retries; `force` bypasses timeline caches.
+Original-source Generate inputs remain unchanged; this change provides temporal
+reference metadata, not a replacement for Generate's narrative continuity input.

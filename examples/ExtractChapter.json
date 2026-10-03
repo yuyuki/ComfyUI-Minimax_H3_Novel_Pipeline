@@ -1,8 +1,8 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 106,
-  "last_link_id": 169,
+  "last_node_id": 107,
+  "last_link_id": 171,
   "nodes": [
     {
       "id": 67,
@@ -96,7 +96,8 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            140
+            140,
+            171
           ]
         }
       ],
@@ -252,7 +253,7 @@
           "name": "MINIMAX_CHAPTER_SELECTION",
           "type": "MINIMAX_CHAPTER_SELECTION",
           "links": [
-            141
+            170
           ]
         }
       ],
@@ -325,8 +326,8 @@
           "link": 140
         },
         {
-          "name": "chapter_selection",
-          "type": "MINIMAX_CHAPTER_SELECTION",
+          "name": "cinematic_chapters",
+          "type": "MINIMAX_CINEMATIC_CHAPTERS",
           "link": 141
         }
       ],
@@ -353,21 +354,17 @@
       },
       "widgets_values": [
         5500,
-        2,
         0.18,
         8192,
         false,
-        "chapter_catalogs",
-        2
+        "chapter_catalogs"
       ],
       "widgets_values_named": {
         "chunk_chars": 5500,
-        "overlap_paragraphs": 2,
         "temperature": 0.18,
         "max_tokens": 8192,
         "force": false,
-        "out_dir": "chapter_catalogs",
-        "merge_batch_size": 2
+        "out_dir": "chapter_catalogs"
       }
     },
     {
@@ -928,6 +925,57 @@
         "refine_camera": false,
         "camera_direction": ""
       }
+    },
+    {
+      "id": 107,
+      "type": "CinematicChapterAdapterNode",
+      "pos": [
+        -300,
+        1650
+      ],
+      "size": [
+        315,
+        250
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "lmstudio_config",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "link": 171
+        },
+        {
+          "name": "chapter_selection",
+          "type": "MINIMAX_CHAPTER_SELECTION",
+          "link": 170
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cinematic_chapters",
+          "type": "MINIMAX_CINEMATIC_CHAPTERS",
+          "links": [
+            141
+          ]
+        },
+        {
+          "name": "saved_files",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CinematicChapterAdapterNode"
+      },
+      "widgets_values": [
+        "cinematic_chapters",
+        4000,
+        0.15,
+        8192,
+        2
+      ]
     }
   ],
   "links": [
@@ -949,11 +997,11 @@
     ],
     [
       141,
-      81,
+      107,
       0,
       83,
       1,
-      "MINIMAX_CHAPTER_SELECTION"
+      "MINIMAX_CINEMATIC_CHAPTERS"
     ],
     [
       147,
@@ -1066,6 +1114,22 @@
       90,
       0,
       "STRING"
+    ],
+    [
+      170,
+      81,
+      0,
+      107,
+      1,
+      "MINIMAX_CHAPTER_SELECTION"
+    ],
+    [
+      171,
+      69,
+      0,
+      107,
+      0,
+      "MINIMAX_LMSTUDIO_CONFIG"
     ]
   ],
   "groups": [

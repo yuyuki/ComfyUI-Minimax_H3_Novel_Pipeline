@@ -11,12 +11,12 @@ and an `adaptation` object containing `initialState`,
 `event`, and `endingState` strings. `event` preserves all ordered events, numbered
 and separated by newlines. Its `saved_files` output lists the files;
 `cinematic_chapters` exposes the chapter records and sequence arrays in memory.
-Review the generated adaptations before use. Connecting this new output to
-**Extract Chapter References** is reserved for a later change.
+Review the generated adaptations, then connect `cinematic_chapters` to
+**Extract Chapter References** (replacing its former `chapter_selection` input).
 
 1. Add **LM Studio Configuration**, enter the server URL, and set the
    matching **Trusted API URL** and **API Key** in
-   ComfyUI Settings → MiniMax H3 Novel → LM Studio.
+   ComfyUI Settings â†’ MiniMax H3 Novel â†’ LM Studio.
 2. Add **Select Chapters**, **Extract Chapter References**, **Consolidate
    References** and **Generate H3 Prompts**. Connect configuration to all three.
    Optionally turn on `enable_spatial_continuity` in **Generate H3 Prompts** to enable
@@ -38,7 +38,8 @@ Review the generated adaptations before use. Connecting this new output to
    validation. Check `camera_warnings` if the extra description is rejected.
    `repair_attempts` also limits camera-only correction retries after a rejection.
 3. Choose the chapters once in Select Chapters, then connect its
-   `chapter_selection` output to Extract and Generate. Connect Extract's
+   `chapter_selection` output to Cinematic Chapter Adapter and Generate. Connect the
+   adapter’s `cinematic_chapters` output to Extract. Share configuration with the adapter. Connect Extract's
    `chapter_catalogs` to Consolidate, then
    Consolidate's `consolidated_references` to Generate. Optionally connect
    Consolidate's `registry_summary` to a Preview Text node for chapter, entity
@@ -70,7 +71,7 @@ references and does not generate images or audio itself.
 Set each stage's output budget with its own `max_tokens`; configuration no
 longer applies a second cap. Old configuration widgets migrate on workflow
 load. Set extraction passage size with Extract's `chunk_chars`; the shared
-`qwen35_safe_chunk_chars` field is removed. Paragraphs and overlap are preserved.
+`qwen35_safe_chunk_chars` field is removed. Paragraph order is preserved within each phase; phases never overlap.
 Restart ComfyUI and refresh the browser after updating the node package.
 For JSON failures, check the ComfyUI console's `LLM stream` lines for character
 counts, `finish_reason` and `local_stop`. These diagnostics omit generated text.
@@ -93,7 +94,6 @@ When `status` is `completed`, `outputs` lists result paths relative to the snaps
 and SHA-256 hashes. `started` indicates an incomplete execution. API keys are omitted.
 Change settings in the nodes; these JSON files are records, not editable presets.
 
-Extraction uses hierarchical merges (`merge_batch_size`, default 2) and caches each merge batch for resuming. The default `max_tokens` is 8192 per extraction/merge call. Update these controls in existing workflows to adopt the new defaults. The final catalog must still fit the output budget; dense catalogs may need more output tokens and a larger context window. For crowded passages, reduce `chunk_chars` to avoid the per-passage limits of 6 characters, 4 locations and 6 objects. Enable `force` to regenerate cached results.
 
 Compact retries preserve entity capacities and visual features, allowing 500 characters for stable descriptions and 350 for chapter appearance/state. Cached results from the older retry policy are regenerated automatically.
 
@@ -155,3 +155,26 @@ outputs and inspect Generate's per-scene `narrative_state` in `manifest.json`. T
 opening frame should have the torch held in a hand; only the mouth-placement event
 changes its relationship to `in_mouth`.
 See [the detailed contract documentation](../docs/narrative_preprocessing.md).
+
+### Extraction timeline contract
+
+Each chapter is independent. Sequence IDs must be positive and strictly increasing
+in the supplied array; extraction never sorts them. `initialState` is true at the
+start, `event` describes changes during the sequence, and `endingState` is true
+only after completion. Each phase is extracted separately without future text.
+`source` is retained as supporting evidence, never used to override adaptation.
+
+Catalogs retain the complete ordered `sequences`, plus each reference's
+`first_sequence`, `first_phase`, and `state_by_sequence`. Each sequence entry maps
+phase names to lists of observations (including descriptions, states and evidence).
+Missing phases mean no observation, not absence or automatic state inheritance.
+Repeated unambiguous names/aliases share an identity; uncertain identities stay separate.
+Changing state is never merged into an unqualified chapter appearance/state.
+Consolidated registries retain these records in `chapter_timelines`, indexed by
+chapter ID and linked through existing local/global entity mappings.
+
+Extraction's `chunk_chars` divides paragraphs only within a phase. The obsolete
+`overlap_paragraphs` and `merge_batch_size` controls are removed. Phase calls use
+`max_tokens` and the shared JSON retries; `force` bypasses timeline caches.
+Original-source Generate inputs remain unchanged; this change provides temporal
+reference metadata, not a replacement for Generate's narrative continuity input.

@@ -11,7 +11,7 @@ flowchart TD
     selector["Select Chapters"] --> adapter["Cinematic Chapter Adapter"]
     config --> adapter
     adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]
-    selector --> extract
+    adapted --> extract
     config["LM Studio configuration"] --> extract["1. Extract chapter references"]
     extract --> consolidate["2. Consolidate references"]
     consolidate --> designs["Prepare visual designs"]
@@ -27,7 +27,7 @@ flowchart TD
 ```
 
 The node wrappers coordinate filesystem access, configuration snapshots and run outputs. The three `pipeline_step*` modules contain the LLM-facing stage implementations.
-The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its output is not yet connected to extraction.
+The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its ordered phases feed extraction; catalogs and registries retain temporal observations.
 
 ## Internal module dependencies
 
@@ -37,6 +37,7 @@ flowchart TD
     m_chapter_selection["chapter_selection"]
     m_cinematic_adaptation["cinematic_adaptation"]
     m_cinematic_chapter_adapter["cinematic_chapter_adapter"]
+    m_cinematic_references["cinematic_references"]
     m_configuration_snapshot["configuration_snapshot"]
     m_consolidate_references["consolidate_references"]
     m_extract_chapter_references["extract_chapter_references"]
@@ -82,6 +83,11 @@ flowchart TD
     m_cinematic_chapter_adapter --> m_progress
     m_cinematic_chapter_adapter --> m_run_output
     m_cinematic_chapter_adapter --> m_util
+    m_cinematic_references --> m_lmstudio_pipeline
+    m_cinematic_references --> m_path_access
+    m_cinematic_references --> m_progress
+    m_cinematic_references --> m_prompt_cache
+    m_cinematic_references --> m_util
     m_configuration_snapshot --> m_lmstudio_config
     m_configuration_snapshot --> m_lmstudio_json
     m_configuration_snapshot --> m_lmstudio_models
@@ -93,7 +99,7 @@ flowchart TD
     m_consolidate_references --> m_run_output
     m_consolidate_references --> m_util
     m_consolidate_references --> m_visual_designs
-    m_extract_chapter_references --> m_chapter_selection
+    m_extract_chapter_references --> m_cinematic_references
     m_extract_chapter_references --> m_configuration_snapshot
     m_extract_chapter_references --> m_lmstudio_pipeline
     m_extract_chapter_references --> m_progress
@@ -179,9 +185,10 @@ flowchart TD
 | `src/chapter_selection.py` | `progress`, `util` | `SelectChaptersNode`, `chapter_path_list`, `saved_chapter_choices` |
 | `src/cinematic_adaptation.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress` | `adapt_chapter`, `source_chunks` |
 | `src/cinematic_chapter_adapter.py` | `chapter_selection`, `cinematic_adaptation`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `CinematicChapterAdapterNode` |
+| `src/cinematic_references.py` | `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `chapter_digest`, `parse_chapters`, `process_chapter` |
 | `src/configuration_snapshot.py` | `lmstudio_config`, `lmstudio_json`, `lmstudio_models`, `util` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/consolidate_references.py` | `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
-| `src/extract_chapter_references.py` | `chapter_selection`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
+| `src/extract_chapter_references.py` | `cinematic_references`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
 | `src/generate_h3_prompts.py` | `chapter_selection`, `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `path_access`, `progress`, `run_output`, `util` | `GenerateH3PromptsNode` |
 | `src/image_prompt_export.py` | `path_access`, `util` | `export_image_prompts` |
 | `src/lmstudio_config.py` | `lmstudio_models`, `lmstudio_settings`, `progress`, `run_output` | `LMStudioConfigurationNode` |
@@ -209,4 +216,4 @@ flowchart TD
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **33**. Internal dependency edges: **103**.
+Modules: **34**. Internal dependency edges: **108**.

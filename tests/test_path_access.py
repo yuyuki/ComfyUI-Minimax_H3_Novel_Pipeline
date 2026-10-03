@@ -81,7 +81,7 @@ def test_input_discovery_uses_server_root_and_natural_order(roots, monkeypatch, 
 
 
 @pytest.mark.parametrize("node,kwargs", [
-    (ExtractChapterReferencesNode, {"chapter_selection": {}}),
+    (ExtractChapterReferencesNode, {"cinematic_chapters": []}),
     (ConsolidateReferencesNode, {"chapter_catalogs": [{"chapter_id": "one"}]}),
     (GenerateH3PromptsNode, {"consolidated_references": {}, "chapter_selection": {}}),
 ])
@@ -96,7 +96,6 @@ def test_all_stages_reject_output_escape_before_loading_pipeline(roots, monkeypa
 
 
 @pytest.mark.parametrize("node,extra", [
-    (ExtractChapterReferencesNode, {}),
     (GenerateH3PromptsNode, {"consolidated_references": {}}),
 ])
 def test_chapter_selection_rejects_external_reads(roots, monkeypatch, tmp_path, node, extra):

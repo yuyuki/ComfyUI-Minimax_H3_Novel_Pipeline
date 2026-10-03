@@ -4,12 +4,10 @@ from __future__ import annotations
 from . import progress
 
 import argparse
-from pathlib import Path
 from typing import Any
 
-from . import configuration_snapshot, lmstudio_pipeline, util
+from . import cinematic_references, configuration_snapshot, lmstudio_pipeline, util
 from .run_output import stage_output
-from .chapter_selection import chapter_path_list as selected_chapter_paths
 
 def _default_output_dir() -> str:
     return "chapter_catalogs"
@@ -20,20 +18,18 @@ def _log(message: str) -> None:
 
 
 class ExtractChapterReferencesNode:
-    """Extract reference catalogs through LM Studio; no ComfyUI CLIP is loaded."""
+    """Extract independent cinematic timelines with sequence/phase provenance."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
+            "cinematic_chapters": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Ordered chapter timelines from Cinematic Chapter Adapter."}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
-            "overlap_paragraphs": ("INT", {"default": 2, "min": 0, "max": 100}),
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 2.0, "step": 0.05}),
-            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768, "tooltip": "JSON output budget per extraction/merge call. Dense catalogs may need more tokens."}),
+            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768, "tooltip": "JSON output budget per sequence-phase extraction call. Dense catalogs may need more tokens."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
-            "merge_batch_size": ("INT", {"default": 2, "min": 2, "max": 32, "tooltip": "Partial catalogs per merge call. Final merged catalogs must still fit the output budget."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
@@ -42,31 +38,40 @@ class ExtractChapterReferencesNode:
     CATEGORY = "MiniMax H3 Novel"
 
     @progress.node_progress
-    def run(self, lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
+    def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         output = stage_output(lmstudio_config, out_dir.strip())
-        paths = util.discover_inputs([Path(path) for path in selected_chapter_paths(chapter_selection)])
-        if not paths:
-            raise ValueError("No supported chapter files found.")
+        chapters = cinematic_references.parse_chapters(cinematic_chapters)
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         pipeline = lmstudio_pipeline.load("extract")
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
-            args = argparse.Namespace(merge_batch_size=max(2, int(params["merge_batch_size"])), chunk_chars=int(params["chunk_chars"]), overlap_paragraphs=int(params["overlap_paragraphs"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), base_url=lmstudio_config["api_url"])
+            args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), base_url=lmstudio_config["api_url"])
             output.mkdir(parents=True, exist_ok=True)
             snapshot = configuration_snapshot.start(
                 output, "extract", lmstudio_config, resolved_model, args, out_dir=out_dir,
-                inputs={"chapters": [{"file": str(path), "sha256": configuration_snapshot.file_digest(path)} for path in paths]},
+                inputs={"chapters": [{"chapter_name": c["chapter_name"], "sha256": cinematic_references.chapter_digest(c)} for c in chapters]},
             )
-            _log(f"LM Studio extraction: model={resolved_model}, chapters={len(paths)}")
+            _log(f"LM Studio extraction: model={resolved_model}, chapters={len(chapters)}")
             results = []
             artifacts = []
-            for index, path in enumerate(paths):
+            reserved_ids = {pipeline.slug(c["chapter_name"]) for c in chapters}
+            used_ids = set()
+            for index, chapter in enumerate(chapters):
                 lmstudio_pipeline.comfy_interrupt_check()
-                with progress.scope(index / len(paths), (index + 1) / len(paths)):
-                    saved = pipeline.process_chapter(path, output, client, resolved_model, args)
+                with progress.scope(index / len(chapters), (index + 1) / len(chapters)):
+                    chapter_id = pipeline.slug(chapter["chapter_name"])
+                    if sum(pipeline.slug(c["chapter_name"]) == chapter_id for c in chapters) > 1:
+                        base_id = f"{chapter_id}_{index + 1:03d}"
+                        chapter_id = base_id
+                        suffix = 1
+                        while chapter_id in reserved_ids or chapter_id in used_ids:
+                            chapter_id = f"{base_id}_{suffix}"
+                            suffix += 1
+                    used_ids.add(chapter_id)
+                    saved = cinematic_references.process_chapter(chapter, output, client, resolved_model, args, chapter_id)
                     results.append(util.load_json(saved))
                     artifacts.append(saved)
             configuration_snapshot.complete(snapshot, artifacts)

@@ -95,6 +95,10 @@ class ConsolidateReferencesNode:
                 audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
             digest = hashlib.sha256("\n".join(f"{c['chapter_id']}:{c.get('source', {}).get('sha256', '')}" for c in chapters).encode()).hexdigest()
             payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
+            payload["chapter_timelines"] = {c["chapter_id"]: {
+                "sequences": c["sequences"],
+                "references": {kind: c.get(kind, []) for kind in ("characters", "locations", "objects")},
+            } for c in chapters if "timeline_version" in c}
             payload["visual_designs"] = designs
             payload["image_style"] = args.image_style
             util.save_json(output / "consolidated_references.json", payload)

@@ -13,6 +13,9 @@ from minimax_h3_novel_pipeline import generate_h3_prompts as generate
 from minimax_h3_novel_pipeline.lmstudio_config import LMStudioConfigurationNode
 
 
+ADAPTED = [{"chapter_name": "chapter", "sequences": [{"sequence": 1, "source": "Text",
+            "adaptation": {"initialState": "A character.", "event": "", "endingState": ""}}]}]
+
 def defaults(cls):
     return {key: spec[1]["default"]
             for fields in cls.INPUT_TYPES().values() for key, spec in fields.items()
@@ -27,7 +30,7 @@ def setup(tmp_path, monkeypatch):
               "api_key": "secret-must-not-be-saved", "unexpected": "secret-must-not-be-saved"}
     chapter = tmp_path / "chapter.txt"
     chapter.write_text("A chapter with a character and a location.\n" * 10, encoding="utf-8")
-    for module in (extract, generate):
+    for module in (generate,):
         monkeypatch.setattr(module, "selected_chapter_paths", lambda selection: [str(chapter)])
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen3.5-test"))
     return tmp_path, config, chapter
@@ -48,8 +51,8 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
             saved = output / "chapter_references.json"
             util.save_json(saved, catalog)
             return saved
-        monkeypatch.setattr(pipeline, "process_chapter", process)
-        inputs = {"chapter_selection": {}}
+        monkeypatch.setattr(extract.cinematic_references, "process_chapter", process)
+        inputs = {"cinematic_chapters": ADAPTED}
     elif stage == "consolidate":
         monkeypatch.setattr(pipeline, "reconcile_chapter", lambda *args: [])
         monkeypatch.setattr(pipeline, "audit_registry", lambda *args: [])
@@ -83,7 +86,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     for artifact in record["outputs"]:
         assert snapshots.file_digest(output / artifact["file"]) == artifact["sha256"]
     if stage == "extract":
-        assert record["inputs"]["chapters"][0]["sha256"] == snapshots.file_digest(chapter)
+        assert record["inputs"]["chapters"][0]["sha256"] == extract.cinematic_references.chapter_digest(ADAPTED[0])
     assert record["model_controls"]["top_p"] == 0.8
 
 
@@ -121,12 +124,11 @@ def test_generate_continuity_toggle_and_legacy_connection(setup, monkeypatch, to
 
 def test_failed_execution_does_not_claim_completed_results(setup, monkeypatch):
     root, config, _ = setup
-    pipeline = lmstudio_pipeline.load("extract")
     def fail(*args):
         raise RuntimeError("secret-must-not-be-saved")
-    monkeypatch.setattr(pipeline, "process_chapter", fail)
+    monkeypatch.setattr(extract.cinematic_references, "process_chapter", fail)
     with pytest.raises(RuntimeError):
-        extract.ExtractChapterReferencesNode().run(config, {}, **defaults(extract.ExtractChapterReferencesNode))
+        extract.ExtractChapterReferencesNode().run(config, ADAPTED, **defaults(extract.ExtractChapterReferencesNode))
     text = (root / config["run_folder"] / "chapter_catalogs/extract_configuration.json").read_text()
     assert "secret-must-not-be-saved" not in text
     assert json.loads(text)["status"] == "started"
@@ -136,18 +138,17 @@ def test_failed_execution_does_not_claim_completed_results(setup, monkeypatch):
 def test_mistral_records_ignored_qwen_controls_and_normalized_node_settings(setup, monkeypatch):
     root, config, _ = setup
     config.update(model_family="Mistral", thinking=True, qwen35_top_k=90)
-    pipeline = lmstudio_pipeline.load("extract")
     def process(path, output, *args):
         saved = output / "chapter_references.json"
         util.save_json(saved, {"chapter_id": "chapter"})
         return saved
-    monkeypatch.setattr(pipeline, "process_chapter", process)
+    monkeypatch.setattr(extract.cinematic_references, "process_chapter", process)
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mistral-test"))
-    params = {**defaults(extract.ExtractChapterReferencesNode), "merge_batch_size": 1}
-    extract.ExtractChapterReferencesNode().run(config, {}, **params)
+    params = defaults(extract.ExtractChapterReferencesNode)
+    extract.ExtractChapterReferencesNode().run(config, ADAPTED, **params)
     record = util.load_json(root / config["run_folder"] / "chapter_catalogs/extract_configuration.json")
     assert record["lmstudio_config"]["thinking"] is True
     assert record["model_controls"]["settings"] == {"thinking": False}
     assert record["model_controls"]["request_extra_body"] == {}
     assert record["model_controls"]["chatml_fallback_allowed"] is False
-    assert record["node_settings"]["merge_batch_size"] == 2
+    assert "merge_batch_size" not in record["node_settings"]
