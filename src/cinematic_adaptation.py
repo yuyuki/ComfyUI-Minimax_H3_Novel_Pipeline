@@ -60,6 +60,10 @@ SCHEMA = {
     },
 }
 
+# Bound recovery work: small invalid passages still fail rather than silently
+# accepting rewritten or missing source. Larger passages can be halved repeatedly.
+_MIN_RECOVERY_CHARS = 1000
+
 
 def source_chunks(text: str, max_chars: int) -> list[str]:
     """Bound requests without normalizing, overlapping or losing source text."""
@@ -86,7 +90,7 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
         raise ValueError("sequences must be a nonempty array.")
     cursor = 0
     validated = []
-    for item in sequences:
+    for index, item in enumerate(sequences, start=1):
         if not isinstance(item, dict) or set(item) != {"source", "initial_state", "events", "final_state"}:
             raise ValueError("Each sequence requires source, initial_state, events and final_state.")
         for key in ("source", "initial_state", "final_state"):
@@ -99,7 +103,10 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
         while cursor < len(source) and source[cursor].isspace():
             cursor += 1
         if not source.startswith(excerpt, cursor):
-            raise ValueError("Source excerpts must copy the complete passage verbatim and in order.")
+            raise ValueError(
+                "Source excerpts must copy the complete passage verbatim and in order. "
+                f"Sequence {index} does not match at passage character {cursor + 1}."
+            )
         cursor += len(excerpt)
         # Restore boundary whitespace from the actual source, never from the LLM.
         validated.append({**item, "source": source[start:cursor]})
@@ -115,23 +122,46 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
     if not text.strip():
         raise ValueError("Cannot adapt an empty chapter.")
     chunks = source_chunks(text, chunk_chars)
-    results = []
-    previous_state = ""
-    for index, chunk in enumerate(progress.steps(chunks), start=1):
+    def adapt_passage(chunk: str, previous_state: str) -> list[dict]:
         lmstudio_pipeline.comfy_interrupt_check()
         prompt = json.dumps({"adaptation_model": model, "previous_final_state": previous_state,
                              "current_passage": chunk}, ensure_ascii=False)
         correction = ""
         for attempt in range(correction_attempts + 1):
+            lmstudio_pipeline.comfy_interrupt_check()
             result = lmstudio_json.chat_json(client, model, SYSTEM, prompt + correction,
                                             SCHEMA, temperature, max_tokens)
             try:
                 sequences = _validated_sequences(result, chunk)
-                break
+                return sequences
             except ValueError as exc:
                 if attempt == correction_attempts:
-                    raise ValueError(f"Cinematic adaptation passage {index}/{len(chunks)}: {exc}") from exc
+                    if len(chunk) <= _MIN_RECOVERY_CHARS:
+                        raise
+                    parts = source_chunks(chunk, len(chunk) // 2)
+                    print(
+                        f"    Cinematic adaptation: invalid passage ({len(chunk)} chars); "
+                        f"retrying as {len(parts)} smaller passages.", flush=True,
+                    )
+                    recovered = []
+                    state = previous_state
+                    for part_index, part in enumerate(parts):
+                        with progress.scope(part_index / len(parts), (part_index + 1) / len(parts)):
+                            child = adapt_passage(part, state)
+                        recovered.extend(child)
+                        state = child[-1]["final_state"]
+                    return recovered
                 correction = f"\nPrevious response rejected: {exc} Regenerate the complete passage."
+        raise AssertionError("Unreachable")
+
+    results = []
+    previous_state = ""
+    for index, chunk in enumerate(chunks, start=1):
+        try:
+            with progress.scope((index - 1) / len(chunks), index / len(chunks)):
+                sequences = adapt_passage(chunk, previous_state)
+        except ValueError as exc:
+            raise ValueError(f"Cinematic adaptation passage {index}/{len(chunks)}: {exc}") from exc
         for item in sequences:
             events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
             adaptation = {

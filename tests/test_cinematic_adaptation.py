@@ -2,9 +2,90 @@
 from contextlib import nullcontext
 import json
 
+import pytest
+
 from minimax_h3_novel_pipeline import cinematic_adaptation as adaptation
 from minimax_h3_novel_pipeline import cinematic_chapter_adapter as adapter
 from minimax_h3_novel_pipeline import path_access
+
+
+def _sequence(source, initial="Before.", final="After."):
+    return {"source": source, "initial_state": initial, "events": ["Action."], "final_state": final}
+
+
+def test_long_passage_recovers_after_corrections_with_lossless_continuity(monkeypatch):
+    source = "Il attend. Il crie.\n\n" * 300
+    requests = []
+    accepted = []
+
+    def chat(client, model, system, prompt, schema, *args):
+        payload, _ = json.JSONDecoder().raw_decode(prompt)
+        requests.append((payload, prompt))
+        passage = payload["current_passage"]
+        if len(passage) > 2000:
+            return {"sequences": [_sequence(passage.replace("crie", "parle", 1))]}
+        final = f"State {len(accepted) + 1}."
+        accepted.append((payload, final))
+        return {"sequences": [_sequence(passage, payload["previous_final_state"] or "Before.", final)]}
+
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
+                                      temperature=0.15, max_tokens=8192, correction_attempts=1)
+    assert "".join(item["source"] for item in result) == source
+    assert [item["sequence"] for item in result] == list(range(1, len(result) + 1))
+    assert len(accepted) > 2
+    assert requests[0][0] == requests[1][0]
+    assert "Previous response rejected:" in requests[1][1]
+    assert accepted[0][0]["previous_final_state"] == ""
+    for (previous, final), (following, _) in zip(accepted, accepted[1:]):
+        assert following["previous_final_state"] == final
+
+
+def test_correction_success_does_not_split_passage(monkeypatch):
+    source = "Il attend. " * 200
+    prompts = []
+
+    def chat(*args):
+        prompts.append(args[3])
+        return {"sequences": [_sequence("Wrong." if len(prompts) == 1 else source)]}
+
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
+                                      temperature=0.15, max_tokens=8192, correction_attempts=1)
+    assert len(prompts) == 2
+    assert len(result) == 1
+    assert result[0]["source"] == source
+
+
+@pytest.mark.parametrize("invalid_source", ["Il part.", "Il attend."])
+def test_recovery_remains_bounded_and_rejects_rewriting_or_omissions(monkeypatch, invalid_source):
+    requests = []
+
+    def chat(*args):
+        requests.append(args[3])
+        return {"sequences": [_sequence(invalid_source)]}
+
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    with pytest.raises(ValueError, match="Cinematic adaptation passage 1/1: Source excerpts"):
+        adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
+                                 temperature=0.15, max_tokens=8192, correction_attempts=1)
+    # Two attempts each for the original, its half, and the first small child.
+    assert len(requests) == 6
+
+
+@pytest.mark.parametrize("error", [RuntimeError("network failure"), KeyboardInterrupt()])
+def test_request_errors_do_not_trigger_subdivision(monkeypatch, error):
+    requests = []
+
+    def chat(*args):
+        requests.append(args[3])
+        raise error
+
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    with pytest.raises(type(error)):
+        adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
+                                 temperature=0.15, max_tokens=8192, correction_attempts=1)
+    assert len(requests) == 1
 
 
 def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monkeypatch):

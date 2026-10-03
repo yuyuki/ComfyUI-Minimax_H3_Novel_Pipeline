@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Recover from invalid cinematic adaptation responses on long passages by retrying
+  smaller passages with strict source coverage, sequential state continuity and
+  bounded recovery; add offline regression coverage.
+
 - Return cinematic sequence adaptations as objects with `initialState`, `event`
   and `endingState` strings; preserve ordered events and chapter continuity.
 

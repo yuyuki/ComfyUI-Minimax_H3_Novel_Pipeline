@@ -40,6 +40,10 @@ semantic fidelity and temporal correctness still require reviewing model output.
 `chunk_chars` bounds each input passage; `max_tokens` controls its output budget.
 If responses are truncated, reduce `chunk_chars` or increase `max_tokens`.
 `correction_attempts` retries invalid fields or missing/rewritten source excerpts.
+If validation still fails, passages longer than 1000 characters are automatically
+split into smaller requests with the same correction budget per request. Recovery
+preserves exact source coverage and carries final state through each smaller
+passage; invalid responses at 1000 characters or fewer still stop the run.
 
 `cinematic_chapters` returns a list of chapter records with `source_file`,
 `saved_file` and `sequences`; `saved_files` lists the JSON paths for inspection.
