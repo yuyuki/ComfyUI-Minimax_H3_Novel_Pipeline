@@ -142,3 +142,45 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch):
         },
     }]
     assert saved_files == chapters[0]["saved_file"]
+
+
+@pytest.mark.parametrize("cancel_after_first", [False, True])
+def test_completed_chapter_saved_before_later_failure_or_cancellation(tmp_path, monkeypatch, cancel_after_first):
+    paths = [tmp_path / "chapter1.txt", tmp_path / "chapter2.txt"]
+    for path in paths:
+        path.write_text("Il part. " * 15, encoding="utf-8")
+    output = tmp_path / "output"
+    saved = output / "001_chapter1.cinematic.json"
+    sequences = [{"sequence": 1, "source": "Il part.", "adaptation": {
+        "initialState": "Before.", "event": "1. Action.", "endingState": "After.",
+    }}]
+    completed = False
+    calls = []
+
+    def adapt(*args, **kwargs):
+        nonlocal completed
+        calls.append(args[2])
+        if len(calls) == 2:
+            assert json.loads(saved.read_text(encoding="utf-8")) == sequences
+            raise RuntimeError("second chapter failed")
+        completed = True
+        return sequences
+
+    def interrupt_check():
+        if cancel_after_first and completed:
+            assert json.loads(saved.read_text(encoding="utf-8")) == sequences
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(adapter, "stage_output", lambda *args: output)
+    monkeypatch.setattr(adapter.lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "mock"))
+    monkeypatch.setattr(adapter.lmstudio_pipeline, "comfy_interrupt_check", interrupt_check)
+    monkeypatch.setattr(adaptation, "adapt_chapter", adapt)
+
+    with pytest.raises(KeyboardInterrupt if cancel_after_first else RuntimeError):
+        adapter.CinematicChapterAdapterNode().run(
+            {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(path) for path in paths]},
+        )
+    assert json.loads(saved.read_text(encoding="utf-8")) == sequences
+    assert not (output / "002_chapter2.cinematic.json").exists()
+    assert len(calls) == (1 if cancel_after_first else 2)

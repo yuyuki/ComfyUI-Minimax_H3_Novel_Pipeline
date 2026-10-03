@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Save completed cinematic chapter JSON before progress updates or cancellation
+  checks; verify saved chapters survive later failures and cancellation offline.
+
 - Recover from invalid cinematic adaptation responses on long passages by retrying
   smaller passages with strict source coverage, sequential state continuity and
   bounded recovery; add offline regression coverage.
