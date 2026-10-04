@@ -141,6 +141,77 @@ def test_persistently_missing_link_kind_is_not_guessed_or_dropped(monkeypatch):
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("sequence,phase", [(None, None), (None, "event"), (1, None)])
+@pytest.mark.parametrize("status,target", [("proposed", "LOCAL_3"), ("unresolved", None)])
+def test_missing_attribution_scope_uses_unique_source_observation(sequence, phase, status, target):
+    source = chapters()
+    before = deepcopy(source)
+    link = decision(status=status, target=target)
+    calls = []
+
+    def chat(*args):
+        calls.append(args)
+        return {"entities": manifest(source)["entities"],
+                "links": [{**link, "sequence": sequence, "phase": phase}]}
+
+    result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=8000))
+    assert len(calls) == 1
+    assert result["links"] == [link]
+    assert source == before
+    links.validate_links(result, source)
+
+
+@pytest.mark.parametrize("sequence,phase", [(None, None), (9, None), (None, "initialState")])
+def test_ambiguous_or_conflicting_attribution_scope_retries_with_source_scopes(sequence, phase):
+    source = chapters()
+    states = source[0]["characters"][1]["state_by_sequence"]
+    states["2"] = deepcopy(states["1"])
+    link = decision(status="proposed")
+    calls = []
+
+    def chat(client, model, system, user, *args):
+        calls.append(user)
+        if len(calls) == 1:
+            return {"entities": manifest(source)["entities"],
+                    "links": [{**link, "sequence": sequence, "phase": phase}]}
+        assert "attribution requires an integer sequence and a phase" in user
+        assert 'valid source scopes: [{"sequence": 1, "phase": "event"}, {"sequence": 2, "phase": "event"}]' in user
+        assert "LOCAL_2" in user
+        return {"entities": manifest(source)["entities"], "links": [deepcopy(link)]}
+
+    result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=8000))
+    assert len(calls) == 2
+    assert result["links"] == [link]
+    links.validate_links(result, source)
+
+
+def test_persistently_ambiguous_attribution_scope_is_not_guessed(monkeypatch):
+    from minimax_h3_novel_pipeline import lmstudio_json
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    source = chapters()
+    states = source[0]["characters"][1]["state_by_sequence"]
+    states["2"] = deepcopy(states["1"])
+    calls = []
+
+    def chat(*args):
+        calls.append(args)
+        return {"entities": manifest(source)["entities"],
+                "links": [{**decision(status="unresolved", target=None), "sequence": None, "phase": None}]}
+
+    with pytest.raises(ValueError, match="bounded retries:.*attribution requires an integer sequence"):
+        links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=8000))
+    assert len(calls) == 2
+
+
+def test_imported_attribution_null_scope_remains_invalid():
+    source = chapters()
+    document = manifest(source)
+    document["links"] = [{**decision(), "sequence": None, "phase": None}]
+    with pytest.raises(ValueError, match=r"links\[0\].sequence"):
+        links.validate_links(document, source)
+
+
 def test_imported_identity_sequence_remains_invalid():
     source = chapters()
     document = links.document(source)

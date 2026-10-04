@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Complete missing model attribution scope only from a unique matching source
+  observation; explain ambiguous scopes on retries and keep import validation strict.
+
 - Include the complete reference-link response schema in model instructions,
   including required `kind` values; cover missing-kind retries without guessing
   or dropping links.

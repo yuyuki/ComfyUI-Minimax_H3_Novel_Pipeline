@@ -30,7 +30,9 @@ Use only supplied addresses. Source must belong to the current chapter; targets 
 belong to any supplied chapter. Never link an entity to itself.
 identity: relation=same_as, sequence=null, phase=null, target required.
 attribution: use a precise relation such as emitted_by for a cry or describes for
-a descriptive aspect; exact source sequence and phase required. Target may be null
+a descriptive aspect; exact source sequence and phase required, even for unresolved
+links or unknown targets. Copy an integer sequence and phase from the source's
+state_by_sequence; never use null for either attribution field. Target may be null
 when unknown. A later reply is not proof of the original sound's author. Attempt
 contextual attachment for every manifestation; leave ambiguity unresolved.
 relation: a concise relationship label; scope temporary facts to sequence and phase,
@@ -156,10 +158,31 @@ def load_links(path, chapters):
     return payload
 
 
+def complete_attribution_scope(link, index, label):
+    """Complete only unambiguous missing model scope; never guess an observation."""
+    source = index.get(address(link["source"]))
+    if source is None:
+        raise ValueError(f"{label}: unknown source address.")
+    scopes = [{"sequence": int(seq), "phase": phase}
+              for seq, phases in source[1]["state_by_sequence"].items()
+              for phase, observations in phases.items() if observations]
+    candidates = [scope for scope in scopes
+                  if all(link[field] is None or link[field] == scope[field] for field in ("sequence", "phase"))]
+    if len(candidates) == 1:
+        link.update(candidates[0])
+        return
+    raise ValueError(
+        f"{label}: attribution requires an integer sequence and a phase, even when unresolved or target=null. "
+        f"Choose the source observation supported by evidence for {json.dumps(link['source'])}; "
+        f"valid source scopes: {json.dumps(scopes)}. Do not guess or use null."
+    )
+
+
 def prepare_links(chat, client, model, chapters, args, imported=None):
     if imported is not None:
         return deepcopy(imported)
     payload = document(chapters)
+    index = source_index(chapters)
     processed = set()
     for chapter in progress.steps(chapters):
         comfy_interrupt_check()
@@ -181,6 +204,8 @@ def prepare_links(chat, client, model, chapters, args, imported=None):
                     raise ValueError(f"links[{i}]: identity links mean the same entity across all sequences; "
                                      "set sequence=null and phase=null. Keep source evidence in evidence. "
                                      "Use kind=relation only for a narrative relationship between distinct entities.")
+                if link["kind"] == "attribution" and (link["sequence"] is None or link["phase"] is None):
+                    complete_attribution_scope(link, index, f"links[{i}]")
             if {address(e) for e in result["entities"]} != expected:
                 raise ValueError("Return exactly the current chapter entities.")
             if any(l["source"]["chapter_id"] != cid or l["status"] not in {"proposed", "unresolved"} for l in result["links"]):
