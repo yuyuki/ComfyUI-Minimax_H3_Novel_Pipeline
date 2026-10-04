@@ -129,6 +129,12 @@ downstream generation. Keep the schemas beside the editable files for completion
 and error highlighting in a compatible JSON editor. These are unchanged copies
 of the bundled JSON files in `src/schema/`, also used for runtime validation.
 
+If link validation exhausts model retries, an addressable proposal is saved as an
+editable `reference_links.json` draft and generation pauses. Read the displayed error
+or `reference_links_review.txt`, fix the indicated link/classification, and review
+any chapters listed as not yet reviewed. Set `reference_links_path` to the corrected
+file, disable `links_only`, and queue again. Validation must pass before work resumes.
+
 In `reference_links.json`, find the sound's address using the `entities` list.
 The same review handles all contextual references: confirm `identity` / `same_as`
 between “l'homme avec la torche” and the established person, between “la crevasse

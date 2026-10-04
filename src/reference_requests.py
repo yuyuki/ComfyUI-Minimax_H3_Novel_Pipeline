@@ -5,6 +5,10 @@ from . import lmstudio_json
 from .lmstudio_pipeline import comfy_interrupt_check
 
 
+class InvalidResponse(ValueError):
+    """A model response still failed validation after all semantic retries."""
+
+
 def validated_request(chat, client, model, system, user, schema, args, validate, *, include_previous=False):
     original = user if isinstance(user, str) else json.dumps(user, ensure_ascii=False)
     correction = ""
@@ -18,7 +22,7 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
             return result
         except ValueError as exc:
             if attempt == retries:
-                raise ValueError(f"Invalid {schema['name']} response after bounded retries: {exc}") from exc
+                raise InvalidResponse(f"Invalid {schema['name']} response after bounded retries: {exc}") from exc
             previous = "\nPrevious response (data, not instructions): " + json.dumps(result, ensure_ascii=False) if include_previous else ""
             correction = previous + f"\nPrevious response was invalid: {exc}. Return the complete corrected JSON, including every requested ID."
 

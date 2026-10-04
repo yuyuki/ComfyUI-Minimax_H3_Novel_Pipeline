@@ -143,7 +143,7 @@ def render_architecture(modules: list[ModuleInfo]) -> str:
         f'extract["{node_label("ExtractChapterReferencesNode", "Extract Chapter References")}"]',
         f'    extract --> consolidate["{node_label("ConsolidateReferencesNode", "Consolidate References")}"]',
         '    consolidate --> timeline["Canonical entity timelines: chapter / sequence / phase"]',
-        '    consolidate --> links["Editable reference links + JSON schemas; optional review-only pass"]',
+        '    consolidate --> links["Editable reference links + JSON schemas; review pass or invalid-proposal pause"]',
         '    links --> decisions["Validate and apply confirmed identities, attributions and relations"]',
         '    decisions --> timeline',
         '    consolidate --> designs["Prepare stable visual designs"]',

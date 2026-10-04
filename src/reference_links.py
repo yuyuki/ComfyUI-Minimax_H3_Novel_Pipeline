@@ -4,7 +4,7 @@ import json
 
 from . import configuration_snapshot, progress, util
 from .editable_schemas import LINK_SCHEMA, LINK_VERSION, obj, validate_document
-from .reference_requests import validated_request
+from .reference_requests import InvalidResponse, validated_request
 from .reference_timeline import merge_timeline
 from .lmstudio_pipeline import comfy_interrupt_check
 
@@ -131,7 +131,12 @@ def validate_links(payload, chapters):
             if (mentions[src]["classification"] != "manifestation" or seq is None
                     or (dst is not None and mentions[dst]["classification"] != "entity")
                     or (link["status"] == "confirmed" and dst is None)):
-                raise ValueError(f"{label}: attribution requires a manifestation, temporal scope and an entity target when confirmed.")
+                raise ValueError(
+                    f"{label}: attribution requires a manifestation, temporal scope and an entity target when confirmed. "
+                    f"Source {src} classification={mentions[src]['classification']}; "
+                    f"target {dst} classification={mentions[dst]['classification'] if dst else None}; "
+                    f"sequence={seq}, phase={phase}."
+                )
             if link["status"] == "confirmed":
                 scope = (src, seq, phase)
                 if scope in attributions:
@@ -177,6 +182,15 @@ def complete_attribution_scope(link, index, label):
     )
 
 
+class LinksReviewRequired(ValueError):
+    """An addressable draft needs manual correction before it can be used."""
+
+    def __init__(self, message, draft, unprocessed):
+        super().__init__(message)
+        self.draft = deepcopy(draft)
+        self.unprocessed = unprocessed
+
+
 def prepare_links(chat, client, model, chapters, args, imported=None):
     if imported is not None:
         return deepcopy(imported)
@@ -196,6 +210,7 @@ def prepare_links(chat, client, model, chapters, args, imported=None):
         decoded = {}
 
         def check(result):
+            decoded.clear()
             validate_document(result, RESPONSE_SCHEMA["schema"], "reference link proposals")
             ids = [e["id"] for e in result["entities"]]
             if len(ids) != len(set(ids)) or set(ids) != set(current):
@@ -216,19 +231,20 @@ def prepare_links(chat, client, model, chapters, args, imported=None):
                                      f"Supplied IDs: {', '.join(available)}.")
                 link = {**original, "source": {k: available[src][k] for k in ("chapter_id", "local_id")},
                         "target": {k: available[dst][k] for k in ("chapter_id", "local_id")} if dst else None}
+                decisions.append(link)
+            proposed = deepcopy(payload)
+            proposed["entities"] = [e for e in payload["entities"] if e["chapter_id"] != cid] + entities
+            proposed["links"] += decisions
+            decoded.update(proposed)
+            for i, link in enumerate(decisions):
+                label = f"links[{i}] {json.dumps(result['links'][i], ensure_ascii=False)}"
                 if link["kind"] == "identity" and (link["sequence"] is not None or link["phase"] is not None):
                     raise ValueError(f"{label}: identity links mean the same entity across all sequences; "
                                      "set sequence=null and phase=null. Keep source evidence in evidence. "
                                      "Use kind=relation only for a narrative relationship between distinct entities.")
                 if link["kind"] == "attribution" and (link["sequence"] is None or link["phase"] is None):
                     complete_attribution_scope(link, index, label)
-                decisions.append(link)
-            proposed = deepcopy(payload)
-            proposed["entities"] = [e for e in payload["entities"] if e["chapter_id"] != cid] + entities
-            proposed["links"] += decisions
             validate_links(proposed, chapters)
-            decoded.clear()
-            decoded.update(proposed)
 
         # Keep narrative and observation context, replacing local IDs in the model
         # input with the same aliases used by the response contract.
@@ -238,10 +254,16 @@ def prepare_links(chat, client, model, chapters, args, imported=None):
                 entity["id"] = aliases[(cid, entity.pop("local_id"))]
         model_entities = [{"id": key, **{k: v for k, v in entity.items() if k != "local_id"}}
                           for key, entity in available.items()]
-        validated_request(chat, client, model, SYSTEM,
-                          {"chapter": model_chapter, "current_entity_ids": current,
-                           "available_entities": model_entities},
-                          RESPONSE_SCHEMA, args, check, include_previous=True)
+        try:
+            validated_request(chat, client, model, SYSTEM,
+                              {"chapter": model_chapter, "current_entity_ids": current,
+                               "available_entities": model_entities},
+                              RESPONSE_SCHEMA, args, check, include_previous=True)
+        except InvalidResponse as exc:
+            if decoded:
+                raise LinksReviewRequired(str(exc), decoded,
+                                          [c["chapter_id"] for c in chapters if c["chapter_id"] not in processed]) from exc
+            raise
         payload = decoded
     return payload
 

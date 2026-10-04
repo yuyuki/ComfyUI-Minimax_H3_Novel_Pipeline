@@ -17,7 +17,7 @@ flowchart TD
     config["LM Studio Configuration"] --> extract["Extract Chapter References"]
     extract --> consolidate["Consolidate References"]
     consolidate --> timeline["Canonical entity timelines: chapter / sequence / phase"]
-    consolidate --> links["Editable reference links + JSON schemas; optional review-only pass"]
+    consolidate --> links["Editable reference links + JSON schemas; review pass or invalid-proposal pause"]
     links --> decisions["Validate and apply confirmed identities, attributions and relations"]
     decisions --> timeline
     consolidate --> designs["Prepare stable visual designs"]
@@ -227,8 +227,8 @@ flowchart TD
 | `src/pipeline_step3_generate.py` | `lmstudio_json`, `path_access`, `progress`, `prompt_cache`, `util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `dedupe_scenes`, `default_view_order`, `entity_index`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `resolve_continuity`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/prompt_cache.py` | `lmstudio_json` | `fingerprint` |
-| `src/reference_links.py` | `configuration_snapshot`, `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `reference_timeline`, `util` | `address`, `apply_decisions`, `audit_unprotected`, `complete_attribution_scope`, `document`, `load_links`, `plan`, `prepare_links`, `source_index`, `validate_links` |
-| `src/reference_requests.py` | `lmstudio_json`, `lmstudio_pipeline` | `validate_assets`, `validated_request` |
+| `src/reference_links.py` | `configuration_snapshot`, `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `reference_timeline`, `util` | `LinksReviewRequired`, `address`, `apply_decisions`, `audit_unprotected`, `complete_attribution_scope`, `document`, `load_links`, `plan`, `prepare_links`, `source_index`, `validate_links` |
+| `src/reference_requests.py` | `lmstudio_json`, `lmstudio_pipeline` | `InvalidResponse`, `validate_assets`, `validated_request` |
 | `src/reference_timeline.py` | `cinematic_references`, `util` | `merge_timeline`, `refresh_first_occurrence`, `state_at`, `validate_catalogs` |
 | `src/route_access.py` | — | `require_local_request` |
 | `src/run_output.py` | `path_access` | `execution_id`, `reserve_run`, `stage_output` |

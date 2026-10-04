@@ -95,8 +95,22 @@ class ConsolidateReferencesNode:
                        "reference_links_path": params.get("reference_links_path", ""), "links_only": bool(params.get("links_only", False))},
             )
             export_schemas(output)
-            with progress.scope(0, 0.1):
-                links = reference_links.prepare_links(pipeline.chat_json, client, resolved_model, chapters, args, imported_links)
+            try:
+                with progress.scope(0, 0.1):
+                    links = reference_links.prepare_links(pipeline.chat_json, client, resolved_model, chapters, args, imported_links)
+            except reference_links.LinksReviewRequired as exc:
+                util.save_json(output / "reference_links.json", exc.draft)
+                summary = (
+                    f"Reference links need manual correction: {exc}\n"
+                    f"Edit {output / 'reference_links.json'}. Set reference_links_path to that file, "
+                    "disable links_only, and queue again. The edited file must pass validation."
+                )
+                if exc.unprocessed:
+                    summary += (f"\nChapters not reviewed by the model: {', '.join(exc.unprocessed)}. "
+                                "Their entities retain default classifications and have no proposed links; review them manually too.")
+                util.output_path(output / "reference_links_review.txt").write_text(summary, encoding="utf-8")
+                from comfy_execution.graph import ExecutionBlocker
+                return {"ui": {"text": [summary]}, "result": (ExecutionBlocker(None), summary)}
             util.save_json(output / "reference_links.json", links)
             if params.get("links_only", False):
                 configuration_snapshot.complete(snapshot, [output / name for name in (

@@ -541,3 +541,74 @@ def test_invalid_short_id_after_retries_never_becomes_a_saved_decision(monkeypat
     with pytest.raises(ValueError, match="bounded retries:.*unknown target ID 'E99'"):
         links.prepare_links(lambda *args: deepcopy(response), None, "mock", source,
                             SimpleNamespace(temperature=0.1, max_tokens=2000))
+
+
+@pytest.mark.parametrize("links_only", [True, False])
+def test_failed_attribution_exports_editable_draft_and_blocks_generation(tmp_path, monkeypatch, links_only):
+    from minimax_h3_novel_pipeline import lmstudio_json
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(run_output, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
+    source = chapters()
+    source.append(catalog("later"))
+    response = proposal(links.document(source[:1])["entities"], [decision(status="proposed")])
+    calls = []
+
+    def chat(*args):
+        calls.append(args)
+        return deepcopy(response)
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    monkeypatch.setattr(step, "reconcile_chapter", lambda *a: pytest.fail("Invalid links must block consolidation"))
+
+    class Blocker:
+        def __init__(self, message):
+            self.message = message
+
+    monkeypatch.setitem(sys.modules, "comfy_execution.graph", SimpleNamespace(ExecutionBlocker=Blocker))
+    args = {key: spec[1]["default"] for section in ConsolidateReferencesNode.INPUT_TYPES().values()
+            for key, spec in section.items() if len(spec) > 1 and "default" in spec[1]}
+    args["links_only"] = links_only
+    config = {"api_url": "http://127.0.0.1:1234/v1", "thinking": False, "run_folder": "20261004140000"}
+    result = ConsolidateReferencesNode().run(source, config, **args)
+    blocker, summary = result["result"]
+    assert isinstance(blocker, Blocker)
+    assert result["ui"] == {"text": [summary]}
+    assert "classification=entity" in summary
+    assert "Chapters not reviewed by the model: later" in summary
+    assert "reference_links_path" in summary
+    assert len(calls) == 2
+    output = tmp_path / config["run_folder"] / "references"
+    path = output / "reference_links.json"
+    draft = util.load_json(path)
+    assert draft["links"] == [decision(status="proposed")]
+    assert len(draft["entities"]) == 5
+    assert (output / "reference_links.schema.json").is_file()
+    assert (output / "reference_links_review.txt").read_text(encoding="utf-8") == summary
+    assert not (output / "consolidated_references.json").exists()
+    with pytest.raises(ValueError, match="attribution requires"):
+        links.load_links(str(path), source)
+    next(e for e in draft["entities"] if links.address(e) == ("chapter", "LOCAL_2"))["classification"] = "manifestation"
+    util.save_json(path, draft)
+    imported = links.load_links(str(path), source)
+    assert links.prepare_links(lambda *a: pytest.fail("Imported draft needs no new proposals"),
+                               None, "mock", source, None, imported) == draft
+
+
+def test_failed_later_chapter_preserves_earlier_links(monkeypatch):
+    from minimax_h3_novel_pipeline import lmstudio_json
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 0)
+    source = chapters() + [catalog("later")]
+    first = proposal(manifest(source[:1])["entities"], [decision(status="proposed")])
+    later = {"entities": [{"id": "E5", "classification": "entity"}],
+             "links": [{**decision(status="proposed"), "source": "E5", "target": "E3"}]}
+    responses = iter([first, later])
+    with pytest.raises(links.LinksReviewRequired) as caught:
+        links.prepare_links(lambda *a: next(responses), None, "mock", source,
+                            SimpleNamespace(temperature=0.1, max_tokens=2000))
+    assert caught.value.draft["links"][0] == decision(status="proposed")
+    assert len(caught.value.draft["links"]) == 2
+    assert caught.value.unprocessed == []

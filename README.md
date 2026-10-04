@@ -358,6 +358,17 @@ entity names and evidence, and edit the decisions. Set `reference_links_path` to
 that file (inside `output/minimax_h3_novel`), disable `links_only`, and queue again.
 File-content changes invalidate the node cache even when the path is unchanged.
 
+If model retries still produce invalid links with known source addresses, consolidation
+saves the draft as `reference_links.json` and pauses downstream generation, even with
+`links_only` disabled. The displayed error and `reference_links_review.txt` explain
+what failed and list any chapters the model has not reviewed. Correct the draft,
+review those remaining chapters, and import it using `reference_links_path` as above.
+Imported files still undergo full validation. For an attribution, the source must
+be classified as `manifestation`, any target as `entity`, and `sequence`/`phase`
+must identify an actual source observation. Remove an unsupported link instead
+of inventing an attribution. Malformed responses or unknown IDs still fail retries;
+they cannot be converted into an editable source-addressed draft.
+
 - `entities[].classification`: `entity` for real people (including unnamed guards),
   places and objects; `manifestation` for non-independent sounds, actions, sensations
   or descriptive fragments mistakenly extracted as entities of any type.
