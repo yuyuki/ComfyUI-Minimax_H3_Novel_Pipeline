@@ -1,4 +1,4 @@
-"""Compatibility exports and ComfyUI mappings for the MiniMax H3 nodes."""
+"""Node exports and ComfyUI mappings for the MiniMax H3 nodes."""
 from __future__ import annotations
 
 from .consolidate_references import ConsolidateReferencesNode

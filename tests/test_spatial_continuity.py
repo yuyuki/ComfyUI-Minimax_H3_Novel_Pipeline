@@ -5,15 +5,9 @@ from minimax_h3_novel_pipeline.spatial_continuity import SpatialContinuityNode
 from minimax_h3_novel_pipeline import pipeline_step3_generate as generate
 
 
-def test_anchors_validate_and_preserve_operator_text():
-    node = SpatialContinuityNode()
-    payload, summary = node.run('{"tablet.wall": "right wall"}')
-    assert payload["anchors"] == {"tablet.wall": "right wall"}
-    assert "tablet.wall: right wall" in summary
-    with pytest.raises(ValueError, match="JSON object"):
-        node.run("[]")
-    with pytest.raises(ValueError, match="Invalid spatial anchors JSON"):
-        node.run("{")
+def test_removed_anchor_argument_is_rejected():
+    with pytest.raises(TypeError):
+        SpatialContinuityNode().run(anchors_json='{"tablet.wall": "right wall"}')
 
 
 def test_resolver_receives_future_and_previous_without_mixing_facts(monkeypatch):

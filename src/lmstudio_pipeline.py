@@ -20,7 +20,7 @@ _SCRIPT_FILES = {
 
 @lru_cache(maxsize=None)
 def load(step: str) -> ModuleType:
-    """Import the packaged stage; historical scripts are never searched."""
+    """Import the bundled stage from the active package."""
     return importlib.import_module(f".{Path(_SCRIPT_FILES[step]).stem}", __package__)
 
 

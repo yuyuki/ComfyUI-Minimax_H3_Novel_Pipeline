@@ -5,36 +5,6 @@ const ACCEPTED = ".txt,.md,.markdown,.pdf";
 const CHAPTER_EXTENSIONS = new Set(ACCEPTED.split(","));
 const PICKER_BUTTON_NAME = "saved_chapter_picker";
 
-app.registerExtension({
-    name: "minimax_h3_novel.config_migration",
-    beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== "LMStudioConfigurationNode") return;
-        const configure = nodeType.prototype.configure;
-        nodeType.prototype.configure = function (info) {
-            let values = info.widgets_values;
-            // Migrate both legacy layouts: with both shared limits, or chunk cap only.
-            if (Array.isArray(values) && values.length === 8) {
-                values = [...values.slice(0, 2), ...values.slice(3)];
-            }
-            if (Array.isArray(values) && values.length === 7 && typeof values[6] !== "string") {
-                values = [...values.slice(0, 3), ...values.slice(4)];
-                info = { ...info, widgets_values: values };
-            }
-            if (Array.isArray(values) && values.length === 6) {
-                info = { ...info, widgets_values: [...values, "Qwen"] };
-            }
-            if (info.widgets_values_named) {
-                const named = { ...info.widgets_values_named };
-                named.model_family ??= "Qwen";
-                delete named.qwen35_max_output_tokens;
-                delete named.qwen35_safe_chunk_chars;
-                info = { ...info, widgets_values_named: named };
-            }
-            return configure?.apply(this, [info]);
-        };
-    },
-});
-
 function localFetch(url, options = {}) {
     const headers = new Headers(options.headers);
     headers.set("X-MiniMax-H3-Request", "1");

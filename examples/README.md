@@ -29,8 +29,7 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    References** and **Generate H3 Prompts**. Connect configuration to all three.
    Optionally turn on `enable_spatial_continuity` in **Generate H3 Prompts** to enable
    automatic staging and model checks of consistency between scenes. No JSON input
-   is needed. To keep real layout constraints from the old `anchors_json` widget,
-   add them to the location's `added_details.layout` in `visual_designs.json` and
+   is needed. Define layout constraints to the location's `added_details.layout` in `visual_designs.json` and
    import that file through Consolidate.
    Generate checks final prompts after camera refinement, corrects contradictions
    within `repair_attempts`, and records unresolved issues as validation warnings.
@@ -141,9 +140,10 @@ moments. Rerun Generate to replace earlier compressed scene plans and prompts.
 ## Cinematic preprocessing
 
 Use **Cinematic Chapter Adapter** or **Load Cinematic Chapters** for the
-cinematic extraction workflow. **Novel Cinematic Simplifier** and
-**Narrative Continuity** have been removed; delete these nodes from older workflows.
-Generate retains its optional `cinematic_narrative` input for compatible bundles.
+cinematic extraction workflow. Generate uses selected source chapters and the
+current consolidated registry, with optional spatial continuity.
+Recreate older configuration nodes and use relative `out_dir` subfolders;
+old widget layouts, narrative bundles and absolute output paths are unsupported.
 
 ### Extraction timeline contract
 

@@ -44,18 +44,12 @@ def reserve_run() -> str:
 
 
 def stage_output(config: dict, value: str) -> Path:
-    """Legacy absolute output paths become subfolders of the current run."""
+    """Resolve a relative stage folder inside the configured execution run."""
     if not isinstance(config, dict):
         raise TypeError("lmstudio_config must come from LM Studio Configuration.")
-    relative = output_path(value).relative_to(storage_root("output"))
-    # A pasted previous-run absolute path must not nest its timestamp again.
-    if Path(value).is_absolute() and relative.parts and re.fullmatch(r"\d{14}", relative.parts[0]):
-        relative = Path(*relative.parts[1:])
+    if Path(value).anchor:
+        raise ValueError("out_dir must be a relative subfolder of the current run.")
     name = config.get("run_folder")
-    if name is None:
-        # Also support programmatic callers using an older configuration dictionary.
-        name = reserve_run()
-        config["run_folder"] = name
     if not isinstance(name, str) or not re.fullmatch(r"\d{14}", name):
         raise ValueError("Invalid run folder; reconnect LM Studio Configuration.")
-    return confined_path(relative, output_path(name))
+    return confined_path(value, output_path(name))

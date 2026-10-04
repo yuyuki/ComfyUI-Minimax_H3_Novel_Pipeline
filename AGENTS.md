@@ -7,6 +7,9 @@
   weaken or bypass requirements.
 - Ask for clarification only when necessary for safety or a material choice.
 - Preserve existing user edits and the scaffold's `src/` layout.
+- Do not retain or introduce legacy code, obsolete formats, migration shims or
+  compatibility paths for removed features. Remove their unused tests and docs;
+  support only the current pipeline contracts.
 
 ## Changelog maintenance
 
@@ -33,8 +36,8 @@
 ## Current architecture
 
 - Root `__init__.py` is the ComfyUI checkout entrypoint. It re-exports mappings
-  from `src/minimax_h3_novel_pipeline` and serves `./web/js`.
-- `src/minimax_h3_novel_pipeline/__init__.py` registers six nodes and four
+  from `src/` and serves `./web/js`.
+- `src/__init__.py` registers ten nodes and four
   local HTTP routes. `nodes.py` exports the node classes.
 - Each node has its own module: `lmstudio_config.py`,
   `extract_chapter_references.py`, `load_chapter_catalogs.py`,
@@ -46,12 +49,10 @@
 - `lmstudio_settings.py` stores the API key in memory and validates the
   trusted endpoint. `route_access.py` enforces direct local browser access.
 - `web/js/minimax_h3_novel.js` implements chapter picking and settings.
-- `external source/` contains historical reference bundles. Do not import
-  them at runtime or edit them as a substitute for changing bundled code.
 
 ## Pipeline entry points
 
-All paths below are relative to `src/minimax_h3_novel_pipeline/`:
+All paths below are relative to `src/`:
 
 | Stage | Node wrapper | Bundled implementation |
 |---|---|---|
@@ -102,6 +103,5 @@ Preserve existing node IDs and socket types for workflow compatibility.
 - Add focused regression coverage for affected behavior; mock network work.
   Tests must run without ComfyUI or a live LM Studio server. Check root
   registration, installed imports and bundled assets after file moves.
-- Lint excludes historical `external source/` bundles. Do not hide failures
-  in the active package. Report live runtime validation separately from
-  offline checks.
+- Do not hide lint failures in the active package. Report live runtime
+  validation separately from offline checks.

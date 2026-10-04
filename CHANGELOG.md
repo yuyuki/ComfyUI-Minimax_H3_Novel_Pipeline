@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Remove old configuration-widget migration, cinematic narrative bundles and their
+  unused state compiler, tests and documentation, plus the removed anchors_json
+  direct-call argument. Require current run configuration and relative output
+  folders; remove stale historical-source references and add a no-legacy rule
+  to AGENTS.md.
+
 - Add Load Cinematic Chapters to resume extraction from saved cinematic chapter
   JSON files or folders, with shared validation, confined paths and natural ordering.
 

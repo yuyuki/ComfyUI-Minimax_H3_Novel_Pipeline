@@ -143,17 +143,17 @@ def test_configuration_nodes_share_run_and_repeat_queues(output_root, monkeypatc
     assert "test-secret" not in json.dumps(first)
 
 
-def test_stage_paths_normalize_legacy_absolute_and_confine(output_root):
+def test_stage_paths_require_current_config_and_relative_subfolder(output_root):
     config = {"run_folder": run_output.reserve_run()}
     target = output_root / config["run_folder"] / "references"
     assert run_output.stage_output(config, "references") == target
-    assert run_output.stage_output(config, str(output_root / "references")) == target
-    assert run_output.stage_output(config, str(output_root / "20250101010101" / "references")) == target
-    for value in ("../escape", str(output_root.parent / "outside"), "C:escape", "references/file:stream"):
+    for value in (str(output_root / "references"), str(output_root / "20250101010101" / "references"), "../escape", str(output_root.parent / "outside"), "C:escape", "references/file:stream"):
         with pytest.raises(ValueError):
             run_output.stage_output(config, value)
-    with pytest.raises(ValueError):
-        run_output.stage_output({"run_folder": "../bad"}, "references")
+    for invalid in ({}, {"run_folder": "../bad"}):
+        with pytest.raises(ValueError):
+            run_output.stage_output(invalid, "references")
+        assert "run_folder" not in invalid or invalid["run_folder"] == "../bad"
 
 
 @pytest.mark.parametrize("kind,gid,expected", [

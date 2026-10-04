@@ -94,7 +94,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     assert record["model_controls"]["top_p"] == 0.8
 
 
-@pytest.mark.parametrize("toggle,legacy,expected", [
+@pytest.mark.parametrize("toggle,anchors,expected", [
     (None, None, None),
     (False, None, None),
     (True, None, {}),
@@ -102,7 +102,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     (False, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
     (True, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
 ])
-def test_generate_continuity_toggle_and_legacy_connection(setup, monkeypatch, toggle, legacy, expected):
+def test_generate_continuity_toggle_and_anchor_connection(setup, monkeypatch, toggle, anchors, expected):
     root, config, _ = setup
     pipeline = lmstudio_pipeline.load("generate")
     captured = []
@@ -117,8 +117,8 @@ def test_generate_continuity_toggle_and_legacy_connection(setup, monkeypatch, to
         params.pop("enable_spatial_continuity")  # Existing workflows omit the new widget.
     else:
         params["enable_spatial_continuity"] = toggle
-    if legacy is not None:
-        params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v1", "anchors": legacy}
+    if anchors is not None:
+        params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v1", "anchors": anchors}
     registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "picture_assets": [], "audio_assets": []}
     generate.GenerateH3PromptsNode().run(registry, config, {}, **params)
     assert captured == [expected]
@@ -156,3 +156,8 @@ def test_mistral_records_ignored_qwen_controls_and_normalized_node_settings(setu
     assert record["model_controls"]["request_extra_body"] == {}
     assert record["model_controls"]["chatml_fallback_allowed"] is False
     assert "merge_batch_size" not in record["node_settings"]
+
+
+def test_generate_has_no_obsolete_narrative_socket():
+    inputs = generate.GenerateH3PromptsNode.INPUT_TYPES()
+    assert set(inputs["optional"]) == {"spatial_continuity", "camera_direction"}

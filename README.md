@@ -185,8 +185,7 @@ The existing
 the consolidated references and are reused for scene staging; no extra design
 file needs to be supplied. The model's review is included in the existing chapter
 `manifest.json` under `spatial_continuity` and in each scene's `continuity_review`.
-The former `anchors_json` widget is removed. If an older workflow contained real
-layout constraints, move them into the relevant location's `added_details.layout`
+Define layout constraints in the relevant location's `added_details.layout`
 in `visual_designs.json`, then import that file through Consolidate before generating.
 Using the configured LM Studio model, Generate plans missing film details against
 the previous state and all later scenes in the chapter. After prompt generation
@@ -362,12 +361,11 @@ src/       Node implementations and bundled pipeline
 web/js/minimax_h3_novel.js           Chapter picker and API-key settings UI
 examples/                           Workflow instructions
 tests/                              Offline regression tests
-external source/                    Historical reference bundles, not runtime code
 ```
 
 The bundled `pipeline_step1_extract.py`, `pipeline_step2_consolidate.py` and
 `pipeline_step3_generate.py` are loaded relative to the Python package.
-They do not require the historical reference bundles. Source checkouts serve
+Source checkouts serve
 `web/js`; built wheels include the same extension inside the Python package.
 
 ## Development and checks
@@ -385,18 +383,17 @@ Tests cover ComfyUI-style registration, frontend paths, installed-package
 imports, bundled step loading, real SDK transport construction, credential
 destination checks and local route access. They require no live LM Studio
 or ComfyUI server. CI runs tests and lint on Python 3.10/3.12 on Linux and
-Windows and builds source/wheel distributions. Lint excludes historical
-`external source/` bundles.
+Windows and builds source/wheel distributions.
 
-For a live smoke test, restart ComfyUI, confirm all seven nodes appear under
+For a live smoke test, restart ComfyUI, confirm all ten nodes appear under
 **MiniMax H3 Novel**, upload a short chapter, configure LM Studio, and run
 Extract â†’ Consolidate â†’ Generate. Check the saved JSON and confirm Stop
 interrupts a running request.
 
 License: [GNU GPL v3](LICENSE).
 
-Registry releases use `.comfyignore` to omit tests, development tools and historical
-sources while retaining runtime code, browser assets, documentation and examples.
+Registry releases use `.comfyignore` to omit tests and development tools while
+retaining runtime code, browser assets, documentation and examples.
 The publish workflow checks the uploaded version for up to roughly ten minutes.
 Only an active, non-deprecated version passes; flagged releases include the registry's
 findings and a manual-review issue draft in the Actions summary. The workflow does
@@ -416,9 +413,10 @@ Only current v4 chapter catalogs and registries are accepted; consolidation requ
 ## Cinematic preprocessing
 
 Use **Cinematic Chapter Adapter** or **Load Cinematic Chapters** for the
-cinematic extraction workflow. **Novel Cinematic Simplifier** and
-**Narrative Continuity** have been removed; delete these nodes from older workflows.
-Generate retains its optional `cinematic_narrative` input for compatible bundles.
+cinematic extraction workflow. Generate uses selected source chapters and the
+current consolidated registry, with optional spatial continuity.
+Recreate older configuration nodes and use relative `out_dir` subfolders;
+old widget layouts, narrative bundles and absolute output paths are unsupported.
 
 ### Extraction timeline contract
 

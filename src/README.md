@@ -5,4 +5,3 @@ configuration, node usage and development checks, and
 [workflow examples](../../examples/README.md) for wiring.
 
 This package contains the node wrappers and the three bundled pipeline steps.
-Historical scripts under `external source/` are not runtime dependencies.
