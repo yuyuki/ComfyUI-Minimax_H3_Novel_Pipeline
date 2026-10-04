@@ -19,6 +19,10 @@ def _default_output_dir() -> str:
     return "references"
 
 
+def _default_reference_links_path() -> str:
+    return "references/reference_links.json"
+
+
 def _log(message: str) -> None:
     print(f"[minimax_h3_novel] {message}", flush=True)
 
@@ -45,7 +49,7 @@ class ConsolidateReferencesNode:
         }, "optional": {
             "image_style": (list(IMAGE_STYLES), {"default": "realistic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional existing visual_designs.json to import inside output/minimax_h3_novel. Leave empty on the first run; consolidation saves this file automatically."}),
-            "reference_links_path": ("STRING", {"default": "", "tooltip": "Edited reference_links.json inside output/minimax_h3_novel. Confirmed decisions override automatic identity matching."}),
+            "reference_links_path": ("STRING", {"default": _default_reference_links_path(), "tooltip": "Default: references/reference_links.json inside the current timestamped run, like out_dir. Generates proposals if the default file does not exist. After review, the saved path replaces the default so you can edit and resume. Other paths import files inside output/minimax_h3_novel."}),
             "links_only": ("BOOLEAN", {"default": True, "tooltip": "Save editable links and schemas, then block downstream generation until a full consolidation run."}),
             "image_asset_scope": (["all entities", "existing priority threshold"], {"default": "all entities"}),
         }}
@@ -59,6 +63,9 @@ class ConsolidateReferencesNode:
     @classmethod
     def IS_CHANGED(cls, **params):
         # ComfyUI must rerun when the contents of an imported file change.
+        if params.get("reference_links_path", "").strip() == _default_reference_links_path():
+            # The run is allocated when LM Studio Configuration executes.
+            return float("nan")
         return tuple(configuration_snapshot.file_digest(util.output_path(params[key].strip()))
                      if params.get(key, "").strip() else ""
                      for key in ("reference_links_path", "visual_designs_path"))
@@ -69,7 +76,11 @@ class ConsolidateReferencesNode:
         if not chapters: raise ValueError("No chapter catalogs were supplied.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
         validate_catalogs(chapters)
-        imported_links = reference_links.load_links(params.get("reference_links_path", ""), chapters)
+        links_path = params.get("reference_links_path", _default_reference_links_path()).strip()
+        if links_path == _default_reference_links_path():
+            default_path = stage_output(lmstudio_config, links_path)
+            links_path = str(default_path) if default_path.exists() else ""
+        imported_links = reference_links.load_links(links_path, chapters)
         designs_path = resolve_designs_path(params.get("visual_designs_path", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
@@ -110,14 +121,16 @@ class ConsolidateReferencesNode:
                                 "Their entities retain default classifications and have no proposed links; review them manually too.")
                 util.output_path(output / "reference_links_review.txt").write_text(summary, encoding="utf-8")
                 from comfy_execution.graph import ExecutionBlocker
-                return {"ui": {"text": [summary]}, "result": (ExecutionBlocker(None), summary)}
+                return {"ui": {"text": [summary], "reference_links_path": [str(output / "reference_links.json")]},
+                        "result": (ExecutionBlocker(None), summary)}
             util.save_json(output / "reference_links.json", links)
             if params.get("links_only", False):
                 configuration_snapshot.complete(snapshot, [output / name for name in (
                     "reference_links.json", "reference_links.schema.json", "visual_designs.schema.json")])
                 from comfy_execution.graph import ExecutionBlocker
                 summary = f"Edit {output / 'reference_links.json'}, then import it and disable links_only."
-                return {"ui": {"text": [summary]}, "result": (ExecutionBlocker(None), summary)}
+                return {"ui": {"text": [summary], "reference_links_path": [str(output / "reference_links.json")]},
+                        "result": (ExecutionBlocker(None), summary)}
             identity_chapters, protected, groups, manifestations = reference_links.plan(chapters, links)
             args.protected_reference_sources = protected
             registry: list[dict[str, Any]] = []

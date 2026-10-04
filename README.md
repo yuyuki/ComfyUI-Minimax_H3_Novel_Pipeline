@@ -357,6 +357,14 @@ so downstream generation does not run. Open `reference_links.json`, check the
 entity names and evidence, and edit the decisions. Set `reference_links_path` to
 that file (inside `output/minimax_h3_novel`), disable `links_only`, and queue again.
 File-content changes invalidate the node cache even when the path is unchanged.
+`reference_links_path` defaults to `references/reference_links.json`, resolved
+inside the current timestamped run like `out_dir`. If that default file does not
+exist, consolidation generates proposals. After review or a validation pause, the
+default (or an empty field) is replaced with the saved file's exact path so the
+next run imports your edits. Custom import paths are preserved and remain relative
+to `output/minimax_h3_novel`, or absolute paths confined inside that folder.
+After the review pass or a validation pause, an empty `reference_links_path` field
+automatically fills with the saved file's path. An existing path is preserved.
 
 If model retries still produce invalid links with known source addresses, consolidation
 saves the draft as `reference_links.json` and pauses downstream generation, even with

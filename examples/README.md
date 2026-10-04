@@ -128,6 +128,13 @@ Consolidate's `links_only` is enabled by default for a two-pass identity review.
 downstream generation. Keep the schemas beside the editable files for completion
 and error highlighting in a compatible JSON editor. These are unchanged copies
 of the bundled JSON files in `src/schema/`, also used for runtime validation.
+`reference_links_path` defaults to `references/reference_links.json` inside the
+current timestamped run, like `out_dir`. A missing default file starts proposal
+generation. After review or a validation pause, the default (or an empty field)
+is replaced with the saved file's exact path for importing edits on the next run.
+Custom import paths are preserved.
+An empty `reference_links_path` fills automatically with the saved file's path
+after review or a validation pause; paths you have already entered are preserved.
 
 If link validation exhausts model retries, an addressable proposal is saved as an
 editable `reference_links.json` draft and generation pauses. Read the displayed error

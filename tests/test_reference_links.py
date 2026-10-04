@@ -350,7 +350,7 @@ def test_links_only_exports_and_import_errors_precede_model_calls(tmp_path, monk
     monkeypatch.setitem(sys.modules, "comfy_execution.graph", SimpleNamespace(ExecutionBlocker=Blocker))
     response = ConsolidateReferencesNode().run(source, config, **args)
     result, summary = response["result"]
-    assert response["ui"] == {"text": [summary]}
+    assert response["ui"] == {"text": [summary], "reference_links_path": [str(tmp_path / config["run_folder"] / "references/reference_links.json")]}
     assert isinstance(result, Blocker) and "reference_links.json" in summary
     output = tmp_path / config["run_folder"] / "references"
     assert util.load_json(output / "reference_links.json") == document
@@ -575,7 +575,7 @@ def test_failed_attribution_exports_editable_draft_and_blocks_generation(tmp_pat
     result = ConsolidateReferencesNode().run(source, config, **args)
     blocker, summary = result["result"]
     assert isinstance(blocker, Blocker)
-    assert result["ui"] == {"text": [summary]}
+    assert result["ui"] == {"text": [summary], "reference_links_path": [str(tmp_path / config["run_folder"] / "references/reference_links.json")]}
     assert "classification=entity" in summary
     assert "Chapters not reviewed by the model: later" in summary
     assert "reference_links_path" in summary
@@ -612,3 +612,38 @@ def test_failed_later_chapter_preserves_earlier_links(monkeypatch):
     assert caught.value.draft["links"][0] == decision(status="proposed")
     assert len(caught.value.draft["links"]) == 2
     assert caught.value.unprocessed == []
+
+
+def test_default_links_path_imports_from_current_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(run_output, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
+    monkeypatch.setattr(step, "chat_json", lambda *a: pytest.fail("Existing default must be imported"))
+    source = chapters()
+    document = manifest(source)
+    config = {"api_url": "http://127.0.0.1:1234/v1", "thinking": False, "run_folder": "20261004150000"}
+    args = {key: spec[1]["default"] for section in ConsolidateReferencesNode.INPUT_TYPES().values()
+            for key, spec in section.items() if len(spec) > 1 and "default" in spec[1]}
+    assert args["reference_links_path"] == "references/reference_links.json"
+    path = tmp_path / config["run_folder"] / args["reference_links_path"]
+    util.save_json(path, document)
+    # A similarly named file outside this run must never be selected.
+    util.save_json(tmp_path / args["reference_links_path"], {"source_digest": "wrong"})
+
+    class Blocker:
+        def __init__(self, message):
+            self.message = message
+
+    monkeypatch.setitem(sys.modules, "comfy_execution.graph", SimpleNamespace(ExecutionBlocker=Blocker))
+    response = ConsolidateReferencesNode().run(source, config, **args)
+    assert isinstance(response["result"][0], Blocker)
+    assert response["ui"]["reference_links_path"] == [str(path)]
+    assert util.load_json(path) == document
+    document["source_digest"] = "wrong"
+    util.save_json(path, document)
+    monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: pytest.fail("Validate before inference"))
+    with pytest.raises(ValueError, match="source_digest"):
+        ConsolidateReferencesNode().run(source, config, **args)
+    args["reference_links_path"] = "missing/custom.json"
+    with pytest.raises(ValueError, match="must point to an existing"):
+        ConsolidateReferencesNode().run(source, config, **args)

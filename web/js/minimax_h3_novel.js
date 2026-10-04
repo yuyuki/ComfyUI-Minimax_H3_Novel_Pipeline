@@ -332,44 +332,29 @@ app.registerExtension({
     },
 });
 
-function installReferenceLinksVisibility(node) {
+function installReferenceLinksPath(node) {
     if (node.comfyClass !== "ConsolidateReferencesNode") return;
-    const linksOnly = widget(node, "links_only");
     const linksPath = widget(node, "reference_links_path");
-    if (!linksOnly || !linksPath) return;
-    const originalType = linksPath.type;
-    const originalComputeSize = linksPath.computeSize;
-    const updateVisibility = () => {
-        linksPath.type = linksOnly.value ? originalType : "hidden";
-        if (linksOnly.value) {
-            if (originalComputeSize) linksPath.computeSize = originalComputeSize;
-            else delete linksPath.computeSize;
-        } else {
-            linksPath.computeSize = () => [0, -4];
+    if (!linksPath) return;
+    const originalOnExecuted = node.onExecuted;
+    node.onExecuted = function(message) {
+        const result = originalOnExecuted?.apply(this, arguments);
+        const savedPath = message?.reference_links_path?.[0];
+        const currentPath = String(linksPath.value ?? "").trim();
+        if ((!currentPath || currentPath === "references/reference_links.json")
+                && typeof savedPath === "string" && savedPath.trim()) {
+            linksPath.value = savedPath;
+            linksPath.callback?.(savedPath);
+            app.graph?.setDirtyCanvas(true, true);
         }
-        // Keep the imported path for the full consolidation after links_only is disabled.
-        node.setSize(node.computeSize());
-        app.graph?.setDirtyCanvas(true, true);
-    };
-    const originalCallback = linksOnly.callback;
-    linksOnly.callback = function(...args) {
-        const result = originalCallback?.apply(this, args);
-        updateVisibility();
         return result;
     };
-    const originalOnConfigure = node.onConfigure;
-    node.onConfigure = function(...args) {
-        const result = originalOnConfigure?.apply(this, args);
-        updateVisibility();
-        return result;
-    };
-    updateVisibility();
 }
 
 app.registerExtension({
-    name: "minimax_h3_novel.reference_links_visibility",
+    name: "minimax_h3_novel.reference_links_path",
     nodeCreated(node) {
-        installReferenceLinksVisibility(node);
+        installReferenceLinksPath(node);
     },
 });
 
