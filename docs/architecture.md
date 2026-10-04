@@ -14,15 +14,15 @@ flowchart TD
     adapted --> extract
     adapted --> loader["Load Cinematic Chapters"]
     loader --> extract
-    config["LM Studio configuration"] --> extract["1. Extract chapter references"]
-    extract --> consolidate["2. Consolidate references"]
+    config["LM Studio Configuration"] --> extract["Extract Chapter References"]
+    extract --> consolidate["Consolidate References"]
     consolidate --> timeline["Canonical entity timelines: chapter / sequence / phase"]
     consolidate --> designs["Prepare stable visual designs"]
-    designs --> generate["3. Generate H3 prompts"]
+    designs --> generate["Generate H3 Prompts"]
     consolidate --> generate
-    novel["Novel prose"] --> normalize["Optional cinematic normalization"]
+    novel["Novel prose"] --> normalize["Novel Cinematic Simplifier"]
     config --> normalize
-    normalize --> state["Narrative continuity: indexed events and deterministic replay"]
+    normalize --> state["Narrative Continuity<br/>indexed events and deterministic replay"]
     novel --> state
     config --> state
     state --> generate
@@ -36,29 +36,31 @@ The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM S
 
 ## Internal module dependencies
 
+Only modules with incoming or outgoing internal dependency edges are shown. Labels include registered ComfyUI node names.
+
 ```mermaid
 flowchart TD
     m_package_init["package_init"]
-    m_chapter_selection["chapter_selection"]
+    m_chapter_selection["chapter_selection<br/>Select Chapters"]
     m_cinematic_adaptation["cinematic_adaptation"]
-    m_cinematic_chapter_adapter["cinematic_chapter_adapter"]
+    m_cinematic_chapter_adapter["cinematic_chapter_adapter<br/>Cinematic Chapter Adapter"]
     m_cinematic_references["cinematic_references"]
     m_configuration_snapshot["configuration_snapshot"]
-    m_consolidate_references["consolidate_references"]
-    m_extract_chapter_references["extract_chapter_references"]
-    m_generate_h3_prompts["generate_h3_prompts"]
+    m_consolidate_references["consolidate_references<br/>Consolidate References"]
+    m_extract_chapter_references["extract_chapter_references<br/>Extract Chapter References"]
+    m_generate_h3_prompts["generate_h3_prompts<br/>Generate H3 Prompts"]
     m_image_prompt_export["image_prompt_export"]
-    m_lmstudio_config["lmstudio_config"]
+    m_lmstudio_config["lmstudio_config<br/>LM Studio Configuration"]
     m_lmstudio_json["lmstudio_json"]
     m_lmstudio_model_mistral["lmstudio_model_mistral"]
     m_lmstudio_model_qwen["lmstudio_model_qwen"]
     m_lmstudio_models["lmstudio_models"]
     m_lmstudio_pipeline["lmstudio_pipeline"]
     m_lmstudio_settings["lmstudio_settings"]
-    m_load_chapter_catalogs["load_chapter_catalogs"]
-    m_load_cinematic_chapters["load_cinematic_chapters"]
-    m_load_consolidated_references["load_consolidated_references"]
-    m_narrative_nodes["narrative_nodes"]
+    m_load_chapter_catalogs["load_chapter_catalogs<br/>Load Chapter Catalogs"]
+    m_load_cinematic_chapters["load_cinematic_chapters<br/>Load Cinematic Chapters"]
+    m_load_consolidated_references["load_consolidated_references<br/>Load Consolidated References"]
+    m_narrative_nodes["narrative_nodes<br/>Narrative Continuity<br/>Novel Cinematic Simplifier"]
     m_narrative_state["narrative_state"]
     m_nodes["nodes"]
     m_path_access["path_access"]
@@ -71,7 +73,7 @@ flowchart TD
     m_reference_timeline["reference_timeline"]
     m_route_access["route_access"]
     m_run_output["run_output"]
-    m_spatial_continuity["spatial_continuity"]
+    m_spatial_continuity["spatial_continuity<br/>Spatial Continuity"]
     m_util["util"]
     m_visual_designs["visual_designs"]
     m_package_init --> m_lmstudio_settings

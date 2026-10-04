@@ -20,6 +20,7 @@ class ModuleInfo:
     path: str
     dependencies: tuple[str, ...]
     public_symbols: tuple[str, ...]
+    comfyui_nodes: tuple[tuple[str, str], ...] = ()
 
 
 def _module_name(path: Path) -> str:
@@ -40,12 +41,51 @@ def _internal_dependencies(tree: ast.AST, module_names: set[str]) -> tuple[str, 
     return tuple(sorted(dependencies))
 
 
+def _registration_entries(tree: ast.AST, name: str) -> dict[str, ast.expr]:
+    """Read literal registration dictionaries without importing the plugin."""
+    entries: dict[str, ast.expr] = {}
+    for node in ast.walk(tree):
+        value = None
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+                value = node.value
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == name
+            and node.func.attr == "update"
+            and len(node.args) == 1
+        ):
+            value = node.args[0]
+        if isinstance(value, ast.Dict):
+            for key, item in zip(value.keys, value.values):
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    entries[key.value] = item
+    return entries
+
+
+def _comfyui_display_names(tree: ast.AST) -> dict[str, str]:
+    classes = _registration_entries(tree, "NODE_CLASS_MAPPINGS")
+    labels = _registration_entries(tree, "NODE_DISPLAY_NAME_MAPPINGS")
+    names: dict[str, str] = {}
+    for node_id, value in classes.items():
+        class_name = value.attr if isinstance(value, ast.Attribute) else value.id if isinstance(value, ast.Name) else None
+        label = labels.get(node_id)
+        if class_name:
+            names[class_name] = label.value if isinstance(label, ast.Constant) and isinstance(label.value, str) else node_id
+    return names
+
+
 def scan_modules(source_dir: Path = SOURCE_DIR) -> list[ModuleInfo]:
     paths = sorted(source_dir.glob("*.py"))
     module_names = {_module_name(path) for path in paths}
+    trees = {path: ast.parse(path.read_text(encoding="utf-8"), filename=str(path)) for path in paths}
+    display_names = _comfyui_display_names(trees[source_dir / "__init__.py"]) if source_dir / "__init__.py" in trees else {}
     modules: list[ModuleInfo] = []
     for path in paths:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = trees[path]
         public_symbols = sorted(
             node.name
             for node in tree.body
@@ -57,6 +97,11 @@ def scan_modules(source_dir: Path = SOURCE_DIR) -> list[ModuleInfo]:
                 path=path.relative_to(ROOT).as_posix(),
                 dependencies=_internal_dependencies(tree, module_names),
                 public_symbols=tuple(public_symbols),
+                comfyui_nodes=tuple(
+                    (node.name, display_names[node.name])
+                    for node in tree.body
+                    if isinstance(node, ast.ClassDef) and node.name in display_names
+                ),
             )
         )
     return modules
@@ -66,7 +111,16 @@ def _mermaid_id(name: str) -> str:
     return "m_" + "".join(character if character.isalnum() else "_" for character in name)
 
 
+def _mermaid_label(label: str) -> str:
+    return label.replace("&", "#38;").replace('"', "#quot;").replace("<", "#60;").replace(">", "#62;").replace("\n", "<br/>")
+
+
 def render_architecture(modules: list[ModuleInfo]) -> str:
+    display_names = dict(node for module in modules for node in module.comfyui_nodes)
+
+    def node_label(class_name: str, fallback: str) -> str:
+        return _mermaid_label(display_names.get(class_name, fallback))
+
     lines = [
         "# Architecture map",
         "",
@@ -78,21 +132,24 @@ def render_architecture(modules: list[ModuleInfo]) -> str:
         "",
         "```mermaid",
         "flowchart TD",
-        '    selector["Select Chapters"] --> adapter["Cinematic Chapter Adapter"]',
+        f'    selector["{node_label("SelectChaptersNode", "Select Chapters")}"] --> '
+        f'adapter["{node_label("CinematicChapterAdapterNode", "Cinematic Chapter Adapter")}"]',
         '    config --> adapter',
         '    adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]',
         '    adapted --> extract',
-        '    adapted --> loader["Load Cinematic Chapters"]',
+        f'    adapted --> loader["{node_label("LoadCinematicChaptersNode", "Load Cinematic Chapters")}"]',
         '    loader --> extract',
-        '    config["LM Studio configuration"] --> extract["1. Extract chapter references"]',
-        '    extract --> consolidate["2. Consolidate references"]',
+        f'    config["{node_label("LMStudioConfigurationNode", "LM Studio Configuration")}"] --> '
+        f'extract["{node_label("ExtractChapterReferencesNode", "Extract Chapter References")}"]',
+        f'    extract --> consolidate["{node_label("ConsolidateReferencesNode", "Consolidate References")}"]',
         '    consolidate --> timeline["Canonical entity timelines: chapter / sequence / phase"]',
         '    consolidate --> designs["Prepare stable visual designs"]',
-        '    designs --> generate["3. Generate H3 prompts"]',
+        f'    designs --> generate["{node_label("GenerateH3PromptsNode", "Generate H3 Prompts")}"]',
         '    consolidate --> generate',
-        '    novel["Novel prose"] --> normalize["Optional cinematic normalization"]',
+        f'    novel["Novel prose"] --> normalize["{node_label("NovelCinematicSimplifierNode", "Novel Cinematic Simplifier")}"]',
         '    config --> normalize',
-        '    normalize --> state["Narrative continuity: indexed events and deterministic replay"]',
+        f'    normalize --> state["{node_label("NarrativeContinuityNode", "Narrative Continuity")}<br/>'
+        'indexed events and deterministic replay"]',
         '    novel --> state',
         '    config --> state',
         '    state --> generate',
@@ -106,11 +163,17 @@ def render_architecture(modules: list[ModuleInfo]) -> str:
         "",
         "## Internal module dependencies",
         "",
+        "Only modules with incoming or outgoing internal dependency edges are shown. Labels include registered ComfyUI node names.",
+        "",
         "```mermaid",
         "flowchart TD",
     ]
+    connected = {module.name for module in modules if module.dependencies}
+    connected.update(dependency for module in modules for dependency in module.dependencies)
     for module in modules:
-        lines.append(f'    {_mermaid_id(module.name)}["{module.name}"]')
+        if module.name in connected:
+            label = "<br/>".join(_mermaid_label(name) for name in [module.name, *(label for _, label in module.comfyui_nodes)])
+            lines.append(f'    {_mermaid_id(module.name)}["{label}"]')
     for module in modules:
         for dependency in module.dependencies:
             lines.append(f"    {_mermaid_id(module.name)} --> {_mermaid_id(dependency)}")
