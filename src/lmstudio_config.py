@@ -32,8 +32,8 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
                     "default": False,
                     "tooltip": (
                         "Disable thinking for faster structured JSON output. Qwen3.5/3.8 requests "
-                        "also prefill a closed thinking block so LM Studio continues directly "
-                        "with JSON. Check thinking and reasoning_chars in the console to verify "
+                        "retry with a closed thinking block in a raw prompt if the chat template "
+                        "returns reasoning or a thinking-token sampler error. Check thinking and reasoning_chars in the console to verify "
                         "the setting with your model and runtime."
                     ),
                 }),

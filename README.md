@@ -137,18 +137,18 @@ Family-specific request settings live in `src/lmstudio_model_qwen.py` and
 `src/lmstudio_model_mistral.py`. To add a family, implement the same profile
 functions and register the module in `src/lmstudio_models.py`; its name appears
 in the dropdown. Streaming, schema constraints, parsing and cancellation remain
-shared in `src/lmstudio_json.py`. Qwen3.5-specific template recovery remains
-limited to Qwen3.5 model identifiers.
+shared in `src/lmstudio_json.py`. Qwen template recovery supports Qwen3.5 and
+Qwen3.8 model identifiers.
 
 All stages require LM Studio structured JSON output. Keep `thinking=false` for
-extraction without reasoning overhead. For Qwen3.5, requests include an assistant
-prefill containing a closed `<think>` block, in addition to `enable_thinking=false`.
-This asks LM Studio to continue directly with JSON even when it ignores the template
-keyword. If sampler initialization rejects `<think>` with an empty grammar stack,
+extraction without reasoning overhead. Chat requests use `enable_thinking=false`
+without an assistant prefill, which can conflict with the JSON grammar sampler.
+For Qwen3.5 and Qwen3.8, if the template still produces reasoning or sampler
+initialization rejects `<think>` with an empty grammar stack,
 the request retries once through `/v1/completions` with an explicit Qwen ChatML
 prompt and a closed thinking block, keeping the JSON schema enabled. This bypasses
 the server chat template; unrelated API errors still propagate. `thinking=true`
-omits the prefill and does not use this recovery. This applies to all three stages and
+does not use this recovery. This applies to all three stages and
 their compact retries; structured output remains enabled. Configuration also exposes
 output-token caps, compact retries, safe extraction chunk size and sampler
 controls. Requests stream responses and check ComfyUI cancellation between

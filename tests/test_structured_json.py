@@ -145,7 +145,7 @@ def test_stream_stops_at_complete_json():
 @pytest.mark.parametrize("thinking", [False, True])
 @pytest.mark.parametrize("model", ["qwen3.5-9b-uncensored-hauhaucs-aggressive@q6_k",
                                    "Qwen3.8-9B-Distill-Heretic-Uncensored-Q8_0.gguf", "other-model"])
-def test_thinking_control_and_qwen_prefill_survive_retries(monkeypatch, thinking, model):
+def test_thinking_control_without_assistant_prefill_survives_retries(monkeypatch, thinking, model):
     monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", thinking)
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     first, second = Stream(['{"value":']), Stream(['{"value":"ok"}'])
@@ -159,10 +159,7 @@ def test_thinking_control_and_qwen_prefill_survive_retries(monkeypatch, thinking
         messages = request["messages"]
         assert messages[0]["content"].endswith("\n\nsystem")
         assert messages[1]["content"].startswith("user")
-        if model.casefold().startswith("qwen") and not thinking:
-            assert messages[2:] == [{"role": "assistant", "content": "<think>\n\n</think>\n\n"}]
-        else:
-            assert len(messages) == 2
+        assert [message["role"] for message in messages] == ["system", "user"]
         assert request["response_format"]["type"] == "json_schema"
         assert request["max_tokens"] == 200
 
@@ -331,7 +328,8 @@ GRAMMAR_ERROR = (
 
 
 @pytest.mark.parametrize("streamed_error", [False, True])
-def test_thinking_grammar_failure_uses_schema_constrained_chatml(monkeypatch, streamed_error):
+@pytest.mark.parametrize("model", ["qwen3.5", "qwen3.8-9b-distill-heretic-uncensored"])
+def test_thinking_grammar_failure_uses_schema_constrained_chatml(monkeypatch, streamed_error, model):
     import json
 
     monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", False)
@@ -360,8 +358,8 @@ def test_thinking_grammar_failure_uses_schema_constrained_chatml(monkeypatch, st
 
     with OpenAI(api_key="test", base_url="http://localhost:1234/v1", max_retries=0,
                 http_client=httpx.Client(transport=httpx.MockTransport(handle))) as client:
-        assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.2, 200) == {"value": "ok"}
-        assert lmstudio_json.chat_json(client, "qwen3.5", "system", "next user", SCHEMA, 0.2, 200) == {"value": "ok"}
+        assert lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.2, 200) == {"value": "ok"}
+        assert lmstudio_json.chat_json(client, model, "system", "next user", SCHEMA, 0.2, 200) == {"value": "ok"}
     assert [path for path, _ in requests] == ["/v1/chat/completions", "/v1/completions", "/v1/completions", "/v1/completions"]
     assert "next user" in requests[-1][1]["prompt"]
     for _, body in requests:

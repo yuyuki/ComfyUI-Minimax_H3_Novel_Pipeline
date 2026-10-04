@@ -39,8 +39,10 @@ def request_settings(model, system, user, settings):
     extra = {"chat_template_kwargs": {"enable_thinking": thinking}}
     if special:
         extra.update({key: settings[key] for key in ("top_k", "min_p", "repeat_penalty")})
-    if supports_thinking_prefill(model) and not thinking:
-        messages.append({"role": "assistant", "content": "<think>\n\n</think>\n\n"})
+    # LM Studio can feed an assistant prefill into the JSON grammar sampler.
+    # A <think> token is not JSON and can fail sampler initialization before
+    # generation starts. Keep the closed thinking block in raw ChatML only,
+    # where it belongs to the input prompt rather than the assistant response.
     return messages, extra, 0.8 if special else 0.9
 
 
