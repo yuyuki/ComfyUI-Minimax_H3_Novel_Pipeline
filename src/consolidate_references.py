@@ -46,7 +46,7 @@ class ConsolidateReferencesNode:
             "image_style": (list(IMAGE_STYLES), {"default": "realistic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional existing visual_designs.json to import inside output/minimax_h3_novel. Leave empty on the first run; consolidation saves this file automatically."}),
             "reference_links_path": ("STRING", {"default": "", "tooltip": "Edited reference_links.json inside output/minimax_h3_novel. Confirmed decisions override automatic identity matching."}),
-            "links_only": ("BOOLEAN", {"default": False, "tooltip": "Save editable links and schemas, then block downstream generation until a full consolidation run."}),
+            "links_only": ("BOOLEAN", {"default": True, "tooltip": "Save editable links and schemas, then block downstream generation until a full consolidation run."}),
             "image_asset_scope": (["all entities", "existing priority threshold"], {"default": "all entities"}),
         }}
 

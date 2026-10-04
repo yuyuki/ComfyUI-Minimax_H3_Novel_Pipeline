@@ -332,6 +332,47 @@ app.registerExtension({
     },
 });
 
+function installReferenceLinksVisibility(node) {
+    if (node.comfyClass !== "ConsolidateReferencesNode") return;
+    const linksOnly = widget(node, "links_only");
+    const linksPath = widget(node, "reference_links_path");
+    if (!linksOnly || !linksPath) return;
+    const originalType = linksPath.type;
+    const originalComputeSize = linksPath.computeSize;
+    const updateVisibility = () => {
+        linksPath.type = linksOnly.value ? originalType : "hidden";
+        if (linksOnly.value) {
+            if (originalComputeSize) linksPath.computeSize = originalComputeSize;
+            else delete linksPath.computeSize;
+        } else {
+            linksPath.computeSize = () => [0, -4];
+        }
+        // Keep the imported path for the full consolidation after links_only is disabled.
+        node.setSize(node.computeSize());
+        app.graph?.setDirtyCanvas(true, true);
+    };
+    const originalCallback = linksOnly.callback;
+    linksOnly.callback = function(...args) {
+        const result = originalCallback?.apply(this, args);
+        updateVisibility();
+        return result;
+    };
+    const originalOnConfigure = node.onConfigure;
+    node.onConfigure = function(...args) {
+        const result = originalOnConfigure?.apply(this, args);
+        updateVisibility();
+        return result;
+    };
+    updateVisibility();
+}
+
+app.registerExtension({
+    name: "minimax_h3_novel.reference_links_visibility",
+    nodeCreated(node) {
+        installReferenceLinksVisibility(node);
+    },
+});
+
 const LMSTUDIO_API_URL_SETTING = "MiniMaxH3Novel.LMStudio.ApiUrl";
 const DEFAULT_LMSTUDIO_API_URL = "http://127.0.0.1:1234/v1";
 const LMSTUDIO_API_KEY_SETTING = "MiniMaxH3Novel.LMStudio.ApiKey";

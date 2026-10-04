@@ -10,7 +10,41 @@ await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64
 test("frontend registers current features without configuration migration", () => {
     assert.deepEqual(extensions.map((item) => item.name).sort(), [
         "minimax_h3_novel.chapter_picker", "minimax_h3_novel.lmstudio_settings",
+        "minimax_h3_novel.reference_links_visibility",
     ]);
+});
+
+test("reference links path follows links_only on creation, toggles and workflow loading", () => {
+    const extension = extensions.find((item) => item.name === "minimax_h3_novel.reference_links_visibility");
+    const computeSize = () => [200, 20];
+    const path = { name: "reference_links_path", type: "text", value: "", computeSize };
+    let callbacks = 0;
+    let configurations = 0;
+    const toggle = { name: "links_only", value: false, callback() { callbacks++; } };
+    const node = {
+        comfyClass: "ConsolidateReferencesNode", widgets: [path, toggle],
+        computeSize: () => [300, path.type === "hidden" ? 100 : 124],
+        setSize(size) { this.size = size; },
+        onConfigure() { configurations++; toggle.value = true; },
+    };
+    extension.nodeCreated(node);
+    assert.equal(path.type, "hidden");
+    assert.deepEqual(node.size, [300, 100]);
+    assert.deepEqual(path.computeSize(), [0, -4]);
+    toggle.value = true;
+    toggle.callback(true);
+    assert.equal(path.type, "text");
+    assert.equal(path.computeSize, computeSize);
+    assert.deepEqual(node.size, [300, 124]);
+    path.value = "run/references/reference_links.json";
+    toggle.value = false;
+    toggle.callback(false);
+    assert.equal(path.type, "hidden");
+    assert.equal(path.value, "run/references/reference_links.json");
+    assert.equal(callbacks, 2);
+    node.onConfigure({});
+    assert.equal(path.type, "text");
+    assert.equal(configurations, 1);
 });
 
 test("LM Studio settings send the authorized endpoint and key together before queuing", async () => {

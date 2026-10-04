@@ -640,7 +640,8 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
-    response = ConsolidateReferencesNode().run([chapter], config, **node_defaults(ConsolidateReferencesNode))
+    params = {**node_defaults(ConsolidateReferencesNode), "links_only": False}
+    response = ConsolidateReferencesNode().run([chapter], config, **params)
     result, summary = response["result"]
     assert response["ui"] == {"text": [summary]}
     assert ConsolidateReferencesNode.RETURN_TYPES == ("MINIMAX_REGISTRY", "STRING")

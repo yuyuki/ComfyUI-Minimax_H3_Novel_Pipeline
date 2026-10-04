@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Show Consolidate's reference_links_path only while links_only is enabled;
+  enable links_only by default and retain the selected path for the subsequent full consolidation.
+
 - Resolve contextual mentions using previously extracted references; generalize
   editable attributions to descriptive fragments of people, places and objects,
   preserving phase observations without creating extra assets or identity traits.

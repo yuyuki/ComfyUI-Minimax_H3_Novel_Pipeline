@@ -123,7 +123,7 @@ An empty object removes all additions for an entity. Omitted entities are design
 anew. The selected style affects all new reference prompts. Loading a consolidated
 registry preserves its already generated style and prompts.
 
-For a two-pass identity review, enable Consolidate's `links_only`. It saves
+Consolidate's `links_only` is enabled by default for a two-pass identity review. It saves
 `references/reference_links.json` and both `*.schema.json` files, and blocks
 downstream generation. Keep the schemas beside the editable files for completion
 and error highlighting in a compatible JSON editor.

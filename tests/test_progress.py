@@ -172,6 +172,25 @@ def test_workflow_completion_metadata_preserves_socket_values(bars, execution_co
     assert all(bar.values == [0, 55, 100] for bar in bars)
 
 
+@pytest.mark.parametrize("name", [
+    "ExtractChapterReferencesNode", "ConsolidateReferencesNode",
+    "CinematicChapterAdapterNode", "GenerateH3PromptsNode",
+])
+def test_preview_nodes_are_execution_roots(name):
+    assert NODE_CLASS_MAPPINGS[name].OUTPUT_NODE is True
+
+
+def test_preview_survives_progress_wrapper(bars, execution_context):
+    payload = {"ui": {"text": ["Résumé"]}, "result": ({"entities": []}, "Résumé")}
+
+    @progress.node_progress
+    def run():
+        return payload
+
+    assert run() is payload
+    assert bars[0].values == [0, 100]
+
+
 def test_direct_calls_with_comfy_installed_keep_tuple(bars, execution_context):
     execution_context.node_id = None
     payload = ({"chapter_paths": "chapter.txt"},)

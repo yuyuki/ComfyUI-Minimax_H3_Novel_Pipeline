@@ -175,7 +175,8 @@ def test_links_only_exports_and_import_errors_precede_model_calls(tmp_path, monk
     util.save_json(path, document)
     args = {key: spec[1]["default"] for section in ConsolidateReferencesNode.INPUT_TYPES().values()
             for key, spec in section.items() if len(spec) > 1 and "default" in spec[1]}
-    args.update(reference_links_path=str(path), links_only=True)
+    assert args["links_only"] is True
+    args.update(reference_links_path=str(path))
     config = {"api_url": "http://127.0.0.1:1234/v1", "thinking": False, "run_folder": "20261004120000"}
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
     monkeypatch.setattr(step, "chat_json", lambda *a: pytest.fail("Imported links-only run needs no inference"))
@@ -236,7 +237,7 @@ def test_full_imported_pass_saves_corrected_registry_and_asset_inputs(tmp_path, 
     monkeypatch.setattr(step, "generate_audio_assets", lambda *a: [])
     args = {key: spec[1]["default"] for section in ConsolidateReferencesNode.INPUT_TYPES().values()
             for key, spec in section.items() if len(spec) > 1 and "default" in spec[1]}
-    args.update(reference_links_path=str(imported), no_audit=True)
+    args.update(reference_links_path=str(imported), no_audit=True, links_only=False)
     config = {"api_url": "http://127.0.0.1:1234/v1", "thinking": False, "run_folder": "20261004130000"}
     registry, _ = ConsolidateReferencesNode().run(source, config, **args)["result"]
     assert {s["canonical_name"] for s in pictures} == {"Indy", "Doriane", "un garde"}

@@ -349,7 +349,7 @@ and `visual_designs.schema.json`. Both editable JSON files declare a relative
 Runtime validation is offline and runs before model requests. Install the updated
 runtime dependencies (`python -m pip install -r requirements.txt`) and restart ComfyUI.
 
-To review references before generating briefs, enable Consolidate's `links_only`.
+Consolidate's `links_only` is enabled by default to review references before generating briefs.
 This exports classifications and suggested links, then blocks its registry output
 so downstream generation does not run. Open `reference_links.json`, check the
 entity names and evidence, and edit the decisions. Set `reference_links_path` to
