@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Replace nonblank-string schema patterns with anchored, explicit Unicode
+  character classes supported by LM Studio grammar conversion; preserve
+  whitespace rejection and multiline text validation.
+
 - Store editable JSON schemas in bundled `src/schema/` files; load them for
   validation and copy them unchanged to run outputs.
 

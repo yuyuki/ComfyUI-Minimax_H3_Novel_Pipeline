@@ -11,7 +11,7 @@
     "source_digest": {
       "type": "string",
       "minLength": 1,
-      "pattern": "\\S"
+      "pattern": "^\\S+$"
     },
     "entities": {
       "type": "array",
@@ -21,17 +21,17 @@
           "chapter_id": {
             "type": "string",
             "minLength": 1,
-            "pattern": "\\S"
+            "pattern": "^\\S+$"
           },
           "local_id": {
             "type": "string",
             "minLength": 1,
-            "pattern": "\\S"
+            "pattern": "^\\S+$"
           },
           "canonical_name": {
             "type": "string",
             "minLength": 1,
-            "pattern": "\\S"
+            "pattern": "^\\S+$"
           },
           "entity_type": {
             "enum": [
@@ -75,12 +75,12 @@
               "chapter_id": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "\\S"
+                "pattern": "^\\S+$"
               },
               "local_id": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "\\S"
+                "pattern": "^\\S+$"
               }
             },
             "required": [
@@ -97,12 +97,12 @@
                   "chapter_id": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": "\\S"
+                    "pattern": "^\\S+$"
                   },
                   "local_id": {
                     "type": "string",
                     "minLength": 1,
-                    "pattern": "\\S"
+                    "pattern": "^\\S+$"
                   }
                 },
                 "required": [
@@ -134,7 +134,7 @@
           "relation": {
             "type": "string",
             "minLength": 1,
-            "pattern": "\\S"
+            "pattern": "^\\S+$"
           },
           "status": {
             "enum": [
@@ -152,7 +152,7 @@
             "items": {
               "type": "string",
               "minLength": 1,
-              "pattern": "\\S"
+              "pattern": "^\\S+$"
             }
           }
         },
@@ -185,12 +185,12 @@
                     "chapter_id": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "local_id": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     }
                   },
                   "required": [
@@ -251,12 +251,12 @@
                     "chapter_id": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "local_id": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     }
                   },
                   "required": [
@@ -284,12 +284,12 @@
                     "chapter_id": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "local_id": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     }
                   },
                   "required": [

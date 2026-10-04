@@ -11,7 +11,7 @@
     "image_style": {
       "type": "string",
       "minLength": 1,
-      "pattern": "\\S"
+      "pattern": "^\\S+$"
     },
     "entities": {
       "type": "array",
@@ -21,7 +21,7 @@
           "global_id": {
             "type": "string",
             "minLength": 1,
-            "pattern": "\\S"
+            "pattern": "^\\S+$"
           },
           "entity_type": {
             "enum": [
@@ -33,7 +33,7 @@
           "canonical_name": {
             "type": "string",
             "minLength": 1,
-            "pattern": "\\S"
+            "pattern": "^\\S+$"
           },
           "source_facts": {
             "type": "object",
@@ -83,47 +83,47 @@
                     "age_appearance": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "skin": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "facial_features": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "hair": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "eyes": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "build": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "default_outfit": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "footwear": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "accessories": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     }
                   },
                   "required": [],
@@ -148,32 +148,32 @@
                     "materials": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "colors": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "architecture": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "layout": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "fixtures": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "vegetation": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     }
                   },
                   "required": [],
@@ -198,32 +198,32 @@
                     "shape": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "materials": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "colors": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "dimensions": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "construction": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     },
                     "markings": {
                       "type": "string",
                       "minLength": 1,
-                      "pattern": "\\S"
+                      "pattern": "^\\S+$"
                     }
                   },
                   "required": [],
