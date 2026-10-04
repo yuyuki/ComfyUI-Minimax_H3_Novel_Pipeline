@@ -1,6 +1,7 @@
 """Timeline boundaries are enforced before mocked model extraction."""
 from copy import deepcopy
 from contextlib import nullcontext
+import argparse
 import json
 
 import pytest
@@ -58,6 +59,7 @@ def test_multiple_chapters_ordered_phases_and_identity(execution):
         (i, p) for i in (1, 2, 3) for p in cr.PHASES]
     assert all("torch" not in c["text"] for c in calls if c["sequence"] == 1)
     for catalog in result:
+        assert "chapter_summary" not in catalog
         assert catalog["sequences"] == chapters[0]["sequences"]
         torch = catalog["objects"][0]
         assert torch["first_sequence"] == 2
@@ -132,6 +134,31 @@ def test_old_completed_catalog_cache_is_regenerated(execution, tmp_path):
     regenerated, _ = node.run(config, [chapter()], **params)["result"]
     assert regenerated[0]["schema_version"] == util.CHAPTER_SCHEMA
     assert regenerated[0]["characters"] == result[0]["characters"]
+
+
+def test_catalog_without_summary_reuses_phase_cache(execution, tmp_path):
+    calls, params, config = execution
+    node = ExtractChapterReferencesNode()
+    result, _ = node.run(config, [chapter()], **params)["result"]
+    saved, = list(tmp_path.rglob("chapter_references.json"))
+    step = lmstudio_pipeline.load("extract")
+    args = argparse.Namespace(
+        chunk_chars=params["chunk_chars"], temperature=params["temperature"],
+        max_tokens=params["max_tokens"], force=params["force"], base_url=config["api_url"],
+    )
+    old_key = cr.fingerprint(
+        "mock", args, cr.TEMPORAL_VERSION, step.EXTRACT_SYSTEM + "\n" + cr.PHASE_SYSTEM,
+        step.CHUNK_SCHEMA, chapter(), client=None,
+    )
+    util.save_json(saved, {**result[0], "cache_key": old_key, "chapter_summary": ""})
+    count = len(calls)
+
+    regenerated, _ = node.run(config, [chapter()], **params)["result"]
+
+    assert regenerated == result
+    assert "chapter_summary" not in util.load_json(saved)
+    assert regenerated[0]["cache_key"] != old_key
+    assert len(calls) == count
 
 
 def test_identity_context_contains_only_prior_observations(execution):

@@ -11,6 +11,7 @@ from .prompt_cache import fingerprint
 
 PHASES = ("initialState", "event", "endingState")
 TEMPORAL_VERSION = "cinematic-reference-timeline.v1"
+CATALOG_CACHE_VERSION = "cinematic-reference-catalog.v2"
 PHASE_SYSTEM = """
 The passage is ONE phase of one cinematic sequence, the authoritative narrative.
 initialState contains only facts already true at START. event contains actions
@@ -80,7 +81,8 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     """Persist identity catalogs plus lossless ordered, phase-specific observations."""
     step = lmstudio_pipeline.load("extract")
     system = step.EXTRACT_SYSTEM + "\n" + PHASE_SYSTEM
-    key = fingerprint(model, args, TEMPORAL_VERSION, system, step.CHUNK_SCHEMA, chapter, client=client)
+    key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION,
+                      system, step.CHUNK_SCHEMA, chapter, client=client)
     saved = confined_path(output / f"{chapter_id}_references.json", output)
     if saved.exists() and not args.force:
         try:
@@ -134,7 +136,7 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     payload = {"schema_version": util.CHAPTER_SCHEMA, "timeline_version": TEMPORAL_VERSION,
                "cache_key": key, "chapter_id": chapter_id, "chapter_name": chapter["chapter_name"],
                "source": {"file": chapter.get("source_file", ""), "sha256": chapter_digest(chapter)},
-               "sequences": deepcopy(chapter["sequences"]), "chapter_summary": "",
+               "sequences": deepcopy(chapter["sequences"]),
                **catalog}
     util.save_json(saved, payload)
     return saved
