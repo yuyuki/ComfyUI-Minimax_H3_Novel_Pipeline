@@ -92,6 +92,55 @@ def test_identity_sequence_retry_explains_correction_and_preserves_evidence():
     links.validate_links(result, source)
 
 
+@pytest.mark.parametrize("kind", ["identity", "attribution", "relation"])
+def test_missing_link_kind_retries_with_explicit_contract(kind):
+    source = chapters()
+    entities = manifest(source)["entities"]
+    link = decision(kind, source="LOCAL_2" if kind == "attribution" else "LOCAL_1", status="proposed")
+    invalid = {"entities": deepcopy(entities), "links": [deepcopy(link)]}
+    del invalid["links"][0]["kind"]
+    before = deepcopy(invalid)
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        calls.append(user)
+        # The complete contract reaches the model even if the backend ignores
+        # response_format, on both the first request and the corrective retry.
+        contract = json.loads(system.split("JSON Schema:\n", 1)[1])
+        assert contract == schema["schema"]
+        assert Draft202012Validator(contract).is_valid({"entities": entities, "links": [link]})
+        assert not Draft202012Validator(contract).is_valid(invalid)
+        if len(calls) == 1:
+            return deepcopy(invalid)
+        assert "'kind' is a required property" in user
+        return {"entities": deepcopy(entities), "links": [deepcopy(link)]}
+
+    result = links.prepare_links(chat, None, "mock", source,
+                                 SimpleNamespace(temperature=0.1, max_tokens=8000))
+    assert len(calls) == 2
+    assert result["links"] == [link]
+    assert invalid == before
+    links.validate_links(result, source)
+
+
+def test_persistently_missing_link_kind_is_not_guessed_or_dropped(monkeypatch):
+    from minimax_h3_novel_pipeline import lmstudio_json
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    source = chapters()
+    invalid = {"entities": manifest(source)["entities"], "links": [decision(status="proposed")]}
+    del invalid["links"][0]["kind"]
+    calls = []
+
+    def chat(*args):
+        calls.append(args)
+        return deepcopy(invalid)
+
+    with pytest.raises(ValueError, match="bounded retries:.*'kind' is a required property"):
+        links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=8000))
+    assert len(calls) == 2
+
+
 def test_imported_identity_sequence_remains_invalid():
     source = chapters()
     document = links.document(source)

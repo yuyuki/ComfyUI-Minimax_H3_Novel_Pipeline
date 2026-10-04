@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Include the complete reference-link response schema in model instructions,
+  including required `kind` values; cover missing-kind retries without guessing
+  or dropping links.
+
 - Replace nonblank-string schema patterns with anchored, explicit Unicode
   character classes supported by LM Studio grammar conversion; preserve
   whitespace rejection and multiline text validation.

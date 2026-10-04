@@ -1,5 +1,6 @@
 """Editable, source-addressed decisions applied before reference assets are built."""
 from copy import deepcopy
+import json
 
 from . import configuration_snapshot, progress, util
 from .editable_schemas import LINK, LINK_SCHEMA, LINK_VERSION, MENTION, obj, validate_document
@@ -54,6 +55,15 @@ PROPOSAL_LINK = {"anyOf": [
 ]}
 RESPONSE_SCHEMA = {"name": "reference_link_proposals", "strict": True, "schema": obj({
     "entities": {"type": "array", "items": MENTION}, "links": {"type": "array", "items": PROPOSAL_LINK}})}
+# response_format constrains decoding on supported backends, but does not
+# necessarily expose the field names to the model (including ChatML fallbacks).
+SYSTEM += (
+    "\nReturn one JSON object matching the following JSON Schema. Include every required field, "
+    "even when its value is null. Every link needs an explicit kind: identity, attribution, or relation. "
+    "kind identifies the link category; relation is its relationship label, not a replacement for kind. "
+    "Use an empty links array only when there are no supported links.\nJSON Schema:\n"
+    + json.dumps(RESPONSE_SCHEMA["schema"], ensure_ascii=False, separators=(",", ":"))
+)
 
 
 def address(value):
