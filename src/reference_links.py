@@ -38,8 +38,22 @@ Use status=proposed for supported suggestions and unresolved for ambiguous links
 Never confirm a decision on the user's behalf. No speculative relationship filler.
 Do not merge relationship partners. Never invent visual or vocal traits.
 """
+PROPOSAL_LINK = {"anyOf": [
+    obj({**LINK["properties"], "kind": {"enum": ["identity"]}, "target": LINK["properties"]["source"],
+         "relation": {"enum": ["same_as"]}, "sequence": {"type": "null"}, "phase": {"type": "null"},
+         "status": {"enum": ["proposed", "unresolved"]}}),
+    obj({**LINK["properties"], "kind": {"enum": ["attribution"]},
+         "sequence": {"type": "integer", "minimum": 1},
+         "phase": {"enum": ["initialState", "event", "endingState"]},
+         "status": {"enum": ["proposed", "unresolved"]}}),
+    *[obj({**LINK["properties"], "kind": {"enum": ["relation"]}, "target": LINK["properties"]["source"],
+           "sequence": sequence, "phase": phase, "status": {"enum": ["proposed", "unresolved"]}})
+      for sequence, phase in (({"type": "null"}, {"type": "null"}),
+                              ({"type": "integer", "minimum": 1},
+                               {"enum": ["initialState", "event", "endingState"]}))],
+]}
 RESPONSE_SCHEMA = {"name": "reference_link_proposals", "strict": True, "schema": obj({
-    "entities": {"type": "array", "items": MENTION}, "links": {"type": "array", "items": LINK}})}
+    "entities": {"type": "array", "items": MENTION}, "links": {"type": "array", "items": PROPOSAL_LINK}})}
 
 
 def address(value):
@@ -148,7 +162,15 @@ def prepare_links(chat, client, model, chapters, args, imported=None):
         def check(result):
             proposed = deepcopy(payload)
             expected = {address(e) for e in payload["entities"] if e["chapter_id"] == cid}
-            validate_document(result, RESPONSE_SCHEMA["schema"], "reference link proposals")
+            # Validate the common shape first so semantic retry messages can explain
+            # a wrong link kind/scope, including on unconstrained ChatML fallbacks.
+            validate_document(result, obj({"entities": {"type": "array", "items": MENTION},
+                                           "links": {"type": "array", "items": LINK}}), "reference link proposals")
+            for i, link in enumerate(result["links"]):
+                if link["kind"] == "identity" and (link["sequence"] is not None or link["phase"] is not None):
+                    raise ValueError(f"links[{i}]: identity links mean the same entity across all sequences; "
+                                     "set sequence=null and phase=null. Keep source evidence in evidence. "
+                                     "Use kind=relation only for a narrative relationship between distinct entities.")
             if {address(e) for e in result["entities"]} != expected:
                 raise ValueError("Return exactly the current chapter entities.")
             if any(l["source"]["chapter_id"] != cid or l["status"] not in {"proposed", "unresolved"} for l in result["links"]):

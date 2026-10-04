@@ -8,6 +8,7 @@ include .comfyignore
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
 
+recursive-include src/schema *.json
 recursive-include web *.js
 recursive-include examples *.md *.json
 recursive-include docs *.md

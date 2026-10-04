@@ -49,6 +49,57 @@ def manifest(source):
     return result
 
 
+@pytest.mark.parametrize("kind,sequence,phase,valid", [
+    ("identity", None, None, True),
+    ("identity", 8, "event", False),
+    ("attribution", 8, "event", True),
+    ("attribution", None, None, False),
+    ("relation", None, None, True),
+    ("relation", 8, "event", True),
+    ("relation", 8, None, False),
+    ("relation", None, "event", False),
+])
+def test_proposal_schema_enforces_link_kind_scope(kind, sequence, phase, valid):
+    schema = links.RESPONSE_SCHEMA["schema"]
+    Draft202012Validator.check_schema(schema)
+    link = decision(kind, status="proposed")
+    link.update(sequence=sequence, phase=phase)
+    assert Draft202012Validator(schema).is_valid({"entities": [], "links": [link]}) is valid
+
+
+def test_identity_sequence_retry_explains_correction_and_preserves_evidence():
+    source = chapters()
+    entities = links.document(source)["entities"]
+    link = decision("identity", "LOCAL_1", "LOCAL_3", "proposed")
+    invalid = {"entities": entities, "links": [{**link, "sequence": 8, "phase": "event"}]}
+    before = deepcopy(invalid)
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        calls.append(user)
+        assert schema is links.RESPONSE_SCHEMA
+        if len(calls) == 1:
+            return deepcopy(invalid)
+        assert "set sequence=null and phase=null" in user
+        assert "Keep source evidence in evidence" in user
+        return {"entities": deepcopy(entities), "links": [deepcopy(link)]}
+
+    result = links.prepare_links(chat, None, "mock", source,
+                                 SimpleNamespace(temperature=0.1, max_tokens=8000))
+    assert len(calls) == 2
+    assert result["links"] == [link]
+    assert invalid == before
+    links.validate_links(result, source)
+
+
+def test_imported_identity_sequence_remains_invalid():
+    source = chapters()
+    document = links.document(source)
+    document["links"] = [{**decision("identity", "LOCAL_1", "LOCAL_3"), "sequence": 8, "phase": "event"}]
+    with pytest.raises(ValueError, match=r"links\[0\].sequence"):
+        links.validate_links(document, source)
+
+
 def reconcile(source, document):
     corrected, protected, groups, events = links.plan(source, document)
     # Exercise the real reconciler with its candidate exclusions.
@@ -152,6 +203,7 @@ def test_schema_exports_and_visual_traits(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     editable_schemas.export_schemas(tmp_path)
     for filename in ("reference_links.schema.json", "visual_designs.schema.json"):
+        assert (tmp_path / filename).read_bytes() == (editable_schemas.SCHEMA_DIR / filename).read_bytes()
         Draft202012Validator.check_schema(util.load_json(tmp_path / filename))
     data = {"$schema": "https://invalid.example/no-network", "schema_version": visual_designs.DESIGN_SCHEMA_VERSION,
             "image_style": "realistic photographic", "entities": [{"global_id": "CHAR_001", "entity_type": "character",

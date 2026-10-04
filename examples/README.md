@@ -126,7 +126,8 @@ registry preserves its already generated style and prompts.
 Consolidate's `links_only` is enabled by default for a two-pass identity review. It saves
 `references/reference_links.json` and both `*.schema.json` files, and blocks
 downstream generation. Keep the schemas beside the editable files for completion
-and error highlighting in a compatible JSON editor.
+and error highlighting in a compatible JSON editor. These are unchanged copies
+of the bundled JSON files in `src/schema/`, also used for runtime validation.
 
 In `reference_links.json`, find the sound's address using the `entities` list.
 The same review handles all contextual references: confirm `identity` / `same_as`

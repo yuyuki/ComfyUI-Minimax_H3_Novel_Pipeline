@@ -49,6 +49,7 @@ package-dir = {"minimax_h3_novel_pipeline" = "src", "minimax_h3_novel_pipeline.w
 include-package-data = false
 
 [tool.setuptools.package-data]
+"minimax_h3_novel_pipeline" = ["schema/*.json"]
 "minimax_h3_novel_pipeline.web" = ["js/*.js"]
 
 [tool.pytest.ini_options]

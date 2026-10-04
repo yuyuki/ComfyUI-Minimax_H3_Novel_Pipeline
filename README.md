@@ -346,6 +346,8 @@ still requires human review. Chapter appearance takes precedence over a base des
 Consolidation also writes `reference_links.json`, `reference_links.schema.json`
 and `visual_designs.schema.json`. Both editable JSON files declare a relative
 `$schema`; keep each schema beside its document for editor completion and validation.
+Schemas are bundled as plain JSON files in `src/schema/` and copied unchanged
+to each run; runtime validation loads the same bundled files.
 Runtime validation is offline and runs before model requests. Install the updated
 runtime dependencies (`python -m pip install -r requirements.txt`) and restart ComfyUI.
 

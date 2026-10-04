@@ -32,7 +32,7 @@ The node wrappers coordinate filesystem access, configuration snapshots and run 
 The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its ordered phases feed extraction; catalogs and registries retain temporal observations.
 
 `reference_timeline` validates cinematic catalogs, merges observations without rewriting them, computes first occurrences and provides exact-address state lookup. Identity reconciliation and duplicate audits exclude temporal state; base image briefs use stable identity only.
-`reference_links` reviews chapter evidence, validates editable source-addressed decisions and applies protected identities and scoped attributions before assets. Manifestations retain their original events without character assets. `editable_schemas` exports the same local JSON schemas used for import validation; editor schema URLs are never fetched at runtime.
+`reference_links` reviews chapter evidence, validates editable source-addressed decisions and applies protected identities and scoped attributions before assets. Manifestations retain their original events without character assets. `editable_schemas` loads bundled `src/schema/*.json` files for import validation and copies them unchanged to run outputs; editor schema URLs are never fetched at runtime.
 
 ## Internal module dependencies
 
@@ -111,7 +111,7 @@ flowchart TD
     m_consolidate_references --> m_run_output
     m_consolidate_references --> m_util
     m_consolidate_references --> m_visual_designs
-    m_editable_schemas --> m_util
+    m_editable_schemas --> m_path_access
     m_extract_chapter_references --> m_cinematic_references
     m_extract_chapter_references --> m_configuration_snapshot
     m_extract_chapter_references --> m_lmstudio_pipeline
@@ -206,7 +206,7 @@ flowchart TD
 | `src/cinematic_references.py` | `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `chapter_digest`, `parse_chapters`, `process_chapter` |
 | `src/configuration_snapshot.py` | `lmstudio_config`, `lmstudio_json`, `lmstudio_models`, `util` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/consolidate_references.py` | `configuration_snapshot`, `editable_schemas`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_links`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
-| `src/editable_schemas.py` | `util` | `export_schemas`, `obj`, `validate_document` |
+| `src/editable_schemas.py` | `path_access` | `export_schemas`, `obj`, `validate_document` |
 | `src/extract_chapter_references.py` | `cinematic_references`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
 | `src/generate_h3_prompts.py` | `chapter_selection`, `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `path_access`, `progress`, `run_output`, `util` | `GenerateH3PromptsNode` |
 | `src/image_prompt_export.py` | `path_access`, `util` | `export_image_prompts` |

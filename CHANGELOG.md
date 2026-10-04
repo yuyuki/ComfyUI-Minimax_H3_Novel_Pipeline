@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Store editable JSON schemas in bundled `src/schema/` files; load them for
+  validation and copy them unchanged to run outputs.
+
+- Constrain model reference-link proposals by kind so identity links require null
+  sequence/phase; explain scope corrections on retries while retaining strict import validation.
+
 - Show Consolidate's reference_links_path only while links_only is enabled;
   enable links_only by default and retain the selected path for the subsequent full consolidation.
 
