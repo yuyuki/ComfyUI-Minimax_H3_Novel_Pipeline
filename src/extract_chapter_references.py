@@ -36,9 +36,10 @@ class ExtractChapterReferencesNode:
     RETURN_NAMES = ("chapter_catalogs", "catalog_summary")
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
+    OUTPUT_NODE = True
 
     @progress.node_progress
-    def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, **params: Any) -> tuple[list[dict[str, Any]], str]:
+    def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, **params: Any) -> dict[str, Any]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         output = stage_output(lmstudio_config, out_dir.strip())
@@ -75,4 +76,5 @@ class ExtractChapterReferencesNode:
                     results.append(util.load_json(saved))
                     artifacts.append(saved)
             configuration_snapshot.complete(snapshot, artifacts)
-            return results, util.catalog_summary(results)
+            summary = util.catalog_summary(results)
+            return {"ui": {"text": [summary]}, "result": (results, summary)}

@@ -64,7 +64,7 @@ class ConsolidateReferencesNode:
                      for key in ("reference_links_path", "visual_designs_path"))
 
     @progress.node_progress
-    def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> tuple[dict[str, Any], str]:
+    def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> dict[str, Any]:
         chapters = list(chapter_catalogs or [])
         if not chapters: raise ValueError("No chapter catalogs were supplied.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
@@ -102,7 +102,8 @@ class ConsolidateReferencesNode:
                 configuration_snapshot.complete(snapshot, [output / name for name in (
                     "reference_links.json", "reference_links.schema.json", "visual_designs.schema.json")])
                 from comfy_execution.graph import ExecutionBlocker
-                return ExecutionBlocker(None), f"Edit {output / 'reference_links.json'}, then import it and disable links_only."
+                summary = f"Edit {output / 'reference_links.json'}, then import it and disable links_only."
+                return {"ui": {"text": [summary]}, "result": (ExecutionBlocker(None), summary)}
             identity_chapters, protected, groups, manifestations = reference_links.plan(chapters, links)
             args.protected_reference_sources = protected
             registry: list[dict[str, Any]] = []
@@ -144,4 +145,5 @@ class ConsolidateReferencesNode:
                 "consolidated_references.json", "visual_designs.json", "reference_asset_prompts.txt", "image_prompts",
                 "reference_links.json", "reference_links.schema.json", "visual_designs.schema.json",
             )])
-            return payload, util.registry_summary(payload)
+            summary = util.registry_summary(payload)
+            return {"ui": {"text": [summary]}, "result": (payload, summary)}

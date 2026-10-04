@@ -48,9 +48,9 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    `chapter_selection` output to Cinematic Chapter Adapter and Generate. Connect the
    adapter’s `cinematic_chapters` output to Extract. Share configuration with the adapter. Connect Extract's
    `chapter_catalogs` to Consolidate, then
-   Consolidate's `consolidated_references` to Generate. Optionally connect
-   Consolidate's `registry_summary` to a Preview Text node for chapter, entity
-   and asset-brief counts.
+   Consolidate's `consolidated_references` to Generate. Each of these four processing
+   nodes can terminate the workflow and displays its own text preview after execution;
+   no separate Preview Text node is required.
 4. In Consolidate, choose `image_style` (default **realistic photographic**) and
    keep `image_asset_scope=all entities` to include every character, place and object.
    Use `asset_batch_size=4` as the initial setting for the Qwen3.5 9B model.

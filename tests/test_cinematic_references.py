@@ -48,7 +48,9 @@ def test_multiple_chapters_ordered_phases_and_identity(execution):
     calls, params, config = execution
     chapters = [chapter(), chapter("second")]
     original = deepcopy(chapters)
-    result, _ = ExtractChapterReferencesNode().run(config, chapters, **params)
+    response = ExtractChapterReferencesNode().run(config, chapters, **params)
+    result, summary = response["result"]
+    assert response["ui"] == {"text": [summary]}
     assert chapters == original
     assert len(result) == 2
     assert [c["chapter_id"] for c in result] == ["chapter", "second"]
@@ -71,7 +73,8 @@ def test_multiple_chapters_ordered_phases_and_identity(execution):
         assert len(indy) == 1
         assert list(indy[0]["state_by_sequence"]) == ["1", "2", "3"]
     count = len(calls)
-    assert ExtractChapterReferencesNode().run(config, chapters, **params)[0] == result
+    cached = ExtractChapterReferencesNode().run(config, chapters, **params)
+    assert cached == response
     assert len(calls) == count
     chapters[0]["sequences"][0]["adaptation"]["event"] = "Indy shouts."
     ExtractChapterReferencesNode().run(config, chapters, **params)
@@ -102,7 +105,7 @@ def test_serialized_input_and_socket():
 
 def test_duplicate_chapter_names_have_separate_files(execution):
     _, params, config = execution
-    results, _ = ExtractChapterReferencesNode().run(config, [chapter(), chapter()], **params)
+    results, _ = ExtractChapterReferencesNode().run(config, [chapter(), chapter()], **params)["result"]
     assert [c["chapter_id"] for c in results] == ["chapter_001", "chapter_002"]
     assert all(c["schema_version"] == util.CHAPTER_SCHEMA for c in results)
 
@@ -113,7 +116,7 @@ def test_extraction_resumes_from_saved_cinematic_chapter(execution, tmp_path):
     value.pop("source_file")
     util.save_json(tmp_path / "previous/001_chapter.cinematic.json", value)
     loaded, _ = LoadCinematicChaptersNode().run("previous")
-    results, _ = ExtractChapterReferencesNode().run(config, loaded, **params)
+    results, _ = ExtractChapterReferencesNode().run(config, loaded, **params)["result"]
     assert results[0]["sequences"] == value["sequences"]
     assert [(c["sequence"], c["phase"]) for c in calls] == [
         (i, phase) for i in (1, 2, 3) for phase in cr.PHASES]
@@ -122,11 +125,11 @@ def test_extraction_resumes_from_saved_cinematic_chapter(execution, tmp_path):
 def test_old_completed_catalog_cache_is_regenerated(execution, tmp_path):
     _, params, config = execution
     node = ExtractChapterReferencesNode()
-    result, _ = node.run(config, [chapter()], **params)
+    result, _ = node.run(config, [chapter()], **params)["result"]
     saved, = list(tmp_path.rglob("chapter_references.json"))
     old = {**result[0], "schema_version": "minimax-h3-novel-refs.chapter.v3"}
     util.save_json(saved, old)
-    regenerated, _ = node.run(config, [chapter()], **params)
+    regenerated, _ = node.run(config, [chapter()], **params)["result"]
     assert regenerated[0]["schema_version"] == util.CHAPTER_SCHEMA
     assert regenerated[0]["characters"] == result[0]["characters"]
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from . import cinematic_adaptation, configuration_snapshot, lmstudio_pipeline, progress, util
@@ -69,4 +70,5 @@ class CinematicChapterAdapterNode:
                 chapters.append({"source_file": str(path), "saved_file": str(saved), **chapter})
                 lmstudio_pipeline.comfy_interrupt_check()
             configuration_snapshot.complete(snapshot, artifacts)
-        return chapters, "\n".join(str(path) for path in artifacts)
+        return {"ui": {"text": [json.dumps(chapters, ensure_ascii=False, indent=2)]},
+                "result": (chapters, "\n".join(str(path) for path in artifacts))}

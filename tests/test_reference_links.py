@@ -183,7 +183,9 @@ def test_links_only_exports_and_import_errors_precede_model_calls(tmp_path, monk
         def __init__(self, message):
             self.message = message
     monkeypatch.setitem(sys.modules, "comfy_execution.graph", SimpleNamespace(ExecutionBlocker=Blocker))
-    result, summary = ConsolidateReferencesNode().run(source, config, **args)
+    response = ConsolidateReferencesNode().run(source, config, **args)
+    result, summary = response["result"]
+    assert response["ui"] == {"text": [summary]}
     assert isinstance(result, Blocker) and "reference_links.json" in summary
     output = tmp_path / config["run_folder"] / "references"
     assert util.load_json(output / "reference_links.json") == document
@@ -236,7 +238,7 @@ def test_full_imported_pass_saves_corrected_registry_and_asset_inputs(tmp_path, 
             for key, spec in section.items() if len(spec) > 1 and "default" in spec[1]}
     args.update(reference_links_path=str(imported), no_audit=True)
     config = {"api_url": "http://127.0.0.1:1234/v1", "thinking": False, "run_folder": "20261004130000"}
-    registry, _ = ConsolidateReferencesNode().run(source, config, **args)
+    registry, _ = ConsolidateReferencesNode().run(source, config, **args)["result"]
     assert {s["canonical_name"] for s in pictures} == {"Indy", "Doriane", "un garde"}
     saved = util.load_json(tmp_path / config["run_folder"] / "references/consolidated_references.json")
     assert saved == registry

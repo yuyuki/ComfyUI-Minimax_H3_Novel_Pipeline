@@ -640,7 +640,9 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
-    result, summary = ConsolidateReferencesNode().run([chapter], config, **node_defaults(ConsolidateReferencesNode))
+    response = ConsolidateReferencesNode().run([chapter], config, **node_defaults(ConsolidateReferencesNode))
+    result, summary = response["result"]
+    assert response["ui"] == {"text": [summary]}
     assert ConsolidateReferencesNode.RETURN_TYPES == ("MINIMAX_REGISTRY", "STRING")
     assert ConsolidateReferencesNode.RETURN_NAMES == ("consolidated_references", "registry_summary")
     assert summary == (
@@ -660,8 +662,10 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
     from minimax_h3_novel_pipeline import generate_h3_prompts as wrapper
     monkeypatch.setattr(wrapper, "selected_chapter_paths", lambda value: ["chapter.txt"])
     monkeypatch.setattr(util, "discover_inputs", lambda paths: paths)
-    prompts, scene_text, image_text = GenerateH3PromptsNode().run(
+    response = GenerateH3PromptsNode().run(
         loaded, next_config, {}, **node_defaults(GenerateH3PromptsNode))
+    prompts, scene_text, image_text = response["result"]
+    assert response["ui"] == {"text": [scene_text, image_text]}
     assert scene_text == ""
     assert "Copper hair." in image_text
     assert prompts["image_prompts"][0]["global_id"] == "CHAR_001"

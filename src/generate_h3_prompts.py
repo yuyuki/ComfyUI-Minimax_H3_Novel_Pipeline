@@ -40,9 +40,10 @@ class GenerateH3PromptsNode:
     RETURN_NAMES = ("prompts", "prompt_text", "image_prompt_text")
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
+    OUTPUT_NODE = True
 
     @progress.node_progress
-    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> tuple[dict[str, Any], str, str]:
+    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> dict[str, Any]:
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
         output = stage_output(lmstudio_config, out_dir.strip())
@@ -103,5 +104,6 @@ class GenerateH3PromptsNode:
             configuration_snapshot.complete(snapshot, [output / "image_prompts"] + [
                 confined_path(manifest["chapter_id"], output) for manifest in manifests
             ])
-            return ({"schema_version": "minimax-h3-novel-prompts.v3", "model": resolved_model,
-                     "chapters": manifests, "image_prompts": image_records}, prompt_text, image_text)
+            return {"ui": {"text": [prompt_text, image_text]}, "result": (
+                {"schema_version": "minimax-h3-novel-prompts.v3", "model": resolved_model,
+                 "chapters": manifests, "image_prompts": image_records}, prompt_text, image_text)}

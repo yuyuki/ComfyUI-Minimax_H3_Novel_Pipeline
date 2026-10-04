@@ -171,9 +171,12 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
 
-    chapters, saved_files = adapter.CinematicChapterAdapterNode().run(
+    response = adapter.CinematicChapterAdapterNode().run(
         {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(chapter)]},
     )
+    chapters, saved_files = response["result"]
+    assert json.loads(response["ui"]["text"][0]) == chapters
+    assert "Il est parti." in response["ui"]["text"][0]
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
     assert saved == {"chapter_name": "chapter", "sequences": chapters[0]["sequences"]}
     assert chapters[0]["chapter_name"] == "chapter"

@@ -230,8 +230,11 @@ The final warning includes the last reason if every attempt fails.
 Add **Select Chapters**, then connect its `chapter_selection` output to both
 Cinematic Chapter Adapter and Generate. Connect the adapter to Extract. Use its picker or enter one file/folder per line in its
 `chapter_paths` field.
-Connect Consolidate's `registry_summary` output to a Preview Text node to inspect
-chapter, entity and asset-brief counts.
+Cinematic Chapter Adapter, Extract, Consolidate and Generate are output nodes:
+they can terminate a queued workflow without a separate Preview Text node.
+After execution, each displays a read-only, copyable text preview: adapted chapter
+JSON, catalog summary, registry summary, or scene and image prompts respectively.
+Their existing output sockets remain available for downstream nodes.
 Chapter paths must stay inside ComfyUI's input directory. Relative paths start
 there, for example `minimax_h3_novel/chapter_01.txt`; copy external chapters
 into that directory or upload them through the picker.

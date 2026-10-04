@@ -162,7 +162,7 @@ def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcil
                if len(value) > 1 and "default" in value[1]}
     chapters = [catalog("Z"), catalog("A", name="Henry Jones", alias=["Indy"])]
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261003120000", "thinking": False}
-    registry, _ = node.ConsolidateReferencesNode().run(chapters, config, **options)
+    registry, _ = node.ConsolidateReferencesNode().run(chapters, config, **options)["result"]
     path = tmp_path / config["run_folder"] / "references/consolidated_references.json"
     loaded, = LoadConsolidatedReferencesNode().run(str(path))
     assert loaded == registry
