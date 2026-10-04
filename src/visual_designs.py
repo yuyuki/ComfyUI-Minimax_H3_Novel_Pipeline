@@ -6,17 +6,14 @@ from . import progress
 from . import util
 from .reference_requests import validated_request
 from .lmstudio_pipeline import comfy_interrupt_check
+from .editable_schemas import DESIGN_SCHEMA as FILE_SCHEMA, TRAITS, validate_document
 
 IMAGE_STYLES = (
     "realistic photographic", "cinematic photographic", "digital illustration",
     "anime", "watercolor", "3D render",
 )
 DESIGN_SCHEMA_VERSION = "minimax-h3-visual-designs.v1"
-DESIGN_TRAITS = {
-    "character": ["age_appearance", "skin", "facial_features", "hair", "eyes", "build", "default_outfit", "footwear", "accessories"],
-    "location": ["materials", "colors", "architecture", "layout", "fixtures", "vegetation"],
-    "object": ["shape", "materials", "colors", "dimensions", "construction", "markings"],
-}
+DESIGN_TRAITS = TRAITS
 
 
 def object_schema(properties):
@@ -90,6 +87,7 @@ def resolve_designs_path(path):
             "Clear visual_designs_path to generate new designs, or select an existing edited file. "
             "Consolidation creates visual_designs.json in its output folder automatically."
         )
+    validate_document(util.load_json(resolved), FILE_SCHEMA, "visual_designs.json")
     return resolved
 
 
@@ -188,4 +186,5 @@ def prepare_designs(chat, client, model, entities, args, path=""):
             added = {item["trait"]: item["description"] for item in response["added_details"]}
 
         designs.append({**base, "added_details": added})
-    return {"schema_version": DESIGN_SCHEMA_VERSION, "image_style": args.image_style, "entities": designs}
+    return {"$schema": "./visual_designs.schema.json", "schema_version": DESIGN_SCHEMA_VERSION,
+            "image_style": args.image_style, "entities": designs}

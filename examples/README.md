@@ -123,6 +123,53 @@ An empty object removes all additions for an entity. Omitted entities are design
 anew. The selected style affects all new reference prompts. Loading a consolidated
 registry preserves its already generated style and prompts.
 
+For a two-pass identity review, enable Consolidate's `links_only`. It saves
+`references/reference_links.json` and both `*.schema.json` files, and blocks
+downstream generation. Keep the schemas beside the editable files for completion
+and error highlighting in a compatible JSON editor.
+
+In `reference_links.json`, find the sound's address using the `entities` list.
+The same review handles all contextual references: confirm `identity` / `same_as`
+between “l'homme avec la torche” and the established person, between “la crevasse
+à Delphes” and “la crevasse sombre”, or between “la corde” and “le filin”, when
+the passage establishes one entity. Use null sequence/phase for identity links.
+For “la paroi rocheuse” describing the crevasse, classify the fragment as
+`manifestation` and confirm an `attribution` with `relation: "describes"` to the
+crevasse at the fragment's exact sequence/phase. This preserves the description
+on the location without creating a separate asset. Objects support the same flow.
+Keep genuinely independent places/objects as `entity`; leave uncertain targets unresolved.
+
+Keep `classification: "manifestation"` for a sound such as “les cris”; retain
+`entity` for an actual unnamed person. For an attribution, edit the character
+target and set `status` to `confirmed` only when you want to impose that decision:
+
+```json
+{
+  "kind": "attribution",
+  "source": {"chapter_id": "chapter", "local_id": "CHAR_002"},
+  "target": {"chapter_id": "chapter", "local_id": "CHAR_003"},
+  "sequence": 1,
+  "phase": "event",
+  "relation": "emitted_by",
+  "status": "confirmed",
+  "reason": "Attribution reviewed by the operator.",
+  "evidence": ["Des cris retentissaient au-dessus de lui."]
+}
+```
+
+These addresses are illustrative: use the generated IDs and actual evidence.
+Leave uncertain authors `unresolved` (a `null` target is allowed); sounds still
+produce no character asset. `identity` links use `same_as` and null sequence/phase.
+Confirm to merge; reject to prevent a merge. `relation` links describe relationships
+without merging their endpoints. Only confirmed links are applied, and the model
+cannot undo manual decisions. Classification is applied even for unresolved links.
+
+Set `reference_links_path` to the edited file, disable `links_only`, and rerun
+Consolidate with the same catalogs. Schemas and source addresses are checked before
+model calls. Regenerate links after changing catalogs; regenerate visual designs
+after identity edits that change global IDs. Install the updated requirements and
+restart ComfyUI to load the new inputs and JSON Schema validator.
+
 For each entity, the text export labels source description and added design details
 separately, followed by individual copy-paste prompts for each base-reference view.
 `image_prompts.json` contains asset IDs, descriptions and prompts for automation.

@@ -337,6 +337,13 @@ def reconcile_chapter(
     if not incoming:
         return registry
     candidates = candidate_catalog(incoming, registry, args.candidate_count, args.include_all_below)
+    protected = getattr(args, "protected_reference_sources", set())
+    locked_ids = {e["global_id"] for e in registry
+                  if any((s["chapter_id"], s["local_id"]) in protected for s in e["source_entities"])}
+    for item in incoming:
+        lid = item["local_id"]
+        candidates[lid] = ([] if (chapter["chapter_id"], lid) in protected
+                           else [e for e in candidates[lid] if e["global_id"] not in locked_ids])
     def validate_resolutions(result):
         resolutions = result.get("resolutions", [])
         ids = [r.get("local_id") for r in resolutions]

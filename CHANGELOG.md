@@ -8,6 +8,17 @@ by later entries.
 
 ## Unreleased
 
+- Resolve contextual mentions using previously extracted references; generalize
+  editable attributions to descriptive fragments of people, places and objects,
+  preserving phase observations without creating extra assets or identity traits.
+
+- Add editable reference links with a review-only pass, source fingerprints,
+  protected identity decisions, scoped sound attributions and narrative relations.
+  Keep manifestations out of character assets and preserve their source events.
+- Export editor JSON schemas for reference links and visual designs; validate
+  imports offline before inference and invalidate node caching on file edits.
+  Add jsonschema to aligned runtime dependencies, documentation and regressions.
+
 - Remove old configuration-widget migration, cinematic narrative bundles and their
   unused state compiler, tests and documentation, plus the removed anchors_json
   direct-call argument. Require current run configuration and relative output

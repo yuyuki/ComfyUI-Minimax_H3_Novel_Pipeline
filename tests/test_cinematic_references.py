@@ -129,3 +129,19 @@ def test_old_completed_catalog_cache_is_regenerated(execution, tmp_path):
     regenerated, _ = node.run(config, [chapter()], **params)
     assert regenerated[0]["schema_version"] == util.CHAPTER_SCHEMA
     assert regenerated[0]["characters"] == result[0]["characters"]
+
+
+def test_identity_context_contains_only_prior_observations(execution):
+    calls, params, config = execution
+    ExtractChapterReferencesNode().run(config, [chapter()], **params)
+    assert all(not entities for entities in calls[0]["known_references"].values())
+    for call in calls:
+        context = call["known_references"]
+        if call["sequence"] == 1:
+            assert "torch" not in json.dumps(context)
+        if call["sequence"] == 2 and call["phase"] == "event":
+            assert context["objects"] == []
+            assert context["characters"][0]["canonical_name"] == "Indy"
+        if call["sequence"] == 3 and call["phase"] == "event":
+            assert context["objects"][0]["canonical_name"] == "torch"
+            assert "catches" not in json.dumps(context)

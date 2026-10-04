@@ -340,6 +340,59 @@ file's informational `source_facts` snapshot. LM Studio checks additions for
 contradictions and reports conflicting traits for correction; this semantic check
 still requires human review. Chapter appearance takes precedence over a base design.
 
+Consolidation also writes `reference_links.json`, `reference_links.schema.json`
+and `visual_designs.schema.json`. Both editable JSON files declare a relative
+`$schema`; keep each schema beside its document for editor completion and validation.
+Runtime validation is offline and runs before model requests. Install the updated
+runtime dependencies (`python -m pip install -r requirements.txt`) and restart ComfyUI.
+
+To review references before generating briefs, enable Consolidate's `links_only`.
+This exports classifications and suggested links, then blocks its registry output
+so downstream generation does not run. Open `reference_links.json`, check the
+entity names and evidence, and edit the decisions. Set `reference_links_path` to
+that file (inside `output/minimax_h3_novel`), disable `links_only`, and queue again.
+File-content changes invalidate the node cache even when the path is unchanged.
+
+- `entities[].classification`: `entity` for real people (including unnamed guards),
+  places and objects; `manifestation` for non-independent sounds, actions, sensations
+  or descriptive fragments mistakenly extracted as entities of any type.
+  Manifestations remain in the saved narrative/events but receive no reference assets.
+- `identity` / `same_as`: two local mentions represent one entity of the same type.
+  Set `sequence` and `phase` to `null`; the target supplies the retained identity name.
+- `attribution`: attach a manifestation at an exact sequence/phase to a person,
+  place or object. Use `emitted_by` for a cry, `describes` for a descriptive aspect,
+  or another precise relationship. Its observation is retained without turning
+  the fragment into an alias or permanent visual/vocal trait.
+- `relation`: a narrative relationship such as `assistant_of` or `located_in`.
+  Supply sequence/phase for temporary facts, or two `null` values for persistent
+  relationships. This does not merge entities or change their stable appearance.
+
+Generated links are `proposed` or `unresolved`. Only `confirmed` links are applied.
+Extraction receives earlier reference names, aliases and last observations to resolve
+contextual mentions without seeing future phases. Review missed matches in `links_only`:
+use identity links for the same man, crevasse or rope under different names, and
+attribution links for descriptions of the crevasse's wall or abyss. These decisions
+depend on the passage; similar words alone do not establish identity.
+`rejected` identity links prevent automatic merging; other rejected links are not
+applied. Ambiguous initial cries should remain unresolved when several speakers
+are possible. Classification is applied independently of link status: restore
+`entity` if the model incorrectly classified a real person as a manifestation.
+Confirmed links and rejected identities protect their entities from automatic
+matching/auditing; other entities still follow normal consolidation. Review any
+remaining duplicates explicitly. Confirmed relations and attributions are passed
+to prompt generation with their chapter/sequence scope.
+
+Addresses use `chapter_id` + `local_id`, never mutable global IDs. Every source
+entity must appear exactly once in the file. The source fingerprint rejects files
+from changed catalogs; regenerate links after re-extraction. Conflicting decisions,
+unknown addresses and invalid scopes are errors. Raw chapter snapshots remain
+unchanged; applied decisions and manifestations are saved separately in the registry.
+Identity edits can change global IDs: regenerate visual designs after changing
+identity links, then edit/import the new `visual_designs.json`. Imported visual
+traits are restricted by entity type (for example `hair` for a character and
+`layout` for a location). JSON schemas validate structure; semantic checks still
+compare designs against current novel facts.
+
 Style is applied when Consolidate generates briefs. Loading an existing registry
 and running Generate exports its saved prompts without restyling or additional
 image-prompt LLM calls. Older registries must be regenerated with the v4 timeline schema. Copy a single view's prompt into your separate Qwen-Image-2512

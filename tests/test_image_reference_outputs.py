@@ -585,14 +585,16 @@ def test_bad_design_imports_fail_actionably(output_root, change):
     item = entity()
     design = {"global_id": item["global_id"], "canonical_name": item["canonical_name"],
               "entity_type": item["entity_type"], "source_facts": visual_designs.source_facts(item),
-              "added_details": {"color": "Gold instead of silver."}}
+              "added_details": {"skin": "Gold instead of silver."}}
     if change == "name":
         design["canonical_name"] = "Another character"
     if change == "type":
         design["entity_type"] = "location"
+        design["added_details"] = {"colors": "Gold instead of silver."}
     if change == "id":
         design["global_id"] = "CHAR_999"
     util.save_json(output_root / "designs.json", {"schema_version": visual_designs.DESIGN_SCHEMA_VERSION,
+                                                "image_style": "realistic photographic",
                                                 "entities": [design, design] if change == "duplicate" else [design]})
     def chat(client, model, system, user, *args):
         return design_checks(user, "conflict", "color contradicts the silver source description")

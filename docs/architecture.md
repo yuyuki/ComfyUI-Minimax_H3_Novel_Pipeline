@@ -17,6 +17,9 @@ flowchart TD
     config["LM Studio Configuration"] --> extract["Extract Chapter References"]
     extract --> consolidate["Consolidate References"]
     consolidate --> timeline["Canonical entity timelines: chapter / sequence / phase"]
+    consolidate --> links["Editable reference links + JSON schemas; optional review-only pass"]
+    links --> decisions["Validate and apply confirmed identities, attributions and relations"]
+    decisions --> timeline
     consolidate --> designs["Prepare stable visual designs"]
     designs --> generate["Generate H3 Prompts"]
     consolidate --> generate
@@ -29,6 +32,7 @@ The node wrappers coordinate filesystem access, configuration snapshots and run 
 The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its ordered phases feed extraction; catalogs and registries retain temporal observations.
 
 `reference_timeline` validates cinematic catalogs, merges observations without rewriting them, computes first occurrences and provides exact-address state lookup. Identity reconciliation and duplicate audits exclude temporal state; base image briefs use stable identity only.
+`reference_links` reviews chapter evidence, validates editable source-addressed decisions and applies protected identities and scoped attributions before assets. Manifestations retain their original events without character assets. `editable_schemas` exports the same local JSON schemas used for import validation; editor schema URLs are never fetched at runtime.
 
 ## Internal module dependencies
 
@@ -43,6 +47,7 @@ flowchart TD
     m_cinematic_references["cinematic_references"]
     m_configuration_snapshot["configuration_snapshot"]
     m_consolidate_references["consolidate_references<br/>Consolidate References"]
+    m_editable_schemas["editable_schemas"]
     m_extract_chapter_references["extract_chapter_references<br/>Extract Chapter References"]
     m_generate_h3_prompts["generate_h3_prompts<br/>Generate H3 Prompts"]
     m_image_prompt_export["image_prompt_export"]
@@ -63,6 +68,7 @@ flowchart TD
     m_pipeline_step3_generate["pipeline_step3_generate"]
     m_progress["progress"]
     m_prompt_cache["prompt_cache"]
+    m_reference_links["reference_links"]
     m_reference_requests["reference_requests"]
     m_reference_timeline["reference_timeline"]
     m_route_access["route_access"]
@@ -96,13 +102,16 @@ flowchart TD
     m_configuration_snapshot --> m_lmstudio_models
     m_configuration_snapshot --> m_util
     m_consolidate_references --> m_configuration_snapshot
+    m_consolidate_references --> m_editable_schemas
     m_consolidate_references --> m_image_prompt_export
     m_consolidate_references --> m_lmstudio_pipeline
     m_consolidate_references --> m_progress
+    m_consolidate_references --> m_reference_links
     m_consolidate_references --> m_reference_timeline
     m_consolidate_references --> m_run_output
     m_consolidate_references --> m_util
     m_consolidate_references --> m_visual_designs
+    m_editable_schemas --> m_util
     m_extract_chapter_references --> m_cinematic_references
     m_extract_chapter_references --> m_configuration_snapshot
     m_extract_chapter_references --> m_lmstudio_pipeline
@@ -165,6 +174,13 @@ flowchart TD
     m_pipeline_step3_generate --> m_prompt_cache
     m_pipeline_step3_generate --> m_util
     m_prompt_cache --> m_lmstudio_json
+    m_reference_links --> m_configuration_snapshot
+    m_reference_links --> m_editable_schemas
+    m_reference_links --> m_lmstudio_pipeline
+    m_reference_links --> m_progress
+    m_reference_links --> m_reference_requests
+    m_reference_links --> m_reference_timeline
+    m_reference_links --> m_util
     m_reference_requests --> m_lmstudio_json
     m_reference_requests --> m_lmstudio_pipeline
     m_reference_timeline --> m_cinematic_references
@@ -172,6 +188,7 @@ flowchart TD
     m_run_output --> m_path_access
     m_spatial_continuity --> m_progress
     m_util --> m_path_access
+    m_visual_designs --> m_editable_schemas
     m_visual_designs --> m_lmstudio_pipeline
     m_visual_designs --> m_progress
     m_visual_designs --> m_reference_requests
@@ -188,7 +205,8 @@ flowchart TD
 | `src/cinematic_chapter_adapter.py` | `chapter_selection`, `cinematic_adaptation`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `CinematicChapterAdapterNode` |
 | `src/cinematic_references.py` | `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `chapter_digest`, `parse_chapters`, `process_chapter` |
 | `src/configuration_snapshot.py` | `lmstudio_config`, `lmstudio_json`, `lmstudio_models`, `util` | `complete`, `content_digest`, `file_digest`, `start` |
-| `src/consolidate_references.py` | `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
+| `src/consolidate_references.py` | `configuration_snapshot`, `editable_schemas`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_links`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
+| `src/editable_schemas.py` | `util` | `export_schemas`, `obj`, `validate_document` |
 | `src/extract_chapter_references.py` | `cinematic_references`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
 | `src/generate_h3_prompts.py` | `chapter_selection`, `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `path_access`, `progress`, `run_output`, `util` | `GenerateH3PromptsNode` |
 | `src/image_prompt_export.py` | `path_access`, `util` | `export_image_prompts` |
@@ -209,12 +227,13 @@ flowchart TD
 | `src/pipeline_step3_generate.py` | `lmstudio_json`, `path_access`, `progress`, `prompt_cache`, `util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `dedupe_scenes`, `default_view_order`, `entity_index`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `resolve_continuity`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/prompt_cache.py` | `lmstudio_json` | `fingerprint` |
+| `src/reference_links.py` | `configuration_snapshot`, `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `reference_timeline`, `util` | `address`, `apply_decisions`, `audit_unprotected`, `document`, `load_links`, `plan`, `prepare_links`, `source_index`, `validate_links` |
 | `src/reference_requests.py` | `lmstudio_json`, `lmstudio_pipeline` | `validate_assets`, `validated_request` |
 | `src/reference_timeline.py` | `cinematic_references`, `util` | `merge_timeline`, `refresh_first_occurrence`, `state_at`, `validate_catalogs` |
 | `src/route_access.py` | — | `require_local_request` |
 | `src/run_output.py` | `path_access` | `execution_id`, `reserve_run`, `stage_output` |
 | `src/spatial_continuity.py` | `progress` | `SpatialContinuityNode` |
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
-| `src/visual_designs.py` | `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
+| `src/visual_designs.py` | `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **34**. Internal dependency edges: **106**.
+Modules: **36**. Internal dependency edges: **117**.

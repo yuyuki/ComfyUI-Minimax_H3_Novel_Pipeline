@@ -402,8 +402,7 @@ def chapter_catalog(refs: dict[str, Any], chapter_id: str) -> list[dict[str, Any
     entities = entity_index(refs)
     assets = picture_assets_by_entity(refs)
     gids = set(refs.get("chapter_entity_map", {}).get(chapter_id, {}).values())
-    if not gids:
-        gids = {e["global_id"] for e in entities.values() if chapter_id in e.get("chapters_seen", [])}
+    gids.update(e["global_id"] for e in entities.values() if chapter_id in e.get("chapters_seen", []))
 
     out = []
     for gid in sorted(gids, key=natural_key):
@@ -429,6 +428,10 @@ def chapter_catalog(refs: dict[str, Any], chapter_id: str) -> list[dict[str, Any
                 "stable_visual_description": e.get("stable_visual_description", ""),
                 "distinguishing_features": e.get("distinguishing_features", []),
                 "voice_description": e.get("voice_description", ""),
+                "confirmed_narrative_relations": [r for r in e.get("narrative_relations", [])
+                                                  if r["source"]["chapter_id"] == chapter_id],
+                "confirmed_attributions": [r for r in e.get("confirmed_attributions", [])
+                                           if r["source"]["chapter_id"] == chapter_id],
                 "available_picture_views": available,
             }
         )
@@ -455,6 +458,9 @@ never pack leftover beats into the last scene.
 Before selecting scenes, trace the passage's physical states and dialogue turns
 in source order. The original prose governs events; entity catalog descriptions
 are reference metadata, not a timeline or evidence that an entity is on screen.
+confirmed_attributions and confirmed_narrative_relations are operator-reviewed
+decisions. Apply them only to the indicated source event and temporal scope;
+never move their actions to another moment or make an offscreen speaker visible.
 Preserve the opening situation, spatial relationships, and causal order. Do not
 advance a later prop arrival or character action to the start of the sequence.
 When selecting a dialogue exchange, retain its short replies and calls, including

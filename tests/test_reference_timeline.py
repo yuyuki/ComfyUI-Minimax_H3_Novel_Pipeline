@@ -37,6 +37,10 @@ def catalog(cid="chapter", kind="characters", name="Indy", alias=None):
 def mocked_reconcile(monkeypatch):
     calls = []
     def chat(client, model, system, user, schema, *args):
+        if schema["name"] == "reference_link_proposals":
+            data = json.loads(user)
+            return {"entities": [e for e in data["available_entities"] if e["chapter_id"] == data["chapter"]["chapter_id"]],
+                    "links": []}
         incoming = json.loads(user.split("INCOMING:\n", 1)[1].split("\n\nCANDIDATES:", 1)[0])
         candidates = json.loads(user.split("CANDIDATES:\n", 1)[1])
         calls.append(user)

@@ -21,6 +21,20 @@ Stable descriptions contain intrinsic identity traits only: no posture, position
 equipment, possession, injuries, relationships or environmental conditions.
 Put changing facts in chapter_appearance/chapter_state, retaining action order.
 Do not infer omitted facts, carry states forward or resolve uncertain identities.
+known_references contains only earlier observations, for identity resolution, not
+facts to copy into this phase. Resolve contextual mentions to an existing person,
+place or object whenever evidence supports it. Reuse its canonical_name and retain
+genuine alternative names in aliases. "L'homme avec la torche" and "l'homme" may
+refer to the established person; "la crevasse à Delphes", "la crevasse sombre"
+and "la crevasse" may name one location; "la corde" and "le filin" one object.
+These are contextual decisions, never universal synonym rules. A different rope,
+another man or a newly arriving torch must remain distinct.
+Descriptions of parts/aspects ("la paroi rocheuse", "l'abîme" of the crevasse),
+actions, sensations and sounds belong in the supported entity's phase observation,
+not in separate asset identities or aliases. Attach a cry to its established person
+only when supported. Otherwise retain it in the narrative without inventing a person.
+Actual unnamed people and explicitly established offscreen speakers remain entities.
+Never turn a temporary description or manifestation into a permanent identity trait.
 """
 
 
@@ -85,7 +99,11 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     for seq, phase, text in progress.steps(jobs):
         lmstudio_pipeline.comfy_interrupt_check()
         # No original source, other phases, or later sequences enter this request.
-        user = json.dumps({"sequence": seq["sequence"], "phase": phase, "text": text}, ensure_ascii=False)
+        known = {kind: [{"canonical_name": e["canonical_name"], "aliases": e["aliases"],
+                         "last_observations": list(list(e["state_by_sequence"].values())[-1].values())[-1]}
+                        for e in entities] for kind, entities in catalog.items()}
+        user = json.dumps({"sequence": seq["sequence"], "phase": phase, "text": text,
+                           "known_references": known}, ensure_ascii=False)
         part_key = fingerprint(model, args, TEMPORAL_VERSION, system, step.CHUNK_SCHEMA, user, client=client)
         cache = confined_path(cache_dir / f"{part_key}.json", output)
         if cache.exists() and not args.force:
@@ -108,7 +126,9 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                               "first_sequence": seq["sequence"], "first_phase": phase, "state_by_sequence": {}}
                     entity["chapter_appearance" if kind == "characters" else "chapter_state"] = ""
                     catalog[kind].append(entity)
-                entity["aliases"] = list(dict.fromkeys([*entity["aliases"], *observation["aliases"]]))
+                entity["aliases"] = list(dict.fromkeys([*entity["aliases"], *observation["aliases"],
+                                                       *([observation["canonical_name"]]
+                                                         if observation["canonical_name"] != entity["canonical_name"] else [])]))
                 phases = entity["state_by_sequence"].setdefault(str(seq["sequence"]), {})
                 phases.setdefault(phase, []).append(observation)
     payload = {"schema_version": util.CHAPTER_SCHEMA, "timeline_version": TEMPORAL_VERSION,
