@@ -55,6 +55,65 @@ def design_checks(user, verdict="compatible_addition", reason="Compatible with s
                        for trait in json.loads(user)["added_details"]]}
 
 
+@pytest.mark.parametrize("model", ["qwen", "mistral"])
+def test_consolidation_preserves_french_briefs_and_audio_language_context(monkeypatch, tmp_path, model):
+    step = lmstudio_pipeline.load("consolidate")
+    item = entity()
+    item.update(canonical_name="Éloïse", stable_visual_description="Cheveux noirs et yeux verts.",
+                distinguishing_features=[], speaks=True, voice_description="",
+                reference_priority="recommended")
+    args = options()
+    args.max_character_base_views = 1
+    args.audio_threshold = "recommended"
+    source = item["stable_visual_description"]
+    brief = "Une référence claire et réutilisable."
+    instruction = "Éclairage doux sur fond uni."
+    seen = set()
+
+    def chat(client, selected_model, system, user, schema, temperature, max_tokens):
+        assert selected_model == model
+        policy = " ".join(system.lower().split())
+        assert "source language" in policy
+        assert "not translate into english" in policy
+        data = json.loads(user)
+        seen.add(schema["name"])
+        if schema["name"] == "reference_appearance":
+            assert data.get("stable_visual_description", data.get("appearance")) == source
+            return {"appearance": source}
+        if schema["name"] == "audio_asset_briefs_v2":
+            assert data[0]["voice_description"] == ""
+            assert data[0]["stable_visual_description"] == source
+        else:
+            assert data[0]["appearance"] == source
+        return {"assets": [{"asset_id": spec["asset_id"], "description": brief,
+                            "generation_prompt": instruction} for spec in data]}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    pictures = step.generate_picture_assets(None, model, step.build_picture_specs([item], args), args)
+    audio = step.generate_audio_assets(None, model, step.build_audio_specs([item], args), args)
+    assert seen == {"reference_appearance", "picture_asset_briefs_v2", "audio_asset_briefs_v2"}
+    assert source in pictures[0]["generation_prompt"]
+    for asset in pictures + audio:
+        assert asset["description"] == brief
+        assert instruction in asset["generation_prompt"]
+    output = tmp_path / "reference_asset_prompts.txt"
+    step.write_asset_prompts(output, pictures, audio)
+    saved = output.read_text(encoding="utf-8")
+    assert source in saved and brief in saved and "Éloïse" in saved
+
+
+def test_all_consolidation_prompts_request_source_language():
+    step = lmstudio_pipeline.load("consolidate")
+    for system in (step.RECONCILE_SYSTEM, step.AUDIT_SYSTEM, step.APPEARANCE_SYSTEM,
+                   step.FACIAL_APPEARANCE_SYSTEM, step.VIEW_APPEARANCE_SYSTEM,
+                   step.PICTURE_BRIEF_SYSTEM, step.AUDIO_BRIEF_SYSTEM,
+                   visual_designs.DESIGN_SYSTEM, visual_designs.CONFLICT_SYSTEM):
+        policy = " ".join(system.lower().split())
+        assert "source language" in policy
+        assert "not translate into english" in policy
+        assert "json keys" in policy
+
+
 def test_runs_share_queue_and_advance_on_collision(output_root, monkeypatch):
     class Clock:
         @staticmethod

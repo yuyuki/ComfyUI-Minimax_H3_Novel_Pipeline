@@ -22,6 +22,12 @@ def _log(message: str) -> None:
 
 
 class ConsolidateReferencesNode:
+    DESCRIPTION = (
+        "Consolidate references while asking the selected LM Studio model to preserve "
+        "the source language of supplied descriptions and generated briefs. Language "
+        "support depends on the model. JSON keys and fixed image framing remain unchanged."
+    )
+
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
