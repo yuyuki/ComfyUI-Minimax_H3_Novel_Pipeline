@@ -1340,13 +1340,13 @@ def process_chapter(
     narrative_attempts = 0
     if narrative is not None:
         if not isinstance(narrative, dict) or narrative.get("schema_version") != "minimax-cinematic-narrative.v1":
-            raise ValueError("Invalid cinematic_narrative; connect Novel Cinematic Simplifier.")
+            raise ValueError("Invalid cinematic_narrative; supply a compatible minimax-cinematic-narrative.v1 bundle.")
         chapters = narrative.get("chapters")
         if not isinstance(chapters, dict):
             raise ValueError("Invalid cinematic narrative chapters; rerun preprocessing.")
         record = chapters.get(str(path.resolve()))
         if not isinstance(record, dict) or record.get("source_digest") != narrative_state.source_digest(text):
-            raise ValueError("Cinematic narrative is missing or stale for this chapter. Rerun Novel Cinematic Simplifier.")
+            raise ValueError("Cinematic narrative is missing or stale for this chapter. Supply a bundle matching the current source.")
         if not isinstance(record.get("cinematic_text"), str) or not record["cinematic_text"].strip():
             raise ValueError("Cinematic narrative contains no cinematic text.")
         text = record["cinematic_text"]

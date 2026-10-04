@@ -1,12 +1,11 @@
 """Source-backed continuity regression; LM Studio responses remain deterministic mocks."""
-from contextlib import nullcontext
 from copy import deepcopy
 import json
 from pathlib import Path
 
 import pytest
 
-from minimax_h3_novel_pipeline import narrative_nodes as nodes, narrative_state as ns, path_access
+from minimax_h3_novel_pipeline import narrative_state as ns
 from .test_narrative_state import contract, entity, extraction
 
 
@@ -118,10 +117,8 @@ def test_source_backed_initial_frame_contamination(index, key, field, value):
     assert any(error["entity"] == key and error["suggested_correction"] for error in errors)
 
 
-def test_actual_prologue_preprocessing_with_mocked_lmstudio(tmp_path, monkeypatch):
+def test_actual_prologue_preprocessing_with_mocked_lmstudio(monkeypatch):
     source = "\n\n".join(p.strip() for p in SOURCE.read_text(encoding="utf-8-sig").split("\n\n") if p.strip())
-    chapter = tmp_path / SOURCE.name
-    chapter.write_text(source, encoding="utf-8")
     beats = source_contracts()
     combined = {**beats[0], "events": [b["events"][0] for b in beats], "state_after": beats[-1]["state_after"]}
     # Preserve the entire source and dialogue; normalize the opening metaphor for this mock.
@@ -136,14 +133,9 @@ def test_actual_prologue_preprocessing_with_mocked_lmstudio(tmp_path, monkeypatc
             return extraction(combined, source)
         return {"errors": []}
     monkeypatch.setattr(ns, "chat_json", chat)
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
-    monkeypatch.setattr(nodes, "stage_output", lambda *a: tmp_path / "output")
-    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock-qwen"))
-    result = nodes.NovelCinematicSimplifierNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})
+    result, _ = ns.simplify(None, "mock-qwen", source, 2)
+    tracked, _ = ns.track_scene(None, "mock-qwen", source, result["cinematic_text"], attempts=2)
     assert calls[0]["original_scene"] == source
-    assert "croissant de lune" not in result[1]
-    assert "— Doriane ! hurla-t-il. Envoyez une autre torche !" in result[1]
-    saved = json.loads((tmp_path / "output/cinematic_narrative.json").read_text(encoding="utf-8"))
-    record = saved["chapters"][str(chapter.resolve())]
-    assert record["segments"][0]["original_text"] == source
-    assert record["segments"][0]["contract"] == ns.compile_contract(extraction(combined, source), source)
+    assert "croissant de lune" not in result["cinematic_text"]
+    assert "— Doriane ! hurla-t-il. Envoyez une autre torche !" in result["cinematic_text"]
+    assert tracked == ns.compile_contract(extraction(combined, source), source)

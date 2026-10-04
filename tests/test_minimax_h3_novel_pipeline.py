@@ -29,7 +29,6 @@ def test_root_registration_and_frontend(plugin):
         "LMStudioConfigurationNode", "SelectChaptersNode", "ExtractChapterReferencesNode",
         "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
         "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SpatialContinuityNode",
-        "NovelCinematicSimplifierNode", "NarrativeContinuityNode",
         "CinematicChapterAdapterNode", "LoadCinematicChaptersNode",
     }
     assert set(plugin.NODE_DISPLAY_NAME_MAPPINGS) == set(plugin.NODE_CLASS_MAPPINGS)
@@ -37,6 +36,17 @@ def test_root_registration_and_frontend(plugin):
     for cls in plugin.NODE_CLASS_MAPPINGS.values():
         assert callable(getattr(cls(), cls.FUNCTION))
         assert "required" in cls.INPUT_TYPES()
+
+
+@pytest.mark.parametrize("name", ["NovelCinematicSimplifierNode", "NarrativeContinuityNode"])
+def test_removed_nodes_are_not_registered_or_exported(plugin, name):
+    from minimax_h3_novel_pipeline import nodes
+
+    assert name not in plugin.NODE_CLASS_MAPPINGS
+    assert name not in plugin.NODE_DISPLAY_NAME_MAPPINGS
+    assert name not in nodes.NODE_CLASS_MAPPINGS
+    assert name not in nodes.__all__
+    assert not hasattr(nodes, name)
 
 
 @pytest.mark.parametrize("step", ["extract", "consolidate", "generate"])
@@ -55,7 +65,7 @@ def test_installed_package_import_outside_checkout(tmp_path):
     result = subprocess.run(
         [sys.executable, "-c",
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
-         "assert len(p.NODE_CLASS_MAPPINGS) == 12; "
+         "assert len(p.NODE_CLASS_MAPPINGS) == 10; "
          "from minimax_h3_novel_pipeline.load_cinematic_chapters import LoadCinematicChaptersNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCinematicChaptersNode'] is LoadCinematicChaptersNode; "
          "assert 'NarrativeStateTrackerNode' not in p.NODE_CLASS_MAPPINGS; "

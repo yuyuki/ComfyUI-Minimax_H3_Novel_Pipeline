@@ -1,33 +1,15 @@
-# Cinematic normalization and temporal continuity
+# Legacy cinematic narrative contracts
+
+Novel Cinematic Simplifier and Narrative Continuity have been removed.
+This document describes the retained internal helpers and compatible bundles
+accepted by Generate's optional `cinematic_narrative` input. For current node
+wiring, see [the workflow guide](../examples/README.md).
 
 The optional path uses the existing trusted LM Studio client, structured JSON/ChatML
 fallbacks, streaming cancellation and scene-local image/audio bindings. It does not
 add fields or sections to the MiniMax H3 prompt format.
 
-## Wiring
-
-**Narrative Continuity** reads selected text without rewriting it. Use this node for
-already simplified chapters/scenes, or optionally supply `cinematic_narrative` from
-Novel Cinematic Simplifier along with the same original chapter selection. Connect
-the resulting bundle to Generate. Incoming source digests and passage coverage are
-checked before model requests; continuity is rebuilt from the supplied prose.
-
-Extract Chapter References continues identifying catalog assets from original prose;
-Consolidate References owns global identity merging and asset briefs. Narrative IDs
-are temporal tracking IDs, not replacement registry IDs. Scene generation still plans
-shots and resolves registry bindings; this layer supplies ordered facts and boundaries.
-
-Connect **Select Chapters** and **LM Studio Configuration** to **Novel Cinematic
-Simplifier**. Connect its `cinematic_narrative` output to the optional input of the
-same name on **Generate H3 Prompts**. Continue to feed the original chapter selection
-and consolidated registry to Generate. Reference extraction still reads original prose.
-Spatial Continuity and camera refinement remain independently optional.
-
-The simplifier runs separate normalization, state extraction and semantic review
-requests per non-overlapping passage. It preserves actions, dialogue, visual atmosphere,
-props, identity and causality; it removes nonvisual metaphors and makes physical
-relationships explicit. Normalization is not summarization. The state pass sees original
-prose, normalized text and the preceding passage's ending state.
+## Internal processing
 
 Semantic complaints about both prose and state contracts are verified before they
 trigger corrections. Reviewers select indexed source IDs; Python supplies their exact
@@ -47,14 +29,7 @@ states. The existing H3 generator and repairer receive these contracts. Final wo
 is reviewed after camera processing and on cache hits. Conflicts in opening descriptions,
 subject definitions or summary are errors, even when the action timeline is correct.
 
-`chunk_chars` on the simplifier controls passage size (default 6000, paragraph boundaries
-preserved; a single long paragraph can exceed this). Generation's overlap/chunk-size
-settings do not split these passages again. `scenes_per_chunk` still limits planning:
-increase it or reduce preprocessing passage size if coverage validation reports omitted
-events. `max_scenes` deliberately limits generation; it does not require reaching the
-chapter's final state when truncating a passage.
-
-## Nodes and debugging
+## Debugging
 
 With Qwen thinking enabled, reasoning and JSON share the request's token budget.
 If a response includes reasoning and reaches the length limit before returning valid
@@ -80,18 +55,7 @@ but opening entities, input context, prose simplification and review responses
 can still exceed model limits. An unfinished page sequence fails rather than
 silently dropping remaining events.
 
-| Node | Inputs | Outputs |
-|---|---|---|
-| Narrative Continuity | chapter_selection, lmstudio_config, out_dir, chunk_chars, correction_attempts; optional cinematic_narrative | cinematic_narrative, cinematic_text, validation_report, state_before_json, events_json, state_after_json |
-| Novel Cinematic Simplifier | chapter_selection, lmstudio_config, out_dir, chunk_chars, correction_attempts | cinematic_narrative, cinematic_text, validation_report, state_before_json, events_json, state_after_json |
-
-All outputs except the first are strings suitable for Preview Text. The simplifier
-infers the first passage's opening state and carries ending states between passages
-automatically. Null attributes mean unknown.
-
-The simplifier saves `cinematic_narrative.json` beneath its timestamped run `out_dir`.
-It contains original and normalized passages, contracts and review history. Generate
-saves per-scene `narrative_state` and `continuity_review` in the existing chapter
+Generate saves per-scene `narrative_state` and `continuity_review` in the existing chapter
 `manifest.json`. Original chapter digests reject stale preprocessing. Prompt cache keys
 include the contract and previous final prompts. Existing result sockets are unchanged.
 
@@ -180,11 +144,7 @@ Deterministic replay validates the declared facts, not arbitrary natural languag
 Literary interpretation, completeness and final-prompt leakage detection still rely
 on the configured model's semantic review. Multiple structured calls cost additional
 time and context; reduce passage size for small models. State grows with the chapter.
-State resets for each chapter and every node execution, including executions after a
-failure. Review findings and verification retries belong only to the current candidate;
-neither node resumes state from saved output or a previous execution. Errors identify
-the chapter, passage and stage (simplification or continuity). There is no dedicated loader for saved preprocessing
-bundles yet.
+There is no dedicated loader for saved preprocessing bundles.
 
 Offline tests mock LM Studio. `tests/fixtures/00_PROLOGUE.md` contains the supplied
 French source, copied from the operator's ComfyUI input directory. Source-backed tests

@@ -7,7 +7,6 @@ import pytest
 
 from minimax_h3_novel_pipeline import narrative_state as ns
 from minimax_h3_novel_pipeline import pipeline_step3_generate as generate
-from minimax_h3_novel_pipeline.narrative_nodes import NovelCinematicSimplifierNode
 from minimax_h3_novel_pipeline.narrative_state import source_digest
 
 
@@ -622,12 +621,11 @@ def test_generation_uses_contract_after_camera_and_on_cache_hits(tmp_path, monke
         generate.process_chapter(chapter, {}, None, "qwen", args)
 
 
-def test_new_nodes_are_optional_and_preview_outputs_are_strings():
+def test_generate_keeps_optional_narrative_input_and_preview_outputs():
     from minimax_h3_novel_pipeline.generate_h3_prompts import GenerateH3PromptsNode
     assert "cinematic_narrative" in GenerateH3PromptsNode.INPUT_TYPES()["optional"]
     assert list(GenerateH3PromptsNode.INPUT_TYPES()["optional"])[:2] == ["spatial_continuity", "camera_direction"]
     assert GenerateH3PromptsNode.RETURN_TYPES == ("MINIMAX_PROMPTS", "STRING", "STRING")
-    assert all(t == "STRING" for t in NovelCinematicSimplifierNode.RETURN_TYPES[1:])
 
 
 def test_scene_boundary_cannot_drop_actions(monkeypatch):
@@ -648,43 +646,27 @@ def test_out_of_order_events_rejected():
     assert any("chronological" in e["expected_state"] for e in ns.validate_contract(beat, source=source))
 
 
-def test_preprocessing_node_persists_prologue_and_passes_state_between_passages(tmp_path, monkeypatch):
-    from contextlib import nullcontext
-    from minimax_h3_novel_pipeline import narrative_nodes as nodes, path_access
+def test_generation_accepts_legacy_bundle_across_all_prologue_passages(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline import path_access
+
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     beats = prologue()
     sources = [beat["events"][0]["description"] for beat in beats]
     chapter = tmp_path / "prologue_sequence.txt"
-    chapter.write_text("\n\n".join(sources), encoding="utf-8")
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
-    monkeypatch.setattr(nodes, "stage_output", lambda *a: tmp_path / "output")
-    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock-qwen"))
-    monkeypatch.setattr(nodes.util, "split_chunks", lambda *a: sources)
-    tracked = []
-
+    source = "\n\n".join(sources)
+    chapter.write_text(source, encoding="utf-8")
+    bundle = {"schema_version": "minimax-cinematic-narrative.v1", "chapters": {
+        str(chapter.resolve()): {"source_digest": source_digest(source), "cinematic_text": source, "segments": [
+            {"original_text": text, "cinematic_text": text, "contract": beat}
+            for text, beat in zip(sources, beats)]}}}
     def chat(client, model, system, user, schema, *args):
-        payload = json.loads(user)
         if schema == ns.REVIEW_SCHEMA:
             return {"errors": []}
-        index = sources.index(payload["original_scene"])
-        if schema == ns.SIMPLIFY_SCHEMA:
-            return {"cinematic_text": sources[index]}
-        tracked.append(payload["current_state"])
-        return extraction(beats[index], payload["original_scene"], payload["current_state"])
+        payload = json.loads(user)
+        beat = beats[sources.index(payload["original_scene"])]
+        return extraction(beat, payload["original_scene"], payload["current_state"])
 
     monkeypatch.setattr(ns, "chat_json", chat)
-    outputs = NovelCinematicSimplifierNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})
-    assert len(outputs) == 6
-    bundle = outputs[0]
-    saved = json.loads((tmp_path / "output/cinematic_narrative.json").read_text(encoding="utf-8"))
-    assert saved == bundle
-    assert tracked == [None] + [b["state_after"] for b in beats[:-1]]
-    record = bundle["chapters"][str(chapter.resolve())]
-    assert len(record["segments"]) == 8
-    assert ns.state_map(record["segments"][-1]["contract"]["state_after"])["main_rope"]["status"] == "broken"
-    for preview in outputs[2:]:
-        assert isinstance(json.loads(preview), dict)
-
-    # Run the persisted preprocessing result through all eight generated scenes.
     def plan(client, model, chapter_id, chunk, index, *args):
         source = sources[index - 1]
         return [generate.Scene(f"Beat {index}", source, source, "", [], [], [], False, "")]

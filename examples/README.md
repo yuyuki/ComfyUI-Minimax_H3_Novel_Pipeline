@@ -140,29 +140,10 @@ moments. Rerun Generate to replace earlier compressed scene plans and prompts.
 
 ## Cinematic preprocessing
 
-For an already cinematic chapter or scene saved as a selected text file, use
-**Select Chapters -> Narrative Continuity -> Generate H3 Prompts**, sharing the
-LM Studio configuration and keeping Generate's chapter selection and registry inputs.
-Narrative Continuity does not rewrite prose. It optionally accepts a Simplifier bundle;
-select the same original chapters when using that input. Existing Simplifier workflows
-still run the shared continuity layer automatically.
-
-Add **Novel Cinematic Simplifier** to the workflow above. Share the existing chapter
-selection and LM Studio configuration with it; connect its first output to Generate's
-optional `cinematic_narrative` input. Keep the original chapter selection and registry
-connections on Generate. Connect the simplifier's other outputs to Preview Text nodes
-to inspect normalized prose, state before/after, ordered events and validation reports.
-
-Start with `chunk_chars=6000` and `correction_attempts=2`. Increase Generate's
-`scenes_per_chunk` if a passage needs more scenes to retain every action. Preprocessed
-passages have no overlap, so state transitions are not repeated at chunk boundaries.
-The existing example workflow remains valid without preprocessing.
-
-To inspect the torch-in-mouth transition, preview the simplifier's state and event
-outputs and inspect Generate's per-scene `narrative_state` in `manifest.json`. The
-opening frame should have the torch held in a hand; only the mouth-placement event
-changes its relationship to `in_mouth`.
-See [the detailed contract documentation](../docs/narrative_preprocessing.md).
+Use **Cinematic Chapter Adapter** or **Load Cinematic Chapters** for the
+cinematic extraction workflow. **Novel Cinematic Simplifier** and
+**Narrative Continuity** have been removed; delete these nodes from older workflows.
+Generate retains its optional `cinematic_narrative` input for compatible bundles.
 
 ### Extraction timeline contract
 

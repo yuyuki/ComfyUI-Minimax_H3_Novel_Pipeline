@@ -413,26 +413,12 @@ Consolidation audits registries above `audit_max_entities` using likely-duplicat
 
 Only current v4 chapter catalogs and registries are accepted; consolidation requires cinematic phase timelines. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
 
-## Optional cinematic preprocessing
+## Cinematic preprocessing
 
-For text already simplified, connect **Select Chapters** and **LM Studio Configuration**
-to **Narrative Continuity**, then its `cinematic_narrative` output to **Generate H3 Prompts**.
-This node preserves the prose and tracks entities and events. It can also read the
-simplifier's bundle through its optional `cinematic_narrative` input.
-State preconditions and ending states are computed by Python; the model selects
-indexed source passages instead of copying quotations.
-
-Connect **Select Chapters** and **LM Studio Configuration** to **Novel Cinematic
-Simplifier**, then connect `cinematic_narrative` to **Generate H3 Prompts**. This
-normalizes literary prose without summarizing, tracks ordered state transitions,
-and checks that later actions do not appear in initial frames. Existing workflows
-work without this connection; reference extraction, H3 bindings and camera processing
-retain their existing roles.
-
-The simplifier provides text/JSON previews and bounded model correction. State
-tracking and continuity validation are integrated into preprocessing and generation. See
-[schemas, outputs, validation and limitations](docs/narrative_preprocessing.md) and
-[example wiring](examples/README.md#cinematic-preprocessing).
+Use **Cinematic Chapter Adapter** or **Load Cinematic Chapters** for the
+cinematic extraction workflow. **Novel Cinematic Simplifier** and
+**Narrative Continuity** have been removed; delete these nodes from older workflows.
+Generate retains its optional `cinematic_narrative` input for compatible bundles.
 
 ### Extraction timeline contract
 

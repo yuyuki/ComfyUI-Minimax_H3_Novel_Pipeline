@@ -1,11 +1,10 @@
-"""Event extraction, deterministic replay, and prose-preserving node integration."""
-from contextlib import nullcontext
+"""Event extraction and deterministic replay."""
 from copy import deepcopy
 import json
 
 import pytest
 
-from minimax_h3_novel_pipeline import narrative_nodes as nodes, narrative_state as ns
+from minimax_h3_novel_pipeline import narrative_state as ns
 from .test_narrative_state import confirmed_review, contract, entity, extraction, opening, prologue
 
 
@@ -149,49 +148,6 @@ def test_event_page_cancellation_propagates_without_retry(monkeypatch):
     with pytest.raises(InterruptProcessingException):
         ns.track_scene(None, "mock", "Indy waits.", "Indy waits.", attempts=2)
     assert calls == [ns.EXTRACTION_SCHEMA, ns.EVENT_PAGE_SCHEMA]
-
-
-@pytest.mark.parametrize("node_class", [nodes.NarrativeContinuityNode, nodes.NovelCinematicSimplifierNode])
-def test_new_execution_after_verification_failure_has_no_prior_state_or_feedback(tmp_path, monkeypatch, node_class):
-    from minimax_h3_novel_pipeline import path_access
-
-    chapter = tmp_path / "chapter.txt"
-    chapter.write_text("Indy calls Doriane. " * 8, encoding="utf-8")
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
-    monkeypatch.setattr(nodes, "stage_output", lambda *a: tmp_path / "output")
-    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
-    fail = True
-    requests = []
-
-    def chat(client, model, system, user, schema, *args):
-        payload = json.loads(user)
-        requests.append((schema, payload))
-        source = payload["original_scene"]
-        if schema == ns.SIMPLIFY_SCHEMA:
-            return {"cinematic_text": source}
-        if schema == ns.EXTRACTION_SCHEMA:
-            return extraction(contract(opening(), source), source)
-        if schema == ns.REVIEW_SCHEMA:
-            return {"errors": [ns.issue("indy", "calls", "silent")] if fail else []}
-        return {"decisions": []}
-
-    monkeypatch.setattr(ns, "chat_json", chat)
-    node = node_class()
-    stage = "simplification" if node.simplify_prose else "continuity"
-    with pytest.raises(ns.ReviewVerificationError, match=f"Narrative {stage} failed for chapter.txt, passage 1/1"):
-        node.run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})
-    fail = False
-    for source in ["Doriane waits.", "Indy climbs."]:
-        source = " ".join([source] * 10)
-        chapter.write_text(source, encoding="utf-8")
-        requests.clear()
-        bundle = node.run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"})[0]
-        for schema, payload in requests:
-            assert payload["original_scene"] == source
-            assert "validation_errors" not in payload and "previous_verification" not in payload
-            if schema == ns.EXTRACTION_SCHEMA:
-                assert payload["current_state"] is None
-        assert bundle["chapters"][str(chapter.resolve())]["cinematic_text"] == source
 
 
 def test_declarations_are_absent_until_introduction_and_carry_is_immutable():
@@ -366,39 +322,6 @@ def test_unintroduced_physical_state_and_ownership_cycles_are_errors():
     assert ns.validate_contract(contract(state))
     cyclic = {"entities": [entity("a", owner="b", location="b"), entity("b", owner="a", location="a")]}
     assert any(e["expected_state"] == "acyclic ownership" for e in ns.validate_contract(contract(cyclic)))
-
-
-@pytest.mark.parametrize("use_bundle", [False, True])
-def test_continuity_node_preserves_prose_and_propagates_state(tmp_path, monkeypatch, use_bundle):
-    beats = prologue()
-    source = "\n\n".join(b["events"][0]["description"] for b in beats)
-    chapter = tmp_path / "chapter.txt"
-    monkeypatch.setattr(nodes.util, "discover_inputs", lambda *a: [chapter])
-    monkeypatch.setattr(nodes.util, "read_chapter", lambda *a: source)
-    monkeypatch.setattr(nodes, "stage_output", lambda *a: tmp_path / "output")
-    monkeypatch.setattr(nodes.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
-    texts = [b["events"][0]["description"] for b in beats]
-    monkeypatch.setattr(nodes.util, "split_chunks", lambda text, size, overlap: texts if size == 6000 else [text])
-    current_states = []
-    def chat(*args):
-        assert args[4] != ns.SIMPLIFY_SCHEMA
-        payload = json.loads(args[3])
-        if args[4] == ns.REVIEW_SCHEMA:
-            return {"errors": []}
-        current_states.append(deepcopy(payload["current_state"]))
-        beat = beats[texts.index(payload["original_scene"])]
-        return extraction(beat, payload["original_scene"], payload["current_state"])
-    monkeypatch.setattr(ns, "chat_json", chat)
-    bundle = {"schema_version": "minimax-cinematic-narrative.v1", "chapters": {str(chapter.resolve()): {
-        "source_digest": ns.source_digest(source), "segments": [{"original_text": t, "cinematic_text": t} for t in texts]}}}
-    result = nodes.NarrativeContinuityNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"}, cinematic_narrative=bundle if use_bundle else None)
-    assert result[1] == source
-    assert current_states == [None] + [b["state_after"] for b in beats[:-1]]
-    assert json.loads((tmp_path / "output/cinematic_narrative.json").read_text(encoding="utf-8")) == result[0]
-    if use_bundle:
-        bundle["chapters"][str(chapter.resolve())]["segments"].pop()
-        with pytest.raises(ValueError, match="cover the original chapter"):
-            nodes.NarrativeContinuityNode().run({"chapter_paths": [str(chapter)]}, {"api_url": "unused"}, cinematic_narrative=bundle)
 
 
 def test_evidence_preserves_french_punctuation_and_unicode():
