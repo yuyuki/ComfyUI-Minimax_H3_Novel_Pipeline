@@ -47,7 +47,7 @@ def entity(gid, name, kind="character"):
     return {"global_id": gid, "canonical_name": name, "entity_type": kind,
             "aliases": [], "importance": "minor", "reference_priority": "optional",
             "chapters_seen": [gid], "source_entities": [{"chapter_id": gid, "local_id": "CHAR_001"}],
-            "chapter_variations": []}
+            "timeline": {}}
 
 
 def test_large_audit_is_bounded_and_rejects_unseen_ids(monkeypatch):

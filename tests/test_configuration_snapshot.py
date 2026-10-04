@@ -44,7 +44,11 @@ def setup(tmp_path, monkeypatch):
 def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, stage, module, cls):
     root, config, chapter = setup
     pipeline = lmstudio_pipeline.load(stage)
-    catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "source": {}}
+    catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
+               "source": {}, "timeline_version": "cinematic-reference-timeline.v1",
+               "characters": [], "locations": [], "objects": [],
+               "sequences": [{"sequence": 1, "source": "text", "adaptation": {
+                   "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
     registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "picture_assets": [], "audio_assets": []}
     if stage == "extract":
         def process(path, output, *args):

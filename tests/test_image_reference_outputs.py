@@ -32,12 +32,12 @@ def entity(kind="character", gid="CHAR_001"):
     return {"global_id": gid, "entity_type": kind, "canonical_name": "Aster",
             "stable_visual_description": "A silver silhouette.", "distinguishing_features": ["A star marking."],
             "importance": "major", "reference_priority": "optional", "chapters_seen": ["chapter"],
-            "chapter_variations": [], "source_entities": [], "speaks": False}
+            "timeline": {}, "source_entities": [], "speaks": False}
 
 
 def options():
     return SimpleNamespace(max_character_base_views=4, max_location_base_views=3, max_object_base_views=2,
-                           picture_threshold="recommended", no_variants=False, asset_batch_size=4,
+                           picture_threshold="recommended", asset_batch_size=4,
                            temperature=0.12, max_tokens=2500, image_style="realistic photographic")
 
 
@@ -113,11 +113,10 @@ def test_all_entity_coverage_prioritizes_core_views(kind, gid, expected):
     assert step.build_picture_specs([item], args) == []
 
 
-def test_prompts_repeat_identity_design_style_and_variant(monkeypatch):
+def test_prompts_repeat_stable_identity_design_style_without_temporal_state(monkeypatch):
     step = lmstudio_pipeline.load("consolidate")
     item = entity()
-    item["chapter_variations"] = [{"chapter_id": "chapter", "variant_reference_recommended": True,
-                                    "visual_state": "Wearing a red coat."}]
+    item["timeline"] = {"chapter": {"2": {"event": [{"chapter_appearance": "Wearing a red coat."}]}}}
     args = options()
     args.image_style = "watercolor"
     args.visual_designs = {"CHAR_001": {"added_details": {"hair": "Short copper hair."}}}
@@ -135,8 +134,8 @@ def test_prompts_repeat_identity_design_style_and_variant(monkeypatch):
 
     monkeypatch.setattr(step, "chat_json", chat)
     assets = step.generate_picture_assets(None, "qwen", step.build_picture_specs([item], args), args)
-    assert len(assets) == 6
-    assert seen_temperatures == [args.temperature, args.temperature]
+    assert len(assets) == 4
+    assert seen_temperatures == [args.temperature]
     for asset in assets:
         prompt = asset["generation_prompt"]
         facial = asset["view_type"] in step.FACIAL_VIEWS
@@ -186,8 +185,7 @@ def test_noisy_source_is_normalized_once_and_exported_without_reappending(output
         "Yeux noisette", "Cicatrice sur le menton", "Carries a backpack with a side pocket",
         "Holds torch between teeth during fall", "Étudiant en linguistique",
     ]
-    item["chapter_variations"] = [{"chapter_id": "chapter", "variant_reference_recommended": True,
-                                    "visual_state": "Wearing a red coat."}]
+    item["timeline"] = {"chapter": {"2": {"event": [{"chapter_appearance": "Wearing a red coat."}]}}}
     original = copy.deepcopy(item)
     args = options()
     args.visual_designs = {"CHAR_001": {"added_details": {"default_outfit": "A dark robe.",
@@ -212,10 +210,9 @@ def test_noisy_source_is_normalized_once_and_exported_without_reappending(output
 
     monkeypatch.setattr(step, "chat_json", chat)
     assets = step.generate_picture_assets(None, "qwen", step.build_picture_specs([item], args), args)
-    assert len(appearance_calls) == 2  # Four base views and two variant views share two paragraphs.
+    assert len(appearance_calls) == 1  # All base views share stable appearance only.
     assert appearance_calls[0]["distinguishing_features"] == item["distinguishing_features"]
     assert appearance_calls[0]["added_details"] == args.visual_designs["CHAR_001"]["added_details"]
-    assert appearance_calls[1]["base_appearance"] == base
     assert item == original
     for asset in assets:
         prompt = asset["generation_prompt"]
@@ -493,7 +490,11 @@ def test_invalid_design_import_fails_before_model_work(output_root, monkeypatch,
     monkeypatch.setattr(lmstudio_pipeline, "load", unexpected)
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", unexpected)
     params = {**node_defaults(ConsolidateReferencesNode), "visual_designs_path": path}
-    chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "source": {}}
+    chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
+               "source": {}, "timeline_version": "cinematic-reference-timeline.v1",
+               "characters": [], "locations": [], "objects": [],
+               "sequences": [{"sequence": 1, "source": "text", "adaptation": {
+                   "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
     with pytest.raises(ValueError, match="Clear visual_designs_path to generate new designs"):
         ConsolidateReferencesNode().run([chapter], {}, **params)
     assert list(output_root.iterdir()) == []
@@ -540,7 +541,7 @@ def test_bad_design_imports_fail_actionably(output_root, change):
         visual_designs.prepare_designs(chat, None, "model", [item], options(), "designs.json")
 
 
-def test_export_preserves_assets_and_supports_old_v3_registry(output_root):
+def test_export_preserves_current_registry_assets(output_root):
     registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [entity()], "picture_assets": [{
         "asset_id": "PIC_CHAR_001_FACE_FRONT", "linked_global_id": "CHAR_001", "view_type": "face_front",
         "variant": "base", "description": "portrait", "generation_prompt": "A silver figure facing forward.",
@@ -573,7 +574,11 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
     config = dict(api_url="http://127.0.0.1:1234/v1", thinking=False, qwen35_length_retries=2,
                   qwen35_top_k=20, qwen35_min_p=0, qwen35_repeat_penalty=1.05,
                   run_folder=run_output.reserve_run())
-    chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "source": {}}
+    chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
+               "source": {}, "timeline_version": "cinematic-reference-timeline.v1",
+               "characters": [], "locations": [], "objects": [],
+               "sequences": [{"sequence": 1, "source": "text", "adaptation": {
+                   "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
     result, summary = ConsolidateReferencesNode().run([chapter], config, **node_defaults(ConsolidateReferencesNode))
     assert ConsolidateReferencesNode.RETURN_TYPES == ("MINIMAX_REGISTRY", "STRING")
     assert ConsolidateReferencesNode.RETURN_NAMES == ("consolidated_references", "registry_summary")

@@ -70,8 +70,7 @@ identity, anatomy, materials, architecture, setting or explicit permanent traits
 
 def source_facts(entity):
     return {"stable_visual_description": entity.get("stable_visual_description", ""),
-            "distinguishing_features": entity.get("distinguishing_features", []),
-            "chapter_variations": entity.get("chapter_variations", [])}
+            "distinguishing_features": entity.get("distinguishing_features", [])}
 
 
 def resolve_designs_path(path):

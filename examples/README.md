@@ -125,14 +125,14 @@ anew. The selected style affects all new reference prompts. Loading a consolidat
 registry preserves its already generated style and prompts.
 
 For each entity, the text export labels source description and added design details
-separately, followed by individual copy-paste prompts for each view and variant.
+separately, followed by individual copy-paste prompts for each base-reference view.
 `image_prompts.json` contains asset IDs, descriptions and prompts for automation.
 Style/design choices do not modify extracted novel facts. Review generated images
 for consistency before using them as H3 references.
 
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 
-Only current v3 chapter catalogs and registries are accepted. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
+Only current v4 chapter catalogs and registries are accepted; consolidation requires cinematic phase timelines. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
 
 Generate gives each scene one continuous shot lasting the full `duration`.
 Increase `scenes_per_chunk` (and `max_scenes` if capped) to allow more separate
@@ -178,8 +178,26 @@ phase names to lists of observations (including descriptions, states and evidenc
 Missing phases mean no observation, not absence or automatic state inheritance.
 Repeated unambiguous names/aliases share an identity; uncertain identities stay separate.
 Changing state is never merged into an unqualified chapter appearance/state.
-Consolidated registries retain these records in `chapter_timelines`, indexed by
-chapter ID and linked through existing local/global entity mappings.
+Consolidation separates global stable identity from each entity's
+`timeline[chapter_id][sequence][phase]` observation lists. Identity reconciliation
+and duplicate audits receive only stable fields; deterministic merges preserve
+all observations and their evidence, even when aliases resolve to one identity.
+`chapter_timelines` retains the original chapter records and ordered sequences.
+Chapter IDs must be unique; sequence numbers are local to their chapter.
+
+`first_occurrence_by_chapter` records each chapter's `first_sequence` and
+`first_phase`, computed by numeric sequence and phase rank. Entity-level
+`first_chapter_id`, `first_sequence`, and `first_phase` use supplied chapter order.
+The Python `reference_timeline.state_at(entity, chapter_id, sequence, phase)` helper
+returns only observations at that exact address (an empty list means unknown).
+Read the preceding sequence's `endingState` separately for continuity; it never
+overwrites the next explicit `initialState`. No state is propagated automatically.
+
+Chapter-wide variations and the `no_variants` control are removed. Reference
+image briefs use stable identity only, so later possession, disguise or damage
+cannot become a chapter-wide image default. Sequence-specific image generation
+requires a consumer that explicitly selects a temporal address. Regenerate old
+catalogs and registries; no legacy format conversion is provided.
 
 Extraction's `chunk_chars` divides paragraphs only within a phase. The obsolete
 `overlap_paragraphs` and `merge_batch_size` controls are removed. Phase calls use

@@ -294,7 +294,7 @@ The default asset batch size is 4; existing workflows retain their saved value.
 Each entity gets a separate file in `image_prompts/characters/`, `places/` or
 `objects/`, named with its stable entity ID and name. Each file contains the source
 description, clearly labeled **Added design details**, and a complete copy-paste
-prompt for each generated angle and chapter variant. `image_prompts.json` contains
+prompt for each generated base-reference angle. `image_prompts.json` contains
 the same records. Generate's appended `image_prompt_text` output provides these
 texts in ComfyUI; existing `prompts` and `prompt_text` sockets keep their positions.
 The `prompts` dictionary also includes `image_prompts` records.
@@ -319,7 +319,7 @@ older planning and prompt caches are invalidated automatically.
 
 Before assembling views, LM Studio condenses overlapping source descriptions,
 feature lists and approved designs into a shared English appearance paragraph
-per entity and chapter variant. It is instructed to merge repeated facts and
+per entity. It is instructed to merge repeated facts and
 translations, omit biography and scene actions from neutral references, and
 replace conflicting base clothing with chapter clothing. Each view reuses that
 paragraph with its own framing and composition, in natural language suitable for
@@ -343,8 +343,7 @@ still requires human review. Chapter appearance takes precedence over a base des
 
 Style is applied when Consolidate generates briefs. Loading an existing registry
 and running Generate exports its saved prompts without restyling or additional
-image-prompt LLM calls. Older v3 registries remain loadable and show no added design
-details unless recorded. Copy a single view's prompt into your separate Qwen-Image-2512
+image-prompt LLM calls. Older registries must be regenerated with the v4 timeline schema. Copy a single view's prompt into your separate Qwen-Image-2512
 workflow. Text prompts alone cannot guarantee identical identity across independently
 generated images; visually review the resulting references before binding them to H3.
 
@@ -412,7 +411,7 @@ Compact retries retain the original entity capacities, six distinguishing featur
 
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 
-Only current v3 chapter catalogs and registries are accepted. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
+Only current v4 chapter catalogs and registries are accepted; consolidation requires cinematic phase timelines. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
 
 ## Optional cinematic preprocessing
 
@@ -449,8 +448,26 @@ phase names to lists of observations (including descriptions, states and evidenc
 Missing phases mean no observation, not absence or automatic state inheritance.
 Repeated unambiguous names/aliases share an identity; uncertain identities stay separate.
 Changing state is never merged into an unqualified chapter appearance/state.
-Consolidated registries retain these records in `chapter_timelines`, indexed by
-chapter ID and linked through existing local/global entity mappings.
+Consolidation separates global stable identity from each entity's
+`timeline[chapter_id][sequence][phase]` observation lists. Identity reconciliation
+and duplicate audits receive only stable fields; deterministic merges preserve
+all observations and their evidence, even when aliases resolve to one identity.
+`chapter_timelines` retains the original chapter records and ordered sequences.
+Chapter IDs must be unique; sequence numbers are local to their chapter.
+
+`first_occurrence_by_chapter` records each chapter's `first_sequence` and
+`first_phase`, computed by numeric sequence and phase rank. Entity-level
+`first_chapter_id`, `first_sequence`, and `first_phase` use supplied chapter order.
+The Python `reference_timeline.state_at(entity, chapter_id, sequence, phase)` helper
+returns only observations at that exact address (an empty list means unknown).
+Read the preceding sequence's `endingState` separately for continuity; it never
+overwrites the next explicit `initialState`. No state is propagated automatically.
+
+Chapter-wide variations and the `no_variants` control are removed. Reference
+image briefs use stable identity only, so later possession, disguise or damage
+cannot become a chapter-wide image default. Sequence-specific image generation
+requires a consumer that explicitly selects a temporal address. Regenerate old
+catalogs and registries; no legacy format conversion is provided.
 
 Extraction's `chunk_chars` divides paragraphs only within a phase. The obsolete
 `overlap_paragraphs` and `merge_batch_size` controls are removed. Phase calls use

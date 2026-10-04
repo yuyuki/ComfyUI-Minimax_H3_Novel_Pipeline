@@ -71,7 +71,8 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     if saved.exists() and not args.force:
         try:
             cached = util.load_json(saved)
-            if cached.get("cache_key") == key and cached.get("timeline_version") == TEMPORAL_VERSION:
+            if (cached.get("cache_key") == key and cached.get("timeline_version") == TEMPORAL_VERSION
+                    and cached.get("schema_version") == util.CHAPTER_SCHEMA):
                 return saved
         except (ValueError, OSError):
             pass

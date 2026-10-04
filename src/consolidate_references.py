@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from . import progress
+from .reference_timeline import refresh_first_occurrence, validate_catalogs
 
 import argparse
-import hashlib
 from typing import Any, Iterable
 
 from . import configuration_snapshot, lmstudio_pipeline, util
@@ -29,7 +29,7 @@ class ConsolidateReferencesNode:
             "candidate_count": ("INT", {"default": 12, "min": 1, "max": 1000}), "include_all_below": ("INT", {"default": 35, "min": 0, "max": 100000}),
             "picture_threshold": (["optional", "recommended", "required"], {"default": "recommended"}), "audio_threshold": (["optional", "recommended", "required"], {"default": "recommended"}),
             "max_character_base_views": ("INT", {"default": 4, "min": 1, "max": 7}), "max_location_base_views": ("INT", {"default": 3, "min": 1, "max": 6}), "max_object_base_views": ("INT", {"default": 2, "min": 1, "max": 4}), "asset_batch_size": ("INT", {"default": 4, "min": 1, "max": 1000}),
-            "no_variants": ("BOOLEAN", {"default": False}), "no_audit": ("BOOLEAN", {"default": False}), "audit_max_entities": ("INT", {"default": 120, "min": 0, "max": 100000}),
+            "no_audit": ("BOOLEAN", {"default": False}), "audit_max_entities": ("INT", {"default": 120, "min": 0, "max": 100000}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8500, "min": 256, "max": 100000}),
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "audit_similarity": ("FLOAT", {"default": 0.68, "min": 0.0, "max": 1.0, "step": 0.01}),
@@ -50,15 +50,14 @@ class ConsolidateReferencesNode:
         chapters = list(chapter_catalogs or [])
         if not chapters: raise ValueError("No chapter catalogs were supplied.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
+        validate_catalogs(chapters)
         designs_path = resolve_designs_path(params.get("visual_designs_path", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
-        for chapter in chapters:
-            util.require_schema(chapter, util.CHAPTER_SCHEMA)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         pipeline = lmstudio_pipeline.load("consolidate")
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
-            keys = ("candidate_count", "include_all_below", "picture_threshold", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_variants", "no_audit", "audit_max_entities", "temperature", "max_tokens")
+            keys = ("candidate_count", "include_all_below", "picture_threshold", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_audit", "audit_max_entities", "temperature", "max_tokens")
             args = argparse.Namespace(**{key: params[key] for key in keys}, audit_similarity=float(params["audit_similarity"]), audit_cluster_size=max(2, int(params["audit_cluster_size"])))
             args.image_style = params.get("image_style", "realistic photographic")
             args.image_asset_scope = params.get("image_asset_scope", "all entities")
@@ -81,6 +80,8 @@ class ConsolidateReferencesNode:
             lmstudio_pipeline.comfy_interrupt_check()
             with progress.scope(0.3, 0.4):
                 registry = pipeline.audit_registry(client, resolved_model, registry, args)
+            for entity in registry:
+                refresh_first_occurrence(entity, [c["chapter_id"] for c in chapters])
             registry.sort(key=lambda item: ({"character": 0, "location": 1, "object": 2}[item["entity_type"]], pipeline.natural_key(item["global_id"])))
             with progress.scope(0.4, 0.55):
                 designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
@@ -93,12 +94,12 @@ class ConsolidateReferencesNode:
             lmstudio_pipeline.comfy_interrupt_check()
             with progress.scope(0.85, 0.98):
                 audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
-            digest = hashlib.sha256("\n".join(f"{c['chapter_id']}:{c.get('source', {}).get('sha256', '')}" for c in chapters).encode()).hexdigest()
+            digest = configuration_snapshot.content_digest(chapters)
             payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
             payload["chapter_timelines"] = {c["chapter_id"]: {
                 "sequences": c["sequences"],
                 "references": {kind: c.get(kind, []) for kind in ("characters", "locations", "objects")},
-            } for c in chapters if "timeline_version" in c}
+            } for c in chapters}
             payload["visual_designs"] = designs
             payload["image_style"] = args.image_style
             util.save_json(output / "consolidated_references.json", payload)

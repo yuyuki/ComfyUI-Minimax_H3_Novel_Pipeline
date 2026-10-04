@@ -117,3 +117,15 @@ def test_extraction_resumes_from_saved_cinematic_chapter(execution, tmp_path):
     assert results[0]["sequences"] == value["sequences"]
     assert [(c["sequence"], c["phase"]) for c in calls] == [
         (i, phase) for i in (1, 2, 3) for phase in cr.PHASES]
+
+
+def test_old_completed_catalog_cache_is_regenerated(execution, tmp_path):
+    _, params, config = execution
+    node = ExtractChapterReferencesNode()
+    result, _ = node.run(config, [chapter()], **params)
+    saved, = list(tmp_path.rglob("chapter_references.json"))
+    old = {**result[0], "schema_version": "minimax-h3-novel-refs.chapter.v3"}
+    util.save_json(saved, old)
+    regenerated, _ = node.run(config, [chapter()], **params)
+    assert regenerated[0]["schema_version"] == util.CHAPTER_SCHEMA
+    assert regenerated[0]["characters"] == result[0]["characters"]

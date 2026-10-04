@@ -230,9 +230,10 @@ def test_unsupported_structured_output_propagates_without_fallback():
 
 
 @pytest.mark.parametrize("schema", [util.CHAPTER_SCHEMA, util.REGISTRY_SCHEMA])
-def test_old_schemas_are_rejected(schema):
+@pytest.mark.parametrize("version", ["v2", "v3"])
+def test_old_schemas_are_rejected(schema, version):
     with pytest.raises(ValueError, match="regenerate"):
-        util.require_schema({"schema_version": schema.replace(".v3", ".v2")}, schema)
+        util.require_schema({"schema_version": schema.rsplit(".", 1)[0] + "." + version}, schema)
     util.require_schema({"schema_version": schema}, schema)
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from . import progress
+from .reference_timeline import merge_timeline, validate_catalogs
 
 import argparse
 import difflib
@@ -67,7 +68,6 @@ def reconciliation_item_schema() -> dict[str, Any]:
         "importance": {"type": "string", "enum": list(IMPORTANCE_ORDER)},
         "reference_priority": {"type": "string", "enum": list(PRIORITY_ORDER)},
         "reference_view_hints": {"type": "array", "items": {"type": "string"}},
-        "variant_reference_recommended": {"type": "boolean"},
         "reason": {"type": "string"},
         "confidence": {"type": "number"},
     }
@@ -80,7 +80,7 @@ def reconciliation_item_schema() -> dict[str, Any]:
 
 
 RECONCILE_SCHEMA = {
-    "name": "chapter_to_global_reconciliation_v2",
+    "name": "chapter_to_global_identity_v4",
     "strict": True,
     "schema": {
         "type": "object",
@@ -105,7 +105,7 @@ AUDIT_ITEM = {
     "reason": {"type": "string"},
 }
 AUDIT_SCHEMA = {
-    "name": "global_duplicate_audit_v2",
+    "name": "global_duplicate_identity_audit_v4",
     "strict": True,
     "schema": {
         "type": "object",
@@ -210,10 +210,10 @@ def make_client(base_url: str, api_key: str, *, http_client=None) -> OpenAI:
 
 def incoming_entities(chapter: dict[str, Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for source_key, entity_type, state_key in (
-        ("characters", "character", "chapter_appearance"),
-        ("locations", "location", "chapter_state"),
-        ("objects", "object", "chapter_state"),
+    for source_key, entity_type in (
+        ("characters", "character"),
+        ("locations", "location"),
+        ("objects", "object"),
     ):
         for e in chapter.get(source_key, []):
             out.append(
@@ -224,13 +224,21 @@ def incoming_entities(chapter: dict[str, Any]) -> list[dict[str, Any]]:
                     "canonical_name": e.get("canonical_name", ""),
                     "aliases": e.get("aliases", []),
                     "stable_visual_description": e.get("stable_visual_description", ""),
-                    "chapter_visual_state": e.get(state_key, ""),
                     "distinguishing_features": e.get("distinguishing_features", []),
                     "voice_description": e.get("voice_description", "") if entity_type == "character" else "",
                     "speaks": bool(e.get("speaks", False)) if entity_type == "character" else False,
                     "importance": e.get("importance", "minor"),
                     "reference_priority": e.get("reference_priority", "optional"),
                     "reference_view_hints": e.get("reference_view_hints", []),
+                    "stable_observations": [
+                        {key: observation[key] for key in (
+                            "canonical_name", "aliases", "stable_visual_description",
+                            "distinguishing_features", "voice_description", "speaks",
+                            "importance", "reference_priority", "reference_view_hints",
+                        ) if key in observation}
+                        for phases in e["state_by_sequence"].values()
+                        for observations in phases.values() for observation in observations
+                    ],
                 }
             )
     return out
@@ -309,10 +317,9 @@ Rules:
 - Merge only source-supported profile information; never invent missing traits.
 - reference_view_hints should be the union of justified useful views and must be
   valid for the entity type.
-- variant_reference_recommended is true only when the chapter-specific visible
-  state merits an alternate reusable image: substantial disguise/costume, major
-  injury/transformation, large time jump, structural damage/change, etc. Ordinary
-  lighting/weather or trivial clothing changes should normally be false.
+- Consolidate only persistent identity traits. Never add posture, possession,
+  actions, damage, injuries or other temporary conditions to stable fields.
+- stable_observations are identity-only observations; no temporal state is supplied.
 """.strip()
 
 
@@ -323,25 +330,35 @@ def reconcile_chapter(
     registry: list[dict[str, Any]],
     args: argparse.Namespace,
 ) -> list[dict[str, Any]]:
+    validate_catalogs([chapter])
     incoming = incoming_entities(chapter)
+    if not incoming:
+        return registry
     candidates = candidate_catalog(incoming, registry, args.candidate_count, args.include_all_below)
-    result = chat_json(
-        client,
-        model,
-        RECONCILE_SYSTEM,
+    def validate_resolutions(result):
+        resolutions = result.get("resolutions", [])
+        ids = [r.get("local_id") for r in resolutions]
+        expected = {item["local_id"]: item for item in incoming}
+        if len(ids) != len(set(ids)) or set(ids) != set(expected):
+            raise ValueError("Return exactly one resolution for each incoming local_id.")
+        for resolution in resolutions:
+            lid = resolution["local_id"]
+            if resolution.get("entity_type") != expected[lid]["entity_type"]:
+                raise ValueError("Resolution entity_type must match the incoming entity.")
+            if resolution.get("match_global_id") not in {"NEW", *(e["global_id"] for e in candidates[lid])}:
+                raise ValueError("Match must be NEW or a supplied candidate for this entity.")
+
+    result = validated_request(
+        chat_json, client, model, RECONCILE_SYSTEM,
         f"Chapter: {chapter['chapter_id']}\n\nINCOMING:\n{json.dumps(incoming, ensure_ascii=False, indent=2)}\n\nCANDIDATES:\n{json.dumps(candidates, ensure_ascii=False, indent=2)}",
         RECONCILE_SCHEMA,
-        args.temperature,
-        args.max_tokens,
+        args, validate_resolutions,
     )
     resolutions = {x["local_id"]: x for x in result.get("resolutions", [])}
-    current_ids = {e["global_id"] for e in registry}
 
     for item in incoming:
-        r = resolutions.get(item["local_id"], {})
-        match = r.get("match_global_id", "NEW")
-        if match != "NEW" and match not in current_ids:
-            match = "NEW"
+        r = resolutions[item["local_id"]]
+        match = r["match_global_id"]
 
         if match == "NEW":
             gid = next_global_id(registry, item["entity_type"])
@@ -349,9 +366,9 @@ def reconcile_chapter(
                 "global_id": gid,
                 "entity_type": item["entity_type"],
                 "canonical_name": (r.get("canonical_name") or item["canonical_name"]).strip(),
-                "aliases": dedupe(item["aliases"] + r.get("aliases", []), 50),
+                "aliases": dedupe([item["canonical_name"]] + item["aliases"] + r.get("aliases", []), 50),
                 "stable_visual_description": (r.get("stable_visual_description") or item["stable_visual_description"]).strip(),
-                "distinguishing_features": dedupe(r.get("distinguishing_features", item["distinguishing_features"]), 30),
+                "distinguishing_features": dedupe(item["distinguishing_features"] + r.get("distinguishing_features", []), 30),
                 "voice_description": (r.get("voice_description") or item["voice_description"]).strip() if item["entity_type"] == "character" else "",
                 "speaks": bool(r.get("speaks", item["speaks"])) if item["entity_type"] == "character" else False,
                 "importance": r.get("importance", item["importance"]),
@@ -359,16 +376,15 @@ def reconcile_chapter(
                 "reference_view_hints": dedupe(item["reference_view_hints"] + r.get("reference_view_hints", []), 20),
                 "chapters_seen": [item["chapter_id"]],
                 "source_entities": [{"chapter_id": item["chapter_id"], "local_id": item["local_id"]}],
-                "chapter_variations": [],
+                "timeline": {},
             }
             registry.append(e)
-            current_ids.add(gid)
         else:
             e = next(x for x in registry if x["global_id"] == match)
             e["canonical_name"] = (r.get("canonical_name") or e["canonical_name"]).strip()
-            e["aliases"] = dedupe(e.get("aliases", []) + item["aliases"] + r.get("aliases", []), 50)
+            e["aliases"] = dedupe(e.get("aliases", []) + [item["canonical_name"]] + item["aliases"] + r.get("aliases", []), 50)
             e["stable_visual_description"] = (r.get("stable_visual_description") or e.get("stable_visual_description", "")).strip()
-            e["distinguishing_features"] = dedupe(e.get("distinguishing_features", []) + r.get("distinguishing_features", []), 30)
+            e["distinguishing_features"] = dedupe(e.get("distinguishing_features", []) + item["distinguishing_features"] + r.get("distinguishing_features", []), 30)
             if e["entity_type"] == "character":
                 e["voice_description"] = (r.get("voice_description") or e.get("voice_description", "")).strip()
                 e["speaks"] = bool(e.get("speaks") or item["speaks"] or r.get("speaks"))
@@ -381,18 +397,9 @@ def reconcile_chapter(
             if src not in e["source_entities"]:
                 e["source_entities"].append(src)
 
-        state = item.get("chapter_visual_state", "").strip()
-        if state:
-            variant = {
-                "chapter_id": item["chapter_id"],
-                "visual_state": state,
-                "variant_reference_recommended": bool(r.get("variant_reference_recommended", False)),
-            }
-            old = next((x for x in e["chapter_variations"] if x["chapter_id"] == item["chapter_id"]), None)
-            if old:
-                old.update(variant)
-            else:
-                e["chapter_variations"].append(variant)
+        source = next(source for kind in ("characters", "locations", "objects")
+                      for source in chapter[kind] if source["local_id"] == item["local_id"])
+        merge_timeline(e, {chapter["chapter_id"]: source["state_by_sequence"]})
 
     return registry
 
@@ -502,9 +509,7 @@ def _apply_audit_result(registry: list[dict[str, Any]], result: dict[str, Any]) 
             for src in other["source_entities"]:
                 if src not in keep["source_entities"]:
                     keep["source_entities"].append(src)
-            for var in other["chapter_variations"]:
-                if var not in keep["chapter_variations"]:
-                    keep["chapter_variations"].append(var)
+            merge_timeline(keep, other["timeline"])
             removed.add(mid)
     return removed
 
@@ -594,14 +599,6 @@ def desired_base_views(entity: dict[str, Any], args: argparse.Namespace) -> list
     return merged[:max(1, limit)]
 
 
-def variant_views(entity_type: str) -> list[str]:
-    if entity_type == "character":
-        return ["full_body_front", "face_front"]
-    if entity_type == "location":
-        return ["wide_establishing"]
-    return ["hero_three_quarter"]
-
-
 def build_picture_specs(registry: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
     for e in registry:
@@ -624,26 +621,6 @@ def build_picture_specs(registry: list[dict[str, Any]], args: argparse.Namespace
                 }
             )
 
-        if args.no_variants:
-            continue
-        for var in e.get("chapter_variations", []):
-            if not var.get("variant_reference_recommended"):
-                continue
-            for view in variant_views(e["entity_type"]):
-                specs.append(
-                    {
-                        "asset_id": f"PIC_{e['global_id']}_{var['chapter_id'].upper()}_{view.upper()}",
-                        "linked_global_id": e["global_id"],
-                        "entity_type": e["entity_type"],
-                        "canonical_name": e["canonical_name"],
-                        "variant": var["chapter_id"],
-                        "view_type": view,
-                        "chapters": [var["chapter_id"]],
-                        "stable_visual_description": e.get("stable_visual_description", ""),
-                        "distinguishing_features": e.get("distinguishing_features", []),
-                        "chapter_visual_state": var.get("visual_state", ""),
-                    }
-                )
     for spec in specs:
         design = getattr(args, "visual_designs", {}).get(spec["linked_global_id"], {})
         spec["added_details"] = design.get("added_details", {})

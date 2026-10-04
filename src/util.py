@@ -13,8 +13,8 @@ from typing import Any, Iterable
 
 from .path_access import input_path, output_path
 
-CHAPTER_SCHEMA = "minimax-h3-novel-refs.chapter.v3"
-REGISTRY_SCHEMA = "minimax-h3-novel-refs.consolidated.v3"
+CHAPTER_SCHEMA = "minimax-h3-novel-refs.chapter.v4"
+REGISTRY_SCHEMA = "minimax-h3-novel-refs.consolidated.v4"
 
 
 def require_schema(data: Any, expected: str) -> None:

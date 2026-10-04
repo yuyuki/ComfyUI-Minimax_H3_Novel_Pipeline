@@ -417,7 +417,6 @@ def chapter_catalog(refs: dict[str, Any], chapter_id: str) -> list[dict[str, Any
         e = entities.get(gid)
         if not e:
             continue
-        variation = next((x for x in e.get("chapter_variations", []) if x.get("chapter_id") == chapter_id), {})
         available = []
         for a in assets.get(gid, []):
             if a.get("variant") in {"base", chapter_id}:
@@ -435,7 +434,6 @@ def chapter_catalog(refs: dict[str, Any], chapter_id: str) -> list[dict[str, Any
                 "canonical_name": e["canonical_name"],
                 "aliases": e.get("aliases", []),
                 "stable_visual_description": e.get("stable_visual_description", ""),
-                "chapter_visual_state": variation.get("visual_state", ""),
                 "distinguishing_features": e.get("distinguishing_features", []),
                 "voice_description": e.get("voice_description", ""),
                 "available_picture_views": available,
