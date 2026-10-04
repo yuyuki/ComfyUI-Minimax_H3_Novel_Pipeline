@@ -49,29 +49,21 @@ def manifest(source):
     return result
 
 
-@pytest.mark.parametrize("kind,sequence,phase,valid", [
-    ("identity", None, None, True),
-    ("identity", 8, "event", False),
-    ("attribution", 8, "event", True),
-    ("attribution", None, None, False),
-    ("relation", None, None, True),
-    ("relation", 8, "event", True),
-    ("relation", 8, None, False),
-    ("relation", None, "event", False),
-])
-def test_proposal_schema_enforces_link_kind_scope(kind, sequence, phase, valid):
-    schema = links.RESPONSE_SCHEMA["schema"]
-    Draft202012Validator.check_schema(schema)
-    link = decision(kind, status="proposed")
-    link.update(sequence=sequence, phase=phase)
-    assert Draft202012Validator(schema).is_valid({"entities": [], "links": [link]}) is valid
+def proposal(entities, decisions):
+    """Fixture model replies use the compact contract, independently of production decoding."""
+    aliases = {(e["chapter_id"], e["local_id"]): f"E{i}" for i, e in enumerate(entities, 1)}
+    def short(value):
+        return aliases[(value["chapter_id"], value["local_id"])] if value else None
+    return {"entities": [{"id": short(e), "classification": e["classification"]} for e in entities],
+            "links": [{**link, "source": short(link["source"]), "target": short(link["target"])}
+                      for link in decisions]}
 
 
 def test_identity_sequence_retry_explains_correction_and_preserves_evidence():
     source = chapters()
     entities = links.document(source)["entities"]
     link = decision("identity", "LOCAL_1", "LOCAL_3", "proposed")
-    invalid = {"entities": entities, "links": [{**link, "sequence": 8, "phase": "event"}]}
+    invalid = proposal(entities, [{**link, "sequence": 8, "phase": "event"}])
     before = deepcopy(invalid)
     calls = []
 
@@ -82,7 +74,7 @@ def test_identity_sequence_retry_explains_correction_and_preserves_evidence():
             return deepcopy(invalid)
         assert "set sequence=null and phase=null" in user
         assert "Keep source evidence in evidence" in user
-        return {"entities": deepcopy(entities), "links": [deepcopy(link)]}
+        return proposal(entities, [link])
 
     result = links.prepare_links(chat, None, "mock", source,
                                  SimpleNamespace(temperature=0.1, max_tokens=8000))
@@ -97,23 +89,25 @@ def test_missing_link_kind_retries_with_explicit_contract(kind):
     source = chapters()
     entities = manifest(source)["entities"]
     link = decision(kind, source="LOCAL_2" if kind == "attribution" else "LOCAL_1", status="proposed")
-    invalid = {"entities": deepcopy(entities), "links": [deepcopy(link)]}
+    invalid = proposal(entities, [link])
     del invalid["links"][0]["kind"]
     before = deepcopy(invalid)
     calls = []
 
     def chat(client, model, system, user, schema, *args):
         calls.append(user)
-        # The complete contract reaches the model even if the backend ignores
-        # response_format, on both the first request and the corrective retry.
-        contract = json.loads(system.split("JSON Schema:\n", 1)[1])
-        assert contract == schema["schema"]
-        assert Draft202012Validator(contract).is_valid({"entities": entities, "links": [link]})
+        assert "JSON Schema:" not in system
+        example = json.loads(system.split("Example of the output shape (use actual supplied IDs and evidence):\n")[1]
+                             .split("\nUse links=[]")[0])
+        contract = schema["schema"]
+        Draft202012Validator.check_schema(contract)
+        assert Draft202012Validator(contract).is_valid(example)
+        assert Draft202012Validator(contract).is_valid(proposal(entities, [link]))
         assert not Draft202012Validator(contract).is_valid(invalid)
         if len(calls) == 1:
             return deepcopy(invalid)
         assert "'kind' is a required property" in user
-        return {"entities": deepcopy(entities), "links": [deepcopy(link)]}
+        return proposal(entities, [link])
 
     result = links.prepare_links(chat, None, "mock", source,
                                  SimpleNamespace(temperature=0.1, max_tokens=8000))
@@ -128,7 +122,7 @@ def test_persistently_missing_link_kind_is_not_guessed_or_dropped(monkeypatch):
 
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     source = chapters()
-    invalid = {"entities": manifest(source)["entities"], "links": [decision(status="proposed")]}
+    invalid = proposal(manifest(source)["entities"], [decision(status="proposed")])
     del invalid["links"][0]["kind"]
     calls = []
 
@@ -151,8 +145,7 @@ def test_missing_attribution_scope_uses_unique_source_observation(sequence, phas
 
     def chat(*args):
         calls.append(args)
-        return {"entities": manifest(source)["entities"],
-                "links": [{**link, "sequence": sequence, "phase": phase}]}
+        return proposal(manifest(source)["entities"], [{**link, "sequence": sequence, "phase": phase}])
 
     result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=8000))
     assert len(calls) == 1
@@ -172,12 +165,11 @@ def test_ambiguous_or_conflicting_attribution_scope_retries_with_source_scopes(s
     def chat(client, model, system, user, *args):
         calls.append(user)
         if len(calls) == 1:
-            return {"entities": manifest(source)["entities"],
-                    "links": [{**link, "sequence": sequence, "phase": phase}]}
+            return proposal(manifest(source)["entities"], [{**link, "sequence": sequence, "phase": phase}])
         assert "attribution requires an integer sequence and a phase" in user
         assert 'valid source scopes: [{"sequence": 1, "phase": "event"}, {"sequence": 2, "phase": "event"}]' in user
         assert "LOCAL_2" in user
-        return {"entities": manifest(source)["entities"], "links": [deepcopy(link)]}
+        return proposal(manifest(source)["entities"], [link])
 
     result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=8000))
     assert len(calls) == 2
@@ -196,8 +188,8 @@ def test_persistently_ambiguous_attribution_scope_is_not_guessed(monkeypatch):
 
     def chat(*args):
         calls.append(args)
-        return {"entities": manifest(source)["entities"],
-                "links": [{**decision(status="unresolved", target=None), "sequence": None, "phase": None}]}
+        return proposal(manifest(source)["entities"],
+                        [{**decision(status="unresolved", target=None), "sequence": None, "phase": None}])
 
     with pytest.raises(ValueError, match="bounded retries:.*attribution requires an integer sequence"):
         links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=8000))
@@ -383,7 +375,8 @@ def test_model_proposals_receive_sequences_and_remain_unconfirmed():
         calls.append(data)
         entities = data["available_entities"]
         entities[1]["classification"] = "manifestation"
-        return {"entities": entities, "links": [decision(status="proposed")]}
+        return {"entities": [{"id": e["id"], "classification": e["classification"]} for e in entities],
+                "links": [{**decision(status="proposed"), "source": "E2", "target": "E3"}]}
     result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=2000))
     assert calls[0]["chapter"]["sequences"] == source[0]["sequences"]
     assert result["links"][0]["status"] == "proposed"
@@ -459,3 +452,92 @@ def test_descriptive_fragment_attaches_to_entity_without_asset_or_alias(mocked_r
     assert observation["chapter_state"] == item["state_by_sequence"]["1"]["event"][0]["chapter_state"]
     assert "chapter_appearance" not in observation
     assert observation["attributed_from"]["local_id"] == "LOCAL_2"
+
+
+@pytest.mark.parametrize("field,value,error", [
+    ("source", "E99", "invalid source ID 'E99'"),
+    ("target", "E99", "unknown target ID 'E99'"),
+    ("target", "E1", "self-link (E1 -> E1)"),
+])
+def test_invalid_short_ids_retry_with_offending_link_and_choices(field, value, error):
+    source = chapters()
+    good = proposal(links.document(source)["entities"], [decision("identity", "LOCAL_1", "LOCAL_3", "proposed")])
+    bad = deepcopy(good)
+    bad["links"][0][field] = value
+    calls = []
+
+    def chat(client, model, system, user, *args):
+        calls.append(user)
+        if len(calls) == 1:
+            return deepcopy(bad)
+        assert error in user
+        assert "E1, E2, E3, E4" in user
+        assert json.dumps(bad, ensure_ascii=False) in user
+        assert "links[0]" in user
+        return deepcopy(good)
+
+    result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=2000))
+    assert len(calls) == 2
+    assert result["links"] == [decision("identity", "LOCAL_1", "LOCAL_3", "proposed")]
+    links.validate_links(result, source)
+
+
+@pytest.mark.parametrize("bad_ids", [["E1", "E2", "E3", "E4", "E1"], ["E1", "E2", "E3"], ["E1", "E2", "E3", "E99"]])
+def test_classifications_require_every_current_id_once(bad_ids):
+    source = chapters()
+    calls = []
+
+    def chat(client, model, system, user, *args):
+        calls.append(user)
+        if len(calls) == 1:
+            return {"entities": [{"id": key, "classification": "entity"} for key in bad_ids], "links": []}
+        assert "exactly once each current entity ID: E1, E2, E3, E4" in user
+        return proposal(links.document(source)["entities"], [])
+
+    result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=2000))
+    assert len(calls) == 2
+    assert result == links.document(source)
+
+
+def test_short_ids_map_repeated_local_ids_across_chapters_and_reject_future_targets():
+    source = [catalog("first"), catalog("second"), catalog("third")]
+    before = deepcopy(source)
+    calls = []
+
+    def chat(client, model, system, user, *args):
+        data = json.loads(user.split("\nPrevious response", 1)[0])
+        calls.append(data)
+        current = data["current_entity_ids"][0]
+        assert data["chapter"]["characters"][0]["id"] == current
+        assert "local_id" not in data["chapter"]["characters"][0]
+        assert all("local_id" not in e for e in data["available_entities"])
+        response = {"entities": [{"id": current, "classification": "entity"}], "links": []}
+        if current == "E1":
+            if len(calls) == 1:
+                response["links"] = [{**decision("identity", status="proposed"), "source": "E1", "target": "E2"}]
+            else:
+                assert "unknown target ID 'E2'" in user
+                assert "Permitted target IDs: E1." in user
+        elif current == "E2":
+            response["links"] = [{**decision("identity", status="proposed"), "source": "E2", "target": "E1"}]
+        return response
+
+    result = links.prepare_links(chat, None, "mock", source, SimpleNamespace(temperature=0.1, max_tokens=2000))
+    assert len(calls) == 4
+    assert result["links"][0]["source"] == {"chapter_id": "second", "local_id": "LOCAL_1"}
+    assert result["links"][0]["target"] == {"chapter_id": "first", "local_id": "LOCAL_1"}
+    assert source == before
+    assert [(e["canonical_name"], e["entity_type"]) for e in result["entities"]] == [("Indy", "character")] * 3
+    links.validate_links(result, source)
+
+
+def test_invalid_short_id_after_retries_never_becomes_a_saved_decision(monkeypatch):
+    from minimax_h3_novel_pipeline import lmstudio_json
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    source = chapters()
+    response = proposal(links.document(source)["entities"], [decision("identity", "LOCAL_1", "LOCAL_3", "proposed")])
+    response["links"][0]["target"] = "E99"
+    with pytest.raises(ValueError, match="bounded retries:.*unknown target ID 'E99'"):
+        links.prepare_links(lambda *args: deepcopy(response), None, "mock", source,
+                            SimpleNamespace(temperature=0.1, max_tokens=2000))

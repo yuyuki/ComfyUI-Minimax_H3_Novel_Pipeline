@@ -158,7 +158,7 @@ def render_architecture(modules: list[ModuleInfo]) -> str:
         "The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its ordered phases feed extraction; catalogs and registries retain temporal observations.",
         "",
         "`reference_timeline` validates cinematic catalogs, merges observations without rewriting them, computes first occurrences and provides exact-address state lookup. Identity reconciliation and duplicate audits exclude temporal state; base image briefs use stable identity only.",
-        "`reference_links` reviews chapter evidence, validates editable source-addressed decisions and applies protected identities and scoped attributions before assets. Manifestations retain their original events without character assets. `editable_schemas` loads bundled `src/schema/*.json` files for import validation and copies them unchanged to run outputs; editor schema URLs are never fetched at runtime.",
+        "`reference_links` requests classifications and link decisions using short entity IDs and a compact model-only schema, then restores catalog metadata and chapter/local addresses in Python. It reviews chapter evidence, validates editable source-addressed decisions and applies protected identities and scoped attributions before assets. Manifestations retain their original events without character assets. `editable_schemas` loads bundled `src/schema/*.json` files for import validation and copies them unchanged to run outputs; editor schema URLs are never fetched at runtime.",
         "",
         "## Internal module dependencies",
         "",

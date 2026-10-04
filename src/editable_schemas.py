@@ -11,9 +11,6 @@ SCHEMA_DIR = Path(__file__).resolve().parent / "schema"
 LINK_SCHEMA = json.loads((SCHEMA_DIR / "reference_links.schema.json").read_text(encoding="utf-8"))
 DESIGN_SCHEMA = json.loads((SCHEMA_DIR / "visual_designs.schema.json").read_text(encoding="utf-8"))
 LINK_VERSION = LINK_SCHEMA["properties"]["schema_version"]["const"]
-# Model retries check the common shape before explaining kind-specific errors.
-LINK = {key: value for key, value in LINK_SCHEMA["properties"]["links"]["items"].items() if key != "allOf"}
-MENTION = LINK_SCHEMA["properties"]["entities"]["items"]
 TRAITS = {
     rule["if"]["properties"]["entity_type"]["const"]:
         list(rule["then"]["properties"]["added_details"]["properties"])

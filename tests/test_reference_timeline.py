@@ -39,7 +39,7 @@ def mocked_reconcile(monkeypatch):
     def chat(client, model, system, user, schema, *args):
         if schema["name"] == "reference_link_proposals":
             data = json.loads(user)
-            return {"entities": [e for e in data["available_entities"] if e["chapter_id"] == data["chapter"]["chapter_id"]],
+            return {"entities": [{"id": key, "classification": "entity"} for key in data["current_entity_ids"]],
                     "links": []}
         incoming = json.loads(user.split("INCOMING:\n", 1)[1].split("\n\nCANDIDATES:", 1)[0])
         candidates = json.loads(user.split("CANDIDATES:\n", 1)[1])

@@ -3,7 +3,7 @@ from copy import deepcopy
 import json
 
 from . import configuration_snapshot, progress, util
-from .editable_schemas import LINK, LINK_SCHEMA, LINK_VERSION, MENTION, obj, validate_document
+from .editable_schemas import LINK_SCHEMA, LINK_VERSION, obj, validate_document
 from .reference_requests import validated_request
 from .reference_timeline import merge_timeline
 from .lmstudio_pipeline import comfy_interrupt_check
@@ -26,7 +26,7 @@ people, places and objects, including separately established parts.
 Propose identity links only for the same entity, attribution links from manifestations
 to their supported person, place or object, and relation links for source-supported narrative
 relationships between people, places and objects. Include short verbatim evidence.
-Use only supplied addresses. Source must belong to the current chapter; targets may
+Use only supplied IDs. Source must belong to the current chapter; targets may
 belong to any supplied chapter. Never link an entity to itself.
 identity: relation=same_as, sequence=null, phase=null, target required.
 attribution: use a precise relation such as emitted_by for a cry or describes for
@@ -41,31 +41,30 @@ Use status=proposed for supported suggestions and unresolved for ambiguous links
 Never confirm a decision on the user's behalf. No speculative relationship filler.
 Do not merge relationship partners. Never invent visual or vocal traits.
 """
-PROPOSAL_LINK = {"anyOf": [
-    obj({**LINK["properties"], "kind": {"enum": ["identity"]}, "target": LINK["properties"]["source"],
-         "relation": {"enum": ["same_as"]}, "sequence": {"type": "null"}, "phase": {"type": "null"},
-         "status": {"enum": ["proposed", "unresolved"]}}),
-    obj({**LINK["properties"], "kind": {"enum": ["attribution"]},
-         "sequence": {"type": "integer", "minimum": 1},
-         "phase": {"enum": ["initialState", "event", "endingState"]},
-         "status": {"enum": ["proposed", "unresolved"]}}),
-    *[obj({**LINK["properties"], "kind": {"enum": ["relation"]}, "target": LINK["properties"]["source"],
-           "sequence": sequence, "phase": phase, "status": {"enum": ["proposed", "unresolved"]}})
-      for sequence, phase in (({"type": "null"}, {"type": "null"}),
-                              ({"type": "integer", "minimum": 1},
-                               {"enum": ["initialState", "event", "endingState"]}))],
-]}
+# The model contract is intentionally separate from the editable file schema.
 RESPONSE_SCHEMA = {"name": "reference_link_proposals", "strict": True, "schema": obj({
-    "entities": {"type": "array", "items": MENTION}, "links": {"type": "array", "items": PROPOSAL_LINK}})}
-# response_format constrains decoding on supported backends, but does not
-# necessarily expose the field names to the model (including ChatML fallbacks).
-SYSTEM += (
-    "\nReturn one JSON object matching the following JSON Schema. Include every required field, "
-    "even when its value is null. Every link needs an explicit kind: identity, attribution, or relation. "
-    "kind identifies the link category; relation is its relationship label, not a replacement for kind. "
-    "Use an empty links array only when there are no supported links.\nJSON Schema:\n"
-    + json.dumps(RESPONSE_SCHEMA["schema"], ensure_ascii=False, separators=(",", ":"))
-)
+    "entities": {"type": "array", "items": obj({
+        "id": {"type": "string"}, "classification": {"enum": ["entity", "manifestation"]}})},
+    "links": {"type": "array", "items": obj({
+        "kind": {"enum": ["identity", "attribution", "relation"]},
+        "source": {"type": "string"}, "target": {"type": ["string", "null"]},
+        "relation": {"type": "string"}, "sequence": {"type": ["integer", "null"], "minimum": 1},
+        "phase": {"enum": [None, "initialState", "event", "endingState"]},
+        "status": {"enum": ["proposed", "unresolved"]}, "reason": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+    })},
+})}
+SYSTEM += """
+Use only the supplied short IDs (E1, E2, ...), not names or chapter/local addresses.
+Return classifications for exactly current_entity_ids, once each. Copy no names or types.
+Return one JSON object; include all fields shown, including null values.
+Example of the output shape (use actual supplied IDs and evidence):
+{"entities":[{"id":"E1","classification":"entity"},{"id":"E2","classification":"entity"}],
+ "links":[{"kind":"identity","source":"E2","target":"E1","relation":"same_as",
+ "sequence":null,"phase":null,"status":"proposed","reason":"Same person",
+ "evidence":["verbatim source text"]}]}
+Use links=[] when no links are supported. Every link needs kind as well as relation.
+"""
 
 
 def address(value):
@@ -183,44 +182,67 @@ def prepare_links(chat, client, model, chapters, args, imported=None):
         return deepcopy(imported)
     payload = document(chapters)
     index = source_index(chapters)
+    # Stable, globally unique aliases avoid repeated local IDs across chapters.
+    aliases = {address(e): f"E{i}" for i, e in enumerate(payload["entities"], 1)}
     processed = set()
     for chapter in progress.steps(chapters):
         comfy_interrupt_check()
         cid = chapter["chapter_id"]
         processed.add(cid)
-        available = [e for e in payload["entities"] if e["chapter_id"] in processed]
-        if not any(e["chapter_id"] == cid for e in available):
+        available = {aliases[address(e)]: e for e in payload["entities"] if e["chapter_id"] in processed}
+        current = [key for key, e in available.items() if e["chapter_id"] == cid]
+        if not current:
             continue
+        decoded = {}
 
         def check(result):
-            proposed = deepcopy(payload)
-            expected = {address(e) for e in payload["entities"] if e["chapter_id"] == cid}
-            # Validate the common shape first so semantic retry messages can explain
-            # a wrong link kind/scope, including on unconstrained ChatML fallbacks.
-            validate_document(result, obj({"entities": {"type": "array", "items": MENTION},
-                                           "links": {"type": "array", "items": LINK}}), "reference link proposals")
-            for i, link in enumerate(result["links"]):
+            validate_document(result, RESPONSE_SCHEMA["schema"], "reference link proposals")
+            ids = [e["id"] for e in result["entities"]]
+            if len(ids) != len(set(ids)) or set(ids) != set(current):
+                raise ValueError(f"Return exactly once each current entity ID: {', '.join(current)}; received {ids}.")
+            entities = [{**available[e["id"]], "classification": e["classification"]} for e in result["entities"]]
+            decisions = []
+            for i, original in enumerate(result["links"]):
+                label = f"links[{i}] {json.dumps(original, ensure_ascii=False)}"
+                src, dst = original["source"], original["target"]
+                if src not in current:
+                    raise ValueError(f"{label}: invalid source ID {src!r}. Permitted source IDs: {', '.join(current)}.")
+                if dst is not None and dst not in available:
+                    raise ValueError(f"{label}: unknown target ID {dst!r}. Permitted target IDs: {', '.join(available)}. "
+                                     "Only attribution may have an unknown (null) target; never invent an ID.")
+                if src == dst:
+                    raise ValueError(f"{label}: self-link ({src} -> {dst}). Use a distinct supported target "
+                                     "or omit this link if it only repeats the same entity. "
+                                     f"Supplied IDs: {', '.join(available)}.")
+                link = {**original, "source": {k: available[src][k] for k in ("chapter_id", "local_id")},
+                        "target": {k: available[dst][k] for k in ("chapter_id", "local_id")} if dst else None}
                 if link["kind"] == "identity" and (link["sequence"] is not None or link["phase"] is not None):
-                    raise ValueError(f"links[{i}]: identity links mean the same entity across all sequences; "
+                    raise ValueError(f"{label}: identity links mean the same entity across all sequences; "
                                      "set sequence=null and phase=null. Keep source evidence in evidence. "
                                      "Use kind=relation only for a narrative relationship between distinct entities.")
                 if link["kind"] == "attribution" and (link["sequence"] is None or link["phase"] is None):
-                    complete_attribution_scope(link, index, f"links[{i}]")
-            if {address(e) for e in result["entities"]} != expected:
-                raise ValueError("Return exactly the current chapter entities.")
-            if any(l["source"]["chapter_id"] != cid or l["status"] not in {"proposed", "unresolved"} for l in result["links"]):
-                raise ValueError("Proposals must use current chapter sources and proposed/unresolved status.")
-            if any(l["target"] and l["target"]["chapter_id"] not in processed for l in result["links"]):
-                raise ValueError("Use only supplied target addresses.")
-            proposed["entities"] = [e for e in payload["entities"] if e["chapter_id"] != cid] + result["entities"]
-            proposed["links"] += result["links"]
+                    complete_attribution_scope(link, index, label)
+                decisions.append(link)
+            proposed = deepcopy(payload)
+            proposed["entities"] = [e for e in payload["entities"] if e["chapter_id"] != cid] + entities
+            proposed["links"] += decisions
             validate_links(proposed, chapters)
+            decoded.clear()
+            decoded.update(proposed)
 
-        result = validated_request(chat, client, model, SYSTEM,
-                                   {"chapter": chapter, "available_entities": available},
-                                   RESPONSE_SCHEMA, args, check)
-        payload["entities"] = [e for e in payload["entities"] if e["chapter_id"] != cid] + result["entities"]
-        payload["links"] += result["links"]
+        # Keep narrative and observation context, replacing local IDs in the model
+        # input with the same aliases used by the response contract.
+        model_chapter = deepcopy(chapter)
+        for kind in KINDS:
+            for entity in model_chapter[kind]:
+                entity["id"] = aliases[(cid, entity.pop("local_id"))]
+        model_entities = [{"id": key, **{k: v for k, v in entity.items() if k != "local_id"}}
+                          for key, entity in available.items()]
+        validated_request(chat, client, model, SYSTEM,
+                          {"chapter": model_chapter, "current_entity_ids": current,
+                           "available_entities": model_entities},
+                          RESPONSE_SCHEMA, args, check, include_previous=True)
+        payload = decoded
     return payload
 
 

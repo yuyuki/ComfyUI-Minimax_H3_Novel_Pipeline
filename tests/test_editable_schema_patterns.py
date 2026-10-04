@@ -5,7 +5,7 @@ import sys
 import pytest
 from jsonschema import Draft202012Validator
 
-from minimax_h3_novel_pipeline import editable_schemas, reference_links
+from minimax_h3_novel_pipeline import editable_schemas
 
 
 def pattern_fields(value):
@@ -22,7 +22,6 @@ def pattern_fields(value):
 @pytest.mark.parametrize("schema", [
     editable_schemas.LINK_SCHEMA,
     editable_schemas.DESIGN_SCHEMA,
-    reference_links.RESPONSE_SCHEMA["schema"],
 ])
 def test_nonblank_patterns_use_grammar_supported_syntax_and_preserve_validation(schema):
     fields = list(pattern_fields(schema))
