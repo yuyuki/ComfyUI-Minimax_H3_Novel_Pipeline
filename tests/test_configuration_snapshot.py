@@ -41,7 +41,7 @@ def setup(tmp_path, monkeypatch):
     ("consolidate", consolidate, consolidate.ConsolidateReferencesNode),
     ("generate", generate, generate.GenerateH3PromptsNode),
 ])
-def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, stage, module, cls):
+def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, stage, module, cls, cinematic_registry):
     root, config, chapter = setup
     pipeline = lmstudio_pipeline.load(stage)
     catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
@@ -49,7 +49,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
-    registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "picture_assets": [], "audio_assets": []}
+    registry = cinematic_registry(chapter, schema_version=util.REGISTRY_SCHEMA, entities=[], picture_assets=[], audio_assets=[])
     if stage == "extract":
         def process(path, output, *args):
             saved = output / "chapter_references.json"
@@ -102,8 +102,8 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     (False, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
     (True, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
 ])
-def test_generate_continuity_toggle_and_anchor_connection(setup, monkeypatch, toggle, anchors, expected):
-    root, config, _ = setup
+def test_generate_continuity_toggle_and_anchor_connection(setup, monkeypatch, toggle, anchors, expected, cinematic_registry):
+    root, config, chapter = setup
     pipeline = lmstudio_pipeline.load("generate")
     captured = []
 
@@ -119,7 +119,7 @@ def test_generate_continuity_toggle_and_anchor_connection(setup, monkeypatch, to
         params["enable_spatial_continuity"] = toggle
     if anchors is not None:
         params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v1", "anchors": anchors}
-    registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "picture_assets": [], "audio_assets": []}
+    registry = cinematic_registry(chapter, schema_version=util.REGISTRY_SCHEMA, entities=[], picture_assets=[], audio_assets=[])
     generate.GenerateH3PromptsNode().run(registry, config, {}, **params)
     assert captured == [expected]
     record = util.load_json(root / config["run_folder"] / params["out_dir"] / "generate_configuration.json")

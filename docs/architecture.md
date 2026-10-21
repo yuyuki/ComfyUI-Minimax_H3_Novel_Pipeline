@@ -167,10 +167,12 @@ flowchart TD
     m_pipeline_step2_consolidate --> m_progress
     m_pipeline_step2_consolidate --> m_reference_requests
     m_pipeline_step2_consolidate --> m_reference_timeline
+    m_pipeline_step3_generate --> m_cinematic_references
     m_pipeline_step3_generate --> m_lmstudio_json
     m_pipeline_step3_generate --> m_path_access
     m_pipeline_step3_generate --> m_progress
     m_pipeline_step3_generate --> m_prompt_cache
+    m_pipeline_step3_generate --> m_reference_timeline
     m_pipeline_step3_generate --> m_util
     m_prompt_cache --> m_lmstudio_json
     m_reference_requests --> m_lmstudio_json
@@ -216,7 +218,7 @@ flowchart TD
 | `src/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
 | `src/pipeline_step1_extract.py` | `lmstudio_json`, `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |
 | `src/pipeline_step2_consolidate.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress`, `reference_requests`, `reference_timeline` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `similarity`, `stronger`, `threshold`, `write_asset_prompts` |
-| `src/pipeline_step3_generate.py` | `lmstudio_json`, `path_access`, `progress`, `prompt_cache`, `util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `dedupe_scenes`, `default_view_order`, `entity_index`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `resolve_continuity`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `slug`, `timestamp_seconds`, `validate_prompt` |
+| `src/pipeline_step3_generate.py` | `cinematic_references`, `lmstudio_json`, `path_access`, `progress`, `prompt_cache`, `reference_timeline`, `util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `dedupe_scenes`, `default_view_order`, `entity_index`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `resolve_continuity`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `selected_timeline`, `sequence_catalog`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/prompt_cache.py` | `lmstudio_json` | `fingerprint` |
 | `src/reference_requests.py` | `lmstudio_json`, `lmstudio_pipeline` | `InvalidResponse`, `validate_assets`, `validated_request` |
@@ -227,4 +229,4 @@ flowchart TD
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **35**. Internal dependency edges: **111**.
+Modules: **35**. Internal dependency edges: **113**.

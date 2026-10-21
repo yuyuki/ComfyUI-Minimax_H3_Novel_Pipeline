@@ -65,6 +65,7 @@ class CinematicChapterAdapterNode:
                     # Persist completed work before progress or cancellation can interrupt it.
                     # The index distinguishes identically named chapters from separate folders.
                     saved = output / f"{index + 1:03d}_{path.stem}.cinematic.json"
+                    chapter = {**chapter, "source_file": str(path)}
                     util.save_json(saved, chapter)
                 artifacts.append(saved)
                 chapters.append({"source_file": str(path), "saved_file": str(saved), **chapter})

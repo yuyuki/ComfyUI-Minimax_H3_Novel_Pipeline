@@ -99,7 +99,7 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
     assert errors == ([] if resolved else ["Wrong eyeline"])
 
 
-def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text(tmp_path, monkeypatch):
+def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text(tmp_path, monkeypatch, cinematic_registry):
     import json
     from types import SimpleNamespace
     from minimax_h3_novel_pipeline import path_access
@@ -143,7 +143,7 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
     monkeypatch.setattr(generate, "check_prompt_continuity", review)
     monkeypatch.setattr(generate, "repair_prompt", lambda *a: "corrected")
     for _ in range(2):
-        manifest = generate.process_chapter(chapter, {"chapter_entity_map": {}, "visual_designs": designs}, None, "qwen", args)
+        manifest = generate.process_chapter(chapter, cinematic_registry(chapter, visual_designs=designs), None, "qwen", args)
         for entry in manifest["outputs"]:
             asset_file = args.out_dir / "chapter" / entry["assets_file"]
             assert json.loads(asset_file.read_text())["copy_paste_prompt"] == "corrected"

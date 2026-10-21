@@ -31,6 +31,7 @@ def chapter(name="Chapitre 1"):
 def test_file_load_preserves_adapter_output_and_extraction_socket(output_root):
     saved = output_root / "001_chapter.cinematic.json"
     value = chapter()
+    value["source_file"] = str(output_root / "original.md")
     util.save_json(saved, value)
     loaded, files = LoadCinematicChaptersNode().run(str(saved))
     assert loaded == [{**value, "saved_file": str(saved)}]

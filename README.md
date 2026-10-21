@@ -98,3 +98,18 @@ observations are retained at their original chapter, sequence and phase; extract
 sequences are unchanged. Invalid targets, self-links, chains and cycles are rejected.
 Reference image prompts cover every consolidated entity. See [examples](examples/README.md)
 for catalog editing and visual design settings.
+
+### Generation from consolidated cinematic timelines
+
+Generate H3 Prompts uses the registry's `chapter_timelines`, preserving sequence
+order and `initialState` / `event` / `endingState` observations. Connect the same
+Select Chapters output used by Cinematic Chapter Adapter; selected paths must
+match the registry's source-file provenance. Chapter IDs come from the registry.
+Missing or ambiguous matches require reconsolidating the intended chapters.
+Generation does not reread or rechunk the raw prose. `scenes_per_chunk` limits
+scenes per cinematic sequence; `max_scenes` limits scenes per chapter. Text chunk
+size and paragraph-overlap controls have been removed from Generate.
+
+Each saved scene records its sequence ID. Reference state is scoped to that exact
+sequence and phase, with no automatic carry-forward. Stable visual designs and
+image styles remain part of the consolidated assets and image-prompt export.

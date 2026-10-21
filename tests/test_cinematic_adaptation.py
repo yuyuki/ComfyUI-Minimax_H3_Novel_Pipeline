@@ -178,7 +178,8 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
     assert json.loads(response["ui"]["text"][0]) == chapters
     assert "Il est parti." in response["ui"]["text"][0]
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
-    assert saved == {"chapter_name": "chapter", "sequences": chapters[0]["sequences"]}
+    assert saved == {"chapter_name": "chapter", "sequences": chapters[0]["sequences"],
+                     "source_file": str(chapter)}
     assert chapters[0]["chapter_name"] == "chapter"
     assert saved["sequences"] == [{
         "sequence": 1, "source": source, "adaptation": {
@@ -198,7 +199,7 @@ def test_completed_chapter_saved_before_later_failure_or_cancellation(tmp_path, 
     sequences = [{"sequence": 1, "source": "Il part.", "adaptation": {
         "initialState": "Before.", "event": "1. Action.", "endingState": "After.",
     }}]
-    chapter = {"chapter_name": "chapter1", "sequences": sequences}
+    chapter = {"chapter_name": "chapter1", "sequences": sequences, "source_file": str(paths[0])}
     completed = False
     calls = []
 

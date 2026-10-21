@@ -192,7 +192,7 @@ def test_extraction_existing_cache_still_loads(roots):
     ("extract", ".cache"), ("extract", ".cache/chapter"),
     ("generate", "chapter"), ("generate", "chapter/.cache"),
 ])
-def test_bundled_steps_reject_nested_directory_escape(roots, tmp_path, step_name, linked_dir):
+def test_bundled_steps_reject_nested_directory_escape(roots, tmp_path, step_name, linked_dir, cinematic_registry):
     source, output = roots
     output.mkdir()
     chapter = source / "chapter.txt"
@@ -207,11 +207,11 @@ def test_bundled_steps_reject_nested_directory_escape(roots, tmp_path, step_name
         if step_name == "extract":
             step.process_chapter(chapter, output, None, "mock", args)
         else:
-            step.process_chapter(chapter, {"chapter_entity_map": {}}, None, "mock", args)
+            step.process_chapter(chapter, cinematic_registry(chapter), None, "mock", args)
     assert list(outside.iterdir()) == []
 
 
-def test_generated_scene_files_and_manifest_stay_in_output(roots, monkeypatch):
+def test_generated_scene_files_and_manifest_stay_in_output(roots, monkeypatch, cinematic_registry):
     source, output = roots
     output.mkdir()
     chapter = source / "chapter.txt"
@@ -220,7 +220,7 @@ def test_generated_scene_files_and_manifest_stay_in_output(roots, monkeypatch):
     monkeypatch.setattr(step, "plan_scenes", lambda *args: [])
     args = SimpleNamespace(force=True, chunk_chars=5500, overlap_paragraphs=0,
                            out_dir=output, duration=8, delay=0, max_scenes=0)
-    manifest = step.process_chapter(chapter, {"chapter_entity_map": {}}, None, "mock", args)
+    manifest = step.process_chapter(chapter, cinematic_registry(chapter), None, "mock", args)
     assert json.loads((output / "chapter/manifest.json").read_text()) == manifest
     scene = SimpleNamespace(title="A scene", visual_event="An event", adaptation_notes="", source_excerpt="Text")
     bindings = {"picture_input_order": [], "subjects": [], "audio": []}
