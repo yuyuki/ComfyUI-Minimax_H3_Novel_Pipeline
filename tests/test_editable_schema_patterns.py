@@ -20,7 +20,6 @@ def pattern_fields(value):
 
 
 @pytest.mark.parametrize("schema", [
-    editable_schemas.LINK_SCHEMA,
     editable_schemas.DESIGN_SCHEMA,
 ])
 def test_nonblank_patterns_use_grammar_supported_syntax_and_preserve_validation(schema):

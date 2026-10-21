@@ -37,7 +37,7 @@ def entity(kind="character", gid="CHAR_001"):
 
 def options():
     return SimpleNamespace(max_character_base_views=4, max_location_base_views=3, max_object_base_views=2,
-                           picture_threshold="recommended", asset_batch_size=4,
+                           asset_batch_size=4,
                            temperature=0.12, max_tokens=2500, image_style="realistic photographic")
 
 
@@ -168,8 +168,6 @@ def test_all_entity_coverage_prioritizes_core_views(kind, gid, expected):
     args = options()
     specs = step.build_picture_specs([item], args)
     assert [spec["view_type"] for spec in specs] == expected
-    args.image_asset_scope = "existing priority threshold"
-    assert step.build_picture_specs([item], args) == []
 
 
 def test_prompts_repeat_stable_identity_design_style_without_temporal_state(monkeypatch):
@@ -640,7 +638,7 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
-    params = {**node_defaults(ConsolidateReferencesNode), "links_only": False}
+    params = node_defaults(ConsolidateReferencesNode)
     response = ConsolidateReferencesNode().run([chapter], config, **params)
     result, summary = response["result"]
     assert response["ui"] == {"text": [summary]}

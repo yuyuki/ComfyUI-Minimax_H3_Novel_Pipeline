@@ -73,8 +73,6 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     # Optional defaults must be recorded even when old workflows omit them.
     if stage == "consolidate":
         params.pop("image_style")
-        params.pop("image_asset_scope")
-        params["links_only"] = False
     cls().run(lmstudio_config=config, **inputs, **params)
     output = root / config["run_folder"] / params["out_dir"]
     path = output / f"{stage}_configuration.json"
@@ -83,8 +81,6 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     assert "secret-must-not-be-saved" not in text
     assert record["lmstudio_config"] == defaults(LMStudioConfigurationNode)
     expected_settings = defaults(cls)
-    if stage == "consolidate":
-        expected_settings["links_only"] = False
     assert record["node_settings"] == expected_settings
     assert record["resolved_model"] == "qwen3.5-test"
     assert record["status"] == "completed"

@@ -4,14 +4,21 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
+from shutil import copyfile
+from pathlib import Path
 
 from . import lmstudio_pipeline, progress, util
+from .editable_schemas import validate_document
 from .path_access import confined_path
 from .prompt_cache import fingerprint
 
 PHASES = ("initialState", "event", "endingState")
 TEMPORAL_VERSION = "cinematic-reference-timeline.v1"
 CATALOG_CACHE_VERSION = "cinematic-reference-catalog.v2"
+CATALOG_SCHEMA_FILENAME = "chapter_references.schema.json"
+CATALOG_SCHEMA = json.loads(
+    (Path(__file__).resolve().parent / "schema" / CATALOG_SCHEMA_FILENAME).read_text(encoding="utf-8")
+)
 PHASE_SYSTEM = """
 The passage is ONE phase of one cinematic sequence, the authoritative narrative.
 initialState contains only facts already true at START. event contains actions
@@ -37,6 +44,46 @@ only when supported. Otherwise retain it in the narrative without inventing a pe
 Actual unnamed people and explicitly established offscreen speakers remain entities.
 Never turn a temporary description or manifestation into a permanent identity trait.
 """
+
+LOCAL_LINK_SYSTEM = """
+You are reviewing a single chapter's extracted reference catalog.
+
+For every entity, set link_to_local_id to the local_id of another catalog entry only
+when both entries clearly represent the exact same fictional character, physical
+location, or object in the story. This includes an incomplete descriptive reference
+such as "someone screaming" when the chapter establishes that it is Doriane. Leave
+link_to_local_id null when the identity is uncertain, when the entry is a genuinely
+different entity, or when there is no better main entry.
+
+Links must be within the same entity type. Select one canonical/main entry as the
+target and link secondary descriptive or duplicate entries to it. A main entry must
+have null, never link an entry to itself, and never create a chain or cycle. Do not
+invent evidence or resolve ambiguity by guesswork.
+""".strip()
+
+LOCAL_LINK_SCHEMA = {
+    "name": "chapter_reference_local_links_v1",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "links": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "local_id": {"type": "string", "minLength": 1},
+                        "link_to_local_id": {"type": ["string", "null"]},
+                    },
+                    "required": ["local_id", "link_to_local_id"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["links"],
+        "additionalProperties": False,
+    },
+}
 
 
 def parse_chapters(value):
@@ -77,18 +124,81 @@ def chapter_digest(chapter):
     return hashlib.sha256(json.dumps(chapter, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def _catalog_entities(catalog):
+    return [entity for kind in ("characters", "locations", "objects") for entity in catalog[kind]]
+
+
+def assign_local_links(catalog, client, model, args):
+    """Ask the model to connect only high-confidence duplicate manifestations."""
+    entities = _catalog_entities(catalog)
+    for entity in entities:
+        entity["link_to_local_id"] = None
+    if len(entities) < 2:
+        return
+
+    review = {
+        kind: [
+            {
+                "local_id": entity["local_id"],
+                "canonical_name": entity["canonical_name"],
+                "aliases": entity["aliases"],
+                "stable_visual_description": entity["stable_visual_description"],
+                "evidence": entity["evidence"],
+                "state_by_sequence": entity["state_by_sequence"],
+            }
+            for entity in catalog[kind]
+        ]
+        for kind in ("characters", "locations", "objects")
+    }
+    result = lmstudio_pipeline.load("extract").chat_json(
+        client, model, LOCAL_LINK_SYSTEM, json.dumps(review, ensure_ascii=False),
+        LOCAL_LINK_SCHEMA, min(args.temperature, 0.2), args.max_tokens,
+    )
+    by_id = {entity["local_id"]: entity for entity in entities}
+    proposed = result.get("links", [])
+    seen_ids = set()
+    for item in proposed:
+        source_id = item.get("local_id")
+        if source_id not in by_id or source_id in seen_ids:
+            raise ValueError("Local-link review returned an invalid or duplicate local_id.")
+        seen_ids.add(source_id)
+        source = by_id[source_id]
+        target_id = item["link_to_local_id"]
+        if target_id is None:
+            continue
+        target = by_id.get(target_id)
+        if target is None or target is source:
+            raise ValueError("Local-link review returned an invalid target local_id.")
+        source_kind = next(kind for kind in ("characters", "locations", "objects") if source in catalog[kind])
+        target_kind = next(kind for kind in ("characters", "locations", "objects") if target in catalog[kind])
+        if source_kind != target_kind:
+            raise ValueError("Local-link review may only link entities of the same type.")
+        source["link_to_local_id"] = target_id
+    if any(entity["link_to_local_id"] and by_id[entity["link_to_local_id"]]["link_to_local_id"]
+           for entity in entities):
+        raise ValueError("Local-link review must point directly to a main local_id, without chains.")
+
+
+def copy_catalog_schema(output):
+    source = confined_path(Path(__file__).resolve().parent / "schema" / CATALOG_SCHEMA_FILENAME,
+                           Path(__file__).resolve().parent)
+    copyfile(source, confined_path(output / CATALOG_SCHEMA_FILENAME, output))
+
+
 def process_chapter(chapter, output, client, model, args, chapter_id):
     """Persist identity catalogs plus lossless ordered, phase-specific observations."""
     step = lmstudio_pipeline.load("extract")
     system = step.EXTRACT_SYSTEM + "\n" + PHASE_SYSTEM
     key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION,
-                      system, step.CHUNK_SCHEMA, chapter, client=client)
+                      system, LOCAL_LINK_SYSTEM, step.CHUNK_SCHEMA, LOCAL_LINK_SCHEMA,
+                      chapter, client=client)
     saved = confined_path(output / f"{chapter_id}_references.json", output)
     if saved.exists() and not args.force:
         try:
             cached = util.load_json(saved)
             if (cached.get("cache_key") == key and cached.get("timeline_version") == TEMPORAL_VERSION
                     and cached.get("schema_version") == util.CHAPTER_SCHEMA):
+                copy_catalog_schema(output)
                 return saved
         except (ValueError, OSError):
             pass
@@ -138,5 +248,8 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                "source": {"file": chapter.get("source_file", ""), "sha256": chapter_digest(chapter)},
                "sequences": deepcopy(chapter["sequences"]),
                **catalog}
+    assign_local_links(payload, client, model, args)
+    validate_document(payload, CATALOG_SCHEMA, saved.name)
+    copy_catalog_schema(output)
     util.save_json(saved, payload)
     return saved

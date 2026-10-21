@@ -52,7 +52,7 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    nodes can terminate the workflow and displays its own text preview after execution;
    no separate Preview Text node is required.
 4. In Consolidate, choose `image_style` (default **realistic photographic**) and
-   keep `image_asset_scope=all entities` to include every character, place and object.
+   reference image prompts include every consolidated character, place and object.
    Use `asset_batch_size=4` as the initial setting for the Qwen3.5 9B model.
 5. Queue the workflow. Open the new timestamp folder shown in configuration status.
    Copy each view's prompt from `references/image_prompts/` into your Qwen-Image-2512
@@ -123,66 +123,16 @@ An empty object removes all additions for an entity. Omitted entities are design
 anew. The selected style affects all new reference prompts. Loading a consolidated
 registry preserves its already generated style and prompts.
 
-Consolidate's `links_only` is enabled by default for a two-pass identity review. It saves
-`references/reference_links.json` and both `*.schema.json` files, and blocks
-downstream generation. Keep the schemas beside the editable files for completion
-and error highlighting in a compatible JSON editor. These are unchanged copies
-of the bundled JSON files in `src/schema/`, also used for runtime validation.
-`reference_links_path` defaults to `references/reference_links.json` inside the
-current timestamped run, like `out_dir`. A missing default file starts proposal
-generation. After review or a validation pause, the default (or an empty field)
-is replaced with the saved file's exact path for importing edits on the next run.
-Custom import paths are preserved.
-An empty `reference_links_path` fills automatically with the saved file's path
-after review or a validation pause; paths you have already entered are preserved.
-
-If link validation exhausts model retries, an addressable proposal is saved as an
-editable `reference_links.json` draft and generation pauses. Read the displayed error
-or `reference_links_review.txt`, fix the indicated link/classification, and review
-any chapters listed as not yet reviewed. Set `reference_links_path` to the corrected
-file, disable `links_only`, and queue again. Validation must pass before work resumes.
-
-In `reference_links.json`, find the sound's address using the `entities` list.
-The same review handles all contextual references: confirm `identity` / `same_as`
-between “l'homme avec la torche” and the established person, between “la crevasse
-à Delphes” and “la crevasse sombre”, or between “la corde” and “le filin”, when
-the passage establishes one entity. Use null sequence/phase for identity links.
-For “la paroi rocheuse” describing the crevasse, classify the fragment as
-`manifestation` and confirm an `attribution` with `relation: "describes"` to the
-crevasse at the fragment's exact sequence/phase. This preserves the description
-on the location without creating a separate asset. Objects support the same flow.
-Keep genuinely independent places/objects as `entity`; leave uncertain targets unresolved.
-
-Keep `classification: "manifestation"` for a sound such as “les cris”; retain
-`entity` for an actual unnamed person. For an attribution, edit the character
-target and set `status` to `confirmed` only when you want to impose that decision:
-
-```json
-{
-  "kind": "attribution",
-  "source": {"chapter_id": "chapter", "local_id": "CHAR_002"},
-  "target": {"chapter_id": "chapter", "local_id": "CHAR_003"},
-  "sequence": 1,
-  "phase": "event",
-  "relation": "emitted_by",
-  "status": "confirmed",
-  "reason": "Attribution reviewed by the operator.",
-  "evidence": ["Des cris retentissaient au-dessus de lui."]
-}
-```
-
-These addresses are illustrative: use the generated IDs and actual evidence.
-Leave uncertain authors `unresolved` (a `null` target is allowed); sounds still
-produce no character asset. `identity` links use `same_as` and null sequence/phase.
-Confirm to merge; reject to prevent a merge. `relation` links describe relationships
-without merging their endpoints. Only confirmed links are applied, and the model
-cannot undo manual decisions. Classification is applied even for unresolved links.
-
-Set `reference_links_path` to the edited file, disable `links_only`, and rerun
-Consolidate with the same catalogs. Schemas and source addresses are checked before
-model calls. Regenerate links after changing catalogs; regenerate visual designs
-after identity edits that change global IDs. Install the updated requirements and
-restart ComfyUI to load the new inputs and JSON Schema validator.
+Edit `link_to_local_id` directly in the extracted chapter catalog, using the exported
+`chapter_references.schema.json` for editor completion. Use another entry's `local_id`
+only for the same entity, in the same chapter and category; use `null` for main entries
+or uncertain identity. Targets must exist; self-links, chains and cycles are rejected.
+Load the edited catalogs with Load Chapter Catalogs before running Consolidate.
+Linked entries are grouped before model reconciliation and keep all source addresses
+and phase observations. The model may reconcile these groups across chapters.
+Sequences remain unchanged; no states are propagated between phases. Base image prompts
+are prepared for every consolidated entity using stable identity facts only.
+Regenerate visual designs when identity edits change global IDs.
 
 For each entity, the text export labels source description and added design details
 separately, followed by individual copy-paste prompts for each base-reference view.

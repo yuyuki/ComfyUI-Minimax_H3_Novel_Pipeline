@@ -32,6 +32,9 @@ def execution(tmp_path, monkeypatch):
     calls = []
     def extract(client, model, system, user, schema, temperature, max_tokens):
         data = json.loads(user)
+        if "sequence" not in data:
+            return {"links": [{"local_id": entity["local_id"], "link_to_local_id": None}
+                              for entities in data.values() for entity in entities]}
         calls.append(data)
         result = {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
         for name, kind in (("Indy", "characters"), ("Doriane", "characters"), ("torch", "objects")):
@@ -71,6 +74,7 @@ def test_multiple_chapters_ordered_phases_and_identity(execution):
         assert "catches" in states["3"]["event"][0]["chapter_state"]
         assert "holds" in states["3"]["endingState"][0]["chapter_state"]
         assert torch["chapter_state"] == ""
+        assert torch["link_to_local_id"] is None
         indy = [e for e in catalog["characters"] if e["canonical_name"] == "Indy"]
         assert len(indy) == 1
         assert list(indy[0]["state_by_sequence"]) == ["1", "2", "3"]
@@ -159,6 +163,58 @@ def test_catalog_without_summary_reuses_phase_cache(execution, tmp_path):
     assert "chapter_summary" not in util.load_json(saved)
     assert regenerated[0]["cache_key"] != old_key
     assert len(calls) == count
+
+
+def test_catalog_schema_is_copied_and_validates_local_links(execution, tmp_path):
+    _, params, config = execution
+    results, _ = ExtractChapterReferencesNode().run(config, [chapter()], **params)["result"]
+    schema_path, = list(tmp_path.rglob("chapter_references.schema.json"))
+    assert schema_path.is_file()
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    cr.validate_document(results[0], schema, "chapter_references.json")
+
+
+def test_local_link_review_connects_descriptive_reference(monkeypatch):
+    catalog = {
+        "characters": [
+            {"local_id": "CHAR_001", "canonical_name": "Doriane", "aliases": [],
+             "stable_visual_description": "", "evidence": ["Doriane cries."], "state_by_sequence": {"1": {}}},
+            {"local_id": "CHAR_002", "canonical_name": "someone screaming", "aliases": [],
+             "stable_visual_description": "", "evidence": ["Someone screams; it is Doriane."], "state_by_sequence": {"1": {}}},
+        ],
+        "locations": [],
+        "objects": [],
+    }
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", lambda *args: {"links": [
+        {"local_id": "CHAR_001", "link_to_local_id": None},
+        {"local_id": "CHAR_002", "link_to_local_id": "CHAR_001"},
+    ]})
+
+    cr.assign_local_links(catalog, None, "mock", argparse.Namespace(temperature=0.18, max_tokens=8192))
+
+    assert catalog["characters"][0]["link_to_local_id"] is None
+    assert catalog["characters"][1]["link_to_local_id"] == "CHAR_001"
+
+
+def test_local_link_review_defaults_omitted_entities_to_null(monkeypatch):
+    catalog = {
+        "characters": [
+            {"local_id": "CHAR_001", "canonical_name": "Doriane", "aliases": [],
+             "stable_visual_description": "", "evidence": [], "state_by_sequence": {"1": {}}},
+            {"local_id": "CHAR_002", "canonical_name": "someone screaming", "aliases": [],
+             "stable_visual_description": "", "evidence": [], "state_by_sequence": {"1": {}}},
+        ],
+        "locations": [],
+        "objects": [],
+    }
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", lambda *args: {"links": [
+        {"local_id": "CHAR_002", "link_to_local_id": "CHAR_001"},
+    ]})
+
+    cr.assign_local_links(catalog, None, "mock", argparse.Namespace(temperature=0.18, max_tokens=8192))
+
+    assert catalog["characters"][0]["link_to_local_id"] is None
+    assert catalog["characters"][1]["link_to_local_id"] == "CHAR_001"
 
 
 def test_identity_context_contains_only_prior_observations(execution):

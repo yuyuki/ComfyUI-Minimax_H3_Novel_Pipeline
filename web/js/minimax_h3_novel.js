@@ -332,32 +332,6 @@ app.registerExtension({
     },
 });
 
-function installReferenceLinksPath(node) {
-    if (node.comfyClass !== "ConsolidateReferencesNode") return;
-    const linksPath = widget(node, "reference_links_path");
-    if (!linksPath) return;
-    const originalOnExecuted = node.onExecuted;
-    node.onExecuted = function(message) {
-        const result = originalOnExecuted?.apply(this, arguments);
-        const savedPath = message?.reference_links_path?.[0];
-        const currentPath = String(linksPath.value ?? "").trim();
-        if ((!currentPath || currentPath === "references/reference_links.json")
-                && typeof savedPath === "string" && savedPath.trim()) {
-            linksPath.value = savedPath;
-            linksPath.callback?.(savedPath);
-            app.graph?.setDirtyCanvas(true, true);
-        }
-        return result;
-    };
-}
-
-app.registerExtension({
-    name: "minimax_h3_novel.reference_links_path",
-    nodeCreated(node) {
-        installReferenceLinksPath(node);
-    },
-});
-
 const LMSTUDIO_API_URL_SETTING = "MiniMaxH3Novel.LMStudio.ApiUrl";
 const DEFAULT_LMSTUDIO_API_URL = "http://127.0.0.1:1234/v1";
 const LMSTUDIO_API_KEY_SETTING = "MiniMaxH3Novel.LMStudio.ApiKey";

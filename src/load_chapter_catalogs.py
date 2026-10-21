@@ -5,7 +5,7 @@ from . import progress
 
 from typing import Any
 
-from . import util
+from . import configuration_snapshot, util
 
 
 class LoadChapterCatalogsNode:
@@ -33,6 +33,14 @@ class LoadChapterCatalogsNode:
     RETURN_NAMES = ("chapter_catalogs", "catalog_summary")
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
+
+    @classmethod
+    def IS_CHANGED(cls, catalog_path):
+        path = util.output_path(catalog_path.strip())
+        paths = ([path] if path.is_file() else
+                 sorted(p for p in path.glob("*_references.json")
+                        if p.is_file() and p.name != "consolidated_references.json"))
+        return tuple((str(p), configuration_snapshot.file_digest(p)) for p in paths)
 
     @progress.node_progress
     def run(self, catalog_path: str) -> tuple[list[dict[str, Any]], str]:

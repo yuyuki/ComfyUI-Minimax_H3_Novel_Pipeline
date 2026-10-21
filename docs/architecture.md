@@ -17,9 +17,8 @@ flowchart TD
     config["LM Studio Configuration"] --> extract["Extract Chapter References"]
     extract --> consolidate["Consolidate References"]
     consolidate --> timeline["Canonical entity timelines: chapter / sequence / phase"]
-    consolidate --> links["Editable reference links + JSON schemas; review pass or invalid-proposal pause"]
-    links --> decisions["Validate and apply confirmed identities, attributions and relations"]
-    decisions --> timeline
+    extract --> local["Editable local identity links in chapter catalogs"]
+    local --> consolidate
     consolidate --> designs["Prepare stable visual designs"]
     designs --> generate["Generate H3 Prompts"]
     consolidate --> generate
@@ -32,7 +31,7 @@ The node wrappers coordinate filesystem access, configuration snapshots and run 
 The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its ordered phases feed extraction; catalogs and registries retain temporal observations.
 
 `reference_timeline` validates cinematic catalogs, merges observations without rewriting them, computes first occurrences and provides exact-address state lookup. Identity reconciliation and duplicate audits exclude temporal state; base image briefs use stable identity only.
-`reference_links` requests classifications and link decisions using short entity IDs and a compact model-only schema, then restores catalog metadata and chapter/local addresses in Python. It reviews chapter evidence, validates editable source-addressed decisions and applies protected identities and scoped attributions before assets. Manifestations retain their original events without character assets. `editable_schemas` loads bundled `src/schema/*.json` files for import validation and copies them unchanged to run outputs; editor schema URLs are never fetched at runtime.
+Local `link_to_local_id` decisions are validated before model work and grouped before reconciliation. Every source ID maps to the unified entity, retaining all phase observations and unchanged chapter sequences. Image briefs cover all consolidated entities. `editable_schemas` validates and exports the visual design schema; extraction exports the chapter catalog schema.
 
 ## Internal module dependencies
 
@@ -68,7 +67,6 @@ flowchart TD
     m_pipeline_step3_generate["pipeline_step3_generate"]
     m_progress["progress"]
     m_prompt_cache["prompt_cache"]
-    m_reference_links["reference_links"]
     m_reference_requests["reference_requests"]
     m_reference_timeline["reference_timeline"]
     m_route_access["route_access"]
@@ -92,6 +90,7 @@ flowchart TD
     m_cinematic_chapter_adapter --> m_progress
     m_cinematic_chapter_adapter --> m_run_output
     m_cinematic_chapter_adapter --> m_util
+    m_cinematic_references --> m_editable_schemas
     m_cinematic_references --> m_lmstudio_pipeline
     m_cinematic_references --> m_path_access
     m_cinematic_references --> m_progress
@@ -106,7 +105,6 @@ flowchart TD
     m_consolidate_references --> m_image_prompt_export
     m_consolidate_references --> m_lmstudio_pipeline
     m_consolidate_references --> m_progress
-    m_consolidate_references --> m_reference_links
     m_consolidate_references --> m_reference_timeline
     m_consolidate_references --> m_run_output
     m_consolidate_references --> m_util
@@ -140,6 +138,7 @@ flowchart TD
     m_lmstudio_pipeline --> m_lmstudio_json
     m_lmstudio_pipeline --> m_lmstudio_models
     m_lmstudio_pipeline --> m_lmstudio_settings
+    m_load_chapter_catalogs --> m_configuration_snapshot
     m_load_chapter_catalogs --> m_progress
     m_load_chapter_catalogs --> m_util
     m_load_cinematic_chapters --> m_cinematic_references
@@ -174,13 +173,6 @@ flowchart TD
     m_pipeline_step3_generate --> m_prompt_cache
     m_pipeline_step3_generate --> m_util
     m_prompt_cache --> m_lmstudio_json
-    m_reference_links --> m_configuration_snapshot
-    m_reference_links --> m_editable_schemas
-    m_reference_links --> m_lmstudio_pipeline
-    m_reference_links --> m_progress
-    m_reference_links --> m_reference_requests
-    m_reference_links --> m_reference_timeline
-    m_reference_links --> m_util
     m_reference_requests --> m_lmstudio_json
     m_reference_requests --> m_lmstudio_pipeline
     m_reference_timeline --> m_cinematic_references
@@ -203,9 +195,9 @@ flowchart TD
 | `src/chapter_selection.py` | `progress`, `util` | `SelectChaptersNode`, `chapter_path_list`, `saved_chapter_choices` |
 | `src/cinematic_adaptation.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress` | `adapt_chapter`, `source_chunks` |
 | `src/cinematic_chapter_adapter.py` | `chapter_selection`, `cinematic_adaptation`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `CinematicChapterAdapterNode` |
-| `src/cinematic_references.py` | `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `chapter_digest`, `parse_chapters`, `process_chapter` |
+| `src/cinematic_references.py` | `editable_schemas`, `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
 | `src/configuration_snapshot.py` | `lmstudio_config`, `lmstudio_json`, `lmstudio_models`, `util` | `complete`, `content_digest`, `file_digest`, `start` |
-| `src/consolidate_references.py` | `configuration_snapshot`, `editable_schemas`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_links`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
+| `src/consolidate_references.py` | `configuration_snapshot`, `editable_schemas`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
 | `src/editable_schemas.py` | `path_access` | `export_schemas`, `obj`, `validate_document` |
 | `src/extract_chapter_references.py` | `cinematic_references`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
 | `src/generate_h3_prompts.py` | `chapter_selection`, `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `path_access`, `progress`, `run_output`, `util` | `GenerateH3PromptsNode` |
@@ -217,7 +209,7 @@ flowchart TD
 | `src/lmstudio_models.py` | `lmstudio_model_mistral`, `lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
 | `src/lmstudio_pipeline.py` | `lmstudio_json`, `lmstudio_models`, `lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
 | `src/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `set_connection_settings`, `validate_api_url` |
-| `src/load_chapter_catalogs.py` | `progress`, `util` | `LoadChapterCatalogsNode` |
+| `src/load_chapter_catalogs.py` | `configuration_snapshot`, `progress`, `util` | `LoadChapterCatalogsNode` |
 | `src/load_cinematic_chapters.py` | `cinematic_references`, `progress`, `util` | `LoadCinematicChaptersNode` |
 | `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
 | `src/nodes.py` | `chapter_selection`, `cinematic_chapter_adapter`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_cinematic_chapters`, `load_consolidated_references`, `spatial_continuity` | — |
@@ -227,7 +219,6 @@ flowchart TD
 | `src/pipeline_step3_generate.py` | `lmstudio_json`, `path_access`, `progress`, `prompt_cache`, `util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `dedupe_scenes`, `default_view_order`, `entity_index`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `resolve_continuity`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/prompt_cache.py` | `lmstudio_json` | `fingerprint` |
-| `src/reference_links.py` | `configuration_snapshot`, `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `reference_timeline`, `util` | `LinksReviewRequired`, `address`, `apply_decisions`, `audit_unprotected`, `complete_attribution_scope`, `document`, `load_links`, `plan`, `prepare_links`, `source_index`, `validate_links` |
 | `src/reference_requests.py` | `lmstudio_json`, `lmstudio_pipeline` | `InvalidResponse`, `validate_assets`, `validated_request` |
 | `src/reference_timeline.py` | `cinematic_references`, `util` | `merge_timeline`, `refresh_first_occurrence`, `state_at`, `validate_catalogs` |
 | `src/route_access.py` | — | `require_local_request` |
@@ -236,4 +227,4 @@ flowchart TD
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **36**. Internal dependency edges: **117**.
+Modules: **35**. Internal dependency edges: **111**.

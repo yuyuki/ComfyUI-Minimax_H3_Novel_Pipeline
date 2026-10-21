@@ -27,7 +27,7 @@ def catalog(cid="chapter", kind="characters", name="Indy", alias=None):
             "sequences": [{"sequence": n, "source": "Evidence", "adaptation": {
                 "initialState": "Opening", "event": "Action", "endingState": "Ending"}} for n in (1, 2, 3)],
             **{k: [] for k in ("characters", "locations", "objects")},
-            kind: [{"local_id": "LOCAL_1", "canonical_name": name, "aliases": alias or [],
+            kind: [{"local_id": "LOCAL_1", "link_to_local_id": None, "canonical_name": name, "aliases": alias or [],
                     "stable_visual_description": "Brown hair" if kind == "characters" else "Hemp fibers",
                     "distinguishing_features": ["Permanent mark"], "voice_description": "Low voice",
                     "first_sequence": 3, "first_phase": "event", "state_by_sequence": observations}]}
@@ -37,10 +37,6 @@ def catalog(cid="chapter", kind="characters", name="Indy", alias=None):
 def mocked_reconcile(monkeypatch):
     calls = []
     def chat(client, model, system, user, schema, *args):
-        if schema["name"] == "reference_link_proposals":
-            data = json.loads(user)
-            return {"entities": [{"id": key, "classification": "entity"} for key in data["current_entity_ids"]],
-                    "links": []}
         incoming = json.loads(user.split("INCOMING:\n", 1)[1].split("\n\nCANDIDATES:", 1)[0])
         candidates = json.loads(user.split("CANDIDATES:\n", 1)[1])
         calls.append(user)
@@ -181,7 +177,7 @@ def test_invalid_identity_resolutions_retry_without_losing_observations(monkeypa
     calls = []
     def chat(*args):
         calls.append(args)
-        resolution = {"local_id": "LOCAL_1", "entity_type": "character", "match_global_id": "NEW"}
+        resolution = {"local_id": "LOCAL_1", "link_to_local_id": None, "entity_type": "character", "match_global_id": "NEW"}
         if len(calls) > 1:
             return {"resolutions": [resolution]}
         if mode == "missing":
@@ -195,3 +191,79 @@ def test_invalid_identity_resolutions_retry_without_losing_observations(monkeypa
     entity, = step.reconcile_chapter(None, "mock", catalog(), [], args)
     assert len(calls) == 2
     assert len(state_at(entity, "chapter", 1, "event")) == 1
+
+
+@pytest.mark.parametrize("kind", ["characters", "locations", "objects"])
+@pytest.mark.parametrize("linked_first", [True, False])
+def test_local_links_group_before_model_and_preserve_all_states(mocked_reconcile, kind, linked_first):
+    from minimax_h3_novel_pipeline import pipeline_step3_generate as generate
+    run, calls = mocked_reconcile
+    chapter = catalog(kind=kind)
+    main = chapter[kind][0]
+    other = deepcopy(main)
+    other.update(local_id="LOCAL_2", link_to_local_id="LOCAL_1", canonical_name="Secondary mention")
+    state = "chapter_appearance" if kind == "characters" else "chapter_state"
+    other["state_by_sequence"] = {"1": {"event": [{state: "contradictory observation", "evidence": ["source"]}]}}
+    chapter[kind] = [other, main] if linked_first else [main, other]
+    original = deepcopy(chapter)
+    registry = run(chapter)
+    entity, = registry
+    incoming = json.loads(calls[0].split("INCOMING:\n", 1)[1].split("\n\nCANDIDATES:", 1)[0])
+    assert [item["local_id"] for item in incoming] == ["LOCAL_1"]
+    assert "Secondary mention" in incoming[0]["aliases"]
+    assert "contradictory observation" not in calls[0]
+    assert chapter == original
+    assert state_at(entity, "chapter", 1, "event") == main["state_by_sequence"]["1"]["event"] + other["state_by_sequence"]["1"]["event"]
+    assert state_at(entity, "chapter", 1, "initialState") == main["state_by_sequence"]["1"]["initialState"]
+    mapping = step.build_chapter_map(registry)
+    assert mapping["chapter"] == {"LOCAL_1": entity["global_id"], "LOCAL_2": entity["global_id"]}
+    refs = {"entities": registry, "chapter_entity_map": mapping, "picture_assets": []}
+    assert len(generate.chapter_catalog(refs, "chapter")) == 1
+    # The entire group can still match an identity from another chapter.
+    registry = run(catalog("next", kind=kind), registry)
+    assert len(registry) == 1
+    assert step.build_chapter_map(registry)["next"]["LOCAL_1"] == entity["global_id"]
+
+
+@pytest.mark.parametrize("mode", ["missing_field", "unknown", "self", "wrong_type", "chain", "cycle", "invalid_type"])
+def test_invalid_local_links_fail_before_model(mocked_reconcile, mode):
+    run, calls = mocked_reconcile
+    chapter = catalog()
+    main = chapter["characters"][0]
+    other = deepcopy(main)
+    other.update(local_id="LOCAL_2", link_to_local_id="LOCAL_1")
+    chapter["characters"].append(other)
+    if mode == "missing_field":
+        other.pop("link_to_local_id")
+    elif mode == "unknown":
+        other["link_to_local_id"] = "MISSING"
+    elif mode == "self":
+        other["link_to_local_id"] = "LOCAL_2"
+    elif mode == "wrong_type":
+        chapter["objects"] = [chapter["characters"].pop()]
+    elif mode == "chain":
+        third = deepcopy(main)
+        third.update(local_id="LOCAL_3", link_to_local_id="LOCAL_2")
+        chapter["characters"].append(third)
+    elif mode == "cycle":
+        main["link_to_local_id"] = "LOCAL_2"
+    else:
+        other["link_to_local_id"] = []
+    with pytest.raises(ValueError, match="chapter/.*link_to_local_id"):
+        run(chapter)
+    assert calls == []
+
+
+def test_catalog_edits_invalidate_loader_cache(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline import path_access
+    from minimax_h3_novel_pipeline.load_chapter_catalogs import LoadChapterCatalogsNode
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    path = tmp_path / "chapter_references.json"
+    chapter = catalog()
+    util.save_json(path, chapter)
+    before = LoadChapterCatalogsNode.IS_CHANGED(str(tmp_path))
+    chapter["characters"][0]["canonical_name"] = "Corrected identity"
+    util.save_json(path, chapter)
+    assert LoadChapterCatalogsNode.IS_CHANGED(str(tmp_path)) != before
+    loaded, _ = LoadChapterCatalogsNode().run(str(path))
+    assert loaded == [chapter]

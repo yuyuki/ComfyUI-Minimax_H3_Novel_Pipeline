@@ -90,3 +90,11 @@ python -m build
 ```
 
 License: [GNU GPL v3](LICENSE).
+
+Consolidation respects editable `link_to_local_id` decisions in extracted catalogs.
+Load corrected files with **Load Chapter Catalogs**: links join same-type entries within
+one chapter before cross-chapter reconciliation. All source IDs and `state_by_sequence`
+observations are retained at their original chapter, sequence and phase; extracted
+sequences are unchanged. Invalid targets, self-links, chains and cycles are rejected.
+Reference image prompts cover every consolidated entity. See [examples](examples/README.md)
+for catalog editing and visual design settings.

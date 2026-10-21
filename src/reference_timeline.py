@@ -45,6 +45,21 @@ def validate_catalogs(chapters):
                         if not all(isinstance(o, dict) for o in observations):
                             raise ValueError(f"{cid}/{lid}: observations must be objects.")
 
+        index = {e["local_id"]: (kind, e) for kind in ("characters", "locations", "objects") for e in chapter[kind]}
+        for lid, (kind, entity) in index.items():
+            if "link_to_local_id" not in entity:
+                raise ValueError(f"{cid}/{lid}: link_to_local_id is required (use null for no link).")
+            target = entity["link_to_local_id"]
+            if target is None:
+                continue
+            if not isinstance(target, str) or target not in index or target == lid:
+                raise ValueError(f"{cid}/{lid}: invalid link_to_local_id target {target!r}.")
+            target_kind, main = index[target]
+            if kind != target_kind:
+                raise ValueError(f"{cid}/{lid}: link_to_local_id must target the same entity type.")
+            if main.get("link_to_local_id") is not None:
+                raise ValueError(f"{cid}/{lid}: link_to_local_id must point directly to a main entry; no chains or cycles.")
+
 
 def merge_timeline(entity, timeline):
     """Identity merges append every observation, including conflicting evidence."""

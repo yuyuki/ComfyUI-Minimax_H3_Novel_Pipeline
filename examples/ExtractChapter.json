@@ -471,7 +471,6 @@
         12,
         35,
         "recommended",
-        "recommended",
         4,
         3,
         2,
@@ -484,13 +483,11 @@
         0.68,
         24,
         "cinematic photographic",
-        "",
-        "all entities"
+        ""
       ],
       "widgets_values_named": {
         "candidate_count": 12,
         "include_all_below": 35,
-        "picture_threshold": "recommended",
         "audio_threshold": "recommended",
         "max_character_base_views": 4,
         "max_location_base_views": 3,
@@ -504,8 +501,7 @@
         "audit_similarity": 0.68,
         "audit_cluster_size": 24,
         "image_style": "cinematic photographic",
-        "visual_designs_path": "",
-        "image_asset_scope": "all entities"
+        "visual_designs_path": ""
       }
     },
     {

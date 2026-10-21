@@ -8,9 +8,7 @@ from jsonschema import Draft202012Validator
 from .path_access import output_path
 
 SCHEMA_DIR = Path(__file__).resolve().parent / "schema"
-LINK_SCHEMA = json.loads((SCHEMA_DIR / "reference_links.schema.json").read_text(encoding="utf-8"))
 DESIGN_SCHEMA = json.loads((SCHEMA_DIR / "visual_designs.schema.json").read_text(encoding="utf-8"))
-LINK_VERSION = LINK_SCHEMA["properties"]["schema_version"]["const"]
 TRAITS = {
     rule["if"]["properties"]["entity_type"]["const"]:
         list(rule["then"]["properties"]["added_details"]["properties"])
@@ -34,6 +32,6 @@ def validate_document(payload, schema, filename):
 def export_schemas(output):
     output = output_path(output)
     output.mkdir(parents=True, exist_ok=True)
-    for name in ("reference_links", "visual_designs"):
+    for name in ("visual_designs",):
         filename = f"{name}.schema.json"
         copyfile(SCHEMA_DIR / filename, output_path(output / filename))
