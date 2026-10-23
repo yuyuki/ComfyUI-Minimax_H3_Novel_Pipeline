@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Bundle the spatial continuity JSON Schema, reuse it for runtime validation,
+  and export it beside generated plans with a relative editor schema link.
+
 - Add Load Spatial Continuity for manually corrected JSON, with consolidation
   validation and content-based ComfyUI cache invalidation.
 

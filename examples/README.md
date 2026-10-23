@@ -41,6 +41,9 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    **LM Studio Configuration** to **Spatial Continuity**, then its
    `spatial_continuity` output to **Generate H3 Prompts**. This exports
    `spatial_continuity.json` and provides a `spatial_json` text output.
+   The node also copies `spatial_continuity.schema.json` beside it and adds a
+   relative `$schema` link for editor validation. Keep both files together when
+   editing a copy. Load Spatial Continuity validates against the bundled schema.
    Each sequence is planned with the entire chapter visible, including distant
    future constraints, initial/final entity positions, camera, evidence and warnings.
    Generate uses this plan during scene planning and prompt generation, and reviews

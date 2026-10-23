@@ -78,3 +78,34 @@ def test_paths_are_confined(saved_plan):
         with pytest.raises(ValueError):
             Loader().run(value, registry)
         assert math.isnan(Loader.IS_CHANGED(value, registry))
+
+
+@pytest.mark.parametrize("change", ["root_extra", "chapter_extra", "camera_missing", "sequence_type", "entity_enum"])
+def test_bundled_schema_rejects_invalid_manual_edits(saved_plan, change):
+    from jsonschema import Draft202012Validator
+    from minimax_h3_novel_pipeline.spatial_continuity import SPATIAL_SCHEMA, _ENTITY
+    path, plan, registry = saved_plan
+    sequence = plan['chapters']['chapter']['sequences'][0]
+    if change == 'root_extra':
+        plan['typo'] = 1
+    elif change == 'chapter_extra':
+        plan['chapters']['chapter']['typo'] = 1
+    elif change == 'camera_missing':
+        del sequence['camera']['camera_axis']
+    elif change == 'sequence_type':
+        sequence['sequence'] = True
+    else:
+        entity = {k: 'unknown' for k in _ENTITY}
+        entity.update(kind='invalid', source_sequence=1)
+        sequence['initial_entities'] = [entity]
+    assert not Draft202012Validator(SPATIAL_SCHEMA).is_valid(plan)
+    path.write_text(json.dumps(plan))
+    with pytest.raises(ValueError, match='invalid spatial output'):
+        Loader().run(str(path), registry)
+
+
+def test_document_schema_url_is_not_fetched(saved_plan):
+    path, plan, registry = saved_plan
+    plan['$schema'] = 'https://invalid.example/no-network'
+    path.write_text(json.dumps(plan))
+    assert Loader().run(str(path), registry)[0] == plan

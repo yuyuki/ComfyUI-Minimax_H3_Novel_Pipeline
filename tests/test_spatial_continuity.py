@@ -199,6 +199,14 @@ def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch):
     assert requests[0]['whole_chapter_timeline'][2]['source'] == 'Near tablet'
     assert requests[1]['previous_final_state'] == spatial_answer()['final_entities']
     assert json.loads(rendered) == json.loads((tmp_path / 'spatial_continuity.json').read_text()) == payload
+    from jsonschema import Draft202012Validator
+    from minimax_h3_novel_pipeline.editable_schemas import SCHEMA_DIR
+    schema_file = tmp_path / "spatial_continuity.schema.json"
+    assert schema_file.read_bytes() == (SCHEMA_DIR / schema_file.name).read_bytes()
+    schema = json.loads(schema_file.read_text())
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema).validate(payload)
+    assert payload["$schema"] == schema_file.name
     spatial.validate_plan(payload, registry)
     registry['source_digest'] = 'changed'
     with pytest.raises(ValueError, match='stale'):

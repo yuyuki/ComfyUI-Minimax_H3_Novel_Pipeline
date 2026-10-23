@@ -13,29 +13,17 @@ from typing import Any
 from . import progress, lmstudio_pipeline, util
 from .lmstudio_json import chat_json
 from .run_output import stage_output
+from .editable_schemas import SCHEMA_DIR, export_schema, validate_document
 
-_ENTITY = {
-    "entity_id": {"type": "string"},
-    "kind": {"type": "string", "enum": ["character", "object", "location"]},
-    "world_position": {"type": "string"},
-    "relative_to": {"type": "string"},
-    "orientation": {"type": "string"},
-    "state": {"type": "string"},
-    "screen_position": {"type": "string"},
-    "evidence": {"type": "string", "enum": ["explicit", "inferred", "unknown"]},
-    "source_sequence": {"type": "integer"},
-}
+SPATIAL_SCHEMA = json.loads((SCHEMA_DIR / "spatial_continuity.schema.json").read_text(encoding="utf-8"))
+_ENTITY = SPATIAL_SCHEMA["$defs"]["entity"]["properties"]
+# LM Studio receives a flat, self-contained per-sequence response schema.
 _FIELDS = {
-    "location_id": {"type": "string"},
-    "location_layout": {"type": "string"},
-    "camera_position": {"type": "string"},
-    "camera_direction": {"type": "string"},
-    "camera_movement": {"type": "string"},
-    "camera_axis": {"type": "string"},
-    "initial_entities": {"type": "array", "items": {"type": "object", "properties": _ENTITY, "required": list(_ENTITY), "additionalProperties": False}},
-    "final_entities": {"type": "array", "items": {"type": "object", "properties": _ENTITY, "required": list(_ENTITY), "additionalProperties": False}},
-    "justified_changes": {"type": "array", "items": {"type": "string"}},
-    "warnings": {"type": "array", "items": {"type": "string"}},
+    **{k: v for k, v in SPATIAL_SCHEMA["$defs"]["sequence"]["properties"].items()
+       if k not in ("sequence", "camera", "initial_entities", "final_entities")},
+    **SPATIAL_SCHEMA["$defs"]["camera"]["properties"],
+    **{k: {"type": "array", "items": SPATIAL_SCHEMA["$defs"]["entity"]}
+       for k in ("initial_entities", "final_entities")},
 }
 _SCHEMA = {
     "name": "chapter_spatial_sequence_v2", "strict": True,
@@ -74,6 +62,7 @@ def validate_plan(payload: dict[str, Any], registry: dict[str, Any]) -> None:
     """Reject stale, incomplete or obsolete plans before generation starts."""
     if not isinstance(payload, dict) or payload.get("schema_version") != "minimax-spatial-continuity.v2":
         raise ValueError("Invalid spatial_continuity. Connect the current Spatial Continuity output.")
+    validate_document(payload, SPATIAL_SCHEMA, "invalid spatial output")
     if payload.get("source_digest") != registry.get("source_digest", ""):
         raise ValueError("Spatial continuity is stale; rerun it with the current consolidation.")
     chapters = payload.get("chapters")
@@ -180,11 +169,13 @@ class SpatialContinuityNode:
                     })
                 chapters[chapter_id] = {"sequences": planned}
         payload = {
+            "$schema": "spatial_continuity.schema.json",
             "schema_version": "minimax-spatial-continuity.v2",
             "source_digest": consolidated_references.get("source_digest", ""),
             "chapters": chapters,
         }
         validate_plan(payload, consolidated_references)
+        export_schema(output, "spatial_continuity")
         util.save_json(output / "spatial_continuity.json", payload)
         rendered = json.dumps(payload, ensure_ascii=False, indent=2)
         count = sum(len(c["sequences"]) for c in chapters.values())

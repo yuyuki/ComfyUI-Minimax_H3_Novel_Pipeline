@@ -29,9 +29,14 @@ def validate_document(payload, schema, filename):
         raise ValueError(f"{filename}: {path or '$'}: {error.message}")
 
 
-def export_schemas(output):
+def export_schema(output, name):
+    if name not in ("visual_designs", "spatial_continuity"):
+        raise ValueError(f"Unknown bundled schema: {name}")
     output = output_path(output)
     output.mkdir(parents=True, exist_ok=True)
-    for name in ("visual_designs",):
-        filename = f"{name}.schema.json"
-        copyfile(SCHEMA_DIR / filename, output_path(output / filename))
+    filename = f"{name}.schema.json"
+    copyfile(SCHEMA_DIR / filename, output_path(output / filename))
+
+
+def export_schemas(output):
+    export_schema(output, "visual_designs")
