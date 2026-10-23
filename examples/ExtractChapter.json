@@ -1,7 +1,7 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 149,
+  "last_node_id": 153,
   "last_link_id": 217,
   "nodes": [
     {
@@ -157,8 +157,8 @@
       "id": 79,
       "type": "SelectChaptersNode",
       "pos": [
-        -811.4508073839679,
-        2407.980064607735
+        -832.0373265801786,
+        2505.4229011947755
       ],
       "size": [
         400,
@@ -280,10 +280,10 @@
         "Node name for S&R": "LoadChapterCatalogsNode"
       },
       "widgets_values": [
-        "20261004160124\\chapter_catalogs"
+        "20261023215454\\chapter_catalogs"
       ],
       "widgets_values_named": {
-        "catalog_path": "20261004160124\\chapter_catalogs"
+        "catalog_path": "20261023215454\\chapter_catalogs"
       }
     },
     {
@@ -329,10 +329,10 @@
         "Node name for S&R": "ComfySwitchNode"
       },
       "widgets_values": [
-        true
+        false
       ],
       "widgets_values_named": {
-        "switch": true
+        "switch": false
       }
     },
     {
@@ -416,22 +416,22 @@
         "Node name for S&R": "LoadConsolidatedReferencesNode"
       },
       "widgets_values": [
-        "20261021212525\\references"
+        "20261023222151\\references"
       ],
       "widgets_values_named": {
-        "consolidated_path": "20261021212525\\references"
+        "consolidated_path": "20261023222151\\references"
       }
     },
     {
       "id": 117,
       "type": "CinematicChapterAdapterNode",
       "pos": [
-        -331.4508073839679,
-        2469.480064607735
+        -352.03732658017844,
+        2566.9229011947755
       ],
       "size": [
-        400,
-        300
+        420.916997271676,
+        317.04342858748987
       ],
       "flags": {},
       "order": 14,
@@ -486,8 +486,8 @@
       "id": 119,
       "type": "GetNode",
       "pos": [
-        -723.9508073839679,
-        2687.980064607735
+        -744.5373265801786,
+        2785.4229011947755
       ],
       "size": [
         225,
@@ -522,8 +522,8 @@
       "id": 122,
       "type": "SetNode",
       "pos": [
-        498.5491926160321,
-        2715.983970857735
+        477.96267341982156,
+        2813.4268074447755
       ],
       "size": [
         431.47265625,
@@ -609,14 +609,16 @@
         0.18,
         8192,
         false,
-        "chapter_catalogs"
+        "chapter_catalogs",
+        "1922"
       ],
       "widgets_values_named": {
         "chunk_chars": 5500,
         "temperature": 0.18,
         "max_tokens": 8192,
         "force": false,
-        "out_dir": "chapter_catalogs"
+        "out_dir": "chapter_catalogs",
+        "default_temporal_context": "1922"
       }
     },
     {
@@ -659,8 +661,8 @@
       "id": 125,
       "type": "LoadCinematicChaptersNode",
       "pos": [
-        -266.4508073839679,
-        2849.480064607735
+        -287.03732658017844,
+        2946.9229011947755
       ],
       "size": [
         270,
@@ -690,18 +692,18 @@
         "Node name for S&R": "LoadCinematicChaptersNode"
       },
       "widgets_values": [
-        "20261003105945\\cinematic_chapters"
+        "20261023222027\\cinematic_chapters"
       ],
       "widgets_values_named": {
-        "cinematic_path": "20261003105945\\cinematic_chapters"
+        "cinematic_path": "20261023222027\\cinematic_chapters"
       }
     },
     {
       "id": 126,
       "type": "ComfySwitchNode",
       "pos": [
-        148.5491926160321,
-        2709.976158357735
+        127.96267341982148,
+        2807.4189949447755
       ],
       "size": [
         270,
@@ -739,10 +741,10 @@
         "Node name for S&R": "ComfySwitchNode"
       },
       "widgets_values": [
-        false
+        true
       ],
       "widgets_values_named": {
-        "switch": false
+        "switch": true
       }
     },
     {
@@ -753,8 +755,8 @@
         1742.694479914327
       ],
       "size": [
-        341.6484375,
-        438
+        400,
+        492
       ],
       "flags": {},
       "order": 19,
@@ -805,7 +807,7 @@
         "references",
         0.68,
         24,
-        "realistic photographic",
+        "cinematic photographic",
         ""
       ],
       "widgets_values_named": {
@@ -823,7 +825,7 @@
         "out_dir": "references",
         "audit_similarity": 0.68,
         "audit_cluster_size": 24,
-        "image_style": "realistic photographic",
+        "image_style": "cinematic photographic",
         "visual_designs_path": ""
       }
     },
@@ -931,10 +933,10 @@
         "Node name for S&R": "ComfySwitchNode"
       },
       "widgets_values": [
-        true
+        false
       ],
       "widgets_values_named": {
-        "switch": true
+        "switch": false
       }
     },
     {
@@ -1034,7 +1036,7 @@
       ],
       "size": [
         400,
-        484
+        538
       ],
       "flags": {},
       "order": 24,
@@ -1123,11 +1125,11 @@
       "id": 148,
       "type": "SetNode",
       "pos": [
-        137.52625063783705,
-        2392.120365266336
+        116.93973144162648,
+        2489.5632018533765
       ],
       "size": [
-        210,
+        419.54296875,
         60
       ],
       "flags": {},
@@ -1168,7 +1170,7 @@
         1635.0989531612734
       ],
       "size": [
-        213.2734375,
+        227.271484375,
         58
       ],
       "flags": {},
@@ -1434,8 +1436,8 @@
       "bounding": [
         -517.5445573839679,
         1653.9800646077351,
-        1123.1875,
-        614
+        1184.9470575886317,
+        697.7184904562328
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1444,8 +1446,8 @@
       "id": 5,
       "title": "Chapter selection",
       "bounding": [
-        -841.4508073839679,
-        2317.980064607735,
+        -862.0373265801786,
+        2415.4229011947755,
         1807.5582037725471,
         676.4217520038865
       ],
@@ -1468,10 +1470,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6411963029879162,
+      "scale": 0.8534322792769171,
       "offset": [
-        -1696.2595622164463,
-        -1007.515658147051
+        -1695.1262049899615,
+        -1287.3303232819685
       ]
     },
     "frontendVersion": "1.55.18"
