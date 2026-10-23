@@ -25,10 +25,10 @@ class GenerateH3PromptsNode:
         return {"required": {
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
-            "duration": ("FLOAT", {"default": 8.0, "min": 0.1, "max": 3600.0, "tooltip": "Duration in seconds of EACH generated scene, not the entire chapter."}),
-            "max_shots": ("INT", {"default": 1, "min": 1, "max": 12, "tooltip": "Maximum camera shots per scene. Qwen may use fewer; a shot needs at least 2.5 seconds. Default 1 preserves existing workflows."}),
-            "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100, "tooltip": "Maximum scenes per cinematic sequence, preserving sequence order."}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000}),
-            "max_pictures": ("INT", {"default": 8, "min": 1, "max": 100}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 10}), "max_audio": ("INT", {"default": 4, "min": 0, "max": 100}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8000, "min": 256, "max": 100000}),
+            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "H3 duration in seconds of EACH generated scene (4–15 seconds)."}),
+            "max_shots": ("INT", {"default": 1, "min": 1, "max": 6, "tooltip": "Maximum camera shots per scene. Qwen may use fewer; a shot needs at least 2.5 seconds. Default 1 preserves existing workflows."}),
+            "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100, "tooltip": "Maximum scenes per cinematic sequence, preserving sequence order."}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000, "tooltip": "Maximum scenes per chapter; 0 generates all scenes."}),
+            "max_pictures": ("INT", {"default": 8, "min": 1, "max": 9}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 9}), "max_audio": ("INT", {"default": 3, "min": 0, "max": 3}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8000, "min": 256, "max": 100000}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "refine_camera": ("BOOLEAN", {"default": False, "tooltip": "After prompt validation, ask LM Studio for camera-only descriptions for each shot. Adds one request per scene."}),
             "enable_spatial_continuity": ("BOOLEAN", {"default": False, "tooltip": "Plan staging and review final prompts for consistency within each chapter. Adds LM Studio requests. A connected Spatial Continuity node also enables this pass."}),
@@ -43,8 +43,24 @@ class GenerateH3PromptsNode:
     CATEGORY = "MiniMax H3 Novel"
     OUTPUT_NODE = True
 
+    @classmethod
+    def validate_parameters(cls, params: dict[str, Any]) -> None:
+        """Reject invalid saved/API values before filesystem or network work."""
+        for name, (kind, *options) in cls.INPUT_TYPES()["required"].items():
+            if kind not in ("INT", "FLOAT"):
+                continue
+            limits = options[0]
+            value = params.get(name, limits["default"])
+            valid_type = type(value) is int if kind == "INT" else type(value) in (int, float)
+            if not valid_type or not limits["min"] <= value <= limits["max"]:
+                raise ValueError(
+                    f"{name} must be {kind.lower()} between {limits['min']} and {limits['max']}. "
+                    "Set it on Generate H3 Prompts."
+                )
+
     @progress.node_progress
     def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> dict[str, Any]:
+        self.validate_parameters(params)
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
         output = stage_output(lmstudio_config, out_dir.strip())
@@ -65,8 +81,8 @@ class GenerateH3PromptsNode:
             keys = ("duration", "scenes_per_chunk", "max_scenes", "max_pictures", "max_pictures_per_subject", "max_audio", "temperature", "max_tokens", "repair_attempts", "force")
             args = argparse.Namespace(**{key: params[key] for key in keys}, out_dir=output,
                                       max_shots=int(params.get("max_shots", 1)))
-            if not 1 <= args.max_shots <= 12:
-                raise ValueError("max_shots must be between 1 and 12. Set it on Generate H3 Prompts.")
+            if not 1 <= args.max_shots <= 6:
+                raise ValueError("max_shots must be between 1 and 6. Set it on Generate H3 Prompts.")
             args.camera_direction = str(params.get("camera_direction", "")).strip()
             args.refine_camera = bool(params.get("refine_camera", False))
             continuity = params.get("spatial_continuity")

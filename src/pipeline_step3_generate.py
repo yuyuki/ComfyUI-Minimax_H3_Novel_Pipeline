@@ -692,6 +692,11 @@ def build_bindings(
     chapter_id: str,
     args: argparse.Namespace,
 ) -> dict[str, Any]:
+    for name, lower, upper in (("max_pictures", 1, 9), ("max_pictures_per_subject", 1, 9),
+                               ("max_audio", 0, 3)):
+        value = getattr(args, name)
+        if type(value) is not int or not lower <= value <= upper:
+            raise ValueError(f"{name} must be an integer between {lower} and {upper} for H3.")
     entities = entity_index(refs)
     view_requests_by_id = request_map(scene)
 
@@ -834,7 +839,7 @@ def build_bindings(
     audio: list[dict[str, Any]] = []
     audio_input_order: list[dict[str, Any]] = []
     for gid in scene.speaking_entity_ids:
-        if len(audio) >= args.max_audio:
+        if not picture_input_order or len(audio) >= args.max_audio:
             break
         asset = audio_asset_for(refs, gid)
         if not asset:

@@ -230,3 +230,17 @@ size and paragraph-overlap controls have been removed from Generate.
 Each saved scene records its sequence ID. Reference state is scoped to that exact
 sequence and phase, with no automatic carry-forward. Stable visual designs and
 image styles remain part of the consolidated assets and image-prompt export.
+
+
+H3 reference generation allows at most 9 images and 3 audio references per scene.
+The defaults are 8 images and 3 audio references; the per-subject image budget
+cannot exceed 9 and remains subject to the total image budget. Audio references
+are selected only when an image reference is available.
+Scene duration is restricted to 4–15 seconds. The pipeline's 2.5-second minimum
+shot length permits at most 6 shots at 15 seconds; shorter scenes automatically
+use a lower shot cap. This pacing rule is internal, not an H3 shot-count limit.
+max_scenes defaults to 0 (all scenes per chapter).
+Temperature, token budget and repair attempts control LM Studio, not H3.
+Actual reference audio files must each be 2–15 seconds and total no more than
+15 seconds. This prompt-only pipeline cannot validate media duration or file size.
+Limits: https://www.minimax.io/news/minimax-h3-open-source

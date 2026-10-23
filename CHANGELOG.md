@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Enforce H3 reference budgets (9 images, 3 audio), 4–15 second scenes and
+  consistent shot limits; validate numeric inputs before execution, prevent
+  audio-only bindings, and repair example widget values with unlimited scenes.
+
 - Bundle the spatial continuity JSON Schema, reuse it for runtime validation,
   and export it beside generated plans with a relative editor schema link.
 
