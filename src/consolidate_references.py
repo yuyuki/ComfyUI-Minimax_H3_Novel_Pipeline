@@ -42,7 +42,7 @@ class ConsolidateReferencesNode:
             "audit_similarity": ("FLOAT", {"default": 0.68, "min": 0.0, "max": 1.0, "step": 0.01}),
             "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
         }, "optional": {
-            "image_style": (list(IMAGE_STYLES), {"default": "realistic photographic"}),
+            "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional existing visual_designs.json to import inside output/minimax_h3_novel. Leave empty on the first run; consolidation saves this file automatically."}),
         }}
 
@@ -72,7 +72,7 @@ class ConsolidateReferencesNode:
         with client:
             keys = ("candidate_count", "include_all_below", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_audit", "audit_max_entities", "temperature", "max_tokens")
             args = argparse.Namespace(**{key: params[key] for key in keys}, audit_similarity=float(params["audit_similarity"]), audit_cluster_size=max(2, int(params["audit_cluster_size"])))
-            args.image_style = params.get("image_style", "realistic photographic")
+            args.image_style = params.get("image_style", "cinematic photographic")
             if args.image_style not in IMAGE_STYLES:
                 raise ValueError("Unknown image style.")
             _log(f"LM Studio consolidation: model={resolved_model}, chapters={len(chapters)}")
