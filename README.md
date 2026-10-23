@@ -92,6 +92,14 @@ python -m build
 
 License: [GNU GPL v3](LICENSE).
 
+Cinematic adaptation reviews source fidelity and state transitions with LM Studio.
+Only flagged sequences are regenerated, bounded by `correction_attempts`, then
+reviewed again. Extraction reviews each phase with earlier identity context only,
+allowing two corrections before failing. These reviews add model calls; accepted
+extractions are cached. Regenerate adaptations and catalogs to apply the checks
+to previous runs. Chapter-level `speaks` records any speech in the chapter;
+phase observations retain their own speech flags.
+
 Consolidation respects editable `link_to_local_id` decisions in extracted catalogs.
 Load corrected files with **Load Chapter Catalogs**: links join same-type entries within
 one chapter before cross-chapter reconciliation. All source IDs and `state_by_sequence`

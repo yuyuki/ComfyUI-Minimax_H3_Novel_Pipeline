@@ -32,6 +32,8 @@ def execution(tmp_path, monkeypatch):
     calls = []
     def extract(client, model, system, user, schema, temperature, max_tokens):
         data = json.loads(user)
+        if schema["name"] == "narrative_semantic_review":
+            return {"issues": []}
         if "sequence" not in data:
             return {"links": [{"local_id": entity["local_id"], "link_to_local_id": None}
                               for entities in data.values() for entity in entities]}

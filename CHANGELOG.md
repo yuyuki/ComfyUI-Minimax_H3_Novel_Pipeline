@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Review cinematic source fidelity and phase states with bounded targeted repairs;
+  distinguish object instances, aggregate chapter speech flags, invalidate extraction
+  caches and cover semantic retries, cancellation and identity regressions offline.
+
 - Enforce H3 reference budgets (9 images, 3 audio), 4–15 second scenes and
   consistent shot limits; validate numeric inputs before execution, prevent
   audio-only bindings, and repair example widget values with unlimited scenes.

@@ -187,7 +187,12 @@ Catalogs retain the complete ordered `sequences`, plus each reference's
 `first_sequence`, `first_phase`, and `state_by_sequence`. Each sequence entry maps
 phase names to lists of observations (including descriptions, states and evidence).
 Missing phases mean no observation, not absence or automatic state inheritance.
-Repeated unambiguous names/aliases share an identity; uncertain identities stay separate.
+Repeated unambiguous names/aliases share a character or location identity; uncertain
+identities stay separate. Objects reuse exact canonical names; shared generic aliases
+never merge distinct physical instances. The local-link review can connect supported
+synonyms. Object names must distinguish functions and attachments when needed.
+Character-level `speaks` is true if any phase contains speech; individual phase
+flags are preserved. Established aliases accumulate without rewriting earlier phases.
 Changing state is never merged into an unqualified chapter appearance/state.
 Consolidation separates global stable identity from each entity's
 `timeline[chapter_id][sequence][phase]` observation lists. Identity reconciliation
@@ -213,6 +218,12 @@ catalogs and registries; no legacy format conversion is provided.
 Extraction's `chunk_chars` divides paragraphs only within a phase. The obsolete
 `overlap_paragraphs` and `merge_batch_size` controls are removed. Phase calls use
 `max_tokens` and the shared JSON retries; `force` bypasses timeline caches.
+Each uncached extraction is semantically reviewed against its phase and earlier
+identity context, with at most two targeted corrections. Failed reviews stop the
+stage without caching the rejected phase. Adapter reviews also check source detail
+coverage and transitions; `correction_attempts` bounds targeted sequence repairs.
+Reviews use additional LM Studio requests and remain model judgments, not a proof
+of narrative fidelity. Regenerate adaptations and catalogs from previous runs.
 Original-source Generate inputs remain unchanged; this change provides temporal
 reference metadata, not a replacement for Generate's narrative continuity input.
 

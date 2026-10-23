@@ -9,6 +9,12 @@ from minimax_h3_novel_pipeline import cinematic_chapter_adapter as adapter
 from minimax_h3_novel_pipeline import path_access
 
 
+@pytest.fixture(autouse=True)
+def accept_semantics(monkeypatch):
+    # These tests isolate structural recovery; semantic review has dedicated tests.
+    monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *args: {})
+
+
 def _sequence(source, initial="Before.", final="After."):
     return {"source": source, "initial_state": initial, "events": ["Action."], "final_state": final}
 
