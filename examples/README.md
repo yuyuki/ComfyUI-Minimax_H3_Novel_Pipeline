@@ -36,8 +36,15 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    The existing visual designs are carried by `consolidated_references` and reused
    automatically. Review `spatial_continuity` in the chapter's existing
    `manifest.json` for inferred staging and prompt checks; no extra JSON file
-   is created. Existing **Spatial Continuity** connections also enable the pass,
-   even with the toggle off; disconnect the node to disable it.
+   is created by the toggle alone.
+   For a reusable chapter-wide plan, connect **Consolidate References** and
+   **LM Studio Configuration** to **Spatial Continuity**, then its
+   `spatial_continuity` output to **Generate H3 Prompts**. This exports
+   `spatial_continuity.json` and provides a `spatial_json` text output.
+   Each sequence is planned with the entire chapter visible, including distant
+   future constraints, initial/final entity positions, camera, evidence and warnings.
+   Generate uses this plan during scene planning and prompt generation, and reviews
+   final prompts even with the toggle off. Rerun Spatial Continuity after consolidation changes.
    Set `duration` in Generate H3 Prompts to the length of each scene. Set
    `max_shots` to your desired limit (1 by default; a shot needs at least 2.5s).
    Optionally describe the camera axis and movement in `camera_direction`.

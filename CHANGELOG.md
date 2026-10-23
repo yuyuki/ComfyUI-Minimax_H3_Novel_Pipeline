@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Finish chapter-wide Spatial Continuity integration: consume v2 sequence plans
+  in generation, reject stale/incomplete output, validate structured states, and
+  replace obsolete node tests and wiring documentation.
+
 - Complete missing model attribution scope only from a unique matching source
   observation; explain ambiguous scopes on retries and keep import validation strict.
 

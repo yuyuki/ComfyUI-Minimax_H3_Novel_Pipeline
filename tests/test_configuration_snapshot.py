@@ -99,16 +99,18 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     (False, None, None),
     (True, None, {}),
     (False, {}, {}),
-    (False, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
-    (True, {"tablet.wall": "right wall"}, {"tablet.wall": "right wall"}),
+
+    (True, {}, {}),
 ])
-def test_generate_continuity_toggle_and_anchor_connection(setup, monkeypatch, toggle, anchors, expected, cinematic_registry):
+def test_generate_continuity_toggle_and_plan_connection(setup, monkeypatch, toggle, anchors, expected, cinematic_registry):
     root, config, chapter = setup
     pipeline = lmstudio_pipeline.load("generate")
     captured = []
 
     def process(path, registry, client, model, args):
         captured.append(getattr(args, "spatial_anchors", None))
+        if anchors is not None:
+            assert args.spatial_plan == params["spatial_continuity"]
         return {"chapter_id": "chapter", "outputs": []}
 
     monkeypatch.setattr(pipeline, "process_chapter", process)
@@ -118,7 +120,12 @@ def test_generate_continuity_toggle_and_anchor_connection(setup, monkeypatch, to
     else:
         params["enable_spatial_continuity"] = toggle
     if anchors is not None:
-        params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v1", "anchors": anchors}
+        from minimax_h3_novel_pipeline.spatial_continuity import _FIELDS
+        answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in _FIELDS.items()}
+        camera = {k: answer.pop(k) for k in list(answer) if k.startswith('camera_')}
+        params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v2",
+            "source_digest": "", "chapters": {"chapter": {"sequences": [
+                {"sequence": 1, "camera": camera, **answer}]}}}
     registry = cinematic_registry(chapter, schema_version=util.REGISTRY_SCHEMA, entities=[], picture_assets=[], audio_assets=[])
     generate.GenerateH3PromptsNode().run(registry, config, {}, **params)
     assert captured == [expected]

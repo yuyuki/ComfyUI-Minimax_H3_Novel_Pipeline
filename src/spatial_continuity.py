@@ -6,6 +6,8 @@ facts to constrain earlier placement without pulling future actions backward.
 from __future__ import annotations
 
 import json
+
+from jsonschema import Draft202012Validator
 from typing import Any
 
 from . import progress, lmstudio_pipeline, util
@@ -63,23 +65,42 @@ Do not invent events, props, dialogue or camera cuts. Keep descriptions
 concise and in the source language. Return only the requested JSON."""
 
 def _verify(data: dict[str, Any], sequence_id: int) -> None:
-    if not isinstance(data, dict):
-        raise ValueError(f"Sequence {sequence_id}: spatial output is not an object.")
-    for field in _FIELDS:
-        if field not in data:
-            raise ValueError(f"Sequence {sequence_id}: missing {field} from spatial output.")
-    for name in ("initial_entities", "final_entities"):
-        if not isinstance(data[name], list):
-            raise ValueError(f"Sequence {sequence_id}: {name} must be a list.")
-        for entity in data[name]:
-            if not isinstance(entity, dict) or not all(k in entity for k in _ENTITY):
-                raise ValueError(f"Sequence {sequence_id}: invalid {name} entity.")
-    for name in ("warnings", "justified_changes"):
-        if not isinstance(data[name], list) or not all(isinstance(x, str) for x in data[name]):
-            raise ValueError(f"Sequence {sequence_id}: invalid {name}.")
+    errors = list(Draft202012Validator(_SCHEMA["schema"]).iter_errors(data))
+    if errors:
+        raise ValueError(f"Sequence {sequence_id}: invalid spatial output: {errors[0].message}")
+
+
+def validate_plan(payload: dict[str, Any], registry: dict[str, Any]) -> None:
+    """Reject stale, incomplete or obsolete plans before generation starts."""
+    if not isinstance(payload, dict) or payload.get("schema_version") != "minimax-spatial-continuity.v2":
+        raise ValueError("Invalid spatial_continuity. Connect the current Spatial Continuity output.")
+    if payload.get("source_digest") != registry.get("source_digest", ""):
+        raise ValueError("Spatial continuity is stale; rerun it with the current consolidation.")
+    chapters = payload.get("chapters")
+    timelines = registry.get("chapter_timelines", {})
+    if not isinstance(chapters, dict) or set(chapters) != set(timelines):
+        raise ValueError("Spatial continuity must cover every consolidated chapter.")
+    for cid, timeline in timelines.items():
+        chapter = chapters[cid]
+        plans = chapter.get("sequences") if isinstance(chapter, dict) else None
+        expected = [s["sequence"] for s in timeline["sequences"]]
+        if (not isinstance(plans, list) or any(not isinstance(p, dict) for p in plans)
+                or [p.get("sequence") for p in plans] != sorted(expected)):
+            raise ValueError(f"{cid}: spatial continuity must cover every sequence once, in order.")
+        for plan in plans:
+            camera = plan.get("camera")
+            if not isinstance(camera, dict):
+                raise ValueError(f"{cid}: invalid spatial camera.")
+            answer = {k: v for k, v in plan.items() if k not in ("sequence", "camera")}
+            answer.update(camera)
+            _verify(answer, plan["sequence"])
+            for entity in answer["initial_entities"] + answer["final_entities"]:
+                if entity["evidence"] != "unknown" and entity["source_sequence"] not in expected:
+                    raise ValueError(f"{cid}: spatial evidence cites an unknown sequence.")
+
 
 class SpatialContinuityNode:
-    """Replace the former no-input compatibility placeholder with real planning."""
+    """Plan spatial continuity using the complete consolidated chapter."""
 
     DESCRIPTION = ("Plan physical placement of characters, objects, locations and camera "
                    "across ALL consolidated cinematic sequences. Save a per-sequence JSON "
@@ -121,11 +142,11 @@ class SpatialContinuityNode:
         tasks = [(chapter_id, timeline) for chapter_id, timeline in timelines.items()]
         with client:
             for chapter_id, timeline in progress.steps(tasks):
-                sequences = timeline.get("sequences", [])
-                if not isinstance(sequences, list):
+                sequences = timeline.get("sequences") if isinstance(timeline, dict) else None
+                if not isinstance(sequences, list) or not sequences or any(not isinstance(s, dict) for s in sequences):
                     raise ValueError(f"{chapter_id}: malformed sequences.")
                 sequence_ids = [seq.get("sequence") for seq in sequences]
-                if any(not isinstance(s, int) for s in sequence_ids) or len(set(sequence_ids)) != len(sequence_ids):
+                if any(type(s) is not int or s < 1 for s in sequence_ids) or len(set(sequence_ids)) != len(sequence_ids):
                     raise ValueError(f"{chapter_id}: invalid or duplicate sequence IDs.")
                 ordered = sorted(sequences, key=lambda seq: seq["sequence"])
                 planned: list[dict[str, Any]] = []
@@ -134,6 +155,7 @@ class SpatialContinuityNode:
                     seq_id = sequence["sequence"]
                     request = {
                         "target_sequence": seq_id,
+                        "chapter_id": chapter_id,
                         "whole_chapter_timeline": ordered,
                         "entity_registry": consolidated_references.get("entities", []),
                         "chapter_references": timeline.get("references", {}),
@@ -162,6 +184,7 @@ class SpatialContinuityNode:
             "source_digest": consolidated_references.get("source_digest", ""),
             "chapters": chapters,
         }
+        validate_plan(payload, consolidated_references)
         util.save_json(output / "spatial_continuity.json", payload)
         rendered = json.dumps(payload, ensure_ascii=False, indent=2)
         count = sum(len(c["sequences"]) for c in chapters.values())

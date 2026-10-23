@@ -1377,7 +1377,13 @@ def process_chapter(
     if not catalog:
         print(f"WARNING: no consolidated entity mapping for {chapter_id}.", file=sys.stderr)
 
-    chunks = [json.dumps(sequence, ensure_ascii=False) for sequence in sequences]
+    spatial_plan = getattr(args, "spatial_plan", None)
+    sequence_plans = ({p["sequence"]: p for p in spatial_plan["chapters"][chapter_id]["sequences"]}
+                      if spatial_plan is not None else {})
+    chunks = [json.dumps({**sequence, **({"spatial_plan": sequence_plans[sequence["sequence"]],
+              "spatial_instruction": "Respect this sequence-wide initial/final staging across its scenes; "
+              "do not repeat the complete transition in each scene."} if sequence_plans else {})},
+              ensure_ascii=False) for sequence in sequences]
     chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = confined_path(chapter_dir / ".cache", chapter_dir)
@@ -1422,7 +1428,18 @@ def process_chapter(
     anchors = getattr(args, "spatial_anchors", None)
     visual_designs = refs.get("visual_designs", {})
     continuity_states: list[dict[str, Any]] = []
-    if anchors is not None:
+    if sequence_plans:
+        for scene in scenes:
+            siblings = [s for s in scenes if s.sequence == scene.sequence]
+            continuity_states.append({
+                "sequence_plan": sequence_plans[scene.sequence],
+                "scene_in_sequence": next(i for i, s in enumerate(siblings, 1) if s is scene),
+                "scenes_in_sequence": len(siblings),
+                "instruction": "This plan spans the full sequence. Initial entities apply at its start; "
+                               "final entities apply at its end. Follow only the current scene's events, "
+                               "carrying intermediate state from previous final prompts. Do not anticipate later actions.",
+            })
+    elif anchors is not None:
         previous: dict[str, Any] = {}
         for index, scene in enumerate(progress.steps(scenes, 0.3, 0.45)):
             previous = resolve_continuity(client, model, scene, previous, scenes[index + 1:], anchors,

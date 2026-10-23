@@ -123,6 +123,7 @@ flowchart TD
     m_generate_h3_prompts --> m_path_access
     m_generate_h3_prompts --> m_progress
     m_generate_h3_prompts --> m_run_output
+    m_generate_h3_prompts --> m_spatial_continuity
     m_generate_h3_prompts --> m_util
     m_image_prompt_export --> m_path_access
     m_image_prompt_export --> m_util
@@ -180,7 +181,11 @@ flowchart TD
     m_reference_timeline --> m_cinematic_references
     m_reference_timeline --> m_util
     m_run_output --> m_path_access
+    m_spatial_continuity --> m_lmstudio_json
+    m_spatial_continuity --> m_lmstudio_pipeline
     m_spatial_continuity --> m_progress
+    m_spatial_continuity --> m_run_output
+    m_spatial_continuity --> m_util
     m_util --> m_path_access
     m_visual_designs --> m_editable_schemas
     m_visual_designs --> m_lmstudio_pipeline
@@ -202,7 +207,7 @@ flowchart TD
 | `src/consolidate_references.py` | `configuration_snapshot`, `editable_schemas`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
 | `src/editable_schemas.py` | `path_access` | `export_schemas`, `obj`, `validate_document` |
 | `src/extract_chapter_references.py` | `cinematic_references`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
-| `src/generate_h3_prompts.py` | `chapter_selection`, `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `path_access`, `progress`, `run_output`, `util` | `GenerateH3PromptsNode` |
+| `src/generate_h3_prompts.py` | `chapter_selection`, `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `path_access`, `progress`, `run_output`, `spatial_continuity`, `util` | `GenerateH3PromptsNode` |
 | `src/image_prompt_export.py` | `path_access`, `util` | `export_image_prompts` |
 | `src/lmstudio_config.py` | `lmstudio_models`, `lmstudio_settings`, `progress`, `run_output` | `LMStudioConfigurationNode` |
 | `src/lmstudio_json.py` | `lmstudio_model_qwen`, `lmstudio_models`, `lmstudio_pipeline` | `chat_json`, `model_settings`, `parse_json`, `select_model` |
@@ -225,8 +230,8 @@ flowchart TD
 | `src/reference_timeline.py` | `cinematic_references`, `util` | `merge_timeline`, `refresh_first_occurrence`, `state_at`, `validate_catalogs` |
 | `src/route_access.py` | — | `require_local_request` |
 | `src/run_output.py` | `path_access` | `execution_id`, `reserve_run`, `stage_output` |
-| `src/spatial_continuity.py` | `progress` | `SpatialContinuityNode` |
+| `src/spatial_continuity.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `SpatialContinuityNode`, `validate_plan` |
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **35**. Internal dependency edges: **113**.
+Modules: **35**. Internal dependency edges: **118**.

@@ -12,6 +12,7 @@ from .chapter_selection import chapter_path_list as selected_chapter_paths
 from .path_access import confined_path
 from .run_output import stage_output
 from .image_prompt_export import export_image_prompts
+from .spatial_continuity import validate_plan
 
 
 def _default_output_dir() -> str:
@@ -73,12 +74,8 @@ class GenerateH3PromptsNode:
             if args.enable_spatial_continuity:
                 args.spatial_anchors = {}
             if continuity is not None:
-                if (not isinstance(continuity, dict) or continuity.get("schema_version") != "minimax-spatial-continuity.v1"
-                        or not isinstance(continuity.get("anchors"), dict)
-                        or any(not isinstance(k, str) or not k.strip() or not isinstance(v, str) or not v.strip()
-                               for k, v in continuity["anchors"].items())):
-                    raise ValueError("Invalid spatial_continuity. Connect the output of Spatial Continuity.")
-                args.spatial_anchors = continuity["anchors"]
+                validate_plan(continuity, consolidated_references)
+                args.spatial_plan = continuity
             args.out_dir.mkdir(parents=True, exist_ok=True)
             snapshot = configuration_snapshot.start(
                 output, "generate", lmstudio_config, resolved_model, args, out_dir=out_dir,
