@@ -19,6 +19,9 @@ may identify the same object only with evidence. Do not copy earlier states into
 that does not support them. Speech is phase-local; an addressee is not the speaker.
 For adaptation, target is the 1-based sequence index. Check transitions against previous
 final state and neighboring sequences, respecting explicit temporal/location breaks.
+Original source outranks generated states: do not demand continuity with an erroneous
+earlier state. Distinguish body orientation from head position and gaze; compatible
+descriptions are not contradictions. Preserve source-supported ongoing motion.
 For extraction, target is always 1. Review only the supplied phase and earlier identity
 context; never infer future events. Check observations against that phase, not prior facts.
 Return issues as target/message pairs, or an empty list when no supported defect remains.

@@ -23,7 +23,8 @@ class CinematicChapterAdapterNode:
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 2.0, "step": 0.05}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
-                                          "tooltip": "Retries for invalid fields, source coverage or semantic defects."}),
+                                          "tooltip": "Retries for invalid fields, source coverage or semantic defects. "
+                                          "When nonzero, persistent semantic defects trigger one final passage rebuild."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CINEMATIC_CHAPTERS", "STRING")

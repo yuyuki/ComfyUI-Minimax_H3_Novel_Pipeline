@@ -93,8 +93,12 @@ python -m build
 License: [GNU GPL v3](LICENSE).
 
 Cinematic adaptation reviews source fidelity and state transitions with LM Studio.
-Only flagged sequences are regenerated, bounded by `correction_attempts`, then
-reviewed again. Extraction reviews each phase with earlier identity context only,
+Flagged sequences are corrected with the full passage source and neighboring
+sequences as context, bounded by `correction_attempts`, then reviewed again.
+If defects persist and `correction_attempts` is nonzero, one final reconstruction
+adapts the entire passage as a single source-bound sequence and reviews it again.
+Unresolved defects still stop the run; zero disables semantic correction.
+Extraction reviews each phase with earlier identity context only,
 allowing two corrections before failing. These reviews add model calls; accepted
 extractions are cached. Regenerate adaptations and catalogs to apply the checks
 to previous runs. Chapter-level `speaks` records any speech in the chapter;

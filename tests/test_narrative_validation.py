@@ -39,6 +39,9 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
                              temperature=0.15, max_tokens=1000, correction_attempts=1)
     assert len(repairs) == 1 and repairs[0]["current_passage"] == " " + source
     assert repairs[0]["previous_final_state"] == first["final_state"]
+    assert repairs[0]["source_context"] == first["source"] + source
+    assert repairs[0]["target_sequence"] == 2
+    assert repairs[0]["context_sequences"] == reviews[0]["sequences"]
     assert len(reviews) == 2 and reviews[0]["sequences"][0] == reviews[1]["sequences"][0]
     assert result["sequences"][1]["adaptation"]["endingState"] == good
     assert "".join(s["source"] for s in result["sequences"]) == first["source"] + source
@@ -60,8 +63,82 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
     with pytest.raises(ValueError, match="semantic validation failed"):
         ca.adapt_chapter(None, "mock", "A bell rings.", chunk_chars=4000,
                          temperature=0.1, max_tokens=1000, correction_attempts=1)
-    assert calls.count(nv.SCHEMA["name"]) == 2
-    assert calls.count(ca._SINGLE_SCHEMA["name"]) == 2
+    assert calls.count(nv.SCHEMA["name"]) == 3
+    assert calls.count(ca._SINGLE_SCHEMA["name"]) == 3
+
+
+@pytest.mark.parametrize("attempts", [0, 1, 2])
+def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, attempts):
+    source = "Indy se balance. Il lève les yeux."
+    following = " Il attrape la torche."
+    bad = {"initial_state": "Il reste immobile.", "events": ["Il lève les yeux."],
+           "final_state": "Il regarde en haut."}
+    good = {"initial_state": "Il se balance.",
+            "events": ["Il se balance.", "Il lève les yeux."],
+            "final_state": "Il se balance, le regard vers le haut."}
+    repairs, reviews = [], []
+
+    def chat(client, model, system, prompt, schema, *args):
+        data = json.loads(prompt)
+        if schema == nv.SCHEMA:
+            reviews.append(deepcopy(data))
+            return {"issues": [{"target": 1, "message": "Preserve the swinging motion."}]
+                    if data["sequences"][0]["initial_state"] == bad["initial_state"] else []}
+        if schema == ca._SINGLE_SCHEMA:
+            repairs.append(data)
+            assert "Review\nmessages and generated states are fallible" in system
+            if "target_sequence" in data:
+                return deepcopy(bad)  # Targeted repairs fail; reconstruction succeeds.
+            assert data["current_passage"] == source
+            assert data["previous_final_state"] == ""
+            assert data["defects_to_correct"] == {"1": ["Preserve the swinging motion."]}
+            assert len(data["rejected_adaptation"]) == 2
+            return deepcopy(good)
+        if data["current_passage"] == following:
+            assert data["previous_final_state"] == good["final_state"]
+            return {"sequences": [{"source": following, **good}]}
+        return {"sequences": [{"source": "Indy se balance.", **bad},
+                              {"source": "Il lève les yeux.", **bad}]}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    kwargs = dict(chunk_chars=len(source), temperature=0.15, max_tokens=1000,
+                  correction_attempts=attempts)
+    if not attempts:
+        with pytest.raises(ValueError, match="after 0 targeted correction rounds"):
+            ca.adapt_chapter(None, "mock", source, **kwargs)
+        assert not repairs and len(reviews) == 1
+        return
+    monkeypatch.setattr(ca, "source_chunks", lambda *a: [source, following])
+    result = ca.adapt_chapter(None, "mock", source + following, **kwargs)
+    assert len(repairs) == attempts + 1
+    assert len(reviews) == attempts + 3  # Initial, targeted, rebuild, following passage.
+    assert len(reviews[-2]["sequences"]) == 1
+    assert result["sequences"][0]["adaptation"]["initialState"] == good["initial_state"]
+    assert "".join(s["source"] for s in result["sequences"]) == source + following
+
+
+def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
+    sequences = [{"source": source, "initial_state": "Wrong.", "events": [source],
+                  "final_state": "Wrong."} for source in ["Il se balance.", " Il lève les yeux."]]
+    repairs = []
+
+    def chat(client, model, system, prompt, schema, *args):
+        data = json.loads(prompt)
+        if schema == nv.SCHEMA:
+            return {"issues": [{"target": i + 1, "message": "Incorrect posture."}
+                               for i, s in enumerate(data["sequences"]) if s["final_state"] == "Wrong."]}
+        if schema == ca._SINGLE_SCHEMA:
+            repairs.append(data)
+            return {"initial_state": "Il se balance.", "events": [data["current_passage"]],
+                    "final_state": "Il se balance."}
+        return {"sequences": deepcopy(sequences)}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    ca.adapt_chapter(None, "mock", "".join(s["source"] for s in sequences), chunk_chars=4000,
+                     temperature=0.15, max_tokens=1000, correction_attempts=1)
+    assert len(repairs) == 2
+    assert repairs[1]["previous_final_state"] == "Il se balance."
+    assert repairs[1]["context_sequences"][0]["final_state"] == "Il se balance."
 
 
 @pytest.mark.parametrize("response", [{}, {"issues": None}, {"issues": [{"target": True, "message": "x"}]},

@@ -89,6 +89,18 @@ _SINGLE_SYSTEM = (
     + SYSTEM[SYSTEM.index("Preserve story meaning"):]
 )
 
+_REPAIR_SYSTEM = """
+Re-read the original source before correcting the rejected adaptation. Review
+messages and generated states are fallible: resolve contradictions from source,
+not by blindly copying a previous state or obeying a review suggestion.
+When source_context and context_sequences are supplied, target_sequence identifies
+the ONLY sequence to return. Use surrounding source to establish continuity, but
+include events only from current_passage. Do not anticipate later actions.
+Preserve supported ongoing motion and posture until the source changes them;
+body orientation and gaze are separate facts, not automatically contradictions.
+Correct all source-supported defects while preserving valid details and dialogue.
+"""
+
 
 class _SourceCoverageError(ValueError):
     """Valid adaptation fields whose copied source does not cover the passage."""
@@ -153,7 +165,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         raise ValueError("Cannot adapt an empty chapter.")
     chunks = source_chunks(text, chunk_chars)
 
-    def review_passage(sequences, previous_state):
+    def review_passage(sequences, previous_state, chunk):
         for attempt in range(correction_attempts + 1):
             issues = narrative_validation.review(
                 lmstudio_json.chat_json, client, model,
@@ -163,23 +175,48 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             if not issues:
                 return sequences
             if attempt == correction_attempts:
-                raise ValueError(f"Narrative semantic validation failed: {issues}")
+                break
+            print(f"    Cinematic adaptation: semantic correction {attempt + 1}/"
+                  f"{correction_attempts} ({len(issues)} sequences).", flush=True)
             for target, messages in sorted(issues.items()):
                 index = target - 1
                 item = sequences[index]
                 prompt = json.dumps({
                     "current_passage": item["source"],
+                    "source_context": chunk,
+                    "context_sequences": sequences,
+                    "target_sequence": target,
                     "previous_final_state": sequences[index - 1]["final_state"] if index else previous_state,
                     "rejected_adaptation": item, "defects_to_correct": messages,
                 }, ensure_ascii=False)
-                sequences[index] = adapt_single_passage(prompt, item["source"])[0]
-        raise AssertionError("Unreachable")
+                sequences[index] = adapt_single_passage(prompt, item["source"], repair=True)[0]
+        if correction_attempts:
+            # One bounded reconstruction removes inconsistent generated boundaries
+            # and states. Never recurse into semantic recovery or accept it unchecked.
+            print("    Cinematic adaptation: rebuilding passage from source after semantic corrections.", flush=True)
+            prompt = json.dumps({
+                "current_passage": chunk, "previous_final_state": previous_state,
+                "rejected_adaptation": sequences, "defects_to_correct": issues,
+            }, ensure_ascii=False)
+            sequences = adapt_single_passage(prompt, chunk, repair=True)
+            issues = narrative_validation.review(
+                lmstudio_json.chat_json, client, model,
+                {"stage": "adaptation", "previous_final_state": previous_state,
+                 "sequences": sequences}, len(sequences), max_tokens,
+            )
+            if not issues:
+                return sequences
+        raise ValueError(
+            f"Narrative semantic validation failed after {correction_attempts} targeted correction rounds"
+            f"{' and one source-grounded reconstruction' if correction_attempts else ''}: {issues}"
+        )
 
-    def adapt_single_passage(prompt: str, chunk: str) -> list[dict]:
+    def adapt_single_passage(prompt: str, chunk: str, *, repair: bool = False) -> list[dict]:
         correction = ""
         for attempt in range(correction_attempts + 1):
             lmstudio_pipeline.comfy_interrupt_check()
-            result = lmstudio_json.chat_json(client, model, _SINGLE_SYSTEM, prompt + correction,
+            system = _SINGLE_SYSTEM + (_REPAIR_SYSTEM if repair else "")
+            result = lmstudio_json.chat_json(client, model, system, prompt + correction,
                                             _SINGLE_SCHEMA, temperature, max_tokens)
             try:
                 if not isinstance(result, dict) or set(result) != {"initial_state", "events", "final_state"}:
@@ -232,7 +269,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         try:
             with progress.scope((index - 1) / len(chunks), index / len(chunks)):
                 sequences = adapt_passage(chunk, previous_state)
-                sequences = review_passage(sequences, previous_state)
+                sequences = review_passage(sequences, previous_state, chunk)
         except ValueError as exc:
             raise ValueError(f"Cinematic adaptation passage {index}/{len(chunks)}: {exc}") from exc
         for item in sequences:
