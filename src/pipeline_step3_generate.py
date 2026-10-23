@@ -187,6 +187,8 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
         "and camera axis. A character facing a tablet to their right must not look left at it. "
         "Distinguish world coordinates, character-relative directions and screen coordinates; "
         "a justified camera reversal can change screen sides without moving objects. "
+        "Report only errors in the current prompt, not errors copied from previous reviews. "
+        "Offscreen spatial entities do not require reference bindings or subject definitions. "
         "Use global entity IDs in bindings to compare identities: Subject/Picture numbers are "
         "local to each scene. Earlier generated staging takes precedence over conflicting "
         "inferred plans, but never over explicit novel facts or operator constraints. "
@@ -206,7 +208,7 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
     if (not isinstance(result, dict) or not isinstance(result.get("errors"), list)
             or any(not isinstance(error, str) or not error.strip() for error in result["errors"])):
         raise ValueError("LM Studio returned an invalid scene continuity review.")
-    return result["errors"]
+    return list(dict.fromkeys(result["errors"]))
 
 
 def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, prompt: str,
@@ -214,14 +216,19 @@ def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, promp
                                  previous_prompts: list[dict[str, Any]], future: list[Scene],
                                  args: argparse.Namespace) -> tuple[str, Validation, list[str], int]:
     """Recheck every correction, including its H3 format, within the repair budget."""
+    best = None
     for attempt in range(args.repair_attempts + 1):
         errors = check_prompt_continuity(client, model, scene, prompt, bindings, continuity,
                                          previous_prompts, future, getattr(args, "camera_direction", ""))
         validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
+        format_errors = len(validation.errors)
         validation.errors.extend(f"Scene continuity: {error}" for error in errors)
         validation.ok = not validation.errors
+        # Do not replace a structurally sound prompt with a damaged repair.
+        if best is None or format_errors <= best[0]:
+            best = (format_errors, prompt, validation, errors)
         if validation.ok or attempt == args.repair_attempts:
-            return prompt, validation, errors, attempt
+            return best[1], best[2], best[3], attempt
         repair_context = {**continuity, "previous_final_prompts": previous_prompts,
                           "future_requirements": [scene_to_dict(s) for s in future]}
         prompt = repair_prompt(client, model, prompt, scene, bindings, validation,
@@ -230,6 +237,10 @@ def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, promp
 
 H3_RULES = r"""
 Cinematic timeline constraints:
+- Source events and exact phase observations outrank inferred spatial plans and
+  visual designs. Spatial plans describe geometry, not permission to reveal props,
+  add characters, perform later actions or create extra reference labels.
+- A sequence-wide final state is not the starting state of every scene.
 - Adaptation phases and exact phase observations in adaptation_notes are context
   for the selected visual_event, not a list of actions to include in every clip.
 - initialState describes the sequence opening; event occurs during the sequence;
@@ -477,6 +488,7 @@ def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> li
 
 PLAN_SYSTEM = """
 Select short, visually coherent scenes from ONE cinematic sequence.
+Spatial staging must not select, add or advance story beats.
 The supplied adaptation is authoritative: initialState is true at the start,
 event happens during the sequence, endingState is true only after completion.
 Never move event/endingState observations into the opening state. Missing phase
@@ -571,8 +583,23 @@ CHAPTER ENTITY CATALOG:
 --- BEGIN NOVEL PASSAGE ---
 {chunk}
 --- END NOVEL PASSAGE ---"""
-    data = chat_json(client, model, PLAN_SYSTEM, user, SCENE_SCHEMA, 0.24, 6500)
     valid_ids = {e["global_id"] for e in catalog}
+    for attempt in range(getattr(args, "repair_attempts", 2) + 1):
+        data = chat_json(client, model, PLAN_SYSTEM, user, SCENE_SCHEMA, 0.24, 6500)
+        requested_ids = set()
+        for raw in data.get("scenes", [])[:args.scenes_per_chunk]:
+            requested_ids.update(raw["visible_entity_ids"] + raw["speaking_entity_ids"])
+            requested_ids.update(req["global_id"] for req in raw.get("reference_view_requests", []))
+            if raw["location_global_id"]:
+                requested_ids.add(raw["location_global_id"])
+        invalid_ids = requested_ids - valid_ids
+        if not invalid_ids:
+            break
+        error = (f"Scene plan introduces entities absent from this sequence: {sorted(invalid_ids)}. "
+                 "Replan only the supplied sequence's events; do not anticipate later revelations.")
+        if attempt == getattr(args, "repair_attempts", 2):
+            raise ValueError(error)
+        user += "\nCORRECTION REQUIRED: " + error
     view_lookup = {
         e["global_id"]: {x["view_type"] for x in e.get("available_picture_views", [])}
         for e in catalog
@@ -1385,10 +1412,8 @@ def process_chapter(
     spatial_plan = getattr(args, "spatial_plan", None)
     sequence_plans = ({p["sequence"]: p for p in spatial_plan["chapters"][chapter_id]["sequences"]}
                       if spatial_plan is not None else {})
-    chunks = [json.dumps({**sequence, **({"spatial_plan": sequence_plans[sequence["sequence"]],
-              "spatial_instruction": "Respect this sequence-wide initial/final staging across its scenes; "
-              "do not repeat the complete transition in each scene."} if sequence_plans else {})},
-              ensure_ascii=False) for sequence in sequences]
+    # Spatial plans may infer future/offscreen geometry; they cannot select story beats.
+    chunks = [json.dumps(sequence, ensure_ascii=False) for sequence in sequences]
     chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = confined_path(chapter_dir / ".cache", chapter_dir)
@@ -1458,6 +1483,15 @@ def process_chapter(
                       if anchors is not None else None)
         print(f"  [{i}/{len(scenes)}] {scene.title}")
         bindings = build_bindings(refs, scene, chapter_id, args)
+        if continuity is not None:
+            # Designs are appearance references, not a chapter-wide cast to depict.
+            scene_ids = set(scene.visible_entity_ids + scene.speaking_entity_ids)
+            scene_ids.update(subject["global_id"] for subject in bindings["subjects"])
+            continuity["visual_designs"] = {
+                **visual_designs,
+                "entities": [design for design in visual_designs.get("entities", [])
+                             if design["global_id"] in scene_ids],
+            }
         if not bindings["subjects"] and not bindings["audio"]:
             reason = "No reference asset available for this full-reference scene."
             entries.append({"index": i, "title": scene.title, "sequence": scene.sequence, "skipped": True, "reason": reason})
@@ -1465,7 +1499,7 @@ def process_chapter(
             continue
 
         prompt_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, H3_RULES, PROMPT_SCHEMA,
-                                       "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v1",
+                                       "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v2",
                                        scene_to_dict(scene), bindings, continuity, previous_prompts, client=client)
         prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", chapter_dir)
         prompt = None
@@ -1474,7 +1508,7 @@ def process_chapter(
         if prompt_cache.exists() and not args.force:
             try:
                 cached = json.loads(prompt_cache.read_text(encoding="utf-8"))
-                if cached.get("cache_key") == prompt_key:
+                if cached.get("cache_key") == prompt_key and cached.get("valid") is True:
                     prompt = cached["prompt"]
                     camera_warnings = cached.get("camera_warnings", [])
                     from_cache = True
@@ -1502,8 +1536,9 @@ def process_chapter(
             prompt, validation, continuity_errors, continuity_repairs = review_and_repair_continuity(
                 client, model, scene, prompt, bindings, continuity, previous_prompts, scenes[i:], args,
             )
-            previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
-                                     "bindings": bindings, "continuity_errors": continuity_errors})
+            if validation.ok:
+                previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
+                                         "bindings": bindings, "continuity_errors": []})
             prompt_review = {
                 "errors": continuity_errors, "repair_attempts_used": continuity_repairs,
                 "valid": validation.ok,
@@ -1512,7 +1547,7 @@ def process_chapter(
                 continuity_states[i - 1]["prompt_review"] = prompt_review
 
         prompt_cache.write_text(
-            json.dumps({"cache_key": prompt_key, "prompt": prompt, "camera_warnings": camera_warnings}, ensure_ascii=False, indent=2) + "\n",
+            json.dumps({"cache_key": prompt_key, "prompt": prompt, "camera_warnings": camera_warnings, "valid": validation.ok}, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         entry = save_scene(chapter_dir, i, scene, bindings, prompt, validation)

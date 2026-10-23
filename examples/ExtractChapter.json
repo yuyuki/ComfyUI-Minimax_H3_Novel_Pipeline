@@ -1,8 +1,8 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 136,
-  "last_link_id": 199,
+  "last_node_id": 149,
+  "last_link_id": 217,
   "nodes": [
     {
       "id": 67,
@@ -24,7 +24,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            192
+            201
           ]
         }
       ],
@@ -44,8 +44,8 @@
       "id": 68,
       "type": "GetNode",
       "pos": [
-        2176.174192616032,
-        1947.9800646077351
+        3430.733666525788,
+        1875.2547318763463
       ],
       "size": [
         225,
@@ -60,7 +60,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            198
+            214
           ]
         }
       ],
@@ -124,7 +124,7 @@
         96
       ],
       "flags": {},
-      "order": 10,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {
@@ -173,7 +173,8 @@
           "name": "chapter_selection",
           "type": "MINIMAX_CHAPTER_SELECTION",
           "links": [
-            178
+            178,
+            216
           ]
         }
       ],
@@ -297,7 +298,7 @@
         106
       ],
       "flags": {},
-      "order": 14,
+      "order": 17,
       "mode": 0,
       "inputs": [
         {
@@ -318,7 +319,7 @@
           "name": "output",
           "type": "MINIMAX_CHAPTERS",
           "links": [
-            191
+            202
           ]
         }
       ],
@@ -346,14 +347,14 @@
         106
       ],
       "flags": {},
-      "order": 17,
+      "order": 20,
       "mode": 0,
       "inputs": [
         {
           "name": "on_false",
           "shape": 7,
           "type": "MINIMAX_REGISTRY",
-          "link": 193
+          "link": 200
         },
         {
           "name": "on_true",
@@ -367,7 +368,9 @@
           "name": "output",
           "type": "MINIMAX_REGISTRY",
           "links": [
-            197
+            204,
+            208,
+            213
           ]
         }
       ],
@@ -377,10 +380,10 @@
         "Node name for S&R": "ComfySwitchNode"
       },
       "widgets_values": [
-        false
+        true
       ],
       "widgets_values_named": {
-        "switch": false
+        "switch": true
       }
     },
     {
@@ -413,10 +416,10 @@
         "Node name for S&R": "LoadConsolidatedReferencesNode"
       },
       "widgets_values": [
-        "20260913111625\\references\\"
+        "20261021212525\\references"
       ],
       "widgets_values_named": {
-        "consolidated_path": "20260913111625\\references\\"
+        "consolidated_path": "20261021212525\\references"
       }
     },
     {
@@ -431,7 +434,7 @@
         300
       ],
       "flags": {},
-      "order": 11,
+      "order": 14,
       "mode": 0,
       "inputs": [
         {
@@ -527,7 +530,7 @@
         93.984375
       ],
       "flags": {},
-      "order": 15,
+      "order": 18,
       "mode": 0,
       "inputs": [
         {
@@ -568,7 +571,7 @@
         300
       ],
       "flags": {},
-      "order": 12,
+      "order": 15,
       "mode": 0,
       "inputs": [
         {
@@ -705,7 +708,7 @@
         106
       ],
       "flags": {},
-      "order": 13,
+      "order": 16,
       "mode": 0,
       "inputs": [
         {
@@ -743,29 +746,29 @@
       }
     },
     {
-      "id": 128,
+      "id": 137,
       "type": "ConsolidateReferencesNode",
       "pos": [
-        1344.549192616032,
-        1735.0035021077351
+        1349.1143112466302,
+        1742.694479914327
       ],
       "size": [
-        281.6484375,
-        685.953125
+        341.6484375,
+        438
       ],
       "flags": {},
-      "order": 16,
+      "order": 19,
       "mode": 0,
       "inputs": [
         {
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
-          "link": 191
+          "link": 202
         },
         {
           "name": "lmstudio_config",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 192
+          "link": 201
         }
       ],
       "outputs": [
@@ -773,24 +776,23 @@
           "name": "consolidated_references",
           "type": "MINIMAX_REGISTRY",
           "links": [
-            193
+            200
           ]
         },
         {
           "name": "registry_summary",
           "type": "STRING",
-          "links": []
+          "links": null
         }
       ],
       "properties": {
         "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "3ed459417a111b4ade8ac6b29dab0b1639b3c5fb",
+        "ver": "70474a7e8596e7c9d023e6446866f77e28912c07",
         "Node name for S&R": "ConsolidateReferencesNode"
       },
       "widgets_values": [
         12,
         35,
-        "recommended",
         "recommended",
         4,
         3,
@@ -803,62 +805,261 @@
         "references",
         0.68,
         24,
-        "cinematic photographic"
+        "realistic photographic",
+        ""
       ],
       "widgets_values_named": {
         "candidate_count": 12,
         "include_all_below": 35,
         "audio_threshold": "recommended",
-        "max_character_base_views": "recommended",
-        "max_location_base_views": 4,
-        "max_object_base_views": 3,
-        "asset_batch_size": 2,
-        "no_audit": 4,
-        "audit_max_entities": false,
-        "temperature": 120,
-        "max_tokens": 0.12,
-        "out_dir": 8500,
-        "audit_similarity": "references",
-        "audit_cluster_size": 0.68,
-        "image_style": 24,
-        "visual_designs_path": "cinematic photographic"
+        "max_character_base_views": 4,
+        "max_location_base_views": 3,
+        "max_object_base_views": 2,
+        "asset_batch_size": 4,
+        "no_audit": false,
+        "audit_max_entities": 120,
+        "temperature": 0.12,
+        "max_tokens": 8500,
+        "out_dir": "references",
+        "audit_similarity": 0.68,
+        "audit_cluster_size": 24,
+        "image_style": "realistic photographic",
+        "visual_designs_path": ""
       }
     },
     {
-      "id": 129,
-      "type": "GenerateH3PromptsNode",
+      "id": 138,
+      "type": "SpatialContinuityNode",
       "pos": [
-        2481.174192616032,
-        1669.9878771077351
+        2683.569218942941,
+        1712.336197843879
       ],
       "size": [
-        400,
-        641.984375
+        283.04296875,
+        146
       ],
       "flags": {},
-      "order": 18,
+      "order": 21,
       "mode": 0,
       "inputs": [
         {
           "name": "consolidated_references",
           "type": "MINIMAX_REGISTRY",
-          "link": 197
+          "link": 204
         },
         {
           "name": "lmstudio_config",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 198
+          "link": 209
+        }
+      ],
+      "outputs": [
+        {
+          "name": "spatial_continuity",
+          "type": "MINIMAX_SPATIAL_CONTINUITY",
+          "links": [
+            205
+          ]
+        },
+        {
+          "name": "spatial_json",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "summary",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "70474a7e8596e7c9d023e6446866f77e28912c07",
+        "Node name for S&R": "SpatialContinuityNode"
+      },
+      "widgets_values": [
+        0.1,
+        5000,
+        "spatial_continuity"
+      ],
+      "widgets_values_named": {
+        "temperature": 0.1,
+        "max_tokens": 5000,
+        "out_dir": "spatial_continuity"
+      }
+    },
+    {
+      "id": 139,
+      "type": "ComfySwitchNode",
+      "pos": [
+        3062.9959321069646,
+        1714.73426414479
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "on_false",
+          "shape": 7,
+          "type": "MINIMAX_SPATIAL_CONTINUITY",
+          "link": 205
+        },
+        {
+          "name": "on_true",
+          "shape": 7,
+          "type": "MINIMAX_SPATIAL_CONTINUITY",
+          "link": 207
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "MINIMAX_SPATIAL_CONTINUITY",
+          "links": [
+            215
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.42.3",
+        "Node name for S&R": "ComfySwitchNode"
+      },
+      "widgets_values": [
+        true
+      ],
+      "widgets_values_named": {
+        "switch": true
+      }
+    },
+    {
+      "id": 140,
+      "type": "LoadSpatialContinuityNode",
+      "pos": [
+        2641.5015398079313,
+        2016.0170363267214
+      ],
+      "size": [
+        343.04296875,
+        98
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "consolidated_references",
+          "type": "MINIMAX_REGISTRY",
+          "link": 208
+        }
+      ],
+      "outputs": [
+        {
+          "name": "spatial_continuity",
+          "type": "MINIMAX_SPATIAL_CONTINUITY",
+          "links": [
+            207
+          ]
+        },
+        {
+          "name": "spatial_json",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "summary",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "d02a0349619da786df9c4b0e4cae9ae09e1485da",
+        "Node name for S&R": "LoadSpatialContinuityNode"
+      },
+      "widgets_values": [
+        "20261023181509\\spatial_continuity"
+      ],
+      "widgets_values_named": {
+        "spatial_path": "20261023181509\\spatial_continuity"
+      }
+    },
+    {
+      "id": 141,
+      "type": "GetNode",
+      "pos": [
+        2323.816229939156,
+        1583.3150744736113
+      ],
+      "size": [
+        213.2734375,
+        58
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MINIMAX_LMSTUDIO_CONFIG",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "links": [
+            209
+          ]
+        }
+      ],
+      "title": "Get_LmConfig",
+      "properties": {
+        "Node name for S&R": "GetNode",
+        "aux_id": "kijai/ComfyUI-KJNodes"
+      },
+      "widgets_values": [
+        "LmConfig"
+      ],
+      "widgets_values_named": {
+        "Constant": "LmConfig"
+      }
+    },
+    {
+      "id": 144,
+      "type": "GenerateH3PromptsNode",
+      "pos": [
+        3729.5412595647363,
+        1599.373965437871
+      ],
+      "size": [
+        400,
+        484
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "consolidated_references",
+          "type": "MINIMAX_REGISTRY",
+          "link": 213
+        },
+        {
+          "name": "lmstudio_config",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "link": 214
         },
         {
           "name": "chapter_selection",
           "type": "MINIMAX_CHAPTER_SELECTION",
-          "link": null
+          "link": 217
         },
         {
           "name": "spatial_continuity",
           "shape": 7,
           "type": "MINIMAX_SPATIAL_CONTINUITY",
-          "link": null
+          "link": 215
         }
       ],
       "outputs": [
@@ -880,7 +1081,7 @@
       ],
       "properties": {
         "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "1364b47154ee432ed9869d3ff0ba336b111696f8",
+        "ver": "8c3ca2fd8358731a83b65baa4164b5e737dcbd54",
         "Node name for S&R": "GenerateH3PromptsNode"
       },
       "widgets_values": [
@@ -888,7 +1089,7 @@
         1,
         4,
         0,
-        8,
+        9,
         4,
         3,
         0.38,
@@ -905,7 +1106,7 @@
         "max_shots": 1,
         "scenes_per_chunk": 4,
         "max_scenes": 0,
-        "max_pictures": 8,
+        "max_pictures": 9,
         "max_pictures_per_subject": 4,
         "max_audio": 3,
         "temperature": 0.38,
@@ -916,6 +1117,83 @@
         "refine_camera": false,
         "enable_spatial_continuity": false,
         "camera_direction": ""
+      }
+    },
+    {
+      "id": 148,
+      "type": "SetNode",
+      "pos": [
+        137.52625063783705,
+        2392.120365266336
+      ],
+      "size": [
+        210,
+        60
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "MINIMAX_CHAPTER_SELECTION",
+          "type": "MINIMAX_CHAPTER_SELECTION",
+          "link": 216
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MINIMAX_CHAPTER_SELECTION",
+          "type": "MINIMAX_CHAPTER_SELECTION",
+          "links": null
+        }
+      ],
+      "title": "Set_chapterSelection",
+      "properties": {
+        "Node name for S&R": "SetNode",
+        "aux_id": "kijai/ComfyUI-KJNodes",
+        "previousName": "chapterSelection"
+      },
+      "widgets_values": [
+        "chapterSelection"
+      ],
+      "widgets_values_named": {
+        "Constant": "chapterSelection"
+      }
+    },
+    {
+      "id": 149,
+      "type": "GetNode",
+      "pos": [
+        3413.6728982655663,
+        1635.0989531612734
+      ],
+      "size": [
+        213.2734375,
+        58
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MINIMAX_CHAPTER_SELECTION",
+          "type": "MINIMAX_CHAPTER_SELECTION",
+          "links": [
+            217
+          ]
+        }
+      ],
+      "title": "Get_chapterSelection",
+      "properties": {
+        "Node name for S&R": "GetNode",
+        "aux_id": "kijai/ComfyUI-KJNodes"
+      },
+      "widgets_values": [
+        "chapterSelection"
+      ],
+      "widgets_values_named": {
+        "Constant": "chapterSelection"
       }
     }
   ],
@@ -1009,44 +1287,108 @@
       "MINIMAX_CINEMATIC_CHAPTERS"
     ],
     [
-      193,
-      128,
+      200,
+      137,
       0,
       95,
       0,
       "MINIMAX_REGISTRY"
     ],
     [
-      197,
-      95,
+      201,
+      67,
       0,
-      129,
-      0,
-      "MINIMAX_REGISTRY"
-    ],
-    [
-      198,
-      68,
-      0,
-      129,
+      137,
       1,
       "MINIMAX_LMSTUDIO_CONFIG"
     ],
     [
-      191,
+      202,
       94,
       0,
-      128,
+      137,
       0,
       "MINIMAX_CHAPTERS"
     ],
     [
-      192,
-      67,
+      204,
+      95,
       0,
-      128,
+      138,
+      0,
+      "MINIMAX_REGISTRY"
+    ],
+    [
+      205,
+      138,
+      0,
+      139,
+      0,
+      "MINIMAX_SPATIAL_CONTINUITY"
+    ],
+    [
+      207,
+      140,
+      0,
+      139,
+      1,
+      "MINIMAX_SPATIAL_CONTINUITY"
+    ],
+    [
+      208,
+      95,
+      0,
+      140,
+      0,
+      "MINIMAX_REGISTRY"
+    ],
+    [
+      209,
+      141,
+      0,
+      138,
       1,
       "MINIMAX_LMSTUDIO_CONFIG"
+    ],
+    [
+      213,
+      95,
+      0,
+      144,
+      0,
+      "MINIMAX_REGISTRY"
+    ],
+    [
+      214,
+      68,
+      0,
+      144,
+      1,
+      "MINIMAX_LMSTUDIO_CONFIG"
+    ],
+    [
+      215,
+      139,
+      0,
+      144,
+      3,
+      "MINIMAX_SPATIAL_CONTINUITY"
+    ],
+    [
+      216,
+      79,
+      0,
+      148,
+      0,
+      "MINIMAX_CHAPTER_SELECTION"
+    ],
+    [
+      217,
+      149,
+      0,
+      144,
+      2,
+      "MINIMAX_CHAPTER_SELECTION"
     ]
   ],
   "groups": [
@@ -1066,8 +1408,8 @@
       "id": 2,
       "title": "Generate",
       "bounding": [
-        2146.174192616032,
-        1579.9878771077351,
+        3400.733666525788,
+        1507.2625443763463,
         765,
         761.984375
       ],
@@ -1104,20 +1446,32 @@
       "bounding": [
         -841.4508073839679,
         2317.980064607735,
-        1771,
-        675.484375
+        1807.5582037725471,
+        676.4217520038865
       ],
       "color": "#8A8",
+      "flags": {}
+    },
+    {
+      "id": 6,
+      "title": "Spatial Continuity",
+      "bounding": [
+        2275.9447851870973,
+        1472.1645539608783,
+        1096.1327087982204,
+        876.3631463218524
+      ],
+      "color": "#3f789e",
       "flags": {}
     }
   ],
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.5923900526069845,
+      "scale": 0.6411963029879162,
       "offset": [
-        897.1234488175469,
-        -1175.756201033695
+        -1696.2595622164463,
+        -1007.515658147051
       ]
     },
     "frontendVersion": "1.55.18"

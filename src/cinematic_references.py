@@ -7,14 +7,14 @@ import json
 from shutil import copyfile
 from pathlib import Path
 
-from . import lmstudio_pipeline, progress, util
+from . import lmstudio_pipeline, narrative_validation, progress, util
 from .editable_schemas import validate_document
 from .path_access import confined_path
 from .prompt_cache import fingerprint
 
 PHASES = ("initialState", "event", "endingState")
 TEMPORAL_VERSION = "cinematic-reference-timeline.v1"
-CATALOG_CACHE_VERSION = "cinematic-reference-catalog.v2"
+CATALOG_CACHE_VERSION = "cinematic-reference-catalog.v3"
 CATALOG_SCHEMA_FILENAME = "chapter_references.schema.json"
 CATALOG_SCHEMA = json.loads(
     (Path(__file__).resolve().parent / "schema" / CATALOG_SCHEMA_FILENAME).read_text(encoding="utf-8")
@@ -43,6 +43,13 @@ not in separate asset identities or aliases. Attach a cry to its established per
 only when supported. Otherwise retain it in the narrative without inventing a person.
 Actual unnamed people and explicitly established offscreen speakers remain entities.
 Never turn a temporary description or manifestation into a permanent identity trait.
+Use distinct canonical names for distinct physical objects, qualified by supported
+function or attachment (for example a climber's rope versus a basket's rope).
+Shared generic nouns are not identity aliases between distinct objects. Reuse an
+existing canonical name only for the same physical instance. Capture established
+personal aliases from dialogue. speaks concerns speech occurring in THIS phase,
+not a past utterance mentioned in a state. Ending observations describe results,
+not actions replayed. Re-evaluate local lighting and possession after changes.
 """
 
 LOCAL_LINK_SYSTEM = """
@@ -59,6 +66,8 @@ Links must be within the same entity type. Select one canonical/main entry as th
 target and link secondary descriptive or duplicate entries to it. A main entry must
 have null, never link an entry to itself, and never create a chain or cycle. Do not
 invent evidence or resolve ambiguity by guesswork.
+Shared nouns or synonyms alone never justify a link. Compare physical instances,
+functions, attachments and holders; coexisting distinct props must remain separate.
 """.strip()
 
 LOCAL_LINK_SCHEMA = {
@@ -190,7 +199,8 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     step = lmstudio_pipeline.load("extract")
     system = step.EXTRACT_SYSTEM + "\n" + PHASE_SYSTEM
     key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION,
-                      system, LOCAL_LINK_SYSTEM, step.CHUNK_SCHEMA, LOCAL_LINK_SCHEMA,
+                      system, LOCAL_LINK_SYSTEM, narrative_validation.SYSTEM,
+                      narrative_validation.SCHEMA, step.CHUNK_SCHEMA, LOCAL_LINK_SCHEMA,
                       chapter, client=client)
     saved = confined_path(output / f"{chapter_id}_references.json", output)
     if saved.exists() and not args.force:
@@ -216,12 +226,28 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                         for e in entities] for kind, entities in catalog.items()}
         user = json.dumps({"sequence": seq["sequence"], "phase": phase, "text": text,
                            "known_references": known}, ensure_ascii=False)
-        part_key = fingerprint(model, args, TEMPORAL_VERSION, system, step.CHUNK_SCHEMA, user, client=client)
+        part_key = fingerprint(model, args, TEMPORAL_VERSION, system, step.CHUNK_SCHEMA,
+                               narrative_validation.SYSTEM, narrative_validation.SCHEMA, user, client=client)
         cache = confined_path(cache_dir / f"{part_key}.json", output)
         if cache.exists() and not args.force:
             result = util.load_json(cache)
         else:
             result = step.chat_json(client, model, system, user, step.CHUNK_SCHEMA, args.temperature, args.max_tokens)
+            for attempt in range(3):
+                issues = narrative_validation.review(
+                    step.chat_json, client, model,
+                    {"stage": "extraction", "phase_input": json.loads(user), "extraction": result},
+                    1, args.max_tokens,
+                )
+                if not issues:
+                    break
+                if attempt == 2:
+                    raise ValueError(f"Sequence {seq['sequence']} {phase}: semantic validation failed: {issues}")
+                lmstudio_pipeline.comfy_interrupt_check()
+                correction = json.dumps({"phase_input": json.loads(user), "rejected_extraction": result,
+                                         "defects_to_correct": issues[1]}, ensure_ascii=False)
+                result = step.chat_json(client, model, system, correction, step.CHUNK_SCHEMA,
+                                        args.temperature, args.max_tokens)
             util.save_json(cache, result)
         for kind, prefix in (("characters", "CHAR"), ("locations", "LOC"), ("objects", "OBJ")):
             for raw in result.get(kind, []):
@@ -229,8 +255,11 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                 names = {n.casefold() for n in [observation["canonical_name"], *observation["aliases"]] if n}
                 if not observation["canonical_name"]:
                     raise ValueError("Cinematic reference extraction returned an empty canonical_name.")
-                matches = [e for e in catalog[kind] if names & {
-                    n.casefold() for n in [e["canonical_name"], *e["aliases"]]}]
+                matches = [e for e in catalog[kind]
+                           if e["canonical_name"].casefold() == observation["canonical_name"].casefold()]
+                if not matches and kind != "objects":
+                    matches = [e for e in catalog[kind] if names & {
+                        n.casefold() for n in [e["canonical_name"], *e["aliases"]]}]
                 # Ambiguous names never justify merging distinct identities.
                 entity = matches[0] if len(matches) == 1 else None
                 if entity is None:
@@ -243,6 +272,8 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                                                          if observation["canonical_name"] != entity["canonical_name"] else [])]))
                 phases = entity["state_by_sequence"].setdefault(str(seq["sequence"]), {})
                 phases.setdefault(phase, []).append(observation)
+                if kind == "characters":
+                    entity["speaks"] = entity["speaks"] or observation["speaks"]
     payload = {"schema_version": util.CHAPTER_SCHEMA, "timeline_version": TEMPORAL_VERSION,
                "cache_key": key, "chapter_id": chapter_id, "chapter_name": chapter["chapter_name"],
                "source": {"file": chapter.get("source_file", ""), "sha256": chapter_digest(chapter)},

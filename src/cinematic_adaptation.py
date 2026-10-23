@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from . import lmstudio_json, lmstudio_pipeline, progress
+from . import lmstudio_json, lmstudio_pipeline, narrative_validation, progress
 
 
 SYSTEM = """You adapt literary chapters into filmable descriptions, not summaries.
@@ -37,6 +37,12 @@ supports continuity; handle explicit time/location changes without inventing a
 transition. Mark flashbacks and temporal breaks explicitly, keeping source
 excerpts in their original order and events chronological within each scene.
 Use previous context only for continuity, never as an event to repeat.
+Final states are snapshots of results, never summaries replaying completed actions.
+Update illumination, attachments and possession after each relevant event. Do not
+carry transient cries or movement forward without support. Preserve explicit gaze,
+faint light, age descriptions and names used in address with their correct identity.
+Distinguish objects by function and attachment, even when both are called a rope.
+Translate metaphors into supported physical descriptions, never literal new assets.
 Return only the requested JSON. Compact retries must still preserve every action,
 dialogue and source excerpt; remove redundancy, not story information.
 """
@@ -147,6 +153,28 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         raise ValueError("Cannot adapt an empty chapter.")
     chunks = source_chunks(text, chunk_chars)
 
+    def review_passage(sequences, previous_state):
+        for attempt in range(correction_attempts + 1):
+            issues = narrative_validation.review(
+                lmstudio_json.chat_json, client, model,
+                {"stage": "adaptation", "previous_final_state": previous_state,
+                 "sequences": sequences}, len(sequences), max_tokens,
+            )
+            if not issues:
+                return sequences
+            if attempt == correction_attempts:
+                raise ValueError(f"Narrative semantic validation failed: {issues}")
+            for target, messages in sorted(issues.items()):
+                index = target - 1
+                item = sequences[index]
+                prompt = json.dumps({
+                    "current_passage": item["source"],
+                    "previous_final_state": sequences[index - 1]["final_state"] if index else previous_state,
+                    "rejected_adaptation": item, "defects_to_correct": messages,
+                }, ensure_ascii=False)
+                sequences[index] = adapt_single_passage(prompt, item["source"])[0]
+        raise AssertionError("Unreachable")
+
     def adapt_single_passage(prompt: str, chunk: str) -> list[dict]:
         correction = ""
         for attempt in range(correction_attempts + 1):
@@ -204,6 +232,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         try:
             with progress.scope((index - 1) / len(chunks), index / len(chunks)):
                 sequences = adapt_passage(chunk, previous_state)
+                sequences = review_passage(sequences, previous_state)
         except ValueError as exc:
             raise ValueError(f"Cinematic adaptation passage {index}/{len(chunks)}: {exc}") from exc
         for item in sequences:

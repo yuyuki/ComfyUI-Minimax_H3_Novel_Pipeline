@@ -41,12 +41,20 @@ Distinguish world-space (fixed in the setting), person-relative and
 screen-space (dependent on camera). Camera movements or cuts can change screen
 placement without moving an actor. Preserve immutable location geometry,
 object anchoring, possession, facing and interactions; do not teleport actors.
+The target sequence's source and adaptation are authoritative for actions and
+visibility. first_sequence/first_phase mark the first source observation, not
+physical creation. Earlier placement inferred from later evidence must remain
+inferred and offscreen until the source reveals it. Never label future evidence
+as an explicit current fact. Keep distinct instances (such as a lost torch and
+its replacement, or a suspension rope and a torch line) distinct in state prose.
 Return initial and final states including important offscreen persistent
 entities. A change requires an event in the target sequence; record its cause
 in justified_changes. When placement is not supportable, use 'unknown', not
 fabricated coordinates. Use consolidated global IDs where available; never
-pretend an ambiguous name is a certain match. Every inferred position must
-identify the supporting source_sequence; explicit facts must cite their
+pretend an ambiguous name is a certain match.
+Use each matched entity's exact consolidated canonical_name; use an empty
+canonical_name when entity_id has no matching consolidated global_id.
+Every inferred position must identify the supporting source_sequence; explicit facts must cite their
 actual sequence. Flag contradictions and missing evidence in warnings.
 Respect consolidated designs unless the source contradicts them.
 Do not invent events, props, dialogue or camera cuts. Keep descriptions
@@ -56,6 +64,14 @@ def _verify(data: dict[str, Any], sequence_id: int) -> None:
     errors = list(Draft202012Validator(_SCHEMA["schema"]).iter_errors(data))
     if errors:
         raise ValueError(f"Sequence {sequence_id}: invalid spatial output: {errors[0].message}")
+    for entity in data["initial_entities"] + data["final_entities"]:
+        if entity["evidence"] == "explicit" and entity["source_sequence"] > sequence_id:
+            raise ValueError(
+                f"Sequence {sequence_id}: spatial output treats future evidence as current fact "
+                f"for {entity['entity_id']} (source sequence {entity['source_sequence']}); "
+                "rerun Spatial Continuity. Earlier placement must be inferred, not explicit; "
+                "future actions and revelations must not happen now."
+            )
 
 
 def validate_plan(payload: dict[str, Any], registry: dict[str, Any]) -> None:
@@ -67,6 +83,7 @@ def validate_plan(payload: dict[str, Any], registry: dict[str, Any]) -> None:
         raise ValueError("Spatial continuity is stale; rerun it with the current consolidation.")
     chapters = payload.get("chapters")
     timelines = registry.get("chapter_timelines", {})
+    names = {entity["global_id"]: entity["canonical_name"] for entity in registry.get("entities", [])}
     if not isinstance(chapters, dict) or set(chapters) != set(timelines):
         raise ValueError("Spatial continuity must cover every consolidated chapter.")
     for cid, timeline in timelines.items():
@@ -84,6 +101,8 @@ def validate_plan(payload: dict[str, Any], registry: dict[str, Any]) -> None:
             answer.update(camera)
             _verify(answer, plan["sequence"])
             for entity in answer["initial_entities"] + answer["final_entities"]:
+                if entity["canonical_name"] != names.get(entity["entity_id"], ""):
+                    raise ValueError(f"{cid}: spatial canonical_name does not match consolidated references.")
                 if entity["evidence"] != "unknown" and entity["source_sequence"] not in expected:
                     raise ValueError(f"{cid}: spatial evidence cites an unknown sequence.")
 
@@ -128,6 +147,8 @@ class SpatialContinuityNode:
         client, model = lmstudio_pipeline.make_client_and_model(
             pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         chapters: dict[str, Any] = {}
+        names = {entity["global_id"]: entity["canonical_name"]
+                 for entity in consolidated_references.get("entities", [])}
         tasks = [(chapter_id, timeline) for chapter_id, timeline in timelines.items()]
         with client:
             for chapter_id, timeline in progress.steps(tasks):
@@ -152,10 +173,20 @@ class SpatialContinuityNode:
                         "previous_final_state": planned[-1]["final_entities"] if planned else [],
                         "previous_camera": planned[-1]["camera"] if planned else {},
                     }
-                    answer = chat_json(client, model, _SYSTEM,
-                                       json.dumps(request, ensure_ascii=False),
-                                       _SCHEMA, float(temperature), int(max_tokens))
-                    _verify(answer, seq_id)
+                    for attempt in range(3):
+                        answer = chat_json(client, model, _SYSTEM,
+                                           json.dumps(request, ensure_ascii=False),
+                                           _SCHEMA, float(temperature), int(max_tokens))
+                        try:
+                            _verify(answer, seq_id)
+                        except ValueError as error:
+                            if attempt == 2:
+                                raise
+                            request["correction_required"] = str(error)
+                        else:
+                            break
+                    for entity in answer["initial_entities"] + answer["final_entities"]:
+                        entity["canonical_name"] = names.get(entity["entity_id"], "")
                     planned.append({
                         "sequence": seq_id,
                         "location_id": answer["location_id"],

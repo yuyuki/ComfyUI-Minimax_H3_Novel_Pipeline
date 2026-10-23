@@ -34,6 +34,10 @@
         "entity_id": {
           "type": "string"
         },
+        "canonical_name": {
+          "type": "string",
+          "description": "Exact canonical_name of the consolidated entity whose global_id matches entity_id; empty when no consolidated entity matches."
+        },
         "kind": {
           "type": "string",
           "enum": [
@@ -71,6 +75,7 @@
       },
       "required": [
         "entity_id",
+        "canonical_name",
         "kind",
         "world_position",
         "relative_to",
