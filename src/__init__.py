@@ -40,6 +40,7 @@ def _build_mappings() -> None:
                 "ConsolidateReferencesNode": _nodes.ConsolidateReferencesNode,
                 "GenerateH3PromptsNode": _nodes.GenerateH3PromptsNode,
                 "SpatialContinuityNode": _nodes.SpatialContinuityNode,
+                "LoadSpatialContinuityNode": _nodes.LoadSpatialContinuityNode,
             }
         )
         NODE_DISPLAY_NAME_MAPPINGS.update(
@@ -54,6 +55,7 @@ def _build_mappings() -> None:
                 "ConsolidateReferencesNode": "Consolidate References",
                 "GenerateH3PromptsNode": "Generate H3 Prompts",
                 "SpatialContinuityNode": "Spatial Continuity",
+                "LoadSpatialContinuityNode": "Load Spatial Continuity",
             }
         )
     except Exception as e:

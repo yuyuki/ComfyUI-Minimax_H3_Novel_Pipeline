@@ -37,7 +37,7 @@
 
 - Root `__init__.py` is the ComfyUI checkout entrypoint. It re-exports mappings
   from `src/` and serves `./web/js`.
-- `src/__init__.py` registers ten nodes and four
+- `src/__init__.py` registers eleven nodes and four
   local HTTP routes. `nodes.py` exports the node classes.
 - Each node has its own module: `lmstudio_config.py`,
   `extract_chapter_references.py`, `load_chapter_catalogs.py`,

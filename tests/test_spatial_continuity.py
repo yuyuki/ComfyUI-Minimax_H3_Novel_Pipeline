@@ -28,11 +28,10 @@ def test_resolver_receives_future_and_previous_without_mixing_facts(monkeypatch)
     assert captured["operator_anchors"]["tablet.wall"] == "right wall"
 
 
-def test_automatic_continuity_needs_no_example_constraints():
-    assert SpatialContinuityNode.INPUT_TYPES() == {"required": {}}
-    payload, summary = SpatialContinuityNode().run()
-    assert payload["anchors"] == {}
-    assert "Automatic" in summary
+def test_spatial_node_requires_consolidation_and_configuration():
+    inputs = SpatialContinuityNode.INPUT_TYPES()["required"]
+    assert inputs["consolidated_references"] == ("MINIMAX_REGISTRY",)
+    assert inputs["lmstudio_config"] == ("MINIMAX_LMSTUDIO_CONFIG",)
 
 
 def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
@@ -99,7 +98,8 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
     assert errors == ([] if resolved else ["Wrong eyeline"])
 
 
-def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text(tmp_path, monkeypatch, cinematic_registry):
+@pytest.mark.parametrize("external_plan", [False, True])
+def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text(tmp_path, monkeypatch, cinematic_registry, external_plan):
     import json
     from types import SimpleNamespace
     from minimax_h3_novel_pipeline import path_access
@@ -118,7 +118,11 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
     monkeypatch.setattr(generate, "plan_scenes", lambda *a: scenes)
     designs = {"entities": [{"global_id": "hero", "added_details": {"hair": "Black hair"}}]}
 
+    if external_plan:
+        args.spatial_plan = {"chapters": {"chapter": {"sequences": [{"sequence": 1, "camera": "right"}]}}}
+
     def resolve(*a):
+        assert not external_plan, "The supplied plan must not be replaced by another model call"
         assert a[-1] == designs
         return {k: [] for k in generate.CONTINUITY_FIELDS}
 
@@ -136,6 +140,9 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
 
     def review(client, model, scene, prompt, bindings, continuity, previous, future, camera):
         assert continuity["visual_designs"] == designs
+        if external_plan:
+            assert continuity["sequence_plan"]["camera"] == "right"
+            assert continuity["scenes_in_sequence"] == 2
         reviews.append((prompt, list(previous)))
         return ["Wrong eyeline"] if prompt != "corrected" else []
 
@@ -156,3 +163,64 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
     assert all(s["prompt_review"]["valid"] for s in report["scenes"])
     assert not (args.out_dir / "chapter/spatial_continuity.json").exists()
     assert "corrected" in (args.out_dir / "chapter/all_prompts.txt").read_text()
+
+
+def spatial_answer():
+    from minimax_h3_novel_pipeline import spatial_continuity as spatial
+    answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in spatial._FIELDS.items()}
+    entity = {k: 'unknown' for k in spatial._ENTITY}
+    entity.update(entity_id='hero', kind='character', evidence='inferred', source_sequence=3,
+                  world_position='Beside the fixed tablet')
+    answer['initial_entities'] = [entity]
+    answer['final_entities'] = [dict(entity)]
+    return answer
+
+
+def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch):
+    import json
+    from contextlib import nullcontext
+    from minimax_h3_novel_pipeline import spatial_continuity as spatial, util
+    registry = {'schema_version': util.REGISTRY_SCHEMA, 'source_digest': 'source',
+                'chapter_timelines': {'chapter': {'sequences': [
+                    {'sequence': i, 'source': 'Near tablet' if i == 3 else 'Waits'} for i in (3, 1, 2)]}}}
+    from minimax_h3_novel_pipeline import path_access
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    monkeypatch.setattr(spatial, 'stage_output', lambda *a: tmp_path)
+    monkeypatch.setattr(spatial.lmstudio_pipeline, 'make_client_and_model', lambda *a: (nullcontext(), 'qwen'))
+    requests = []
+
+    def chat(client, model, system, user, *args):
+        requests.append(json.loads(user))
+        return spatial_answer()
+
+    monkeypatch.setattr(spatial, 'chat_json', chat)
+    payload, rendered, _ = spatial.SpatialContinuityNode().run(registry, {'api_url': 'unused'})['result']
+    assert [s['sequence'] for s in requests[0]['whole_chapter_timeline']] == [1, 2, 3]
+    assert requests[0]['whole_chapter_timeline'][2]['source'] == 'Near tablet'
+    assert requests[1]['previous_final_state'] == spatial_answer()['final_entities']
+    assert json.loads(rendered) == json.loads((tmp_path / 'spatial_continuity.json').read_text()) == payload
+    from jsonschema import Draft202012Validator
+    from minimax_h3_novel_pipeline.editable_schemas import SCHEMA_DIR
+    schema_file = tmp_path / "spatial_continuity.schema.json"
+    assert schema_file.read_bytes() == (SCHEMA_DIR / schema_file.name).read_bytes()
+    schema = json.loads(schema_file.read_text())
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema).validate(payload)
+    assert payload["$schema"] == schema_file.name
+    spatial.validate_plan(payload, registry)
+    registry['source_digest'] = 'changed'
+    with pytest.raises(ValueError, match='stale'):
+        spatial.validate_plan(payload, registry)
+    registry['source_digest'] = 'source'
+    payload['chapters']['chapter']['sequences'].pop()
+    with pytest.raises(ValueError, match='every sequence'):
+        spatial.validate_plan(payload, registry)
+
+
+@pytest.mark.parametrize('field,value', [('kind', 'alien'), ('source_sequence', '3'), ('world_position', 42)])
+def test_spatial_output_validates_entity_types(field, value):
+    from minimax_h3_novel_pipeline import spatial_continuity as spatial
+    answer = spatial_answer()
+    answer['initial_entities'][0][field] = value
+    with pytest.raises(ValueError, match='invalid spatial output'):
+        spatial._verify(answer, 1)

@@ -28,7 +28,7 @@ def test_root_registration_and_frontend(plugin):
     assert set(plugin.NODE_CLASS_MAPPINGS) == {
         "LMStudioConfigurationNode", "SelectChaptersNode", "ExtractChapterReferencesNode",
         "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
-        "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SpatialContinuityNode",
+        "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SpatialContinuityNode", "LoadSpatialContinuityNode",
         "CinematicChapterAdapterNode", "LoadCinematicChaptersNode",
     }
     assert set(plugin.NODE_DISPLAY_NAME_MAPPINGS) == set(plugin.NODE_CLASS_MAPPINGS)
@@ -65,7 +65,7 @@ def test_installed_package_import_outside_checkout(tmp_path):
     result = subprocess.run(
         [sys.executable, "-c",
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
-         "assert len(p.NODE_CLASS_MAPPINGS) == 10; "
+         "assert len(p.NODE_CLASS_MAPPINGS) == 11; "
          "from minimax_h3_novel_pipeline.load_cinematic_chapters import LoadCinematicChaptersNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCinematicChaptersNode'] is LoadCinematicChaptersNode; "
          "assert 'NarrativeStateTrackerNode' not in p.NODE_CLASS_MAPPINGS; "

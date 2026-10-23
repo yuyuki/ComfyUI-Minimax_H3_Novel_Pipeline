@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MiniMax Spatial Continuity v2",
+  "description": "Editable chapter-wide spatial plan. Chapter and sequence coverage, source digest and evidence references are additionally checked against consolidation by the nodes.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "minimax-spatial-continuity.v2"
+    },
+    "source_digest": {
+      "type": "string"
+    },
+    "chapters": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/chapter"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "source_digest",
+    "chapters"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "properties": {
+        "entity_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "character",
+            "object",
+            "location"
+          ]
+        },
+        "world_position": {
+          "type": "string"
+        },
+        "relative_to": {
+          "type": "string"
+        },
+        "orientation": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "screen_position": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string",
+          "enum": [
+            "explicit",
+            "inferred",
+            "unknown"
+          ]
+        },
+        "source_sequence": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entity_id",
+        "kind",
+        "world_position",
+        "relative_to",
+        "orientation",
+        "state",
+        "screen_position",
+        "evidence",
+        "source_sequence"
+      ],
+      "additionalProperties": false
+    },
+    "camera": {
+      "type": "object",
+      "properties": {
+        "camera_position": {
+          "type": "string"
+        },
+        "camera_direction": {
+          "type": "string"
+        },
+        "camera_movement": {
+          "type": "string"
+        },
+        "camera_axis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "camera_position",
+        "camera_direction",
+        "camera_movement",
+        "camera_axis"
+      ],
+      "additionalProperties": false
+    },
+    "sequence": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "location_id": {
+          "type": "string"
+        },
+        "location_layout": {
+          "type": "string"
+        },
+        "camera": {
+          "$ref": "#/$defs/camera"
+        },
+        "initial_entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entity"
+          }
+        },
+        "final_entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/entity"
+          }
+        },
+        "justified_changes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "sequence",
+        "location_id",
+        "location_layout",
+        "camera",
+        "initial_entities",
+        "final_entities",
+        "justified_changes",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "chapter": {
+      "type": "object",
+      "properties": {
+        "sequences": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/sequence"
+          }
+        }
+      },
+      "required": [
+        "sequences"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

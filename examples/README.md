@@ -36,8 +36,27 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    The existing visual designs are carried by `consolidated_references` and reused
    automatically. Review `spatial_continuity` in the chapter's existing
    `manifest.json` for inferred staging and prompt checks; no extra JSON file
-   is created. Existing **Spatial Continuity** connections also enable the pass,
-   even with the toggle off; disconnect the node to disable it.
+   is created by the toggle alone.
+   For a reusable chapter-wide plan, connect **Consolidate References** and
+   **LM Studio Configuration** to **Spatial Continuity**, then its
+   `spatial_continuity` output to **Generate H3 Prompts**. This exports
+   `spatial_continuity.json` and provides a `spatial_json` text output.
+   The node also copies `spatial_continuity.schema.json` beside it and adds a
+   relative `$schema` link for editor validation. Keep both files together when
+   editing a copy. Load Spatial Continuity validates against the bundled schema.
+   Each sequence is planned with the entire chapter visible, including distant
+   future constraints, initial/final entity positions, camera, evidence and warnings.
+   Generate uses this plan during scene planning and prompt generation, and reviews
+   final prompts even with the toggle off. Rerun Spatial Continuity after consolidation changes.
+   To edit the plan manually, save a corrected JSON file inside
+   `output/minimax_h3_novel` (renamed copies are supported). Add **Load Spatial
+   Continuity**, set `spatial_path` to that file or its folder, and connect the
+   same `consolidated_references` used by Generate. Connect the loader's
+   `spatial_continuity` output to Generate instead of the planning node.
+   The loader preserves edits, validates the v2 structure and source digest,
+   and reloads changed file contents on the next execution without LM Studio.
+   Keep chapter/sequence IDs and `source_digest` intact; edit positions, camera,
+   states and evidence. A folder path looks for `spatial_continuity.json`.
    Set `duration` in Generate H3 Prompts to the length of each scene. Set
    `max_shots` to your desired limit (1 by default; a shot needs at least 2.5s).
    Optionally describe the camera axis and movement in `camera_direction`.
