@@ -63,6 +63,7 @@ flowchart TD
     m_load_cinematic_chapters["load_cinematic_chapters<br/>Load Cinematic Chapters"]
     m_load_consolidated_references["load_consolidated_references<br/>Load Consolidated References"]
     m_load_spatial_continuity["load_spatial_continuity<br/>Load Spatial Continuity"]
+    m_narrative_choices["narrative_choices"]
     m_narrative_validation["narrative_validation"]
     m_nodes["nodes"]
     m_path_access["path_access"]
@@ -86,6 +87,7 @@ flowchart TD
     m_chapter_selection --> m_util
     m_cinematic_adaptation --> m_lmstudio_json
     m_cinematic_adaptation --> m_lmstudio_pipeline
+    m_cinematic_adaptation --> m_narrative_choices
     m_cinematic_adaptation --> m_narrative_validation
     m_cinematic_adaptation --> m_progress
     m_cinematic_chapter_adapter --> m_chapter_selection
@@ -97,6 +99,7 @@ flowchart TD
     m_cinematic_chapter_adapter --> m_util
     m_cinematic_references --> m_editable_schemas
     m_cinematic_references --> m_lmstudio_pipeline
+    m_cinematic_references --> m_narrative_choices
     m_cinematic_references --> m_narrative_validation
     m_cinematic_references --> m_path_access
     m_cinematic_references --> m_progress
@@ -106,6 +109,7 @@ flowchart TD
     m_configuration_snapshot --> m_lmstudio_json
     m_configuration_snapshot --> m_lmstudio_models
     m_configuration_snapshot --> m_util
+    m_consolidate_references --> m_cinematic_references
     m_consolidate_references --> m_configuration_snapshot
     m_consolidate_references --> m_editable_schemas
     m_consolidate_references --> m_image_prompt_export
@@ -145,12 +149,16 @@ flowchart TD
     m_lmstudio_pipeline --> m_lmstudio_json
     m_lmstudio_pipeline --> m_lmstudio_models
     m_lmstudio_pipeline --> m_lmstudio_settings
+    m_load_chapter_catalogs --> m_cinematic_references
     m_load_chapter_catalogs --> m_configuration_snapshot
     m_load_chapter_catalogs --> m_progress
     m_load_chapter_catalogs --> m_util
     m_load_cinematic_chapters --> m_cinematic_references
+    m_load_cinematic_chapters --> m_configuration_snapshot
     m_load_cinematic_chapters --> m_progress
     m_load_cinematic_chapters --> m_util
+    m_load_consolidated_references --> m_cinematic_references
+    m_load_consolidated_references --> m_configuration_snapshot
     m_load_consolidated_references --> m_progress
     m_load_consolidated_references --> m_util
     m_load_spatial_continuity --> m_progress
@@ -195,6 +203,7 @@ flowchart TD
     m_spatial_continuity --> m_editable_schemas
     m_spatial_continuity --> m_lmstudio_json
     m_spatial_continuity --> m_lmstudio_pipeline
+    m_spatial_continuity --> m_narrative_choices
     m_spatial_continuity --> m_progress
     m_spatial_continuity --> m_run_output
     m_spatial_continuity --> m_util
@@ -212,11 +221,11 @@ flowchart TD
 |---|---|---|
 | `src/__init__.py` | `lmstudio_settings`, `nodes`, `path_access`, `route_access` | — |
 | `src/chapter_selection.py` | `progress`, `util` | `SelectChaptersNode`, `chapter_path_list`, `saved_chapter_choices` |
-| `src/cinematic_adaptation.py` | `lmstudio_json`, `lmstudio_pipeline`, `narrative_validation`, `progress` | `adapt_chapter`, `source_chunks` |
+| `src/cinematic_adaptation.py` | `lmstudio_json`, `lmstudio_pipeline`, `narrative_choices`, `narrative_validation`, `progress` | `adapt_chapter`, `source_chunks` |
 | `src/cinematic_chapter_adapter.py` | `chapter_selection`, `cinematic_adaptation`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `CinematicChapterAdapterNode` |
-| `src/cinematic_references.py` | `editable_schemas`, `lmstudio_pipeline`, `narrative_validation`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
+| `src/cinematic_references.py` | `editable_schemas`, `lmstudio_pipeline`, `narrative_choices`, `narrative_validation`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
 | `src/configuration_snapshot.py` | `lmstudio_config`, `lmstudio_json`, `lmstudio_models`, `util` | `complete`, `content_digest`, `file_digest`, `start` |
-| `src/consolidate_references.py` | `configuration_snapshot`, `editable_schemas`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
+| `src/consolidate_references.py` | `cinematic_references`, `configuration_snapshot`, `editable_schemas`, `image_prompt_export`, `lmstudio_pipeline`, `progress`, `reference_timeline`, `run_output`, `util`, `visual_designs` | `ConsolidateReferencesNode` |
 | `src/editable_schemas.py` | `path_access` | `export_schema`, `export_schemas`, `obj`, `validate_document` |
 | `src/extract_chapter_references.py` | `cinematic_references`, `configuration_snapshot`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `ExtractChapterReferencesNode` |
 | `src/generate_h3_prompts.py` | `chapter_selection`, `configuration_snapshot`, `image_prompt_export`, `lmstudio_pipeline`, `path_access`, `progress`, `run_output`, `spatial_continuity`, `util` | `GenerateH3PromptsNode` |
@@ -228,10 +237,11 @@ flowchart TD
 | `src/lmstudio_models.py` | `lmstudio_model_mistral`, `lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
 | `src/lmstudio_pipeline.py` | `lmstudio_json`, `lmstudio_models`, `lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
 | `src/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `set_connection_settings`, `validate_api_url` |
-| `src/load_chapter_catalogs.py` | `configuration_snapshot`, `progress`, `util` | `LoadChapterCatalogsNode` |
-| `src/load_cinematic_chapters.py` | `cinematic_references`, `progress`, `util` | `LoadCinematicChaptersNode` |
-| `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
+| `src/load_chapter_catalogs.py` | `cinematic_references`, `configuration_snapshot`, `progress`, `util` | `LoadChapterCatalogsNode` |
+| `src/load_cinematic_chapters.py` | `cinematic_references`, `configuration_snapshot`, `progress`, `util` | `LoadCinematicChaptersNode` |
+| `src/load_consolidated_references.py` | `cinematic_references`, `configuration_snapshot`, `progress`, `util` | `LoadConsolidatedReferencesNode` |
 | `src/load_spatial_continuity.py` | `progress`, `spatial_continuity`, `util` | `LoadSpatialContinuityNode` |
+| `src/narrative_choices.py` | — | `propose`, `resolve_chapter` |
 | `src/narrative_validation.py` | `lmstudio_pipeline` | `review` |
 | `src/nodes.py` | `chapter_selection`, `cinematic_chapter_adapter`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_cinematic_chapters`, `load_consolidated_references`, `load_spatial_continuity`, `spatial_continuity` | — |
 | `src/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
@@ -244,8 +254,8 @@ flowchart TD
 | `src/reference_timeline.py` | `cinematic_references`, `util` | `merge_timeline`, `refresh_first_occurrence`, `state_at`, `validate_catalogs` |
 | `src/route_access.py` | — | `require_local_request` |
 | `src/run_output.py` | `path_access` | `execution_id`, `reserve_run`, `stage_output` |
-| `src/spatial_continuity.py` | `editable_schemas`, `lmstudio_json`, `lmstudio_pipeline`, `progress`, `run_output`, `util` | `SpatialContinuityNode`, `validate_plan` |
+| `src/spatial_continuity.py` | `editable_schemas`, `lmstudio_json`, `lmstudio_pipeline`, `narrative_choices`, `progress`, `run_output`, `util` | `SpatialContinuityNode`, `validate_plan` |
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **37**. Internal dependency edges: **126**.
+Modules: **38**. Internal dependency edges: **134**.

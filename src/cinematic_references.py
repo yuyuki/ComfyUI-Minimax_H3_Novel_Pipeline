@@ -7,14 +7,14 @@ import json
 from shutil import copyfile
 from pathlib import Path
 
-from . import lmstudio_pipeline, narrative_validation, progress, util
+from . import lmstudio_pipeline, narrative_choices, narrative_validation, progress, util
 from .editable_schemas import validate_document
 from .path_access import confined_path
 from .prompt_cache import fingerprint
 
 PHASES = ("initialState", "event", "endingState")
 TEMPORAL_VERSION = "cinematic-reference-timeline.v1"
-CATALOG_CACHE_VERSION = "cinematic-reference-catalog.v3"
+CATALOG_CACHE_VERSION = "cinematic-reference-catalog.v4"
 CATALOG_SCHEMA_FILENAME = "chapter_references.schema.json"
 CATALOG_SCHEMA = json.loads(
     (Path(__file__).resolve().parent / "schema" / CATALOG_SCHEMA_FILENAME).read_text(encoding="utf-8")
@@ -126,7 +126,7 @@ def parse_chapters(value):
                 raise ValueError(f"{label} sequence {previous}: adaptation requires initialState, event and endingState strings.")
             if not any(adaptation[p].strip() for p in PHASES):
                 raise ValueError(f"{label} sequence {previous}: adaptation must not be empty.")
-    return deepcopy(value)
+    return [narrative_choices.resolve_chapter(chapter) for chapter in value]
 
 
 def chapter_digest(chapter):
@@ -196,6 +196,7 @@ def copy_catalog_schema(output):
 
 def process_chapter(chapter, output, client, model, args, chapter_id):
     """Persist identity catalogs plus lossless ordered, phase-specific observations."""
+    chapter = parse_chapters([chapter])[0]
     step = lmstudio_pipeline.load("extract")
     system = step.EXTRACT_SYSTEM + "\n" + PHASE_SYSTEM
     key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION,
@@ -215,6 +216,7 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     cache_dir = confined_path(output / ".cache" / chapter_id, output)
     cache_dir.mkdir(parents=True, exist_ok=True)
     catalog = {kind: [] for kind in ("characters", "locations", "objects")}
+    extraction_issues = []
     jobs = [(seq, phase, part) for seq in chapter["sequences"] for phase in PHASES
             for part in util.split_chunks(seq["adaptation"][phase], args.chunk_chars, 0)
             if part.strip()]
@@ -226,11 +228,12 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                         for e in entities] for kind, entities in catalog.items()}
         user = json.dumps({"sequence": seq["sequence"], "phase": phase, "text": text,
                            "known_references": known}, ensure_ascii=False)
-        part_key = fingerprint(model, args, TEMPORAL_VERSION, system, step.CHUNK_SCHEMA,
+        part_key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION, system, step.CHUNK_SCHEMA,
                                narrative_validation.SYSTEM, narrative_validation.SCHEMA, user, client=client)
         cache = confined_path(cache_dir / f"{part_key}.json", output)
         if cache.exists() and not args.force:
-            result = util.load_json(cache)
+            cached_phase = util.load_json(cache)
+            result, issues = cached_phase["extraction"], cached_phase["issues"]
         else:
             result = step.chat_json(client, model, system, user, step.CHUNK_SCHEMA, args.temperature, args.max_tokens)
             for attempt in range(3):
@@ -242,13 +245,18 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                 if not issues:
                     break
                 if attempt == 2:
-                    raise ValueError(f"Sequence {seq['sequence']} {phase}: semantic validation failed: {issues}")
+                    print(f"Sequence {seq['sequence']} {phase}: narrative doubts recorded; continuing.", flush=True)
+                    break
                 lmstudio_pipeline.comfy_interrupt_check()
                 correction = json.dumps({"phase_input": json.loads(user), "rejected_extraction": result,
                                          "defects_to_correct": issues[1]}, ensure_ascii=False)
                 result = step.chat_json(client, model, system, correction, step.CHUNK_SCHEMA,
                                         args.temperature, args.max_tokens)
-            util.save_json(cache, result)
+            util.save_json(cache, {"extraction": result, "issues": issues})
+        if issues:
+            extraction_issues.append({"sequence": seq["sequence"], "phase": phase,
+                                      "source_excerpt": text,
+                                      "messages": [m for messages in issues.values() for m in messages]})
         for kind, prefix in (("characters", "CHAR"), ("locations", "LOC"), ("objects", "OBJ")):
             for raw in result.get(kind, []):
                 observation = step.clean_entity(raw, kind)
@@ -278,6 +286,8 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                "cache_key": key, "chapter_id": chapter_id, "chapter_name": chapter["chapter_name"],
                "source": {"file": chapter.get("source_file", ""), "sha256": chapter_digest(chapter)},
                "sequences": deepcopy(chapter["sequences"]),
+               "narrative_review": {**deepcopy(chapter.get("narrative_review", {"issues": []})),
+                                    "extraction_issues": extraction_issues},
                **catalog}
     assign_local_links(payload, client, model, args)
     validate_document(payload, CATALOG_SCHEMA, saved.name)

@@ -470,7 +470,7 @@ def selected_timeline(refs: dict[str, Any], path: Path) -> tuple[str, list[dict[
     timeline = refs.get("chapter_timelines", {}).get(chapter_id)
     if not isinstance(timeline, dict):
         raise ValueError("Cinematic chapter_timelines are required; re-extract and reconsolidate references.")
-    sequences = parse_chapters([{"chapter_name": chapter_id, "sequences": timeline.get("sequences")}])[0]["sequences"]
+    sequences = parse_chapters([{**timeline, "chapter_name": chapter_id}])[0]["sequences"]
     return chapter_id, sequences
 
 

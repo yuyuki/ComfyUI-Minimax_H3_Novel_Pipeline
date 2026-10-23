@@ -6,6 +6,7 @@ from . import progress
 from typing import Any
 
 from . import configuration_snapshot, util
+from .cinematic_references import parse_chapters
 
 
 class LoadChapterCatalogsNode:
@@ -76,7 +77,7 @@ class LoadChapterCatalogsNode:
                     f"{json_path.name}: this is not a valid saved chapter catalog "
                     "(chapter_id and schema_version are required)."
                 )
-            catalogs.append(data)
+            catalogs.append(parse_chapters([data])[0])
 
         print(f"[minimax_h3_novel] Loaded {len(catalogs)} chapter catalog(s) from {path}", flush=True)
         return catalogs, util.catalog_summary(catalogs)

@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator
 from typing import Any
 
 from . import progress, lmstudio_pipeline, util
+from .narrative_choices import resolve_chapter
 from .lmstudio_json import chat_json
 from .run_output import stage_output
 from .editable_schemas import SCHEMA_DIR, export_schema, validate_document
@@ -158,6 +159,7 @@ class SpatialContinuityNode:
                 sequence_ids = [seq.get("sequence") for seq in sequences]
                 if any(type(s) is not int or s < 1 for s in sequence_ids) or len(set(sequence_ids)) != len(sequence_ids):
                     raise ValueError(f"{chapter_id}: invalid or duplicate sequence IDs.")
+                sequences = resolve_chapter(timeline)["sequences"]
                 ordered = sorted(sequences, key=lambda seq: seq["sequence"])
                 planned: list[dict[str, Any]] = []
                 for sequence in ordered:

@@ -112,7 +112,9 @@ def test_chapter_selection_rejects_external_reads(roots, monkeypatch, tmp_path, 
 
 def test_loaders_resume_from_confined_outputs(roots, tmp_path):
     _, output = roots
-    catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "one", "characters": []}
+    catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "one", "characters": [],
+               "chapter_name": "one", "sequences": [{"sequence": 1, "source": "Wait.",
+               "adaptation": {"initialState": "Here.", "event": "Wait.", "endingState": "Here."}}]}
     util.save_json(Path("chapter_catalogs/one_references.json"), catalog)
     assert LoadChapterCatalogsNode().run("chapter_catalogs")[0] == [catalog]
     registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "chapter_entity_map": {}, "entity_asset_index": {},

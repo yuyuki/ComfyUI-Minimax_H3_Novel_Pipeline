@@ -7,7 +7,7 @@ import pytest
 
 from minimax_h3_novel_pipeline import cinematic_adaptation as ca
 from minimax_h3_novel_pipeline import cinematic_references as cr
-from minimax_h3_novel_pipeline import narrative_validation as nv, path_access, util
+from minimax_h3_novel_pipeline import narrative_validation as nv, narrative_choices as nc, path_access, util
 
 
 @pytest.mark.parametrize("source,bad,good", [
@@ -25,6 +25,8 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
 
     def chat(client, model, system, prompt, schema, *args):
         data = json.loads(prompt)
+        if schema == nc.PROPOSAL_SCHEMA:
+            return proposal_response()
         if schema == nv.SCHEMA:
             reviews.append(deepcopy(data))
             return {"issues": [{"target": 2, "message": "Final state contradicts or omits source facts."}]
@@ -52,6 +54,8 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
 
     def chat(client, model, system, prompt, schema, *args):
         calls.append(schema["name"])
+        if schema == nc.PROPOSAL_SCHEMA:
+            return proposal_response()
         if schema == nv.SCHEMA:
             return {"issues": [{"target": 1, "message": "Missing explicit action."}]}
         fields = {"initial_state": "Before.", "events": [], "final_state": "After."}
@@ -60,9 +64,12 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
         return {"sequences": [{"source": "Wrong copy.", **fields}]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ValueError, match="semantic validation failed"):
-        ca.adapt_chapter(None, "mock", "A bell rings.", chunk_chars=4000,
-                         temperature=0.1, max_tokens=1000, correction_attempts=1)
+    result = ca.adapt_chapter(None, "mock", "A bell rings.", chunk_chars=4000,
+                              temperature=0.1, max_tokens=1000, correction_attempts=1)
+    issue = result["narrative_review"]["issues"][0]
+    assert issue["sequence"] == 1
+    assert [p["selected"] for p in issue["proposals"]] == [True, False]
+    assert result["sequences"][0]["adaptation"] == issue["proposals"][0]["adaptation"]
     assert calls.count(nv.SCHEMA["name"]) == 3
     assert calls.count(ca._SINGLE_SCHEMA["name"]) == 3
 
@@ -80,6 +87,8 @@ def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, a
 
     def chat(client, model, system, prompt, schema, *args):
         data = json.loads(prompt)
+        if schema == nc.PROPOSAL_SCHEMA:
+            return proposal_response()
         if schema == nv.SCHEMA:
             reviews.append(deepcopy(data))
             return {"issues": [{"target": 1, "message": "Preserve the swinging motion."}]
@@ -104,8 +113,8 @@ def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, a
     kwargs = dict(chunk_chars=len(source), temperature=0.15, max_tokens=1000,
                   correction_attempts=attempts)
     if not attempts:
-        with pytest.raises(ValueError, match="after 0 targeted correction rounds"):
-            ca.adapt_chapter(None, "mock", source, **kwargs)
+        result = ca.adapt_chapter(None, "mock", source, **kwargs)
+        assert result["narrative_review"]["issues"]
         assert not repairs and len(reviews) == 1
         return
     monkeypatch.setattr(ca, "source_chunks", lambda *a: [source, following])
@@ -124,6 +133,8 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
 
     def chat(client, model, system, prompt, schema, *args):
         data = json.loads(prompt)
+        if schema == nc.PROPOSAL_SCHEMA:
+            return proposal_response()
         if schema == nv.SCHEMA:
             return {"issues": [{"target": i + 1, "message": "Incorrect posture."}
                                for i, s in enumerate(data["sequences"]) if s["final_state"] == "Wrong."]}
@@ -170,6 +181,8 @@ def test_phase_repair_identity_speech_and_cache(tmp_path, monkeypatch, persisten
 
     def chat(client, model, system, prompt, schema, *rest):
         data = json.loads(prompt)
+        if schema == nc.PROPOSAL_SCHEMA:
+            return proposal_response()
         if schema == nv.SCHEMA:
             reviews.append(data)
             assert "Not sent" not in prompt
@@ -189,12 +202,6 @@ def test_phase_repair_identity_speech_and_cache(tmp_path, monkeypatch, persisten
                              "aliases": ["rope"], "chapter_state": phase_input["text"]}]}
 
     monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json", chat)
-    if persistent_defect:
-        with pytest.raises(ValueError, match="Sequence 1 event: semantic validation failed"):
-            cr.process_chapter(chapter, output, None, "mock", args, "scene")
-        assert not (output / "scene_references.json").exists()
-        assert len(list((output / ".cache/scene").glob("*.json"))) == 1
-        return
     saved = cr.process_chapter(chapter, output, None, "mock", args, "scene")
     catalog = util.load_json(saved)
     assert len(catalog["objects"]) == 2  # Shared alias must not merge physical objects.
@@ -203,7 +210,41 @@ def test_phase_repair_identity_speech_and_cache(tmp_path, monkeypatch, persisten
     states = person["state_by_sequence"]["1"]
     assert states["initialState"][0]["speaks"] is False
     assert states["endingState"][0]["speaks"] is False
-    assert len(calls) == 4 and len(reviews) == 4
+    assert bool(catalog["narrative_review"]["extraction_issues"]) == persistent_defect
+    assert len(calls) == (5 if persistent_defect else 4)
+    assert len(reviews) == (5 if persistent_defect else 4)
     assert "basket" not in json.dumps(reviews[0])
     cr.process_chapter(chapter, output, None, "mock", args, "scene")
-    assert len(calls) == 4 and len(reviews) == 4
+    assert bool(catalog["narrative_review"]["extraction_issues"]) == persistent_defect
+    assert len(calls) == (5 if persistent_defect else 4)
+    assert len(reviews) == (5 if persistent_defect else 4)
+
+
+def proposal_response():
+    return {"proposals": [
+        {"reason": "Clear staging.", "adaptation": {"initialState": "Before.", "event": "1. A bell rings.", "endingState": "After."}},
+        {"reason": "Closer framing.", "adaptation": {"initialState": "Close view.", "event": "1. A bell rings in close view.", "endingState": "After, close view."}},
+    ]}
+
+
+def test_proposals_keep_global_sequence_ids_and_selected_continuity(monkeypatch):
+    sources = ["First scene.", "Second scene."]
+    calls = []
+    monkeypatch.setattr(ca, "source_chunks", lambda *a: sources)
+
+    def chat(client, model, system, prompt, schema, *args):
+        data = json.loads(prompt)
+        if schema == nv.SCHEMA:
+            return {"issues": [{"target": 1, "message": "Uncertain staging."}]}
+        if schema == nc.PROPOSAL_SCHEMA:
+            return proposal_response()
+        calls.append(data)
+        return {"sequences": [{"source": data["current_passage"],
+                               "initial_state": "Before.", "events": ["Wait."], "final_state": "Wrong."}]}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    result = ca.adapt_chapter(None, "mock", "".join(sources), chunk_chars=1000,
+                             temperature=0.1, max_tokens=1000, correction_attempts=0)
+    assert [i["sequence"] for i in result["narrative_review"]["issues"]] == [1, 2]
+    assert calls[1]["previous_final_state"] == "After."
+    assert "".join(s["source"] for s in result["sequences"]) == "".join(sources)

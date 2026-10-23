@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Continue cinematic adaptation after unresolved narrative reviews with editable
+  scene proposals and automatic selection; propagate selected adaptations and
+  review metadata through loaders, extraction, consolidation and H3 planning.
+  Record extraction doubts without stopping, detect edited files, refresh caches,
+  document the editing workflow and cover selection propagation offline.
+
 - Review cinematic source fidelity and phase states with bounded targeted repairs;
   distinguish object instances, aggregate chapter speech flags, invalidate extraction
   caches and cover semantic retries, cancellation and identity regressions offline.

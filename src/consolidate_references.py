@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from . import progress
 from .reference_timeline import refresh_first_occurrence, validate_catalogs
+from .cinematic_references import parse_chapters
 
 import argparse
 from typing import Any, Iterable
@@ -64,6 +65,7 @@ class ConsolidateReferencesNode:
         if not chapters: raise ValueError("No chapter catalogs were supplied.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
         validate_catalogs(chapters)
+        chapters = parse_chapters(chapters)
         designs_path = resolve_designs_path(params.get("visual_designs_path", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
@@ -109,6 +111,7 @@ class ConsolidateReferencesNode:
             payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
             payload["chapter_timelines"] = {c["chapter_id"]: {
                 "sequences": c["sequences"],
+                "narrative_review": c.get("narrative_review", {"issues": []}),
                 "references": {kind: c.get(kind, []) for kind in ("characters", "locations", "objects")},
             } for c in chapters}
             payload["visual_designs"] = designs

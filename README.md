@@ -97,10 +97,31 @@ Flagged sequences are corrected with the full passage source and neighboring
 sequences as context, bounded by `correction_attempts`, then reviewed again.
 If defects persist and `correction_attempts` is nonzero, one final reconstruction
 adapts the entire passage as a single source-bound sequence and reviews it again.
-Unresolved defects still stop the run; zero disables semantic correction.
-Extraction reviews each phase with earlier identity context only,
-allowing two corrections before failing. These reviews add model calls; accepted
-extractions are cached. Regenerate adaptations and catalogs to apply the checks
+Persistent narrative doubts never stop the run: the model supplies two or three
+complete scene alternatives in `narrative_review.issues[].proposals`. Each issue
+identifies its `sequence`, describes the doubts and quotes the source excerpt.
+Each proposal has an `id`, `reason`, complete `adaptation` (initialState, event,
+endingState), and `selected` boolean. The first proposal is selected automatically
+and applied immediately. There is no `accepted` property. Multiple doubts in one
+sequence share coherent scene alternatives rather than conflicting field edits.
+Zero `correction_attempts` skips repairs, but still reviews and proposes alternatives.
+
+To choose another interpretation, edit `selected` in the saved `.cinematic.json`,
+then run **Load Cinematic Chapters -> Extract -> Consolidate -> Spatial Continuity
+(if used) -> Generate**. File edits invalidate the loader cache. Select exactly one
+proposal per issue; no selection falls back to the first proposal, and multiple
+selections retain the first selected one, with a console notice. Loaders normalize
+in memory without overwriting your file. Edit a proposal's `adaptation` to customize
+it; the selected proposal overrides the sequence's adaptation on loading.
+Do not only edit downstream catalogs: re-extraction is needed to refresh entity
+observations and reference assets after changing a scene.
+
+Review metadata survives extraction and consolidation; only the selected scene
+enters extraction, spatial planning and H3 narrative prompts. Extraction reviews
+each phase with earlier identity context, allowing two corrections, then records
+remaining doubts in `narrative_review.extraction_issues` without stopping. Results
+and their warnings are cached. Connection, invalid JSON/schema and filesystem
+errors still block execution. These reviews add model calls. Regenerate adaptations and catalogs to apply the checks
 to previous runs. Chapter-level `speaks` records any speech in the chapter;
 phase observations retain their own speech flags.
 

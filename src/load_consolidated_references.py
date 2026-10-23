@@ -1,7 +1,8 @@
 """ComfyUI node for reusing a saved Step 2 consolidation output."""
 from __future__ import annotations
 
-from . import progress
+from . import configuration_snapshot, progress
+from .cinematic_references import parse_chapters
 
 from typing import Any
 
@@ -34,6 +35,12 @@ class LoadConsolidatedReferencesNode:
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
 
+    @classmethod
+    def IS_CHANGED(cls, consolidated_path):
+        path = util.output_path(consolidated_path.strip())
+        path = util.output_path(path / "consolidated_references.json" if path.is_dir() else path)
+        return configuration_snapshot.file_digest(path)
+
     @progress.node_progress
     def run(
         self, consolidated_path: str
@@ -63,6 +70,11 @@ class LoadConsolidatedReferencesNode:
         util.require_schema(registry, util.REGISTRY_SCHEMA)
         if not isinstance(registry, dict):
             raise ValueError(f"{json_path.name}: expected a JSON object.")
+        for cid, timeline in registry.get("chapter_timelines", {}).items():
+            resolved = parse_chapters([{**timeline, "chapter_name": cid}])[0]
+            timeline["sequences"] = resolved["sequences"]
+            if "narrative_review" in resolved:
+                timeline["narrative_review"] = resolved["narrative_review"]
 
         required = {"entities", "chapter_entity_map", "entity_asset_index", "picture_assets", "audio_assets"}
         missing = sorted(required - registry.keys())

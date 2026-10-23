@@ -18,6 +18,15 @@
       "additionalProperties": false
     },
     "sequences": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "narrative_review": {
+      "type": "object",
+      "properties": {
+        "issues": {"type": "array", "items": {"type": "object"}},
+        "extraction_issues": {"type": "array", "items": {"type": "object"}}
+      },
+      "required": ["issues"],
+      "additionalProperties": false
+    },
     "characters": {"type": "array", "items": {"$ref": "#/$defs/character"}},
     "locations": {"type": "array", "items": {"$ref": "#/$defs/location"}},
     "objects": {"type": "array", "items": {"$ref": "#/$defs/object"}}

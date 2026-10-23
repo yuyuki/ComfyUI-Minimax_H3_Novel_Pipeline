@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from . import lmstudio_json, lmstudio_pipeline, narrative_validation, progress
+from . import lmstudio_json, lmstudio_pipeline, narrative_choices, narrative_validation, progress
 
 
 SYSTEM = """You adapt literary chapters into filmable descriptions, not summaries.
@@ -164,6 +164,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
     if not text.strip():
         raise ValueError("Cannot adapt an empty chapter.")
     chunks = source_chunks(text, chunk_chars)
+    narrative_issues = []
 
     def review_passage(sequences, previous_state, chunk):
         for attempt in range(correction_attempts + 1):
@@ -206,10 +207,28 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             )
             if not issues:
                 return sequences
-        raise ValueError(
-            f"Narrative semantic validation failed after {correction_attempts} targeted correction rounds"
-            f"{' and one source-grounded reconstruction' if correction_attempts else ''}: {issues}"
-        )
+        for target, messages in sorted(issues.items()):
+            lmstudio_pipeline.comfy_interrupt_check()
+            item = sequences[target - 1]
+            proposals = narrative_choices.propose(
+                lmstudio_json.chat_json, client, model,
+                {"source_context": chunk, "current_passage": item["source"],
+                 "context_sequences": sequences, "target_sequence": target,
+                 "previous_final_state": sequences[target - 2]["final_state"] if target > 1 else previous_state,
+                 "defects_to_resolve": messages}, max_tokens,
+            )
+            sequence_id = len(results) + target
+            narrative_issues.append({
+                "id": f"scene_{sequence_id:03d}_issue_01", "sequence": sequence_id,
+                "description": "\n".join(messages), "source_excerpt": item["source"],
+                "proposals": proposals,
+            })
+            chosen = proposals[0]["adaptation"]
+            item.update(initial_state=chosen["initialState"], events=[chosen["event"]],
+                        final_state=chosen["endingState"])
+            # Keep the public event text intact rather than numbering it twice.
+            item["chosen_event"] = chosen["event"]
+        return sequences
 
     def adapt_single_passage(prompt: str, chunk: str, *, repair: bool = False) -> list[dict]:
         correction = ""
@@ -276,10 +295,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
             adaptation = {
                 "initialState": item["initial_state"],
-                "event": events,
+                "event": item.get("chosen_event", events),
                 "endingState": item["final_state"],
             }
             results.append({"sequence": len(results) + 1,
                             "source": item["source"], "adaptation": adaptation})
         previous_state = sequences[-1]["final_state"]
-    return {"chapter_name": chapter_name, "sequences": results}
+    return {"chapter_name": chapter_name, "sequences": results,
+            "narrative_review": {"issues": narrative_issues}}

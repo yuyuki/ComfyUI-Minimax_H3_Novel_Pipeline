@@ -19,6 +19,9 @@ may identify the same object only with evidence. Do not copy earlier states into
 that does not support them. Speech is phase-local; an addressee is not the speaker.
 For adaptation, target is the 1-based sequence index. Check transitions against previous
 final state and neighboring sequences, respecting explicit temporal/location breaks.
+Adaptation is for film: accept equivalent physical descriptions and supported cinematic
+staging. Do not require literal metaphors or unfilmable inner thoughts/time perceptions.
+Do not report mutually contradictory requirements; check each criticism against source.
 Original source outranks generated states: do not demand continuity with an erroneous
 earlier state. Distinguish body orientation from head position and gaze; compatible
 descriptions are not contradictions. Preserve source-supported ongoing motion.

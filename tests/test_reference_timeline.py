@@ -143,7 +143,7 @@ def test_duplicate_chapter_ids_rejected():
         validate_catalogs([catalog(), catalog()])
 
 
-def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcile, tmp_path, monkeypatch):
+def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcile, tmp_path, monkeypatch, narrative_review):
     from contextlib import nullcontext
     from minimax_h3_novel_pipeline import consolidate_references as node, lmstudio_pipeline, path_access, run_output
     from minimax_h3_novel_pipeline.load_consolidated_references import LoadConsolidatedReferencesNode
@@ -157,6 +157,7 @@ def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcil
     options = {key: value[1]["default"] for key, value in node.ConsolidateReferencesNode.INPUT_TYPES()["required"].items()
                if len(value) > 1 and "default" in value[1]}
     chapters = [catalog("Z"), catalog("A", name="Henry Jones", alias=["Indy"])]
+    chapters[0]["narrative_review"] = narrative_review
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261003120000", "thinking": False}
     registry, _ = node.ConsolidateReferencesNode().run(chapters, config, **options)["result"]
     path = tmp_path / config["run_folder"] / "references/consolidated_references.json"
@@ -166,7 +167,10 @@ def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcil
     assert list(entity["timeline"]) == ["Z", "A"]
     assert entity["timeline"]["Z"] == chapters[0]["characters"][0]["state_by_sequence"]
     assert entity["timeline"]["A"] == chapters[1]["characters"][0]["state_by_sequence"]
-    assert loaded["chapter_timelines"]["Z"]["sequences"] == chapters[0]["sequences"]
+    timeline = loaded["chapter_timelines"]["Z"]
+    assert timeline["narrative_review"] == narrative_review
+    assert timeline["sequences"][0]["adaptation"]["event"] == "B chosen event"
+    assert chapters[0]["sequences"][0]["adaptation"]["event"] == "Action"
     assert state_at(entity, "Z", 1, "initialState")[0]["chapter_appearance"] == "has no torch"
 
 

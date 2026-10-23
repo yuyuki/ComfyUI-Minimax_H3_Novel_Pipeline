@@ -1,7 +1,7 @@
 """ComfyUI node for reusing saved cinematic chapter adaptations."""
 from __future__ import annotations
 
-from . import cinematic_references, progress, util
+from . import cinematic_references, configuration_snapshot, progress, util
 
 
 class LoadCinematicChaptersNode:
@@ -23,6 +23,12 @@ class LoadCinematicChaptersNode:
     RETURN_NAMES = ("cinematic_chapters", "saved_files")
     FUNCTION = "run"
     CATEGORY = "MiniMax H3 Novel"
+
+    @classmethod
+    def IS_CHANGED(cls, cinematic_path):
+        path = util.output_path(cinematic_path.strip())
+        paths = [path] if path.is_file() else sorted(path.glob("*.cinematic.json"))
+        return tuple((str(p), configuration_snapshot.file_digest(util.output_path(p))) for p in paths if p.is_file())
 
     @progress.node_progress
     def run(self, cinematic_path: str) -> tuple[list[dict], str]:

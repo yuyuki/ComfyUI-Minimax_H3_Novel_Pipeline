@@ -219,9 +219,22 @@ Extraction's `chunk_chars` divides paragraphs only within a phase. The obsolete
 `overlap_paragraphs` and `merge_batch_size` controls are removed. Phase calls use
 `max_tokens` and the shared JSON retries; `force` bypasses timeline caches.
 Each uncached extraction is semantically reviewed against its phase and earlier
-identity context, with at most two targeted corrections. Failed reviews stop the
-stage without caching the rejected phase. Adapter reviews also check source detail
+identity context, with at most two targeted corrections. Persistent doubts are
+saved in `narrative_review.extraction_issues`; results and warnings are cached. Adapter reviews also check source detail
 coverage and transitions; `correction_attempts` bounds targeted sequence repairs.
+After bounded repairs/reconstruction, persistent doubts produce two or three full
+scene alternatives in `narrative_review.issues[].proposals`, with the first
+`selected: true`. No narrative disagreement blocks execution and there is no
+`accepted` flag. Each proposal includes a reason and complete `adaptation` with
+`initialState`, `event`, and `endingState`; the selected one governs the scene.
+Set another proposal's `selected` to true and the others to false in the original
+`.cinematic.json`, then reload with **Load Cinematic Chapters** and rerun extraction,
+consolidation, spatial continuity (if used), and generation. This refreshes reference
+observations, assets and prompts together. Missing selections default to the first;
+multiple selections use the first selected proposal, with a console notice. File
+changes are detected on the next run. Alternatives remain in saved review metadata
+but only the resolved adaptation is sent to downstream narrative model calls.
+Malformed data or technical failures still stop the workflow.
 Reviews use additional LM Studio requests and remain model judgments, not a proof
 of narrative fidelity. Regenerate adaptations and catalogs from previous runs.
 Original-source Generate inputs remain unchanged; this change provides temporal

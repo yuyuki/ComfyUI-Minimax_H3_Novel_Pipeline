@@ -177,7 +177,7 @@ def spatial_answer():
 
 
 @pytest.mark.parametrize('canonical_name', ['Éloïse', None])
-def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, canonical_name):
+def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, canonical_name, narrative_review):
     import json
     from contextlib import nullcontext
     from minimax_h3_novel_pipeline import spatial_continuity as spatial, util
@@ -187,6 +187,7 @@ def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, 
                 'chapter_timelines': {'chapter': {'sequences': [
                     {'sequence': i, 'source': 'Near tablet' if i == 3 else 'Waits'} for i in (3, 1, 2)]}}}
     from minimax_h3_novel_pipeline import path_access
+    registry['chapter_timelines']['chapter']['narrative_review'] = narrative_review
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
     monkeypatch.setattr(spatial, 'stage_output', lambda *a: tmp_path)
     monkeypatch.setattr(spatial.lmstudio_pipeline, 'make_client_and_model', lambda *a: (nullcontext(), 'qwen'))
@@ -200,6 +201,8 @@ def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, 
     payload, rendered, _ = spatial.SpatialContinuityNode().run(registry, {'api_url': 'unused'})['result']
     assert [s['sequence'] for s in requests[0]['whole_chapter_timeline']] == [1, 2, 3]
     assert requests[0]['whole_chapter_timeline'][2]['source'] == 'Near tablet'
+    assert requests[0]['whole_chapter_timeline'][0]['adaptation']['event'] == 'B chosen event'
+    assert 'A chosen' not in json.dumps(requests)
     expected_state = spatial_answer()['final_entities']
     expected_state[0]['canonical_name'] = canonical_name or ''
     assert requests[1]['previous_final_state'] == expected_state
