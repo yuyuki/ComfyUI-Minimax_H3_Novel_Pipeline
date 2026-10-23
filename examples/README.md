@@ -45,6 +45,15 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    future constraints, initial/final entity positions, camera, evidence and warnings.
    Generate uses this plan during scene planning and prompt generation, and reviews
    final prompts even with the toggle off. Rerun Spatial Continuity after consolidation changes.
+   To edit the plan manually, save a corrected JSON file inside
+   `output/minimax_h3_novel` (renamed copies are supported). Add **Load Spatial
+   Continuity**, set `spatial_path` to that file or its folder, and connect the
+   same `consolidated_references` used by Generate. Connect the loader's
+   `spatial_continuity` output to Generate instead of the planning node.
+   The loader preserves edits, validates the v2 structure and source digest,
+   and reloads changed file contents on the next execution without LM Studio.
+   Keep chapter/sequence IDs and `source_digest` intact; edit positions, camera,
+   states and evidence. A folder path looks for `spatial_continuity.json`.
    Set `duration` in Generate H3 Prompts to the length of each scene. Set
    `max_shots` to your desired limit (1 by default; a shot needs at least 2.5s).
    Optionally describe the camera axis and movement in `camera_direction`.

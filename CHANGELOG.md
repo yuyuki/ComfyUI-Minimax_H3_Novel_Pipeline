@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Add Load Spatial Continuity for manually corrected JSON, with consolidation
+  validation and content-based ComfyUI cache invalidation.
+
 - Finish chapter-wide Spatial Continuity integration: consume v2 sequence plans
   in generation, reject stale/incomplete output, validate structured states, and
   replace obsolete node tests and wiring documentation.

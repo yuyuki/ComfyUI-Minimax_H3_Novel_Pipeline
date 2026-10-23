@@ -60,6 +60,7 @@ flowchart TD
     m_load_chapter_catalogs["load_chapter_catalogs<br/>Load Chapter Catalogs"]
     m_load_cinematic_chapters["load_cinematic_chapters<br/>Load Cinematic Chapters"]
     m_load_consolidated_references["load_consolidated_references<br/>Load Consolidated References"]
+    m_load_spatial_continuity["load_spatial_continuity<br/>Load Spatial Continuity"]
     m_nodes["nodes"]
     m_path_access["path_access"]
     m_pipeline_step1_extract["pipeline_step1_extract"]
@@ -147,6 +148,9 @@ flowchart TD
     m_load_cinematic_chapters --> m_util
     m_load_consolidated_references --> m_progress
     m_load_consolidated_references --> m_util
+    m_load_spatial_continuity --> m_progress
+    m_load_spatial_continuity --> m_spatial_continuity
+    m_load_spatial_continuity --> m_util
     m_nodes --> m_chapter_selection
     m_nodes --> m_cinematic_chapter_adapter
     m_nodes --> m_consolidate_references
@@ -156,6 +160,7 @@ flowchart TD
     m_nodes --> m_load_chapter_catalogs
     m_nodes --> m_load_cinematic_chapters
     m_nodes --> m_load_consolidated_references
+    m_nodes --> m_load_spatial_continuity
     m_nodes --> m_spatial_continuity
     m_pipeline_step1_extract --> m_lmstudio_json
     m_pipeline_step1_extract --> m_lmstudio_pipeline
@@ -219,7 +224,8 @@ flowchart TD
 | `src/load_chapter_catalogs.py` | `configuration_snapshot`, `progress`, `util` | `LoadChapterCatalogsNode` |
 | `src/load_cinematic_chapters.py` | `cinematic_references`, `progress`, `util` | `LoadCinematicChaptersNode` |
 | `src/load_consolidated_references.py` | `progress`, `util` | `LoadConsolidatedReferencesNode` |
-| `src/nodes.py` | `chapter_selection`, `cinematic_chapter_adapter`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_cinematic_chapters`, `load_consolidated_references`, `spatial_continuity` | — |
+| `src/load_spatial_continuity.py` | `progress`, `spatial_continuity`, `util` | `LoadSpatialContinuityNode` |
+| `src/nodes.py` | `chapter_selection`, `cinematic_chapter_adapter`, `consolidate_references`, `extract_chapter_references`, `generate_h3_prompts`, `lmstudio_config`, `load_chapter_catalogs`, `load_cinematic_chapters`, `load_consolidated_references`, `load_spatial_continuity`, `spatial_continuity` | — |
 | `src/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
 | `src/pipeline_step1_extract.py` | `lmstudio_json`, `lmstudio_pipeline`, `path_access`, `progress`, `prompt_cache`, `util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |
 | `src/pipeline_step2_consolidate.py` | `lmstudio_json`, `lmstudio_pipeline`, `progress`, `reference_requests`, `reference_timeline` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `similarity`, `stronger`, `threshold`, `write_asset_prompts` |
@@ -234,4 +240,4 @@ flowchart TD
 | `src/util.py` | `path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/visual_designs.py` | `editable_schemas`, `lmstudio_pipeline`, `progress`, `reference_requests`, `util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 
-Modules: **35**. Internal dependency edges: **118**.
+Modules: **36**. Internal dependency edges: **122**.

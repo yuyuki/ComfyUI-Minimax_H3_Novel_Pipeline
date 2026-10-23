@@ -77,6 +77,7 @@ The registered custom nodes are:
 | **Load Consolidated References** | Loads a saved consolidated registry for prompt generation.                                                   |
 | **Generate H3 Prompts**          | Generates chapter and scene prompt payloads plus save-ready image-prompt text from the registry.             |
 | **Spatial Continuity**           | Plans all consolidated sequences with character, object, location and camera states; exports JSON and feeds Generate.        |
+| **Load Spatial Continuity** | Loads a manually corrected spatial JSON, validates it against consolidation, and detects saved edits on the next run. |
 
 ## Development and checks
 

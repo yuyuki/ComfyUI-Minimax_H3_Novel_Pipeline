@@ -11,6 +11,7 @@ from .load_cinematic_chapters import LoadCinematicChaptersNode
 from .load_consolidated_references import LoadConsolidatedReferencesNode
 from .lmstudio_config import LMStudioConfigurationNode
 from .spatial_continuity import SpatialContinuityNode
+from .load_spatial_continuity import LoadSpatialContinuityNode
 
 
 NODE_CLASS_MAPPINGS = {
@@ -24,6 +25,7 @@ NODE_CLASS_MAPPINGS = {
     "ConsolidateReferencesNode": ConsolidateReferencesNode,
     "GenerateH3PromptsNode": GenerateH3PromptsNode,
     "SpatialContinuityNode": SpatialContinuityNode,
+    "LoadSpatialContinuityNode": LoadSpatialContinuityNode,
 }
 
 __all__ = [
@@ -37,5 +39,6 @@ __all__ = [
     "ConsolidateReferencesNode",
     "GenerateH3PromptsNode",
     "SpatialContinuityNode",
+    "LoadSpatialContinuityNode",
     "NODE_CLASS_MAPPINGS",
 ]
