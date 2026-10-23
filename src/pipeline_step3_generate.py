@@ -17,6 +17,7 @@ from .lmstudio_json import chat_json, select_model as select_model
 
 from .path_access import confined_path
 from .prompt_cache import fingerprint as cache_fingerprint
+from . import temporal_context
 from .cinematic_references import PHASES, parse_chapters
 from .reference_timeline import state_at
 
@@ -1413,7 +1414,9 @@ def process_chapter(
     sequence_plans = ({p["sequence"]: p for p in spatial_plan["chapters"][chapter_id]["sequences"]}
                       if spatial_plan is not None else {})
     # Spatial plans may infer future/offscreen geometry; they cannot select story beats.
-    chunks = [json.dumps(sequence, ensure_ascii=False) for sequence in sequences]
+    period = temporal_context.prompt(refs["chapter_timelines"][chapter_id].get("default_temporal_context", ""))
+    chunks = [json.dumps({**sequence, **({"temporal_context": period} if period else {})}, ensure_ascii=False)
+              for sequence in sequences]
     chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = confined_path(chapter_dir / ".cache", chapter_dir)
@@ -1441,6 +1444,8 @@ def process_chapter(
             chunk_scenes = dedupe_scenes(chunk_scenes)
             for scene in chunk_scenes:
                 scene.sequence = sequence["sequence"]
+                if period:
+                    scene.adaptation_notes += "\n" + period
                 scene.adaptation_notes += "\nAuthoritative sequence phases: " + json.dumps(sequence["adaptation"], ensure_ascii=False)
                 scene.adaptation_notes += "\nExact reference observations by phase: " + json.dumps(catalog, ensure_ascii=False)
             cache_path.write_text(

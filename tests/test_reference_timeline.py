@@ -151,13 +151,20 @@ def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcil
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(run_output, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "mock"))
-    monkeypatch.setattr(node, "prepare_designs", lambda *args: {"entities": []})
+    def prepare_designs(chat, client, model, entities, args, path):
+        assert args.temporal_context_by_chapter["Z"]["default_temporal_context"] == "1925"
+        assert args.temporal_context_by_chapter["A"]["default_temporal_context"] == "2040"
+        assert args.temporal_context_by_chapter["Z"]["sequences"][0]["adaptation"]["event"] == "B chosen event"
+        return {"entities": []}
+    monkeypatch.setattr(node, "prepare_designs", prepare_designs)
     monkeypatch.setattr(step, "generate_picture_assets", lambda *args: [])
     monkeypatch.setattr(step, "generate_audio_assets", lambda *args: [])
     options = {key: value[1]["default"] for key, value in node.ConsolidateReferencesNode.INPUT_TYPES()["required"].items()
                if len(value) > 1 and "default" in value[1]}
     chapters = [catalog("Z"), catalog("A", name="Henry Jones", alias=["Indy"])]
     chapters[0]["narrative_review"] = narrative_review
+    chapters[0]["default_temporal_context"] = "1925"
+    chapters[1]["default_temporal_context"] = "2040"
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261003120000", "thinking": False}
     registry, _ = node.ConsolidateReferencesNode().run(chapters, config, **options)["result"]
     path = tmp_path / config["run_folder"] / "references/consolidated_references.json"
@@ -168,6 +175,8 @@ def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcil
     assert entity["timeline"]["Z"] == chapters[0]["characters"][0]["state_by_sequence"]
     assert entity["timeline"]["A"] == chapters[1]["characters"][0]["state_by_sequence"]
     timeline = loaded["chapter_timelines"]["Z"]
+    assert timeline["default_temporal_context"] == "1925"
+    assert loaded["chapter_timelines"]["A"]["default_temporal_context"] == "2040"
     assert timeline["narrative_review"] == narrative_review
     assert timeline["sequences"][0]["adaptation"]["event"] == "B chosen event"
     assert chapters[0]["sequences"][0]["adaptation"]["event"] == "Action"

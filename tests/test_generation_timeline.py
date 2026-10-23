@@ -65,3 +65,26 @@ def test_sequence_order_cache_invalidation_and_repeated_beats(tmp_path, monkeypa
     assert cached["scenes"][0]["sequence"] == 3
     assert "A changed ending." in cached["scenes"][0]["adaptation_notes"]
     assert not path.exists()
+
+
+
+def test_temporal_context_reaches_planning_and_prompt_notes(tmp_path, monkeypatch, cinematic_registry):
+    path = tmp_path / "chapter.txt"
+    refs = cinematic_registry(path)
+    refs["chapter_timelines"]["chapter"]["default_temporal_context"] = "1925"
+    calls = []
+    def plan(client, model, chapter, chunk, index, total, catalog, args):
+        calls.append(json.loads(chunk))
+        return [step.Scene("Wait", "Wait", "Wait", "", [], [], [], False, "")]
+    monkeypatch.setattr(step, "plan_scenes", plan)
+    monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [], "audio": []})
+    args = SimpleNamespace(out_dir=tmp_path / "generated", force=False, max_scenes=0, duration=8)
+    step.process_chapter(path, refs, None, "mock", args)
+    assert "1925" in calls[0]["temporal_context"]
+    assert "flashbacks" in calls[0]["temporal_context"]
+    cached = json.loads((args.out_dir / "chapter/.cache/plan_001.json").read_text())
+    assert "1925" in cached["scenes"][0]["adaptation_notes"]
+    refs["chapter_timelines"]["chapter"]["default_temporal_context"] = "2040"
+    step.process_chapter(path, refs, None, "mock", args)
+    assert len(calls) == 2
+    assert "2040" in calls[-1]["temporal_context"]

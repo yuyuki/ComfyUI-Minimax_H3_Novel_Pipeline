@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from . import progress
 from .reference_timeline import merge_timeline, validate_catalogs
+from . import temporal_context
 
 import argparse
 import difflib
@@ -370,8 +371,9 @@ def reconcile_chapter(
                 raise ValueError("Match must be NEW or a supplied candidate for this entity.")
 
     result = validated_request(
-        chat_json, client, model, RECONCILE_SYSTEM,
-        f"Chapter: {chapter['chapter_id']}\n\nINCOMING:\n{json.dumps(incoming, ensure_ascii=False, indent=2)}\n\nCANDIDATES:\n{json.dumps(candidates, ensure_ascii=False, indent=2)}",
+        chat_json, client, model, RECONCILE_SYSTEM + "\n" + temporal_context.RULES,
+        temporal_context.prompt(chapter.get("default_temporal_context", "")) +
+        f"\nChapter: {chapter['chapter_id']}\n\nINCOMING:\n{json.dumps(incoming, ensure_ascii=False, indent=2)}\n\nCANDIDATES:\n{json.dumps(candidates, ensure_ascii=False, indent=2)}",
         RECONCILE_SCHEMA,
         args, validate_resolutions,
     )

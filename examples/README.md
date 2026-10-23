@@ -98,6 +98,14 @@ Set each stage's output budget with its own `max_tokens`; configuration no
 longer applies a second cap. Old configuration widgets migrate on workflow
 load. Set extraction passage size with Extract's `chunk_chars`; the shared
 `qwen35_safe_chunk_chars` field is removed. Paragraph order is preserved within each phase; phases never overlap.
+
+Optional `default_temporal_context` on **Extract Chapter References** accepts a date
+or era, such as `1925` or `France, late 19th century`. Leave it empty when unknown.
+Explicit narrative timing and flashbacks take precedence. This is user context,
+not source evidence. It is saved in chapter catalogs and consolidated timelines,
+preserved by the loaders, and used for missing visual design details and H3 prompts.
+After changing it, rerun extraction, consolidation and generation; extraction caches
+are invalidated automatically.
 Restart ComfyUI and refresh the browser after updating the node package.
 For JSON failures, check the ComfyUI console's `LLM stream` lines for character
 counts, `finish_reason` and `local_stop`. These diagnostics omit generated text.

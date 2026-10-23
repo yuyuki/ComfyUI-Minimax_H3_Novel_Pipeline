@@ -233,3 +233,33 @@ def test_identity_context_contains_only_prior_observations(execution):
         if call["sequence"] == 3 and call["phase"] == "event":
             assert context["objects"][0]["canonical_name"] == "torch"
             assert "catches" not in json.dumps(context)
+
+
+@pytest.mark.parametrize("period", ["", "  1925  ", "France, fin du XIXe siècle"])
+def test_default_temporal_context_persistence_and_cache(execution, tmp_path, period):
+    calls, params, config = execution
+    node = ExtractChapterReferencesNode()
+    source = chapter()
+    source["sequences"][0]["adaptation"]["initialState"] = "In 1810, Indy hangs from a rope."
+    original = deepcopy(source)
+    results, _ = node.run(config, [source], default_temporal_context=period, **params)["result"]
+    assert results[0]["default_temporal_context"] == period.strip()
+    assert source == original
+    assert all(c["default_temporal_context"] == period.strip() for c in calls)
+    assert "1810" in calls[0]["text"]
+    saved, = tmp_path.rglob("chapter_references.json")
+    assert util.load_json(saved) == results[0]
+    count = len(calls)
+    node.run(config, [source], default_temporal_context=period, **params)
+    assert len(calls) == count
+    changed, _ = node.run(config, [source], default_temporal_context="2040", **params)["result"]
+    assert len(calls) > count
+    assert changed[0]["cache_key"] != results[0]["cache_key"]
+    assert changed[0]["source"] == results[0]["source"]
+
+
+def test_invalid_temporal_context_rejected_before_model_work(execution):
+    calls, params, config = execution
+    with pytest.raises(ValueError, match="must be a string"):
+        ExtractChapterReferencesNode().run(config, [chapter()], default_temporal_context=1925, **params)
+    assert calls == []

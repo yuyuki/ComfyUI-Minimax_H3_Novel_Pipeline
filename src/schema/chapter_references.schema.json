@@ -3,6 +3,7 @@
   "title": "MiniMax H3 Novel chapter references",
   "type": "object",
   "properties": {
+    "default_temporal_context": {"type": "string", "description": "User-supplied date or era fallback; explicit narrative timing takes precedence. Not source evidence."},
     "schema_version": {"const": "minimax-h3-novel-refs.chapter.v4"},
     "timeline_version": {"const": "cinematic-reference-timeline.v1"},
     "cache_key": {"type": "string", "minLength": 1},

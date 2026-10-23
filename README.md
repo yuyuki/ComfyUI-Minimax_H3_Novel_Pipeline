@@ -47,6 +47,15 @@ by the nodes. PDF reading uses `pypdf`; text and Markdown do not need it.
 4. For a custom endpoint, set it as **Trusted API URL** in the same settings and enter that identical URL in the configuration node.
 5. Connect `lmstudio_config` to Extract, Consolidate, and Generate; keep only the intended matching model available in LM Studio.
 
+
+Optional `default_temporal_context` on **Extract Chapter References** accepts a date
+or era, such as `1925` or `France, late 19th century`. Leave it empty when unknown.
+Explicit narrative timing and flashbacks take precedence. This is user context,
+not source evidence. It is saved in chapter catalogs and consolidated timelines,
+preserved by the loaders, and used for missing visual design details and H3 prompts.
+After changing it, rerun extraction, consolidation and generation; extraction caches
+are invalidated automatically.
+
 ## Architecture analysis
 
 The generated [architecture map](docs/architecture.md) shows the three-stage

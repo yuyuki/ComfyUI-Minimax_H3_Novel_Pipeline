@@ -6,7 +6,7 @@ from . import progress
 import argparse
 from typing import Any
 
-from . import cinematic_references, configuration_snapshot, lmstudio_pipeline, util
+from . import cinematic_references, configuration_snapshot, lmstudio_pipeline, temporal_context, util
 from .run_output import stage_output
 
 def _default_output_dir() -> str:
@@ -30,6 +30,8 @@ class ExtractChapterReferencesNode:
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768, "tooltip": "JSON output budget per sequence-phase extraction call. Dense catalogs may need more tokens."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
+        }, "optional": {
+            "default_temporal_context": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional default date or era, e.g. 1925 or France, late 19th century. Explicit narrative timing and flashbacks take precedence. Empty leaves unspecified periods unknown."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
@@ -42,6 +44,7 @@ class ExtractChapterReferencesNode:
     def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, **params: Any) -> dict[str, Any]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
+        period = temporal_context.normalize(params.get("default_temporal_context", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
         chapters = cinematic_references.parse_chapters(cinematic_chapters)
         if not isinstance(lmstudio_config, dict):
@@ -50,6 +53,7 @@ class ExtractChapterReferencesNode:
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
             args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), base_url=lmstudio_config["api_url"])
+            args.default_temporal_context = period
             output.mkdir(parents=True, exist_ok=True)
             snapshot = configuration_snapshot.start(
                 output, "extract", lmstudio_config, resolved_model, args, out_dir=out_dir,

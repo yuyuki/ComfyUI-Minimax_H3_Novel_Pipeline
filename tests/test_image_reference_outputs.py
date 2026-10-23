@@ -731,3 +731,78 @@ def test_completed_extraction_invalidates_when_prompt_changes(output_root, monke
     monkeypatch.setattr(step, "EXTRACT_SYSTEM", step.EXTRACT_SYSTEM + "\nNew extraction instruction.")
     step.process_chapter(chapter, output_root, None, "qwen", args)
     assert len(calls) == 2
+
+
+
+def test_visual_designs_receive_only_relevant_chapter_periods(output_root):
+    item = entity()
+    item["chapters_seen"] = ["chapter"]
+    args = options()
+    args.temporal_context_by_chapter = {
+        "chapter": {"default_temporal_context": "1925", "sequences": []},
+        "other": {"default_temporal_context": "2040", "sequences": []},
+    }
+    def chat(client, model, system, user, schema, *unused):
+        data = json.loads(user)
+        assert data["temporal_context_by_chapter"] == {"chapter": args.temporal_context_by_chapter["chapter"]}
+        assert "flashbacks" in system and "not source evidence" in system
+        assert "default_temporal_context" not in data["source_facts"]
+        return {"added_details": []}
+    visual_designs.prepare_designs(chat, None, "model", [item], args)
+
+
+@pytest.mark.parametrize("explicit_period", ["", "In 2040, Aster waits."])
+def test_temporal_design_review_retries_anachronisms_and_preserves_source_priority(output_root, monkeypatch, explicit_period):
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    args = options()
+    args.temporal_context_by_chapter = {
+        "chapter": {"default_temporal_context": "1880", "sequences": [{"source": explicit_period}]},
+    }
+    generations = []
+    reviews = []
+    def chat(client, model, system, user, schema, *unused):
+        # Semantic retries append feedback after the original JSON request.
+        data, _ = json.JSONDecoder().raw_decode(user)
+        assert data["temporal_context_by_chapter"] == args.temporal_context_by_chapter
+        assert "flashbacks" in system
+        if schema is visual_designs.DESIGN_SCHEMA:
+            assert "added_details MUST fit the supplied default period" in system
+            generations.append(user)
+            detail = "Digital watch." if len(generations) == 1 else "Mechanical pocket watch."
+            return {"added_details": [{"trait": "accessories", "description": detail}]}
+        assert "introduces an anachronism" in system
+        assert "never use the fallback period to reject" in system
+        reviews.append(data)
+        incompatible = not explicit_period and data["added_details"]["accessories"] == "Digital watch."
+        return design_checks(json.dumps(data), "conflict" if incompatible else "compatible_addition",
+                             "Digital watch is anachronistic in 1880." if incompatible else "Fits explicit 2040 or default 1880.")
+    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], args)
+    assert len(generations) == (1 if explicit_period else 2)
+    assert len(reviews) == len(generations)
+    expected = "Digital watch." if explicit_period else "Mechanical pocket watch."
+    assert designs["entities"][0]["added_details"] == {"accessories": expected}
+    if not explicit_period:
+        assert "1880" in generations[1] and "Previous response was invalid" in generations[1]
+
+
+def test_imported_design_is_rechecked_against_current_temporal_default(output_root):
+    item = entity()
+    path = output_root / "designs.json"
+    util.save_json(path, {
+        "schema_version": visual_designs.DESIGN_SCHEMA_VERSION,
+        "image_style": "realistic photographic",
+        "entities": [{**{key: item[key] for key in ("global_id", "entity_type", "canonical_name")},
+                      "source_facts": visual_designs.source_facts(item),
+                      "added_details": {"accessories": "Digital watch."}}],
+    })
+    original = path.read_bytes()
+    args = options()
+    args.temporal_context_by_chapter = {"chapter": {"default_temporal_context": "1880", "sequences": []}}
+    def chat(client, model, system, user, schema, *unused):
+        assert schema is visual_designs.CONFLICT_SCHEMA
+        assert json.loads(user)["temporal_context_by_chapter"] == args.temporal_context_by_chapter
+        assert "BOTH generated and imported added_details" in system
+        return design_checks(user, "conflict", "Digital watch is anachronistic in 1880.")
+    with pytest.raises(ValueError, match="temporal context.*1880.*Correct added_details"):
+        visual_designs.prepare_designs(chat, None, "model", [item], args, path)
+    assert path.read_bytes() == original

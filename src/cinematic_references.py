@@ -7,7 +7,7 @@ import json
 from shutil import copyfile
 from pathlib import Path
 
-from . import lmstudio_pipeline, narrative_choices, narrative_validation, progress, util
+from . import lmstudio_pipeline, narrative_choices, narrative_validation, progress, temporal_context, util
 from .editable_schemas import validate_document
 from .path_access import confined_path
 from .prompt_cache import fingerprint
@@ -108,6 +108,7 @@ def parse_chapters(value):
         label = f"cinematic_chapters[{index}]"
         if not isinstance(chapter, dict) or not isinstance(chapter.get("chapter_name"), str) or not chapter["chapter_name"].strip():
             raise ValueError(f"{label} requires a non-empty chapter_name.")
+        temporal_context.normalize(chapter.get("default_temporal_context", ""))
         for key in ("source_file", "saved_file"):
             if key in chapter and not isinstance(chapter[key], str):
                 raise ValueError(f"{label}.{key} must be a string.")
@@ -198,7 +199,8 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     """Persist identity catalogs plus lossless ordered, phase-specific observations."""
     chapter = parse_chapters([chapter])[0]
     step = lmstudio_pipeline.load("extract")
-    system = step.EXTRACT_SYSTEM + "\n" + PHASE_SYSTEM
+    period = temporal_context.normalize(getattr(args, "default_temporal_context", ""))
+    system = step.EXTRACT_SYSTEM + "\n" + PHASE_SYSTEM + "\n" + temporal_context.RULES
     key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION,
                       system, LOCAL_LINK_SYSTEM, narrative_validation.SYSTEM,
                       narrative_validation.SCHEMA, step.CHUNK_SCHEMA, LOCAL_LINK_SCHEMA,
@@ -227,6 +229,7 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                          "last_observations": list(list(e["state_by_sequence"].values())[-1].values())[-1]}
                         for e in entities] for kind, entities in catalog.items()}
         user = json.dumps({"sequence": seq["sequence"], "phase": phase, "text": text,
+                           "default_temporal_context": period,
                            "known_references": known}, ensure_ascii=False)
         part_key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION, system, step.CHUNK_SCHEMA,
                                narrative_validation.SYSTEM, narrative_validation.SCHEMA, user, client=client)
@@ -283,6 +286,7 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                 if kind == "characters":
                     entity["speaks"] = entity["speaks"] or observation["speaks"]
     payload = {"schema_version": util.CHAPTER_SCHEMA, "timeline_version": TEMPORAL_VERSION,
+               "default_temporal_context": period,
                "cache_key": key, "chapter_id": chapter_id, "chapter_name": chapter["chapter_name"],
                "source": {"file": chapter.get("source_file", ""), "sha256": chapter_digest(chapter)},
                "sequences": deepcopy(chapter["sequences"]),

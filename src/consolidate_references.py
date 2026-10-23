@@ -96,6 +96,10 @@ class ConsolidateReferencesNode:
             for entity in registry:
                 refresh_first_occurrence(entity, [c["chapter_id"] for c in chapters])
             registry.sort(key=lambda item: ({"character": 0, "location": 1, "object": 2}[item["entity_type"]], pipeline.natural_key(item["global_id"])))
+            args.temporal_context_by_chapter = {
+                c["chapter_id"]: {"default_temporal_context": c.get("default_temporal_context", ""),
+                                  "sequences": c["sequences"]} for c in chapters
+            }
             with progress.scope(0.4, 0.55):
                 designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
                                           designs_path)
@@ -110,6 +114,7 @@ class ConsolidateReferencesNode:
             digest = configuration_snapshot.content_digest(chapters)
             payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
             payload["chapter_timelines"] = {c["chapter_id"]: {
+                "default_temporal_context": c.get("default_temporal_context", ""),
                 "sequences": c["sequences"],
                 "narrative_review": c.get("narrative_review", {"issues": []}),
                 "references": {kind: c.get(kind, []) for kind in ("characters", "locations", "objects")},
