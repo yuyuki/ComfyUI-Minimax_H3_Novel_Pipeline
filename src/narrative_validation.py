@@ -46,17 +46,36 @@ SCHEMA = {
 
 
 def review(chat, client, model, payload, count, max_tokens):
-    """Reject malformed reviews rather than treating them as approval."""
+    """Keep malformed advisory reviews as doubts, never approval or fatal errors.
+
+    Request failures still propagate. A review with an unusable address applies
+    to every sequence in the passage, since guessing a target could lose a doubt.
+    """
     lmstudio_pipeline.comfy_interrupt_check()
     result = chat(client, model, SYSTEM, json.dumps(payload, ensure_ascii=False),
                   SCHEMA, 0.0, max_tokens)
-    if not isinstance(result, dict) or set(result) != {"issues"} or not isinstance(result["issues"], list):
-        raise ValueError("Invalid narrative semantic review.")
     issues = {}
+
+    def uncertain(value, target=None):
+        message = (
+            "Narrative review could not be interpreted reliably. Recheck against the source; "
+            "this review is not an established defect. Review data: "
+            + json.dumps(value, ensure_ascii=False)
+        )
+        targets = [target] if type(target) is int and 1 <= target <= count else range(1, count + 1)
+        for index in targets:
+            issues.setdefault(index, []).append(message)
+
+    if not isinstance(result, dict) or not isinstance(result.get("issues"), list):
+        uncertain(result)
+        return issues
+    if set(result) != {"issues"}:
+        uncertain({key: value for key, value in result.items() if key != "issues"})
     for item in result["issues"]:
         if (not isinstance(item, dict) or set(item) != {"target", "message"}
                 or type(item["target"]) is not int or not 1 <= item["target"] <= count
                 or not isinstance(item["message"], str) or not item["message"].strip()):
-            raise ValueError("Invalid narrative semantic review issue.")
+            uncertain(item, item.get("target") if isinstance(item, dict) else None)
+            continue
         issues.setdefault(item["target"], []).append(item["message"])
     return issues

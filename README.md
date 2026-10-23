@@ -105,6 +105,10 @@ endingState), and `selected` boolean. The first proposal is selected automatical
 and applied immediately. There is no `accepted` property. Multiple doubts in one
 sequence share coherent scene alternatives rather than conflicting field edits.
 Zero `correction_attempts` skips repairs, but still reviews and proposes alternatives.
+Malformed semantic review entries are retained as doubts, including their original
+content. An unusable sequence address applies the doubt to every sequence in the
+passage. These advisory entries follow the same correction/proposal flow and never
+count as approval or stop execution.
 
 To choose another interpretation, edit `selected` in the saved `.cinematic.json`,
 then run **Load Cinematic Chapters -> Extract -> Consolidate -> Spatial Continuity
@@ -120,7 +124,7 @@ Review metadata survives extraction and consolidation; only the selected scene
 enters extraction, spatial planning and H3 narrative prompts. Extraction reviews
 each phase with earlier identity context, allowing two corrections, then records
 remaining doubts in `narrative_review.extraction_issues` without stopping. Results
-and their warnings are cached. Connection, invalid JSON/schema and filesystem
+and their warnings are cached. Connection, unreadable JSON, invalid adaptation/proposal schemas and filesystem
 errors still block execution. These reviews add model calls. Regenerate adaptations and catalogs to apply the checks
 to previous runs. Chapter-level `speaks` records any speech in the chapter;
 phase observations retain their own speech flags.

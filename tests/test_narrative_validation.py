@@ -153,10 +153,64 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
 
 
 @pytest.mark.parametrize("response", [{}, {"issues": None}, {"issues": [{"target": True, "message": "x"}]},
-                                      {"issues": [{"target": 2, "message": "x"}]}])
+                                      {"issues": [{"target": 2, "message": "x"}]},
+                                      {"issues": [None]}, {"issues": [{"message": "x"}]},
+                                      {"issues": [{"target": 1, "message": " "}]},
+                                      {"issues": [], "doubt": "Missing action."}])
 def test_invalid_review_never_approves(response):
-    with pytest.raises(ValueError, match="Invalid narrative"):
-        nv.review(lambda *a: response, None, "mock", {}, 1, 1000)
+    issues = nv.review(lambda *a: response, None, "mock", {}, 1, 1000)
+    assert set(issues) == {1}
+    assert "not an established defect" in issues[1][0]
+
+
+def test_invalid_review_preserves_valid_doubts_and_uses_safe_targets():
+    response = {"issues": [
+        {"target": 2, "message": "Missing dialogue."},
+        {"target": 2, "message": "Wrong gaze.", "extra": True},
+        {"target": 99, "message": "Missing action."},
+    ]}
+    issues = nv.review(lambda *a: response, None, "mock", {}, 2, 1000)
+    assert len(issues[1]) == 1 and "Missing action." in issues[1][0]
+    assert len(issues[2]) == 3
+    assert issues[2][0] == "Missing dialogue."
+    assert "Wrong gaze." in issues[2][1]
+    assert "Missing action." in issues[2][2]
+
+
+@pytest.mark.parametrize("attempts", [0, 1])
+def test_malformed_reviews_reach_resolvable_proposals(monkeypatch, attempts):
+    source = "A bell rings."
+    calls = []
+
+    def chat(client, model, system, prompt, schema, *args):
+        calls.append(schema["name"])
+        if schema == nv.SCHEMA:
+            return {"issues": [{"target": 99, "message": "Missing bell."}]}
+        if schema == nc.PROPOSAL_SCHEMA:
+            assert "Missing bell." in prompt
+            return proposal_response()
+        fields = {"initial_state": "Before.", "events": [source], "final_state": "After."}
+        return fields if schema == ca._SINGLE_SCHEMA else {"sequences": [{"source": source, **fields}]}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    result = ca.adapt_chapter(None, "mock", source, chunk_chars=4000,
+                             temperature=0.1, max_tokens=1000, correction_attempts=attempts)
+    issue = result["narrative_review"]["issues"][0]
+    assert issue["sequence"] == 1 and issue["source_excerpt"] == source
+    assert "Missing bell." in issue["description"]
+    assert len(issue["proposals"]) == 2
+    assert nc.resolve_chapter(result) == result
+    assert calls.count(nv.SCHEMA["name"]) == (3 if attempts else 1)
+
+
+@pytest.mark.parametrize("error", [ConnectionError("Offline"), RuntimeError("Invalid structured JSON"),
+                                  ValueError("Invalid client configuration"), KeyboardInterrupt()])
+def test_review_technical_failures_and_interruptions_propagate(error):
+    def fail(*args):
+        raise error
+    with pytest.raises(type(error)) as caught:
+        nv.review(fail, None, "mock", {}, 1, 1000)
+    assert caught.value is error
 
 
 def test_cancellation_before_review_prevents_request(monkeypatch):
