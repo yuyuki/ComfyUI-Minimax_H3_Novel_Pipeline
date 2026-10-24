@@ -251,3 +251,42 @@ All evidence is sent together for cross-chapter reconciliation. For large novels
 configure enough LM Studio context and output tokens; failure never silently drops
 chapters or truncates evidence. No profile loader, exported JSON Schema or cinematic
 visual generation is provided by this node.
+
+### Character Visual Profile Generator
+
+Connect `character_profiles` from **Consolidate Character Profiles** and
+`lmstudio_config` from **LM Studio Configuration** with Qwen. Outputs are
+`character_visual_profiles` (`MINIMAX_CHARACTER_VISUAL_PROFILES`) and
+`saved_file` (`STRING`). The node saves readable UTF-8
+`character_visual_profiles.json` under `out_dir` (default
+`character_visual_profiles`) in the current run.
+
+Choose `strict_canon` for source-supported traits only, `balanced` (default) for
+conservative contextual completion, or `cinematic` for restrained creative design.
+Other controls are `thinking`, `temperature`, `max_tokens`,
+`correction_attempts` and `force`. Each character is generated and reviewed with
+all of their consolidated evidence. Shared structured JSON transport handles
+streaming, cancellation and compact retries without truncating evidence.
+Validated designs are cached per character, mode, input, model and settings;
+`force` regenerates them.
+
+The seven fields `age_appearance`, `skin`, `hair`, `eyes`, `build`,
+`default_outfit` and `accessories` contain lists of individual English traits
+with `description`, `classification` (`canonical`, `inferred`, `creative`) and
+`evidence` references. Empty lists mean unspecified. IDs, exact original-language
+quotations, provenance, temporary observations, actions and conflicts are retained
+unchanged, together with the complete input document. Temporary observations do
+not establish habitual clothing or permanent physical traits.
+
+Unresolved conflicts leave affected fields empty, listed in `blocked_fields`.
+Consolidation uses broad physical categories, so a physical conflict conservatively
+blocks all five physical fields; context conflicts can block all seven. No
+chronological variant is silently selected. Structural validation enforces source
+references and canonical coverage; a separate Qwen review checks English,
+translation fidelity, contextual suitability and contradictions. This semantic
+review remains model-based and should be checked by a human.
+
+The saved JSON can be manually refined in any text editor. Keep trait provenance
+accurate when editing. Rerunning writes the generated result again, so preserve
+manual refinements in a separate copy. This stage does not reload edits, copy JSON
+Schemas, or connect to Consolidate References; those features are outside its scope.

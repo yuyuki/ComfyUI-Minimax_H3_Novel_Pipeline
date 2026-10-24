@@ -1,6 +1,7 @@
 """Node exports and ComfyUI mappings for the MiniMax H3 nodes."""
 from __future__ import annotations
 
+from .character_visual_profile_generator import CharacterVisualProfileGeneratorNode
 from .consolidate_references import ConsolidateReferencesNode
 from .consolidate_character_profiles import ConsolidateCharacterProfilesNode
 from .character_evidence_extractor import CharacterEvidenceExtractorNode
@@ -18,6 +19,7 @@ from .load_spatial_continuity import LoadSpatialContinuityNode
 
 
 NODE_CLASS_MAPPINGS = {
+    "CharacterVisualProfileGeneratorNode": CharacterVisualProfileGeneratorNode,
     "ConsolidateCharacterProfilesNode": ConsolidateCharacterProfilesNode,
     "LoadCharacterEvidenceNode": LoadCharacterEvidenceNode,
     "CharacterEvidenceExtractorNode": CharacterEvidenceExtractorNode,
@@ -35,6 +37,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 __all__ = [
+    "CharacterVisualProfileGeneratorNode",
     "ConsolidateCharacterProfilesNode",
     "LoadCharacterEvidenceNode",
     "CharacterEvidenceExtractorNode",

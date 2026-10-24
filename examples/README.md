@@ -313,5 +313,13 @@ current run. Outputs are the structured `character_profiles` dictionary and
 inferred information and chronological changes. Correct input evidence with
 **Load Character Evidence** and rerun to invalidate the consolidation cache;
 `force` bypasses it explicitly. Increase LM Studio context capacity and `max_tokens`
-if the complete novel evidence does not fit. No corresponding profile Load node
-or visual-profile generation is included.
+if the complete novel evidence does not fit. No corresponding profile Load node is included.
+
+For stable visual designs, connect consolidation's `character_profiles` output
+to **Character Visual Profile Generator** and connect the same Qwen configuration.
+Start with `mode = balanced`, or use `strict_canon` to leave unknown traits empty.
+The `character_visual_profiles` output and saved
+`character_visual_profiles/character_visual_profiles.json` contain the seven
+English visual fields, per-trait provenance, original evidence and conflicts.
+Review and refine a copy of the JSON manually; rerunning replaces the generated
+file. There is no visual-profile Load node or connection to Consolidate References.
