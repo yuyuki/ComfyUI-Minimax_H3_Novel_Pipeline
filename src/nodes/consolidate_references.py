@@ -38,6 +38,7 @@ class ConsolidateReferencesNode:
             "audio_threshold": (["optional", "recommended", "required"], {"default": "recommended"}),
             "max_character_base_views": ("INT", {"default": 4, "min": 1, "max": 7}), "max_location_base_views": ("INT", {"default": 3, "min": 1, "max": 6}), "max_object_base_views": ("INT", {"default": 2, "min": 1, "max": 4}), "asset_batch_size": ("INT", {"default": 4, "min": 1, "max": 1000}),
             "no_audit": ("BOOLEAN", {"default": False}), "audit_max_entities": ("INT", {"default": 120, "min": 0, "max": 100000}),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0, "step": 0.05}), "max_tokens": ("INT", {"default": 8500, "min": 256, "max": 100000}),
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "audit_similarity": ("FLOAT", {"default": 0.68, "min": 0.0, "max": 1.0, "step": 0.01}),
@@ -60,7 +61,7 @@ class ConsolidateReferencesNode:
         return configuration_snapshot.file_digest(util.output_path(path)) if path else ""
 
     @progress.node_progress
-    def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, **params: Any) -> dict[str, Any]:
+    def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, thinking: bool = True, **params: Any) -> dict[str, Any]:
         chapters = list(chapter_catalogs or [])
         if not chapters: raise ValueError("No chapter catalogs were supplied.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
@@ -69,6 +70,7 @@ class ConsolidateReferencesNode:
         designs_path = resolve_designs_path(params.get("visual_designs_path", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
+        lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         pipeline = lmstudio_pipeline.load("consolidate")
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
@@ -78,6 +80,7 @@ class ConsolidateReferencesNode:
             if args.image_style not in IMAGE_STYLES:
                 raise ValueError("Unknown image style.")
             _log(f"LM Studio consolidation: model={resolved_model}, chapters={len(chapters)}")
+            args.thinking = bool(thinking)
             snapshot = configuration_snapshot.start(
                 output, "consolidate", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapter_catalogs_sha256": configuration_snapshot.content_digest(chapters),

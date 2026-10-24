@@ -118,6 +118,7 @@ class SpatialContinuityNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
             "consolidated_references": ("MINIMAX_REGISTRY",),
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "temperature": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.05}),
@@ -135,13 +136,14 @@ class SpatialContinuityNode:
     @progress.node_progress
     def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any],
             temperature: float = 0.1, max_tokens: int = 5000,
-            out_dir: str = "spatial_continuity") -> dict[str, Any]:
+            out_dir: str = "spatial_continuity", thinking: bool = True) -> dict[str, Any]:
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
         timelines = consolidated_references.get("chapter_timelines")
         if not isinstance(timelines, dict) or not timelines:
             raise ValueError("Consolidated references have no chapter_timelines.")
         if not isinstance(lmstudio_config, dict):
             raise TypeError("Connect LM Studio Configuration.")
+        lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(lmstudio_config, out_dir)
         output.mkdir(parents=True, exist_ok=True)
         pipeline = lmstudio_pipeline.load("generate")

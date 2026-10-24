@@ -114,6 +114,12 @@ Restart ComfyUI and refresh the browser after updating the node package.
 For JSON failures, check the ComfyUI console's `LLM stream` lines for character
 counts, `finish_reason` and `local_stop`. These diagnostics omit generated text.
 
+Set `thinking` on each LM Studio processing node: it defaults to `true` for
+Cinematic Chapter Adapter, Extract Chapter References, Consolidate References
+and Spatial Continuity, and `false` for Generate H3 Prompts. Mistral ignores
+this Qwen control. LM Studio Configuration shares connection and sampling
+settings only. Recreate existing nodes to refresh their widget layouts.
+
 Chapter paths are relative to ComfyUI's input directory, for example
 `minimax_h3_novel/chapter_01.txt`. Upload or copy external chapters there.
 Every queue execution creates a shared `yyyyMMddHHMMSS` folder, using local time,

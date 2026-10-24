@@ -49,6 +49,9 @@ class CredentialTests(unittest.TestCase):
     def test_configuration_does_not_expose_secret(self):
         config, status = self.config.LMStudioConfigurationNode().run(DEFAULT_URL + "/")
         self.assertEqual(config["api_url"], DEFAULT_URL)
+        self.assertNotIn("thinking", config)
+        self.assertNotIn("thinking", status)
+        self.assertNotIn("thinking", self.config.LMStudioConfigurationNode.INPUT_TYPES()["required"])
         self.assertNotIn("model", config)
         self.assertNotIn("model", self.config.LMStudioConfigurationNode.INPUT_TYPES().get("optional", {}))
         self.assertNotIn("model", self.config.LMStudioConfigurationNode.INPUT_TYPES()["required"])

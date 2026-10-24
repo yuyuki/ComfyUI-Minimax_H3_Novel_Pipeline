@@ -16,6 +16,7 @@ class CinematicChapterAdapterNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "out_dir": ("STRING", {"default": "cinematic_chapters"}),
@@ -36,7 +37,7 @@ class CinematicChapterAdapterNode:
 
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="cinematic_chapters",
-            chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=2):
+            chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=2, thinking: bool = True):
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         if not isinstance(lmstudio_config, dict):
@@ -46,6 +47,7 @@ class CinematicChapterAdapterNode:
         paths = util.discover_inputs([Path(path) for path in chapter_path_list(chapter_selection)])
         if not paths:
             raise ValueError("No supported chapter files found.")
+        lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(lmstudio_config, out_dir.strip())
         pipeline = lmstudio_pipeline.load("extract")
         client, model = lmstudio_pipeline.make_client_and_model(pipeline, lmstudio_config["api_url"], lmstudio_config)
@@ -54,7 +56,7 @@ class CinematicChapterAdapterNode:
         chapters, artifacts = [], []
         with client:
             snapshot = configuration_snapshot.start(
-                output, "cinematic_adapter", lmstudio_config, model, argparse.Namespace(**settings), out_dir=out_dir,
+                output, "cinematic_adapter", lmstudio_config, model, argparse.Namespace(**settings, thinking=bool(thinking)), out_dir=out_dir,
                 inputs={"chapters": [{"file": str(p), "sha256": configuration_snapshot.file_digest(p)} for p in paths]},
                 extra={"schema_version": "minimax-cinematic-chapters.v2"},
             )

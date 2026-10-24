@@ -28,7 +28,7 @@ def start(output, stage, config, model, args, *, out_dir, inputs, extra=None):
         for key, spec in fields.items():
             public[key] = config.get(key, spec[1]["default"])
     profile = lmstudio_models.get_profile(public["model_family"])
-    settings = profile.settings_from_config(public)
+    settings = profile.settings_from_config({**public, "thinking": bool(args.thinking)})
     _, request_extra, top_p = profile.request_settings(model, "", "", settings)
     node_settings = {key: value for key, value in vars(args).items() if key not in {"base_url", "out_dir"}}
     node_settings.update(extra or {})

@@ -228,7 +228,6 @@
       },
       "widgets_values": [
         "http://127.0.0.1:1234/v1",
-        true,
         2,
         20,
         0,
@@ -237,7 +236,6 @@
       ],
       "widgets_values_named": {
         "api_url": "http://127.0.0.1:1234/v1",
-        "thinking": true,
         "qwen35_length_retries": 2,
         "qwen35_top_k": 20,
         "qwen35_min_p": 0,
@@ -366,6 +364,7 @@
         "Node name for S&R": "CinematicChapterAdapterNode"
       },
       "widgets_values": [
+        true,
         "cinematic_chapters",
         4000,
         0.15,
@@ -373,6 +372,7 @@
         2
       ],
       "widgets_values_named": {
+        "thinking": true,
         "out_dir": "cinematic_chapters",
         "chunk_chars": 4000,
         "temperature": 0.15,
@@ -461,6 +461,7 @@
       },
       "widgets_values": [
         5500,
+        true,
         0.18,
         8192,
         false,
@@ -469,6 +470,7 @@
       ],
       "widgets_values_named": {
         "chunk_chars": 5500,
+        "thinking": true,
         "temperature": 0.18,
         "max_tokens": 8192,
         "force": false,
@@ -570,6 +572,7 @@
         4,
         false,
         120,
+        true,
         0.12,
         8500,
         "references",
@@ -588,6 +591,7 @@
         "asset_batch_size": 4,
         "no_audit": false,
         "audit_max_entities": 120,
+        "thinking": true,
         "temperature": 0.12,
         "max_tokens": 8500,
         "out_dir": "references",
@@ -646,11 +650,13 @@
         "Node name for S&R": "SpatialContinuityNode"
       },
       "widgets_values": [
+        true,
         0.1,
         5000,
         "spatial_continuity"
       ],
       "widgets_values_named": {
+        "thinking": true,
         "temperature": 0.1,
         "max_tokens": 5000,
         "out_dir": "spatial_continuity"
@@ -804,6 +810,7 @@
         "Node name for S&R": "GenerateH3PromptsNode"
       },
       "widgets_values": [
+        false,
         8,
         1,
         4,
@@ -821,6 +828,7 @@
         ""
       ],
       "widgets_values_named": {
+        "thinking": false,
         "duration": 8,
         "max_shots": 1,
         "scenes_per_chunk": 4,

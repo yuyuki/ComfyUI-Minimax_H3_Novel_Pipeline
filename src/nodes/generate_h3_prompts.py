@@ -23,6 +23,7 @@ class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
+            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
             "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "H3 duration in seconds of EACH generated scene (4–15 seconds)."}),
@@ -59,7 +60,7 @@ class GenerateH3PromptsNode:
                 )
 
     @progress.node_progress
-    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, **params: Any) -> dict[str, Any]:
+    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, thinking: bool = False, **params: Any) -> dict[str, Any]:
         self.validate_parameters(params)
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
@@ -68,6 +69,7 @@ class GenerateH3PromptsNode:
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         paths = util.discover_inputs([Path(path) for path in selected_chapter_paths(chapter_selection)])
         if not paths: raise ValueError("No supported chapter files found.")
+        lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         pipeline = lmstudio_pipeline.load("generate")
         selected_ids = set()
         for path in paths:
@@ -93,6 +95,7 @@ class GenerateH3PromptsNode:
                 validate_plan(continuity, consolidated_references)
                 args.spatial_plan = continuity
             args.out_dir.mkdir(parents=True, exist_ok=True)
+            args.thinking = bool(thinking)
             snapshot = configuration_snapshot.start(
                 output, "generate", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapters": [str(path) for path in paths],

@@ -53,6 +53,12 @@ by the nodes. PDF reading uses `pypdf`; text and Markdown do not need it.
 5. Connect `lmstudio_config` to Extract, Consolidate, and Generate; keep only the intended matching model available in LM Studio.
 
 
+Set `thinking` on each LM Studio processing node: it defaults to `true` for
+Cinematic Chapter Adapter, Extract Chapter References, Consolidate References
+and Spatial Continuity, and `false` for Generate H3 Prompts. Mistral ignores
+this Qwen control. LM Studio Configuration shares connection and sampling
+settings only. Recreate existing nodes to refresh their widget layouts.
+
 Optional `default_temporal_context` on **Extract Chapter References** accepts a date
 or era, such as `1925` or `France, late 19th century`. Leave it empty when unknown.
 Explicit narrative timing and flashbacks take precedence. This is user context,

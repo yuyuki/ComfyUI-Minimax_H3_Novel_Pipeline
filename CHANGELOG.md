@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Move `thinking` from shared LM Studio configuration to each processing node;
+  enable it by default except for H3 prompt generation. Update execution records,
+  the example workflow, documentation and offline regression coverage.
+
 - Separate ComfyUI nodes into `src/nodes/` and shared logic and schemas into
   `src/core/`; update imports, package assets, architecture scanning and tests
   while preserving node IDs, socket types and frontend entrypoints.

@@ -17,7 +17,7 @@ Share LM Studio settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
 Set the trusted API URL and API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio`.
-The key is not saved in the workflow. Choose Qwen or Mistral and configure the URL here. Thinking and qwen35 controls apply only to Qwen. Set max_tokens on each processing node.
+The key is not saved in the workflow. Choose Qwen or Mistral and configure the URL here. The qwen35 controls apply only to Qwen. Set thinking and max_tokens on each processing node.
 """
 
     @classmethod
@@ -27,15 +27,6 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
                 "api_url": ("STRING", {
                     "default": "http://127.0.0.1:1234/v1",
                     "tooltip": "Must match Trusted API URL in ComfyUI Settings → MiniMax H3 Novel → LM Studio.",
-                }),
-                "thinking": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": (
-                        "Disable thinking for faster structured JSON output. Qwen3.5/3.8 requests "
-                        "retry with a closed thinking block in a raw prompt if the chat template "
-                        "returns reasoning or a thinking-token sampler error. Check thinking and reasoning_chars in the console to verify "
-                        "the setting with your model and runtime."
-                    ),
                 }),
                 "qwen35_length_retries": ("INT", {
                     "default": 2, "min": 0, "max": 10,
@@ -73,7 +64,7 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
         return float("nan")
 
     @progress.node_progress
-    def run(self, api_url: str, thinking: bool = False,
+    def run(self, api_url: str,
             qwen35_length_retries: int = 2,
             qwen35_top_k: int = 20,
             qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05,
@@ -92,7 +83,6 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
         config = {
             "api_url": api_url.strip(),
             "model_family": model_family,
-            "thinking": bool(thinking),
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
             "qwen35_top_k": max(1, int(qwen35_top_k)),
             "qwen35_min_p": min(1.0, max(0.0, float(qwen35_min_p))),
@@ -102,7 +92,6 @@ The key is not saved in the workflow. Choose Qwen or Mistral and configure the U
         }
         status = (
             f"LM Studio: {config['api_url']} | model family: {model_family} (select matching model) | "
-            f"thinking: {config['thinking'] if model_family == 'Qwen' else 'not used'} | "
             f"API key: ComfyUI Settings (hidden) | run: {config['run_folder']}"
         )
         return config, status

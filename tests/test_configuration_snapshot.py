@@ -90,6 +90,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     if stage == "extract":
         assert record["inputs"]["chapters"][0]["sha256"] == extract.cinematic_references.chapter_digest(ADAPTED[0])
     assert record["model_controls"]["top_p"] == 0.8
+    assert record["model_controls"]["settings"]["thinking"] is expected_settings["thinking"]
 
 
 @pytest.mark.parametrize("toggle,anchors,expected", [
@@ -146,7 +147,7 @@ def test_failed_execution_does_not_claim_completed_results(setup, monkeypatch):
 
 def test_mistral_records_ignored_qwen_controls_and_normalized_node_settings(setup, monkeypatch):
     root, config, _ = setup
-    config.update(model_family="Mistral", thinking=True, qwen35_top_k=90)
+    config.update(model_family="Mistral", qwen35_top_k=90)
     def process(path, output, *args):
         saved = output / "chapter_references.json"
         util.save_json(saved, {"chapter_id": "chapter"})
@@ -156,7 +157,8 @@ def test_mistral_records_ignored_qwen_controls_and_normalized_node_settings(setu
     params = defaults(extract.ExtractChapterReferencesNode)
     extract.ExtractChapterReferencesNode().run(config, ADAPTED, **params)
     record = util.load_json(root / config["run_folder"] / "chapter_catalogs/extract_configuration.json")
-    assert record["lmstudio_config"]["thinking"] is True
+    assert "thinking" not in record["lmstudio_config"]
+    assert record["node_settings"]["thinking"] is True
     assert record["model_controls"]["settings"] == {"thinking": False}
     assert record["model_controls"]["request_extra_body"] == {}
     assert record["model_controls"]["chatml_fallback_allowed"] is False

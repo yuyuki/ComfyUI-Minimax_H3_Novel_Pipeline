@@ -26,6 +26,7 @@ class ExtractChapterReferencesNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "cinematic_chapters": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Ordered chapter timelines from Cinematic Chapter Adapter or Load Cinematic Chapters."}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 2.0, "step": 0.05}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768, "tooltip": "JSON output budget per sequence-phase extraction call. Dense catalogs may need more tokens."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),
@@ -41,7 +42,7 @@ class ExtractChapterReferencesNode:
     OUTPUT_NODE = True
 
     @progress.node_progress
-    def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, **params: Any) -> dict[str, Any]:
+    def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, thinking: bool = True, **params: Any) -> dict[str, Any]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         period = temporal_context.normalize(params.get("default_temporal_context", ""))
@@ -49,12 +50,14 @@ class ExtractChapterReferencesNode:
         chapters = cinematic_references.parse_chapters(cinematic_chapters)
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
+        lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         pipeline = lmstudio_pipeline.load("extract")
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
             args = argparse.Namespace(chunk_chars=int(params["chunk_chars"]), temperature=float(params["temperature"]), max_tokens=int(params["max_tokens"]), force=bool(params["force"]), base_url=lmstudio_config["api_url"])
             args.default_temporal_context = period
             output.mkdir(parents=True, exist_ok=True)
+            args.thinking = bool(thinking)
             snapshot = configuration_snapshot.start(
                 output, "extract", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapters": [{"chapter_name": c["chapter_name"], "sha256": cinematic_references.chapter_digest(c)} for c in chapters]},
