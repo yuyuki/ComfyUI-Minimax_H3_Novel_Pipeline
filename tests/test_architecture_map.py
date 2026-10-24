@@ -69,6 +69,8 @@ def test_pipeline_labels_follow_comfyui_registration() -> None:
     assert 'consolidate["Consolidate References"]' in pipeline
     assert 'generate["Generate H3 Prompts"]' in pipeline
     assert 'evidence_json --> evidence_loader["Load Character Evidence"]' in pipeline
+    assert 'evidence --> profiles["Consolidate Character Profiles"]' in pipeline
+    assert 'evidence_loader --> profiles' in pipeline
     assert "Novel Cinematic Simplifier" not in rendered
     assert "Narrative Continuity" not in rendered
     assert "narrative_nodes" not in rendered

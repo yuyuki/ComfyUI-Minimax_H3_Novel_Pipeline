@@ -27,6 +27,7 @@ def plugin():
 def test_root_registration_and_frontend(plugin):
     assert set(plugin.NODE_CLASS_MAPPINGS) == {
         "CharacterEvidenceExtractorNode", "LoadCharacterEvidenceNode",
+        "ConsolidateCharacterProfilesNode",
         "LMStudioConfigurationNode", "SelectChaptersNode", "ExtractChapterReferencesNode",
         "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
         "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SpatialContinuityNode", "LoadSpatialContinuityNode",
@@ -69,7 +70,9 @@ def test_installed_package_import_outside_checkout(tmp_path):
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
          "from minimax_h3_novel_pipeline.nodes.load_character_evidence import LoadCharacterEvidenceNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCharacterEvidenceNode'] is LoadCharacterEvidenceNode; "
-         "assert len(p.NODE_CLASS_MAPPINGS) == 13; "
+         "assert len(p.NODE_CLASS_MAPPINGS) == 14; "
+         "from minimax_h3_novel_pipeline.nodes.consolidate_character_profiles import ConsolidateCharacterProfilesNode; "
+         "assert p.NODE_CLASS_MAPPINGS['ConsolidateCharacterProfilesNode'] is ConsolidateCharacterProfilesNode; "
          "from minimax_h3_novel_pipeline.nodes.load_cinematic_chapters import LoadCinematicChaptersNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCinematicChaptersNode'] is LoadCinematicChaptersNode; "
          "assert 'NarrativeStateTrackerNode' not in p.NODE_CLASS_MAPPINGS; "
