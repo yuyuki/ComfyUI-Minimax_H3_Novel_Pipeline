@@ -1,12 +1,12 @@
 """Reusable chapter picker for MiniMax H3 pipeline nodes."""
 from __future__ import annotations
 
-from . import progress
+from ..core import progress
 
 from pathlib import Path
 from typing import Any
 
-from . import util
+from ..core import util
 
 
 def saved_chapter_choices() -> list[str]:

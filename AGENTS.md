@@ -38,12 +38,13 @@
 - Root `__init__.py` is the ComfyUI checkout entrypoint. It re-exports mappings
   from `src/` and serves `./web/js`.
 - `src/__init__.py` registers eleven nodes and four
-  local HTTP routes. `nodes.py` exports the node classes.
-- Each node has its own module: `lmstudio_config.py`,
+  local HTTP routes. `src/nodes/__init__.py` exports the node classes.
+- Nodes live in `src/nodes/`, each in its own module: `lmstudio_config.py`,
   `extract_chapter_references.py`, `load_chapter_catalogs.py`,
   `consolidate_references.py`, `load_consolidated_references.py`,
   and `generate_h3_prompts.py`.
-- `lmstudio_pipeline.py` dynamically loads bundled scripts relative to its
+- Shared logic and JSON schemas live in `src/core/`.
+- `src/core/lmstudio_pipeline.py` dynamically loads bundled scripts relative to its
   own directory, configures Qwen behavior and wraps streaming cancellation.
 - `util.py` contains file discovery, JSON persistence and shared helpers.
 - `lmstudio_settings.py` stores the API key in memory and validates the
@@ -56,9 +57,9 @@ All paths below are relative to `src/`:
 
 | Stage | Node wrapper | Bundled implementation |
 |---|---|---|
-| Extract | `extract_chapter_references.py` | `pipeline_step1_extract.py` |
-| Consolidate | `consolidate_references.py` | `pipeline_step2_consolidate.py` |
-| Generate | `generate_h3_prompts.py` | `pipeline_step3_generate.py` |
+| Extract | `nodes/extract_chapter_references.py` | `core/pipeline_step1_extract.py` |
+| Consolidate | `nodes/consolidate_references.py` | `core/pipeline_step2_consolidate.py` |
+| Generate | `nodes/generate_h3_prompts.py` | `core/pipeline_step3_generate.py` |
 
 Keep node wrappers small. Reuse bundled schema checks, JSON parsing,
 streaming, compact retries and Qwen3.5 structured-JSON/ChatML fallbacks.

@@ -4,8 +4,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline import progress
-from minimax_h3_novel_pipeline import lmstudio_pipeline
+from minimax_h3_novel_pipeline.core import progress
+from minimax_h3_novel_pipeline.core import lmstudio_pipeline
 from minimax_h3_novel_pipeline.nodes import NODE_CLASS_MAPPINGS
 
 
@@ -106,7 +106,7 @@ def test_all_registered_nodes_have_progress_and_picker_reports(bars):
 @pytest.mark.parametrize("passages", [1, 2])
 @pytest.mark.parametrize("review_fails", [False, True])
 def test_cinematic_adaptation_advances_before_review(bars, monkeypatch, passages, review_fails):
-    from minimax_h3_novel_pipeline import cinematic_adaptation
+    from minimax_h3_novel_pipeline.core import cinematic_adaptation
 
     reviewed = []
 

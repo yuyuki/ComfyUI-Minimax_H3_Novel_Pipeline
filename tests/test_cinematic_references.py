@@ -6,9 +6,9 @@ import json
 
 import pytest
 
-from minimax_h3_novel_pipeline import cinematic_references as cr, lmstudio_pipeline, path_access, run_output, util
-from minimax_h3_novel_pipeline.extract_chapter_references import ExtractChapterReferencesNode
-from minimax_h3_novel_pipeline.load_cinematic_chapters import LoadCinematicChaptersNode
+from minimax_h3_novel_pipeline.core import cinematic_references as cr, lmstudio_pipeline, path_access, run_output, util
+from minimax_h3_novel_pipeline.nodes.extract_chapter_references import ExtractChapterReferencesNode
+from minimax_h3_novel_pipeline.nodes.load_cinematic_chapters import LoadCinematicChaptersNode
 
 
 def chapter(name="chapter"):

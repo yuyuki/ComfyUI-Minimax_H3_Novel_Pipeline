@@ -44,12 +44,12 @@ Repository = "https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline"
 includes = []
 
 [tool.setuptools]
-packages = ["minimax_h3_novel_pipeline", "minimax_h3_novel_pipeline.web"]
+packages = ["minimax_h3_novel_pipeline", "minimax_h3_novel_pipeline.nodes", "minimax_h3_novel_pipeline.core", "minimax_h3_novel_pipeline.web"]
 package-dir = {"minimax_h3_novel_pipeline" = "src", "minimax_h3_novel_pipeline.web" = "web"}
 include-package-data = false
 
 [tool.setuptools.package-data]
-"minimax_h3_novel_pipeline" = ["schema/*.json"]
+"minimax_h3_novel_pipeline.core" = ["schema/*.json"]
 "minimax_h3_novel_pipeline.web" = ["js/*.js"]
 
 [tool.pytest.ini_options]

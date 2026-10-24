@@ -1,5 +1,10 @@
 # MiniMax H3 Novel Pipeline
 
+Python code is organized into `src/nodes/` (the eleven ComfyUI nodes) and
+`src/core/` (pipeline stages, LM Studio integration, shared helpers and JSON
+schemas). `src/__init__.py` registers the nodes and local HTTP routes. The root
+`__init__.py` remains the ComfyUI checkout entrypoint; browser assets stay in `web/`.
+
 - [MiniMax H3 Novel Pipeline](#minimax-h3-novel-pipeline)
   - [Installation](#installation)
     - [LM Studio setup](#lm-studio-setup)

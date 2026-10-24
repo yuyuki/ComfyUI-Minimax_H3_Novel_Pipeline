@@ -2,7 +2,7 @@
 
 import pytest
 
-from minimax_h3_novel_pipeline.chapter_selection import SelectChaptersNode, chapter_path_list
+from minimax_h3_novel_pipeline.nodes.chapter_selection import SelectChaptersNode, chapter_path_list
 
 
 def test_selection_output_contains_a_trimmed_path_list():

@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Separate ComfyUI nodes into `src/nodes/` and shared logic and schemas into
+  `src/core/`; update imports, package assets, architecture scanning and tests
+  while preserving node IDs, socket types and frontend entrypoints.
+
 - Advance cinematic adaptation progress between passage generation and narrative
   review, including single-passage chapters; cover progress and review failures offline.
 

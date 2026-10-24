@@ -1,12 +1,12 @@
 """Secure LM Studio configuration node for the MiniMax H3 workflow."""
 from __future__ import annotations
 
-from . import progress
+from ..core import progress
 
 from typing import Any
 
-from . import lmstudio_settings, lmstudio_models
-from .run_output import reserve_run
+from ..core import lmstudio_settings, lmstudio_models
+from ..core.run_output import reserve_run
 
 
 class LMStudioConfigurationNode:

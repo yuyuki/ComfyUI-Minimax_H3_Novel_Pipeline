@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline import lmstudio_pipeline
+from minimax_h3_novel_pipeline.core import lmstudio_pipeline
 
 
 def test_hierarchical_merge_resumes_and_preserves_order(tmp_path, monkeypatch):
@@ -86,7 +86,7 @@ def test_cluster_matching_respects_aliases_and_types():
 @pytest.mark.parametrize("model", ["qwen3.5-9b", "other-model"])
 @pytest.mark.parametrize("chunk_chars,expected_count", [(1000, 6), (5500, 1)])
 def test_extraction_uses_node_chunk_size(tmp_path, monkeypatch, model, chunk_chars, expected_count):
-    from minimax_h3_novel_pipeline import path_access
+    from minimax_h3_novel_pipeline.core import path_access
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     step = lmstudio_pipeline.load("extract")
     chapter = tmp_path / "chapter.txt"

@@ -4,13 +4,11 @@ import json
 
 import pytest
 
-from minimax_h3_novel_pipeline import (
-    configuration_snapshot as snapshots, lmstudio_pipeline, path_access, run_output, util,
-)
-from minimax_h3_novel_pipeline import extract_chapter_references as extract
-from minimax_h3_novel_pipeline import consolidate_references as consolidate
-from minimax_h3_novel_pipeline import generate_h3_prompts as generate
-from minimax_h3_novel_pipeline.lmstudio_config import LMStudioConfigurationNode
+from minimax_h3_novel_pipeline.core import configuration_snapshot as snapshots, lmstudio_pipeline, path_access, run_output, util
+from minimax_h3_novel_pipeline.nodes import extract_chapter_references as extract
+from minimax_h3_novel_pipeline.nodes import consolidate_references as consolidate
+from minimax_h3_novel_pipeline.nodes import generate_h3_prompts as generate
+from minimax_h3_novel_pipeline.nodes.lmstudio_config import LMStudioConfigurationNode
 
 
 ADAPTED = [{"chapter_name": "chapter", "sequences": [{"sequence": 1, "source": "Text",
@@ -120,7 +118,7 @@ def test_generate_continuity_toggle_and_plan_connection(setup, monkeypatch, togg
     else:
         params["enable_spatial_continuity"] = toggle
     if anchors is not None:
-        from minimax_h3_novel_pipeline.spatial_continuity import _FIELDS
+        from minimax_h3_novel_pipeline.nodes.spatial_continuity import _FIELDS
         answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in _FIELDS.items()}
         camera = {k: answer.pop(k) for k in list(answer) if k.startswith('camera_')}
         params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v2",

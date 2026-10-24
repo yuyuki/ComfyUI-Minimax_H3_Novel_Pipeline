@@ -10,11 +10,11 @@ import json
 from jsonschema import Draft202012Validator
 from typing import Any
 
-from . import progress, lmstudio_pipeline, util
-from .narrative_choices import resolve_chapter
-from .lmstudio_json import chat_json
-from .run_output import stage_output
-from .editable_schemas import SCHEMA_DIR, export_schema, validate_document
+from ..core import progress, lmstudio_pipeline, util
+from ..core.narrative_choices import resolve_chapter
+from ..core.lmstudio_json import chat_json
+from ..core.run_output import stage_output
+from ..core.editable_schemas import SCHEMA_DIR, export_schema, validate_document
 
 SPATIAL_SCHEMA = json.loads((SCHEMA_DIR / "spatial_continuity.schema.json").read_text(encoding="utf-8"))
 _ENTITY = SPATIAL_SCHEMA["$defs"]["entity"]["properties"]

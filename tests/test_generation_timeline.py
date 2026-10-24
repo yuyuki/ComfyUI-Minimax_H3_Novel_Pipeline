@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline import pipeline_step3_generate as step
+from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 
 
 def test_selection_uses_registry_id_and_rejects_missing_or_ambiguous_timeline(tmp_path, cinematic_registry):

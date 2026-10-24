@@ -1,8 +1,8 @@
 """Offline validation of the spatial continuity interface and resolver."""
 import pytest
 
-from minimax_h3_novel_pipeline.spatial_continuity import SpatialContinuityNode
-from minimax_h3_novel_pipeline import pipeline_step3_generate as generate
+from minimax_h3_novel_pipeline.nodes.spatial_continuity import SpatialContinuityNode
+from minimax_h3_novel_pipeline.core import pipeline_step3_generate as generate
 
 
 def test_removed_anchor_argument_is_rejected():
@@ -102,7 +102,7 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
 def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text(tmp_path, monkeypatch, cinematic_registry, external_plan):
     import json
     from types import SimpleNamespace
-    from minimax_h3_novel_pipeline import path_access
+    from minimax_h3_novel_pipeline.core import path_access
 
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     chapter = tmp_path / "chapter.txt"
@@ -166,7 +166,7 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
 
 
 def spatial_answer():
-    from minimax_h3_novel_pipeline import spatial_continuity as spatial
+    from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
     answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in spatial._FIELDS.items()}
     entity = {k: 'unknown' for k in spatial._ENTITY}
     entity.update(entity_id='hero', kind='character', evidence='inferred', source_sequence=3,
@@ -180,13 +180,14 @@ def spatial_answer():
 def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, canonical_name, narrative_review):
     import json
     from contextlib import nullcontext
-    from minimax_h3_novel_pipeline import spatial_continuity as spatial, util
+    from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
+    from minimax_h3_novel_pipeline.core import util
     registry = {'schema_version': util.REGISTRY_SCHEMA, 'source_digest': 'source',
                 'entities': ([{'global_id': 'hero', 'canonical_name': canonical_name}]
                              if canonical_name is not None else []),
                 'chapter_timelines': {'chapter': {'sequences': [
                     {'sequence': i, 'source': 'Near tablet' if i == 3 else 'Waits'} for i in (3, 1, 2)]}}}
-    from minimax_h3_novel_pipeline import path_access
+    from minimax_h3_novel_pipeline.core import path_access
     registry['chapter_timelines']['chapter']['narrative_review'] = narrative_review
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
     monkeypatch.setattr(spatial, 'stage_output', lambda *a: tmp_path)
@@ -211,7 +212,7 @@ def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, 
             assert sequence[field][0]['canonical_name'] == (canonical_name or '')
     assert json.loads(rendered) == json.loads((tmp_path / 'spatial_continuity.json').read_text(encoding='utf-8')) == payload
     from jsonschema import Draft202012Validator
-    from minimax_h3_novel_pipeline.editable_schemas import SCHEMA_DIR
+    from minimax_h3_novel_pipeline.core.editable_schemas import SCHEMA_DIR
     schema_file = tmp_path / "spatial_continuity.schema.json"
     assert schema_file.read_bytes() == (SCHEMA_DIR / schema_file.name).read_bytes()
     schema = json.loads(schema_file.read_text())
@@ -238,7 +239,7 @@ def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, 
 
 @pytest.mark.parametrize('field,value', [('kind', 'alien'), ('source_sequence', '3'), ('world_position', 42)])
 def test_spatial_output_validates_entity_types(field, value):
-    from minimax_h3_novel_pipeline import spatial_continuity as spatial
+    from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
     answer = spatial_answer()
     answer['initial_entities'][0][field] = value
     with pytest.raises(ValueError, match='invalid spatial output'):

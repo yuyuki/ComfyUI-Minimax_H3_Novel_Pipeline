@@ -1,7 +1,7 @@
 """ComfyUI plugin registration for MiniMax H3 novel pipeline nodes.
 
 This module exposes `NODE_CLASS_MAPPINGS` for ComfyUI to import and register. The actual
-node implementations live in `nodes.py`.
+node implementations live in `nodes/`.
 """
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Dict
 
 from . import nodes as _nodes
-from .route_access import require_local_request
-from .path_access import confined_path
+from .core.route_access import require_local_request
+from .core.path_access import confined_path
 
 # Provide mappings expected by ComfyUI custom node loader:
 # - NODE_CLASS_MAPPINGS: dict name -> class
@@ -160,7 +160,7 @@ def _register_upload_route() -> None:
             """Receive the local ComfyUI setting without ever returning/logging it."""
             require_local_request(request)
             try:
-                from . import lmstudio_settings
+                from .core import lmstudio_settings
 
                 data = await request.json()
                 api_key = data.get("api_key", "")

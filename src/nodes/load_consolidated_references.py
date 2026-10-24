@@ -1,12 +1,12 @@
 """ComfyUI node for reusing a saved Step 2 consolidation output."""
 from __future__ import annotations
 
-from . import configuration_snapshot, progress
-from .cinematic_references import parse_chapters
+from ..core import configuration_snapshot, progress
+from ..core.cinematic_references import parse_chapters
 
 from typing import Any
 
-from . import util
+from ..core import util
 
 
 class LoadConsolidatedReferencesNode:

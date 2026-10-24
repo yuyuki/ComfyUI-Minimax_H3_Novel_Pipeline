@@ -1,18 +1,18 @@
 """LM Studio-backed ComfyUI node for cross-chapter consolidation."""
 from __future__ import annotations
 
-from . import progress
-from .reference_timeline import refresh_first_occurrence, validate_catalogs
-from .cinematic_references import parse_chapters
+from ..core import progress
+from ..core.reference_timeline import refresh_first_occurrence, validate_catalogs
+from ..core.cinematic_references import parse_chapters
 
 import argparse
 from typing import Any, Iterable
 
-from . import configuration_snapshot, lmstudio_pipeline, util
-from .run_output import stage_output
-from .visual_designs import IMAGE_STYLES, prepare_designs, resolve_designs_path
-from .image_prompt_export import export_image_prompts
-from .editable_schemas import export_schemas
+from ..core import configuration_snapshot, lmstudio_pipeline, util
+from ..core.run_output import stage_output
+from ..core.visual_designs import IMAGE_STYLES, prepare_designs, resolve_designs_path
+from ..core.image_prompt_export import export_image_prompts
+from ..core.editable_schemas import export_schemas
 
 
 def _default_output_dir() -> str:

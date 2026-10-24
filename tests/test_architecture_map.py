@@ -74,3 +74,25 @@ def test_pipeline_labels_follow_comfyui_registration() -> None:
     module_info = GENERATOR["ModuleInfo"]
     renamed = module_info("extract", "src/extract.py", (), (), (("ExtractChapterReferencesNode", "Renamed Extract"),))
     assert 'extract["Renamed Extract"]' in GENERATOR["render_architecture"]([renamed])
+
+
+def test_scan_nested_packages_resolves_relative_imports(tmp_path, monkeypatch) -> None:
+    scan = GENERATOR["scan_modules"]
+    monkeypatch.setitem(scan.__globals__, "ROOT", tmp_path)
+    source = tmp_path / "src"
+    for package in (source, source / "nodes", source / "core"):
+        package.mkdir(exist_ok=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+    (source / "__init__.py").write_text("from . import nodes\n", encoding="utf-8")
+    (source / "nodes" / "__init__.py").write_text("from .worker import Worker\n", encoding="utf-8")
+    (source / "nodes" / "worker.py").write_text(
+        "from ..core import worker\nfrom ..core.util import helper\nclass Worker: pass\n", encoding="utf-8"
+    )
+    (source / "core" / "worker.py").write_text("from . import util\n", encoding="utf-8")
+    (source / "core" / "util.py").write_text("def helper(): pass\n", encoding="utf-8")
+    modules = {module.name: module for module in scan(source)}
+    assert modules["package_init"].dependencies == ("nodes",)
+    assert modules["nodes"].dependencies == ("nodes.worker",)
+    assert modules["nodes.worker"].dependencies == ("core.util", "core.worker")
+    assert modules["core.worker"].dependencies == ("core.util",)
+    assert modules["core.util"].path == "src/core/util.py"

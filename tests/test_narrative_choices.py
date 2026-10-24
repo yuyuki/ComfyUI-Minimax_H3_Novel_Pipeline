@@ -5,11 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline import (
-    cinematic_references as cr, narrative_choices as nc, path_access, util,
-    pipeline_step3_generate as generate,
-)
-from minimax_h3_novel_pipeline.load_cinematic_chapters import LoadCinematicChaptersNode
+from minimax_h3_novel_pipeline.core import cinematic_references as cr, narrative_choices as nc, path_access, util, pipeline_step3_generate as generate
+from minimax_h3_novel_pipeline.nodes.load_cinematic_chapters import LoadCinematicChaptersNode
 
 
 def chapter(review):

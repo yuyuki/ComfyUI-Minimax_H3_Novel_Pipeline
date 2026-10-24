@@ -5,7 +5,7 @@ import sys
 import pytest
 from jsonschema import Draft202012Validator
 
-from minimax_h3_novel_pipeline import editable_schemas
+from minimax_h3_novel_pipeline.core import editable_schemas
 
 
 def pattern_fields(value):

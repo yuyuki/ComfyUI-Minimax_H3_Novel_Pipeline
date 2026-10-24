@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from . import progress, util
+from ..core import progress, util
 from .spatial_continuity import validate_plan
 
 

@@ -1,17 +1,17 @@
 """LM Studio-backed MiniMax H3 prompt-generation ComfyUI node."""
 from __future__ import annotations
 
-from . import progress
+from ..core import progress
 
 import argparse
 from pathlib import Path
 from typing import Any
 
-from . import configuration_snapshot, lmstudio_pipeline, util
+from ..core import configuration_snapshot, lmstudio_pipeline, util
 from .chapter_selection import chapter_path_list as selected_chapter_paths
-from .path_access import confined_path
-from .run_output import stage_output
-from .image_prompt_export import export_image_prompts
+from ..core.path_access import confined_path
+from ..core.run_output import stage_output
+from ..core.image_prompt_export import export_image_prompts
 from .spatial_continuity import validate_plan
 
 

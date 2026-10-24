@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 import json
 
-from minimax_h3_novel_pipeline import pipeline_step3_generate as step
+from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 from .test_h3_prompt_validation import BINDINGS, prompt_with_shots
 
 

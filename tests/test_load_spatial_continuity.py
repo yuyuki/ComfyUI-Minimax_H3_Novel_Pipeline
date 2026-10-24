@@ -5,9 +5,9 @@ import os
 
 import pytest
 
-from minimax_h3_novel_pipeline import path_access, util
-from minimax_h3_novel_pipeline.load_spatial_continuity import LoadSpatialContinuityNode as Loader
-from minimax_h3_novel_pipeline.spatial_continuity import _FIELDS
+from minimax_h3_novel_pipeline.core import path_access, util
+from minimax_h3_novel_pipeline.nodes.load_spatial_continuity import LoadSpatialContinuityNode as Loader
+from minimax_h3_novel_pipeline.nodes.spatial_continuity import _FIELDS
 
 
 @pytest.fixture
@@ -83,7 +83,7 @@ def test_paths_are_confined(saved_plan):
 @pytest.mark.parametrize("change", ["root_extra", "chapter_extra", "camera_missing", "sequence_type", "entity_enum"])
 def test_bundled_schema_rejects_invalid_manual_edits(saved_plan, change):
     from jsonschema import Draft202012Validator
-    from minimax_h3_novel_pipeline.spatial_continuity import SPATIAL_SCHEMA, _ENTITY
+    from minimax_h3_novel_pipeline.nodes.spatial_continuity import SPATIAL_SCHEMA, _ENTITY
     path, plan, registry = saved_plan
     sequence = plan['chapters']['chapter']['sequences'][0]
     if change == 'root_extra':

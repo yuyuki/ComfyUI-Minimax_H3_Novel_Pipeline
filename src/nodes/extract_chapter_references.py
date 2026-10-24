@@ -1,13 +1,13 @@
 """LM Studio-backed ComfyUI node for chapter-reference extraction."""
 from __future__ import annotations
 
-from . import progress
+from ..core import progress
 
 import argparse
 from typing import Any
 
-from . import cinematic_references, configuration_snapshot, lmstudio_pipeline, temporal_context, util
-from .run_output import stage_output
+from ..core import cinematic_references, configuration_snapshot, lmstudio_pipeline, temporal_context, util
+from ..core.run_output import stage_output
 
 def _default_output_dir() -> str:
     return "chapter_catalogs"

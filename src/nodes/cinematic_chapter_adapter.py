@@ -5,9 +5,9 @@ import argparse
 import json
 from pathlib import Path
 
-from . import cinematic_adaptation, configuration_snapshot, lmstudio_pipeline, progress, util
+from ..core import cinematic_adaptation, configuration_snapshot, lmstudio_pipeline, progress, util
 from .chapter_selection import chapter_path_list
-from .run_output import stage_output
+from ..core.run_output import stage_output
 
 
 class CinematicChapterAdapterNode:

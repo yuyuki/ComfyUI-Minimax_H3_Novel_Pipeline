@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from minimax_h3_novel_pipeline import cinematic_adaptation as ca
-from minimax_h3_novel_pipeline import cinematic_references as cr
-from minimax_h3_novel_pipeline import narrative_validation as nv, narrative_choices as nc, path_access, util
+from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
+from minimax_h3_novel_pipeline.core import cinematic_references as cr
+from minimax_h3_novel_pipeline.core import narrative_validation as nv, narrative_choices as nc, path_access, util
 
 
 @pytest.mark.parametrize("source,bad,good", [

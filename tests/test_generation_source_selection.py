@@ -3,7 +3,8 @@ from copy import deepcopy
 
 import pytest
 
-from minimax_h3_novel_pipeline import generate_h3_prompts as node, pipeline_step3_generate as step, util
+from minimax_h3_novel_pipeline.nodes import generate_h3_prompts as node
+from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step, util
 
 
 def test_source_less_chapter_matches_extraction_id(tmp_path, cinematic_registry):

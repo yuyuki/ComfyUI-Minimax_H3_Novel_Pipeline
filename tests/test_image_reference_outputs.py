@@ -8,14 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline import (
-    image_prompt_export, lmstudio_json, lmstudio_pipeline, path_access, prompt_cache,
-    reference_requests, run_output, util, visual_designs,
-)
-from minimax_h3_novel_pipeline.consolidate_references import ConsolidateReferencesNode
-from minimax_h3_novel_pipeline.generate_h3_prompts import GenerateH3PromptsNode
-from minimax_h3_novel_pipeline.lmstudio_config import LMStudioConfigurationNode
-from minimax_h3_novel_pipeline.load_consolidated_references import LoadConsolidatedReferencesNode
+from minimax_h3_novel_pipeline.core import image_prompt_export, lmstudio_json, lmstudio_pipeline, path_access, prompt_cache, reference_requests, run_output, util, visual_designs
+from minimax_h3_novel_pipeline.nodes.consolidate_references import ConsolidateReferencesNode
+from minimax_h3_novel_pipeline.nodes.generate_h3_prompts import GenerateH3PromptsNode
+from minimax_h3_novel_pipeline.nodes.lmstudio_config import LMStudioConfigurationNode
+from minimax_h3_novel_pipeline.nodes.load_consolidated_references import LoadConsolidatedReferencesNode
 
 
 @pytest.fixture
@@ -131,7 +128,7 @@ def test_runs_share_queue_and_advance_on_collision(output_root, monkeypatch):
 
 
 def test_configuration_nodes_share_run_and_repeat_queues(output_root, monkeypatch):
-    from minimax_h3_novel_pipeline import lmstudio_settings
+    from minimax_h3_novel_pipeline.core import lmstudio_settings
     monkeypatch.setattr(lmstudio_settings, "get_api_key", lambda api_url=None: "test-secret")
     monkeypatch.setattr(lmstudio_settings, "validate_api_url", lambda url: url)
     first, _ = LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1")
@@ -658,7 +655,7 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
     next_config = {**config, "run_folder": run_output.reserve_run()}
     generate = lmstudio_pipeline.load("generate")
     monkeypatch.setattr(generate, "process_chapter", lambda *a: {"chapter_id": "chapter", "outputs": []})
-    from minimax_h3_novel_pipeline import generate_h3_prompts as wrapper
+    from minimax_h3_novel_pipeline.nodes import generate_h3_prompts as wrapper
     monkeypatch.setattr(wrapper, "selected_chapter_paths", lambda value: ["chapter.txt"])
     monkeypatch.setattr(util, "discover_inputs", lambda paths: paths)
     response = GenerateH3PromptsNode().run(

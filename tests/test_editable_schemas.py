@@ -1,6 +1,6 @@
 import pytest
 from jsonschema import Draft202012Validator
-from minimax_h3_novel_pipeline import editable_schemas, path_access, util, visual_designs
+from minimax_h3_novel_pipeline.core import editable_schemas, path_access, util, visual_designs
 
 
 def test_schema_exports_and_visual_traits(tmp_path, monkeypatch):

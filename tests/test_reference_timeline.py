@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline import pipeline_step2_consolidate as step, util
-from minimax_h3_novel_pipeline.reference_timeline import (
+from minimax_h3_novel_pipeline.core import pipeline_step2_consolidate as step, util
+from minimax_h3_novel_pipeline.core.reference_timeline import (
     merge_timeline, refresh_first_occurrence, state_at, validate_catalogs,
 )
 
@@ -145,8 +145,9 @@ def test_duplicate_chapter_ids_rejected():
 
 def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcile, tmp_path, monkeypatch, narrative_review):
     from contextlib import nullcontext
-    from minimax_h3_novel_pipeline import consolidate_references as node, lmstudio_pipeline, path_access, run_output
-    from minimax_h3_novel_pipeline.load_consolidated_references import LoadConsolidatedReferencesNode
+    from minimax_h3_novel_pipeline.nodes import consolidate_references as node
+    from minimax_h3_novel_pipeline.core import lmstudio_pipeline, path_access, run_output
+    from minimax_h3_novel_pipeline.nodes.load_consolidated_references import LoadConsolidatedReferencesNode
 
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(run_output, "storage_root", lambda kind: tmp_path)
@@ -185,7 +186,7 @@ def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcil
 
 @pytest.mark.parametrize("mode", ["missing", "duplicate", "wrong_type", "unknown_match"])
 def test_invalid_identity_resolutions_retry_without_losing_observations(monkeypatch, mode):
-    from minimax_h3_novel_pipeline import lmstudio_json
+    from minimax_h3_novel_pipeline.core import lmstudio_json
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     calls = []
     def chat(*args):
@@ -209,7 +210,7 @@ def test_invalid_identity_resolutions_retry_without_losing_observations(monkeypa
 @pytest.mark.parametrize("kind", ["characters", "locations", "objects"])
 @pytest.mark.parametrize("linked_first", [True, False])
 def test_local_links_group_before_model_and_preserve_all_states(mocked_reconcile, kind, linked_first):
-    from minimax_h3_novel_pipeline import pipeline_step3_generate as generate
+    from minimax_h3_novel_pipeline.core import pipeline_step3_generate as generate
     run, calls = mocked_reconcile
     chapter = catalog(kind=kind)
     main = chapter[kind][0]
@@ -268,8 +269,8 @@ def test_invalid_local_links_fail_before_model(mocked_reconcile, mode):
 
 
 def test_catalog_edits_invalidate_loader_cache(tmp_path, monkeypatch):
-    from minimax_h3_novel_pipeline import path_access
-    from minimax_h3_novel_pipeline.load_chapter_catalogs import LoadChapterCatalogsNode
+    from minimax_h3_novel_pipeline.core import path_access
+    from minimax_h3_novel_pipeline.nodes.load_chapter_catalogs import LoadChapterCatalogsNode
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     path = tmp_path / "chapter_references.json"
     chapter = catalog()

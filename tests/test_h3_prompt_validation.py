@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from minimax_h3_novel_pipeline import pipeline_step3_generate as step
+from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 
 
 BINDINGS = {"subjects": [], "audio": []}
@@ -269,7 +269,7 @@ def test_offscreen_reply_survives_planning_and_reaches_generation(monkeypatch):
 
 
 def test_extraction_requests_attributed_speech_from_original_prose(monkeypatch):
-    from minimax_h3_novel_pipeline import pipeline_step1_extract as extract
+    from minimax_h3_novel_pipeline.core import pipeline_step1_extract as extract
 
     excerpt = "— Doriane ! hurla-t-il. Envoyez une autre torche !\n— Jones ! cria Doriane."
 

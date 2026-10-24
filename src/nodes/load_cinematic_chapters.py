@@ -1,7 +1,7 @@
 """ComfyUI node for reusing saved cinematic chapter adaptations."""
 from __future__ import annotations
 
-from . import cinematic_references, configuration_snapshot, progress, util
+from ..core import cinematic_references, configuration_snapshot, progress, util
 
 
 class LoadCinematicChaptersNode:

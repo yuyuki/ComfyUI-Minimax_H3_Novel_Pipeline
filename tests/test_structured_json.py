@@ -8,7 +8,7 @@ import httpx
 import pytest
 from openai import APIError, OpenAI
 
-from minimax_h3_novel_pipeline import lmstudio_json, lmstudio_pipeline, util
+from minimax_h3_novel_pipeline.core import lmstudio_json, lmstudio_pipeline, util
 
 
 SCHEMA = {"name": "test", "strict": True, "schema": {
@@ -121,7 +121,7 @@ def test_evidence_cleanup_preserves_original_excerpt():
 
 @pytest.mark.parametrize("profiled", [False, True])
 def test_cache_fingerprint_tracks_compact_policy(monkeypatch, profiled):
-    from minimax_h3_novel_pipeline import prompt_cache
+    from minimax_h3_novel_pipeline.core import prompt_cache
 
     client = SimpleNamespace()
     if profiled:
@@ -472,7 +472,7 @@ def test_mistral_does_not_use_qwen_grammar_fallback():
 @pytest.mark.parametrize("stage", ["extract", "consolidate", "generate"])
 @pytest.mark.parametrize("family,expected", [("Mistral", "mistral-small-3.2"), ("Qwen", "qwen3.5-9b")])
 def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, family, expected):
-    from minimax_h3_novel_pipeline import lmstudio_settings
+    from minimax_h3_novel_pipeline.core import lmstudio_settings
 
     def respond(request):
         assert request.url.path == "/v1/models"
@@ -513,14 +513,15 @@ def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, famil
 
 @pytest.mark.parametrize("family", ["Mistral", "Qwen"])
 def test_family_selection_requires_matching_model(family):
-    from minimax_h3_novel_pipeline import lmstudio_models
+    from minimax_h3_novel_pipeline.core import lmstudio_models
     client = SimpleNamespace(models=SimpleNamespace(list=lambda: SimpleNamespace(data=[SimpleNamespace(id="other")])))
     with pytest.raises(RuntimeError, match=f"no matching {family}"):
         lmstudio_models.select_family_model(client, family)
 
 
 def test_unknown_family_rejected_before_credentials(monkeypatch):
-    from minimax_h3_novel_pipeline import lmstudio_config, lmstudio_settings
+    from minimax_h3_novel_pipeline.nodes import lmstudio_config
+    from minimax_h3_novel_pipeline.core import lmstudio_settings
     key = Mock(side_effect=AssertionError("credentials accessed"))
     monkeypatch.setattr(lmstudio_settings, "get_api_key", key)
     with pytest.raises(ValueError, match="Unsupported model family"):
@@ -530,7 +531,7 @@ def test_unknown_family_rejected_before_credentials(monkeypatch):
 
 @pytest.mark.parametrize("family,attempts", [("Mistral", 2), ("Qwen", 4)])
 def test_semantic_retries_follow_client_profile(family, attempts):
-    from minimax_h3_novel_pipeline import lmstudio_models, reference_requests
+    from minimax_h3_novel_pipeline.core import lmstudio_models, reference_requests
     profile = lmstudio_models.get_profile(family)
     client = SimpleNamespace(_minimax_h3_profile=profile,
                              _minimax_h3_settings=profile.settings_from_config({"qwen35_length_retries": 3}))
@@ -544,7 +545,7 @@ def test_semantic_retries_follow_client_profile(family, attempts):
 
 
 def test_cache_uses_client_settings_and_ignores_other_clients(monkeypatch):
-    from minimax_h3_novel_pipeline import lmstudio_models, prompt_cache
+    from minimax_h3_novel_pipeline.core import lmstudio_models, prompt_cache
     profile = lmstudio_models.get_profile("Qwen")
     def client(top_k):
         return SimpleNamespace(_minimax_h3_profile=profile,

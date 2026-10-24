@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline.generate_h3_prompts import GenerateH3PromptsNode as Node
-from minimax_h3_novel_pipeline import pipeline_step3_generate as step
+from minimax_h3_novel_pipeline.nodes.generate_h3_prompts import GenerateH3PromptsNode as Node
+from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 
 
 @pytest.mark.parametrize("name,value", [

@@ -122,7 +122,7 @@ class RouteAccessTests(unittest.TestCase):
         request.json = AsyncMock(return_value={"api_key": "test-only"})
         result = asyncio.run(self.routes["post", "/minimax_h3_novel/lmstudio-settings"](request))
         self.assertEqual(result, {"configured": True})
-        settings = sys.modules["access_test_plugin.lmstudio_settings"]
+        settings = sys.modules["access_test_plugin.core.lmstudio_settings"]
         self.assertEqual(settings.get_api_key(), "test-only")
         settings.set_api_key("")
 
@@ -132,7 +132,7 @@ class RouteAccessTests(unittest.TestCase):
         url = "https://trusted.example/v1"
         request.json = AsyncMock(return_value={"api_url": url + "/", "api_key": "test-only"})
         self.assertEqual(asyncio.run(handler(request)), {"configured": True})
-        settings = sys.modules["access_test_plugin.lmstudio_settings"]
+        settings = sys.modules["access_test_plugin.core.lmstudio_settings"]
         self.addCleanup(settings.set_connection_settings, settings.DEFAULT_API_URL, "")
         self.assertEqual(settings.get_api_key(url), "test-only")
         request.json = AsyncMock(return_value={"api_url": "file:///tmp/invalid", "api_key": "replacement"})

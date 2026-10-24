@@ -1,5 +1,9 @@
 # Example workflow
 
+Node implementations live in `src/nodes/`; shared pipeline code and schemas live
+in `src/core/`. This internal organization preserves node IDs and socket types,
+so the example workflow uses the same wiring.
+
 To try the standalone **Cinematic Chapter Adapter**, connect **Select Chapters**
 to its `chapter_selection` input and **LM Studio Configuration** to its
 `lmstudio_config` input, then queue. The adapter is an output node, so it needs

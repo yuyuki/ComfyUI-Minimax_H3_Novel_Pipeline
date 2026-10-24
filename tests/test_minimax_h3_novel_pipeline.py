@@ -34,6 +34,7 @@ def test_root_registration_and_frontend(plugin):
     assert set(plugin.NODE_DISPLAY_NAME_MAPPINGS) == set(plugin.NODE_CLASS_MAPPINGS)
     assert (ROOT / plugin.WEB_DIRECTORY / "minimax_h3_novel.js").is_file()
     for cls in plugin.NODE_CLASS_MAPPINGS.values():
+        assert cls.__module__.startswith("scaffold_test_plugin.src.nodes.")
         assert callable(getattr(cls(), cls.FUNCTION))
         assert "required" in cls.INPUT_TYPES()
 
@@ -52,7 +53,7 @@ def test_removed_nodes_are_not_registered_or_exported(plugin, name):
 @pytest.mark.parametrize("step", ["extract", "consolidate", "generate"])
 def test_bundled_steps_and_real_client_transport(plugin, step):
     package = sys.modules[plugin.NODE_CLASS_MAPPINGS["LMStudioConfigurationNode"].__module__]
-    pipeline = sys.modules[package.__package__ + ".lmstudio_pipeline"]
+    pipeline = sys.modules[package.__package__.rsplit(".", 1)[0] + ".core.lmstudio_pipeline"]
     module = pipeline.load(step)
     with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200))) as transport:
         client = module.make_client("http://127.0.0.1:1234/v1", "test-key", http_client=transport)
@@ -66,11 +67,11 @@ def test_installed_package_import_outside_checkout(tmp_path):
         [sys.executable, "-c",
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
          "assert len(p.NODE_CLASS_MAPPINGS) == 11; "
-         "from minimax_h3_novel_pipeline.load_cinematic_chapters import LoadCinematicChaptersNode; "
+         "from minimax_h3_novel_pipeline.nodes.load_cinematic_chapters import LoadCinematicChaptersNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCinematicChaptersNode'] is LoadCinematicChaptersNode; "
          "assert 'NarrativeStateTrackerNode' not in p.NODE_CLASS_MAPPINGS; "
          "assert (Path(p.WEB_DIRECTORY) / 'minimax_h3_novel.js').is_file(); "
-         "from minimax_h3_novel_pipeline.lmstudio_pipeline import load; "
+         "from minimax_h3_novel_pipeline.core.lmstudio_pipeline import load; "
          "[load(s) for s in ('extract', 'consolidate', 'generate')]"],
         cwd=tmp_path, capture_output=True, text=True,
     )

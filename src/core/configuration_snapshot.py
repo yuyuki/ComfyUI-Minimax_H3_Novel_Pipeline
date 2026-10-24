@@ -21,7 +21,7 @@ def file_digest(path):
 
 def start(output, stage, config, model, args, *, out_dir, inputs, extra=None):
     """Use an allowlist: never serialize the client or arbitrary config fields."""
-    from .lmstudio_config import LMStudioConfigurationNode
+    from ..nodes.lmstudio_config import LMStudioConfigurationNode
 
     public = {}
     for fields in LMStudioConfigurationNode.INPUT_TYPES().values():

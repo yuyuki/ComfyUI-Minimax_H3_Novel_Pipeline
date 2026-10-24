@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline import pipeline_step3_generate as step
-from minimax_h3_novel_pipeline import spatial_continuity as spatial
+from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
+from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
 
 
 def test_spatial_future_facts_rejected_but_inferred_geometry_allowed():
@@ -112,7 +112,7 @@ def test_review_deduplicates_model_errors(monkeypatch):
 @pytest.mark.parametrize('recovers', [True, False])
 def test_spatial_generation_repairs_future_evidence_before_carrying_state(tmp_path, monkeypatch, recovers):
     from contextlib import nullcontext
-    from minimax_h3_novel_pipeline import path_access, util
+    from minimax_h3_novel_pipeline.core import path_access, util
 
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
 

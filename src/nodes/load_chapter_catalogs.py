@@ -1,12 +1,12 @@
 """ComfyUI node for reusing chapter catalogs saved by Step 1."""
 from __future__ import annotations
 
-from . import progress
+from ..core import progress
 
 from typing import Any
 
-from . import configuration_snapshot, util
-from .cinematic_references import parse_chapters
+from ..core import configuration_snapshot, util
+from ..core.cinematic_references import parse_chapters
 
 
 class LoadChapterCatalogsNode:

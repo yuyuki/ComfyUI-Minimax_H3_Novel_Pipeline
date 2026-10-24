@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from minimax_h3_novel_pipeline import cinematic_adaptation as adaptation
-from minimax_h3_novel_pipeline import cinematic_chapter_adapter as adapter
-from minimax_h3_novel_pipeline import path_access
+from minimax_h3_novel_pipeline.core import cinematic_adaptation as adaptation
+from minimax_h3_novel_pipeline.nodes import cinematic_chapter_adapter as adapter
+from minimax_h3_novel_pipeline.core import path_access
 
 
 @pytest.fixture(autouse=True)
