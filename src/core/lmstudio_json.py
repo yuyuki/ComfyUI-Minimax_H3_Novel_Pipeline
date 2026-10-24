@@ -17,7 +17,7 @@ QWEN35_LENGTH_RETRIES = lmstudio_model_qwen.DEFAULTS["length_retries"]
 QWEN35_TOP_K = lmstudio_model_qwen.DEFAULTS["top_k"]
 QWEN35_MIN_P = lmstudio_model_qwen.DEFAULTS["min_p"]
 QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
-COMPACT_SCHEMA_VERSION = 2
+COMPACT_SCHEMA_VERSION = 3
 
 # Character counts, not token counts. Preserve visual identity on retries and
 # leave unrelated schema fields alone (this helper is shared by all stages).
@@ -98,7 +98,8 @@ def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
             node["maxLength"] = min(int(node["maxLength"]), COMPACT_FIELD_LIMITS[field_name])
         if node.get("type") == "array":
             item_limit = {"aliases": 2, "evidence": 2}
-            if field_name in item_limit:
+            # Only compact lists of short strings, never independent observations.
+            if field_name in item_limit and node.get("items", {}).get("type") == "string":
                 node["maxItems"] = min(int(node.get("maxItems", item_limit[field_name])), item_limit[field_name])
             items = node.get("items")
             if isinstance(items, dict):
@@ -137,7 +138,7 @@ def model_settings(client, model):
 
 
 def chat_json(client: OpenAI, model: str, system: str, user: str,
-              schema: dict[str, Any] | None, temperature: float, max_tokens: int) -> dict[str, Any]:
+              schema: dict[str, Any], temperature: float, max_tokens: int) -> dict[str, Any]:
     from .lmstudio_pipeline import comfy_interrupt_check
 
     profile, settings = model_settings(client, model)
@@ -156,7 +157,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     request_max_tokens = max_tokens
     while attempt <= retries:
         comfy_interrupt_check()
-        request_schema = _qwen35_compact_schema(schema) if attempt and schema is not None else schema
+        request_schema = _qwen35_compact_schema(schema) if attempt else schema
         note = (
             "\nReturn compact JSON within the output limit. Shorten summaries and redundant prose; "
             "preserve distinct entities and source-supported visual traits."
@@ -174,8 +175,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 temperature=min(temperature, 0.12) if attempt else temperature,
                 top_p=top_p, max_tokens=request_max_tokens, stream=True,
             )
-            response_format = ({"type": "json_schema", "json_schema": request_schema}
-                               if request_schema is not None else {"type": "json_object"})
+            response_format = {"type": "json_schema", "json_schema": request_schema}
             if raw_chatml:
                 stream = client.completions.create(
                     **options, **profile.completion_options(messages),
@@ -237,8 +237,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             if not isinstance(result, dict):
                 raise ValueError("Expected a JSON object.")
             try:
-                if request_schema is not None:
-                    _validate_canonical_names(result, request_schema["schema"])
+                _validate_canonical_names(result, request_schema["schema"])
             except ValueError:
                 correction = (
                     "\nYour previous response contained a missing or blank canonical_name. "

@@ -35,6 +35,19 @@ ATTRIBUTES = {"name", "alias", "age", "physical_appearance", "clothing", "access
               "distinguishing_feature", "action", "context"}
 FIELDS = {"character", "attribute", "value", "classification", "confidence",
           "persistence", "quotation", "rationale"}
+SCHEMA = {"name": "character_evidence", "strict": True, "schema": {
+    "type": "object", "additionalProperties": False, "required": ["evidence"],
+    "properties": {"evidence": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False, "required": sorted(FIELDS),
+        "properties": {
+            **{field: {"type": "string", "minLength": 1} for field in sorted(FIELDS - {"confidence"})},
+            "attribute": {"type": "string", "enum": sorted(ATTRIBUTES)},
+            "classification": {"type": "string", "enum": ["explicit", "inferred"]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "persistence": {"type": "string", "enum": ["persistent", "temporary", "unknown"]},
+        },
+    }}},
+}}
 
 
 def read_source(path: Path) -> tuple[str, str]:
@@ -88,7 +101,7 @@ def validate_result(result, passage: str) -> list[dict]:
 
 def extract_chapter(path, output, client, model, args, index):
     text, basis = read_source(path)
-    key = prompt_cache.fingerprint(model, args, VERSION, SYSTEM, str(path), text, client=client)
+    key = prompt_cache.fingerprint(model, args, VERSION, SYSTEM, SCHEMA, str(path), text, client=client)
     cache = output / ".cache" / f"{key}.json"
     jobs = list(passages(text, args.chunk_chars))
     cached = None
@@ -110,7 +123,7 @@ def extract_chapter(path, output, client, model, args, index):
             correction = ""
             for attempt in range(args.correction_attempts + 1):
                 try:
-                    raw = lmstudio_json.chat_json(client, model, SYSTEM, prompt + correction, None,
+                    raw = lmstudio_json.chat_json(client, model, SYSTEM, prompt + correction, SCHEMA,
                                                   args.temperature, args.max_tokens)
                     validate_result(raw, passage)
                     break

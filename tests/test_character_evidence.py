@@ -1,4 +1,4 @@
-"""Source fidelity, chapter isolation, caching and schema-free shared transport."""
+"""Source fidelity, chapter isolation, caching and structured shared transport."""
 import argparse
 from contextlib import nullcontext
 import json
@@ -120,12 +120,20 @@ def test_chunks_cover_source_with_boundary_overlap():
     assert any("Élise avait les yeux verts." in part for _, part in chunks)
 
 
-def test_json_object_transport_repairs_malformed_json(monkeypatch):
+def test_extraction_uses_json_schema_and_repairs_malformed_json(workspace, monkeypatch):
     monkeypatch.setattr(evidence.lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     first, second = Stream(['{"evidence":']), Stream(['```json\n{"evidence": []}\n```'])
     client, create = client_for(first, second)
-    assert evidence.lmstudio_json.chat_json(client, "qwen3.5", "system", "user", None, 0.1, 1000) == {"evidence": []}
-    assert all(call.kwargs["response_format"] == {"type": "json_object"} for call in create.call_args_list)
+    source, output = workspace
+    path = source / "chapter.txt"
+    path.write_text("Élise attend.", encoding="utf-8")
+    result = evidence.extract_chapter(path, output, client, "qwen3.5", settings(), 1)
+    assert result["evidence"] == []
+    assert len(create.call_args_list) == 2
+    assert all(call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.SCHEMA}
+               for call in create.call_args_list)
+    items = evidence.SCHEMA["schema"]["properties"]["evidence"]["items"]
+    assert set(items["required"]) == evidence.FIELDS == set(items["properties"])
     assert first.closed and second.closed
 
 

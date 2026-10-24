@@ -37,11 +37,17 @@ class LoadChapterCatalogsNode:
 
     @classmethod
     def IS_CHANGED(cls, catalog_path):
-        path = util.output_path(catalog_path.strip())
-        paths = ([path] if path.is_file() else
-                 sorted(p for p in path.glob("*_references.json")
-                        if p.is_file() and p.name != "consolidated_references.json"))
-        return tuple((str(p), configuration_snapshot.file_digest(p)) for p in paths)
+        try:
+            path = util.output_path(catalog_path.strip())
+            paths = ([path] if path.is_file() else
+                     sorted(p for p in path.glob("*_references.json")
+                            if p.is_file() and p.name != "consolidated_references.json"))
+            if not paths:
+                return float("nan")
+            return tuple((str(p), configuration_snapshot.file_digest(util.output_path(p))) for p in paths)
+        except (OSError, ValueError):
+            # Invalid imports are reported by run(), not global cache inspection.
+            return float("nan")
 
     @progress.node_progress
     def run(self, catalog_path: str) -> tuple[list[dict[str, Any]], str]:

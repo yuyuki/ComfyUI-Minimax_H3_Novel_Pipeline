@@ -37,9 +37,14 @@ class LoadConsolidatedReferencesNode:
 
     @classmethod
     def IS_CHANGED(cls, consolidated_path):
-        path = util.output_path(consolidated_path.strip())
-        path = util.output_path(path / "consolidated_references.json" if path.is_dir() else path)
-        return configuration_snapshot.file_digest(path)
+        try:
+            path = util.output_path(consolidated_path.strip())
+            path = util.output_path(path / "consolidated_references.json" if path.is_dir() else path)
+            return configuration_snapshot.file_digest(path)
+        except (OSError, ValueError):
+            # Cache inspection also visits nodes outside the executed branch.
+            # Let run() report invalid imports only when this node is executed.
+            return float("nan")
 
     @progress.node_progress
     def run(

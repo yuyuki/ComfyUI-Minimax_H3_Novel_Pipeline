@@ -69,6 +69,15 @@ Preserve existing node IDs and socket types for workflow compatibility.
 
 - All language-model work uses LM Studio's OpenAI-compatible API. Never add
   CLIP inputs, model loading or CLIP-dependent execution paths.
+- For every new LLM node, follow the existing stages: create the client through
+  `lmstudio_pipeline.make_client_and_model` and request structured output through
+  the shared `lmstudio_json.chat_json` transport with an explicit JSON schema
+  (`name`, `strict`, `schema`). Use `response_format.type = "json_schema"`;
+  never introduce `json_object` mode or pass `None` as the schema. Keep Qwen
+  settings, streaming, cancellation and ChatML fallbacks in the shared transport.
+  Add mocked request coverage confirming the schema is sent on initial requests
+  and retries, and that compact retries preserve the intended entity/evidence
+  coverage rather than truncating arrays of independent observations.
 - Share non-secret URL, model and backend controls through
   `LMStudioConfigurationNode` and `MINIMAX_LMSTUDIO_CONFIG`.
 - Credentials may come only from ComfyUI settings or the runtime environment,

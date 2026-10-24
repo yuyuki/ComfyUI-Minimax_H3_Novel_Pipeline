@@ -26,9 +26,15 @@ class LoadCinematicChaptersNode:
 
     @classmethod
     def IS_CHANGED(cls, cinematic_path):
-        path = util.output_path(cinematic_path.strip())
-        paths = [path] if path.is_file() else sorted(path.glob("*.cinematic.json"))
-        return tuple((str(p), configuration_snapshot.file_digest(util.output_path(p))) for p in paths if p.is_file())
+        try:
+            path = util.output_path(cinematic_path.strip())
+            paths = [path] if path.is_file() else sorted(p for p in path.glob("*.cinematic.json") if p.is_file())
+            if not paths:
+                return float("nan")
+            return tuple((str(p), configuration_snapshot.file_digest(util.output_path(p))) for p in paths)
+        except (OSError, ValueError):
+            # Invalid imports are reported by run(), not global cache inspection.
+            return float("nan")
 
     @progress.node_progress
     def run(self, cinematic_path: str) -> tuple[list[dict], str]:
