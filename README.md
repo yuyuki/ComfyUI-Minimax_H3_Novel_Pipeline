@@ -201,6 +201,12 @@ the complete editable output is `character_evidence.json`. Controls are
 `force`. Compatible per-chapter caches in that output folder are reused unless
 `force` is enabled; changed text, prompts, model or settings invalidate them.
 
+Use **Load Character Evidence** with `evidence_path` to reopen this JSON after manual
+edits, independently of the extractor and LM Studio. Paths must stay inside
+`output/minimax_h3_novel`; relative paths start there. Its `character_evidence`
+and `saved_file` outputs match the extractor. Saved edits reload on the next
+workflow execution; loading preserves all data and never writes to the file.
+
 Each observation records its character, attribute, value, explicit/inferred
 classification, confidence, persistence, rationale, original-language quotation
 and chapter/file provenance. Every quotation is checked as an exact substring.

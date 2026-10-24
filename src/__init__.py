@@ -30,6 +30,7 @@ def _build_mappings() -> None:
     try:
         NODE_CLASS_MAPPINGS.update(
             {
+                "LoadCharacterEvidenceNode": _nodes.LoadCharacterEvidenceNode,
                 "CharacterEvidenceExtractorNode": _nodes.CharacterEvidenceExtractorNode,
                 "CinematicChapterAdapterNode": _nodes.CinematicChapterAdapterNode,
                 "ExtractChapterReferencesNode": _nodes.ExtractChapterReferencesNode,
@@ -46,6 +47,7 @@ def _build_mappings() -> None:
         )
         NODE_DISPLAY_NAME_MAPPINGS.update(
             {
+                "LoadCharacterEvidenceNode": "Load Character Evidence",
                 "CharacterEvidenceExtractorNode": "Character Evidence Extractor",
                 "CinematicChapterAdapterNode": "Cinematic Chapter Adapter",
                 "ExtractChapterReferencesNode": "Extract Chapter References",

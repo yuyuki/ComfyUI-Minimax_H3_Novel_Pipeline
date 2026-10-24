@@ -146,6 +146,7 @@ def render_architecture(modules: list[ModuleInfo]) -> str:
         f'    selector --> evidence["{node_label("CharacterEvidenceExtractorNode", "Character Evidence Extractor")}"]',
         '    config --> evidence',
         '    evidence --> evidence_json["Independent chapter evidence and verbatim source JSON"]',
+        f'    evidence_json --> evidence_loader["{node_label("LoadCharacterEvidenceNode", "Load Character Evidence")}"]',
         '    adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]',
         '    adapted --> extract',
         f'    adapted --> loader["{node_label("LoadCinematicChaptersNode", "Load Cinematic Chapters")}"]',
