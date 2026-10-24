@@ -103,6 +103,49 @@ def test_all_registered_nodes_have_progress_and_picker_reports(bars):
     assert bars[0].values == [0, 100]
 
 
+@pytest.mark.parametrize("passages", [1, 2])
+@pytest.mark.parametrize("review_fails", [False, True])
+def test_cinematic_adaptation_advances_before_review(bars, monkeypatch, passages, review_fails):
+    from minimax_h3_novel_pipeline import cinematic_adaptation
+
+    reviewed = []
+
+    def chat(client, model, system, prompt, *args):
+        import json
+
+        source = json.loads(prompt)["current_passage"]
+        return {"sequences": [{"source": source, "initial_state": "Before.",
+                               "events": ["Action."], "final_state": "After."}]}
+
+    def review(*args):
+        reviewed.append(bars[0].current)
+        assert bars[0].current == int(100 * (len(reviewed) - 0.5) / passages)
+        if review_fails:
+            raise RuntimeError("review failed")
+        return {}
+
+    monkeypatch.setattr(cinematic_adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(cinematic_adaptation.narrative_validation, "review", review)
+
+    @progress.node_progress
+    def run():
+        return cinematic_adaptation.adapt_chapter(
+            None, "mock", "Il attend. " * passages, chunk_chars=11,
+            temperature=0.15, max_tokens=8192, correction_attempts=0,
+        )
+
+    if review_fails:
+        with pytest.raises(RuntimeError, match="review failed"):
+            run()
+        assert 100 not in bars[0].values
+    else:
+        assert len(run()["sequences"]) == passages
+        assert bars[0].values[-2:] == [99, 100]
+        assert len(reviewed) == passages
+    assert bars[0].values == sorted(bars[0].values)
+    assert progress._active.get() is None
+
+
 def test_standalone_without_comfy(monkeypatch):
     monkeypatch.setitem(sys.modules, "comfy.utils", None)
 

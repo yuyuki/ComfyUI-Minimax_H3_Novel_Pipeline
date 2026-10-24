@@ -287,8 +287,10 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
     for index, chunk in enumerate(chunks, start=1):
         try:
             with progress.scope((index - 1) / len(chunks), index / len(chunks)):
-                sequences = adapt_passage(chunk, previous_state)
-                sequences = review_passage(sequences, previous_state, chunk)
+                with progress.scope(0, 0.5):
+                    sequences = adapt_passage(chunk, previous_state)
+                with progress.scope(0.5, 1):
+                    sequences = review_passage(sequences, previous_state, chunk)
         except ValueError as exc:
             raise ValueError(f"Cinematic adaptation passage {index}/{len(chunks)}: {exc}") from exc
         for item in sequences:

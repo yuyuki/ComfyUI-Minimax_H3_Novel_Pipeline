@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Advance cinematic adaptation progress between passage generation and narrative
+  review, including single-passage chapters; cover progress and review failures offline.
+
 - Continue cinematic adaptation after unresolved narrative reviews with editable
   scene proposals and automatic selection; propagate selected adaptations and
   review metadata through loaders, extraction, consolidation and H3 planning.
