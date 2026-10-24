@@ -270,6 +270,13 @@ streaming, cancellation and compact retries without truncating evidence.
 Validated designs are cached per character, mode, input, model and settings;
 `force` regenerates them.
 
+Use **Load Character Visual Profiles** with `profiles_path` to reopen the saved
+JSON, including renamed and manually edited copies. Paths must stay inside
+`output/minimax_h3_novel`; relative paths start there. Its
+`character_visual_profiles` and `saved_file` outputs match the generator.
+Loading preserves descriptions, IDs, metadata and original evidence, detects
+saved edits on the next execution, and never calls LM Studio or writes the file.
+
 The seven fields `age_appearance`, `skin`, `hair`, `eyes`, `build`,
 `default_outfit` and `accessories` contain lists of individual English traits
 with `description`, `classification` (`canonical`, `inferred`, `creative`) and

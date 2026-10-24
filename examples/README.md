@@ -322,4 +322,9 @@ The `character_visual_profiles` output and saved
 `character_visual_profiles/character_visual_profiles.json` contain the seven
 English visual fields, per-trait provenance, original evidence and conflicts.
 Review and refine a copy of the JSON manually; rerunning replaces the generated
-file. There is no visual-profile Load node or connection to Consolidate References.
+file. To reopen the edited copy, use **Load Character Visual Profiles** with
+`profiles_path` set to its JSON path inside `output/minimax_h3_novel` (relative
+paths start there). Its outputs replace the generator's outputs directly.
+Saved edits reload on the next execution, preserving descriptions, IDs, metadata
+and original evidence without LM Studio or file writes. There is no connection
+to Consolidate References.

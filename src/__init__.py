@@ -31,6 +31,7 @@ def _build_mappings() -> None:
         NODE_CLASS_MAPPINGS.update(
             {
                 "CharacterVisualProfileGeneratorNode": _nodes.CharacterVisualProfileGeneratorNode,
+                "LoadCharacterVisualProfilesNode": _nodes.LoadCharacterVisualProfilesNode,
                 "LoadCharacterEvidenceNode": _nodes.LoadCharacterEvidenceNode,
                 "ConsolidateCharacterProfilesNode": _nodes.ConsolidateCharacterProfilesNode,
                 "CharacterEvidenceExtractorNode": _nodes.CharacterEvidenceExtractorNode,
@@ -50,6 +51,7 @@ def _build_mappings() -> None:
         NODE_DISPLAY_NAME_MAPPINGS.update(
             {
                 "CharacterVisualProfileGeneratorNode": "Character Visual Profile Generator",
+                "LoadCharacterVisualProfilesNode": "Load Character Visual Profiles",
                 "LoadCharacterEvidenceNode": "Load Character Evidence",
                 "ConsolidateCharacterProfilesNode": "Consolidate Character Profiles",
                 "CharacterEvidenceExtractorNode": "Character Evidence Extractor",

@@ -28,6 +28,7 @@ def test_root_registration_and_frontend(plugin):
     assert set(plugin.NODE_CLASS_MAPPINGS) == {
         "CharacterEvidenceExtractorNode", "LoadCharacterEvidenceNode",
         "ConsolidateCharacterProfilesNode", "CharacterVisualProfileGeneratorNode",
+        "LoadCharacterVisualProfilesNode",
         "LMStudioConfigurationNode", "SelectChaptersNode", "ExtractChapterReferencesNode",
         "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
         "ConsolidateReferencesNode", "GenerateH3PromptsNode", "SpatialContinuityNode", "LoadSpatialContinuityNode",
@@ -70,7 +71,9 @@ def test_installed_package_import_outside_checkout(tmp_path):
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
          "from minimax_h3_novel_pipeline.nodes.load_character_evidence import LoadCharacterEvidenceNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCharacterEvidenceNode'] is LoadCharacterEvidenceNode; "
-         "assert len(p.NODE_CLASS_MAPPINGS) == 15; "
+         "assert len(p.NODE_CLASS_MAPPINGS) == 16; "
+         "from minimax_h3_novel_pipeline.nodes.load_character_visual_profiles import LoadCharacterVisualProfilesNode; "
+         "assert p.NODE_CLASS_MAPPINGS['LoadCharacterVisualProfilesNode'] is LoadCharacterVisualProfilesNode; "
          "from minimax_h3_novel_pipeline.nodes.character_visual_profile_generator import CharacterVisualProfileGeneratorNode; "
          "assert p.NODE_CLASS_MAPPINGS['CharacterVisualProfileGeneratorNode'] is CharacterVisualProfileGeneratorNode; "
          "from minimax_h3_novel_pipeline.nodes.consolidate_character_profiles import ConsolidateCharacterProfilesNode; "

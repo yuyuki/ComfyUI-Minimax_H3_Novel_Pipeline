@@ -153,6 +153,7 @@ def render_architecture(modules: list[ModuleInfo]) -> str:
         f'    profiles --> visual_profiles["{node_label("CharacterVisualProfileGeneratorNode", "Character Visual Profile Generator")}"]',
         '    config --> visual_profiles',
         '    visual_profiles --> visual_json["Editable English character visual profiles JSON"]',
+        f'    visual_json --> visual_loader["{node_label("LoadCharacterVisualProfilesNode", "Load Character Visual Profiles")}"]',
         '    profiles --> profiles_json["Source-grounded editable character profiles JSON"]',
         '    adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]',
         '    adapted --> extract',
