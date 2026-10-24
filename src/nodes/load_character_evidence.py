@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from ..core import progress, util
-from ..core.character_evidence import VERSION
+from ..core.character_evidence import validate_document
 
 
 def _evidence_path(value: str) -> Path:
@@ -18,38 +18,6 @@ def _evidence_path(value: str) -> Path:
     return path
 
 
-def _validate_document(data) -> None:
-    """Check the saved envelope, retaining even extractor observations flagged for review.
-
-    The existing response validator annotates LLM observations and is not a saved
-    document validator. Do not re-run it or rebuild provenance on manually edited data.
-    """
-    def fields(obj, expected, location):
-        if not isinstance(obj, dict):
-            raise ValueError(f"{location} must be an object.")
-        for key, kind in expected.items():
-            if key not in obj:
-                raise ValueError(f"{location}: missing required field '{key}'. Restore it from the saved extractor output.")
-            if type(obj[key]) is not kind:
-                raise ValueError(f"{location}.{key} must be {kind.__name__}.")
-
-    fields(data, {"format_version": int, "location_convention": str, "chapters": list}, "document")
-    if data["format_version"] != VERSION:
-        raise ValueError(f"Unsupported character evidence format_version {data['format_version']}; "
-                         f"expected {VERSION}. Select output from the current Character Evidence Extractor.")
-    for index, chapter in enumerate(data["chapters"]):
-        where = f"chapters[{index}]"
-        fields(chapter, {"chapter": int, "chapter_name": str, "source_file": str,
-                         "source_text": str, "source_text_sha256": str, "location_basis": str,
-                         "evidence": list}, where)
-        for item_index, item in enumerate(chapter["evidence"]):
-            item_where = f"{where}.evidence[{item_index}]"
-            fields(item, {"provenance": dict}, item_where)
-            fields(item["provenance"], {"chapter": int, "chapter_name": str, "file": str,
-                                        "passage": int, "locations": list}, f"{item_where}.provenance")
-            for loc_index, location in enumerate(item["provenance"]["locations"]):
-                fields(location, dict.fromkeys(("start_char", "end_char", "start_line", "end_line"), int),
-                       f"{item_where}.provenance.locations[{loc_index}]")
 
 
 class LoadCharacterEvidenceNode:
@@ -86,7 +54,7 @@ class LoadCharacterEvidenceNode:
         except OSError as exc:
             raise ValueError(f"Cannot read character evidence file {path}. Check file access permissions.") from exc
         try:
-            _validate_document(data)
+            validate_document(data)
         except ValueError as exc:
             raise ValueError(f"{path.name}: {exc}") from exc
         return data, str(path)

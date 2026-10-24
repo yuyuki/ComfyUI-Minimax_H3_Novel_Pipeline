@@ -31,6 +31,7 @@ def _build_mappings() -> None:
         NODE_CLASS_MAPPINGS.update(
             {
                 "LoadCharacterEvidenceNode": _nodes.LoadCharacterEvidenceNode,
+                "ConsolidateCharacterProfilesNode": _nodes.ConsolidateCharacterProfilesNode,
                 "CharacterEvidenceExtractorNode": _nodes.CharacterEvidenceExtractorNode,
                 "CinematicChapterAdapterNode": _nodes.CinematicChapterAdapterNode,
                 "ExtractChapterReferencesNode": _nodes.ExtractChapterReferencesNode,
@@ -48,6 +49,7 @@ def _build_mappings() -> None:
         NODE_DISPLAY_NAME_MAPPINGS.update(
             {
                 "LoadCharacterEvidenceNode": "Load Character Evidence",
+                "ConsolidateCharacterProfilesNode": "Consolidate Character Profiles",
                 "CharacterEvidenceExtractorNode": "Character Evidence Extractor",
                 "CinematicChapterAdapterNode": "Cinematic Chapter Adapter",
                 "ExtractChapterReferencesNode": "Extract Chapter References",

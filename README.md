@@ -219,3 +219,35 @@ Quotation verification establishes text fidelity, not the truth of a model's
 interpretation: review inferences and confidence manually. Unsupported attributes
 must be omitted. Invalid quotes/fields trigger bounded correction attempts;
 persistent failures stop extraction with chapter/passage and retry guidance.
+
+
+### Consolidate Character Profiles
+
+Connect `character_evidence` from **Character Evidence Extractor** or **Load
+Character Evidence**, and `lmstudio_config` from **LM Studio Configuration**
+(model family **Qwen**). The node considers all supplied chapters together.
+It returns `character_profiles` (`MINIMAX_CHARACTER_PROFILES`) and `saved_file`
+(`STRING`), saving readable UTF-8 `character_profiles.json` under `out_dir`
+(default `character_profiles`) in the current run folder.
+
+Controls: `thinking`, `temperature`, `max_tokens`, `correction_attempts`, `force`.
+The complete current input, model, prompt and settings determine the disk cache;
+manual Load-node corrections take priority over any earlier extraction. Invalid
+observations or quotation locations stop consolidation with correction guidance.
+Correct them in the evidence JSON and reload. Existing warning metadata is retained.
+
+Profiles retain every observation and original quotation/location, separate explicit
+stable traits, temporary appearance, actions and inferred information, and list
+unknown attribute categories. Identity aliases require explicit connecting source
+quotations; ambiguous identities remain separate. IDs and ordering are deterministic
+for the same evidence and grouping. The original input document is also embedded.
+Differing values are conservatively flagged for review, even if they may coexist;
+model-detected contradictions and explicitly supported temporal interpretations are
+retained without deleting or overwriting observations. Chapter order alone is not
+assumed to be story chronology. Quote validation proves fidelity, not semantic truth:
+review model identity and chronology interpretations before using them as facts.
+
+All evidence is sent together for cross-chapter reconciliation. For large novels,
+configure enough LM Studio context and output tokens; failure never silently drops
+chapters or truncates evidence. No profile loader, exported JSON Schema or cinematic
+visual generation is provided by this node.

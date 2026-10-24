@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .consolidate_references import ConsolidateReferencesNode
+from .consolidate_character_profiles import ConsolidateCharacterProfilesNode
 from .character_evidence_extractor import CharacterEvidenceExtractorNode
 from .chapter_selection import SelectChaptersNode
 from .cinematic_chapter_adapter import CinematicChapterAdapterNode
@@ -17,6 +18,7 @@ from .load_spatial_continuity import LoadSpatialContinuityNode
 
 
 NODE_CLASS_MAPPINGS = {
+    "ConsolidateCharacterProfilesNode": ConsolidateCharacterProfilesNode,
     "LoadCharacterEvidenceNode": LoadCharacterEvidenceNode,
     "CharacterEvidenceExtractorNode": CharacterEvidenceExtractorNode,
     "CinematicChapterAdapterNode": CinematicChapterAdapterNode,
@@ -33,6 +35,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 __all__ = [
+    "ConsolidateCharacterProfilesNode",
     "LoadCharacterEvidenceNode",
     "CharacterEvidenceExtractorNode",
     "CinematicChapterAdapterNode",

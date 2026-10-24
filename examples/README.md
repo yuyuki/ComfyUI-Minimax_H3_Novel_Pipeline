@@ -302,3 +302,16 @@ to the saved JSON path (relative to `output/minimax_h3_novel`, or an absolute pa
 inside it). Its `character_evidence` and `saved_file` outputs replace the extractor
 outputs directly. No LM Studio configuration or source chapters are needed.
 Saved edits reload on the next workflow execution without rewriting the file.
+
+
+To consolidate characters, connect either evidence node's `character_evidence`
+output to **Consolidate Character Profiles**, together with **LM Studio
+Configuration** using Qwen. Include all novel chapters. Keep `out_dir` at
+`character_profiles` to save `character_profiles/character_profiles.json` in the
+current run. Outputs are the structured `character_profiles` dictionary and
+`saved_file` path. Review the editable JSON's source evidence, unresolved conflicts,
+inferred information and chronological changes. Correct input evidence with
+**Load Character Evidence** and rerun to invalidate the consolidation cache;
+`force` bypasses it explicitly. Increase LM Studio context capacity and `max_tokens`
+if the complete novel evidence does not fit. No corresponding profile Load node
+or visual-profile generation is included.
