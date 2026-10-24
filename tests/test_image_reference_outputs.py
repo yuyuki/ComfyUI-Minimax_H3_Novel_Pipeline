@@ -537,6 +537,29 @@ def test_blank_design_import_generates_new_designs(output_root, path):
 
 
 @pytest.mark.parametrize("path", ["missing/visual_designs.json", "."])
+def test_unavailable_design_import_invalidates_cache_without_error(output_root, path):
+    fingerprint = ConsolidateReferencesNode.IS_CHANGED(visual_designs_path=path)
+    assert fingerprint != fingerprint
+
+
+def test_design_import_cache_tracks_creation_edits_and_removal(output_root):
+    path = output_root / "visual_designs.json"
+    def fingerprint():
+        return ConsolidateReferencesNode.IS_CHANGED(visual_designs_path="visual_designs.json")
+    missing = fingerprint()
+    assert missing != missing
+    path.write_text('{"entities": []}', encoding="utf-8")
+    first = fingerprint()
+    assert first == fingerprint()
+    path.write_text('{"entities": [{}]}', encoding="utf-8")
+    assert first != fingerprint()
+    path.unlink()
+    removed = fingerprint()
+    assert removed != removed
+    assert ConsolidateReferencesNode.IS_CHANGED(visual_designs_path="") == ""
+
+
+@pytest.mark.parametrize("path", ["missing/visual_designs.json", "."])
 def test_invalid_design_import_fails_before_model_work(output_root, monkeypatch, path):
     def unexpected(*args, **kwargs):
         pytest.fail("Invalid import must fail before loading the pipeline or calling LM Studio")

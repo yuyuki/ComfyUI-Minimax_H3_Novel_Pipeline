@@ -58,7 +58,15 @@ class ConsolidateReferencesNode:
     def IS_CHANGED(cls, **params):
         # ComfyUI must rerun when the contents of an imported file change.
         path = params.get("visual_designs_path", "").strip()
-        return configuration_snapshot.file_digest(util.output_path(path)) if path else ""
+        if not path:
+            return ""
+        resolved = util.output_path(path)
+        try:
+            return configuration_snapshot.file_digest(resolved)
+        except OSError:
+            # Cache inspection may include nodes outside the requested branch.
+            # Invalidate unavailable imports; run() validates them if executed.
+            return float("nan")
 
     @progress.node_progress
     def run(self, chapter_catalogs: Iterable[dict[str, Any]], lmstudio_config: dict[str, Any], out_dir: str, thinking: bool = True, **params: Any) -> dict[str, Any]:
