@@ -295,5 +295,17 @@ review remains model-based and should be checked by a human.
 
 The saved JSON can be manually refined in any text editor. Keep trait provenance
 accurate when editing. Rerunning writes the generated result again, so preserve
-manual refinements in a separate copy. This stage does not reload edits, copy JSON
-Schemas, or connect to Consolidate References; those features are outside its scope.
+manual refinements to `character_visual_profiles.json` in a separate copy.
+The separate `visual_designs.json` export retains edits as described below.
+
+The Character Visual Profile Generator also saves a global `visual_designs.json`
+containing every consolidated character, with stable IDs and aliases. Point
+Consolidate References’ `visual_designs_path` at this file to reuse its editable
+`added_details` for the selected chapter catalogs. Only matching chapter entities
+receive designs; other novel characters are ignored. Matching uses exact normalized
+names/aliases or stable character IDs, without LLM calls. Ambiguous matches fail
+explicitly; unmatched chapter characters produce a warning and use normal design
+generation. Temporary observations are excluded from the global export. Manual
+`added_details` edits survive regeneration and are checked against current chapter
+facts on import. The existing `saved_file` output still points to
+`character_visual_profiles.json`.

@@ -45,7 +45,7 @@ class ConsolidateReferencesNode:
             "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
         }, "optional": {
             "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
-            "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional existing visual_designs.json to import inside output/minimax_h3_novel. Leave empty on the first run; consolidation saves this file automatically."}),
+            "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional chapter or global visual_designs.json inside output/minimax_h3_novel; only matching chapter entities are imported. Leave empty on the first run; consolidation saves this file automatically."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_REGISTRY", "STRING")

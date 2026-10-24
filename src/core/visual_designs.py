@@ -1,11 +1,13 @@
 """Editable adaptation choices kept separate from source-supported registry facts."""
 from __future__ import annotations
 
+import warnings
+
 from . import progress
 
 from . import temporal_context, util
 from .reference_requests import validated_request
-from .lmstudio_pipeline import comfy_interrupt_check
+from .lmstudio_pipeline import comfy_interrupt_check, load
 from .editable_schemas import DESIGN_SCHEMA as FILE_SCHEMA, TRAITS, validate_document
 
 IMAGE_STYLES = (
@@ -117,24 +119,38 @@ def load_designs(path, entities):
     items = payload.get("entities")
     if not isinstance(items, list):
         raise ValueError("visual_designs.json requires an entities list.")
-    current = {entity["global_id"]: entity for entity in entities}
+    # Registry IDs such as CHAR_001 are allocated per run, not novel identities.
+    # Reuse consolidation's exact name normalization; fuzzy matches are unsafe here.
+    norm_name = load("consolidate").norm_name
+
+    def names(item):
+        return {norm_name(n) for n in [item["canonical_name"], *item.get("aliases", [])]} - {""}
+
+    ids = [item["global_id"] for item in items]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Duplicate visual design ID in visual_designs.json.")
     imported = {}
-    for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("global_id"), str):
-            raise ValueError("Each visual design requires a global_id.")
-        gid = item["global_id"]
-        if gid not in current or gid in imported:
-            raise ValueError(f"Unknown or duplicate visual design ID {gid}; use a design file matching these chapters.")
-        entity = current[gid]
-        if any(item.get(key) != entity[key] for key in ("entity_type", "canonical_name")):
-            raise ValueError(f"Visual design {gid} name/type mismatch; match it to the current registry before importing.")
-        # Reconciliation can rephrase the same facts on another run. Always check
-        # additions against the CURRENT source, never trust an editable snapshot.
-        details = item.get("added_details")
-        if not isinstance(details, dict) or not all(
-            isinstance(k, str) and k.strip() and isinstance(v, str) and v.strip() for k, v in details.items()
-        ):
-            raise ValueError(f"Visual design {gid}: added_details must map trait names to non-empty descriptions.")
+    used = set()
+    for entity in entities:
+        gid = entity["global_id"]
+        candidates = [item for item in items if item["entity_type"] == entity["entity_type"]
+                      and (names(item) & names(entity) or
+                           item["global_id"] == entity.get("character_id", gid)
+                           and item["global_id"].startswith("char_"))]
+        if len(candidates) > 1 or any(item.get("identity_status") == "ambiguous" for item in candidates):
+            raise ValueError(f"Ambiguous visual design mapping for {gid} ({entity['canonical_name']}): "
+                             + ", ".join(item["global_id"] for item in candidates))
+        if not candidates:
+            if entity["entity_type"] == "character":
+                warnings.warn(f"Unmatched chapter character {gid} ({entity['canonical_name']}) in visual_designs.json.",
+                              UserWarning, stacklevel=2)
+            continue
+        item = candidates[0]
+        if item["global_id"] in used:
+            raise ValueError(f"Ambiguous visual design {item['global_id']} matches multiple chapter entities.")
+        used.add(item["global_id"])
+        # Only the editable stable defaults are consumed. Never import the global
+        # source snapshot, chapter states, or additional registry entities.
         imported[gid] = item
     return imported
 
@@ -146,6 +162,8 @@ def prepare_designs(chat, client, model, entities, args, path=""):
         comfy_interrupt_check()
         gid = entity["global_id"]
         base = {key: entity[key] for key in ("global_id", "entity_type", "canonical_name")}
+        if entity.get("aliases"):
+            base["aliases"] = list(entity["aliases"])
         base["source_facts"] = source_facts(entity)
         context = {**base, "image_style": args.image_style, "allowed_traits": DESIGN_TRAITS[entity["entity_type"]]}
         context["temporal_context_by_chapter"] = {

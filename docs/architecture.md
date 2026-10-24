@@ -21,6 +21,8 @@ flowchart TD
     profiles --> visual_profiles["Character Visual Profile Generator"]
     config --> visual_profiles
     visual_profiles --> visual_json["Editable English character visual profiles JSON"]
+    visual_profiles --> global_designs["Global visual_designs.json"]
+    global_designs --> consolidate
     visual_json --> visual_loader["Load Character Visual Profiles"]
     profiles --> profiles_json["Source-grounded editable character profiles JSON"]
     adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]
@@ -117,10 +119,12 @@ flowchart TD
     m_core_character_profiles --> m_core_prompt_cache
     m_core_character_profiles --> m_core_util
     m_core_character_visual_profiles --> m_core_character_profiles
+    m_core_character_visual_profiles --> m_core_editable_schemas
     m_core_character_visual_profiles --> m_core_lmstudio_json
     m_core_character_visual_profiles --> m_core_lmstudio_pipeline
     m_core_character_visual_profiles --> m_core_prompt_cache
     m_core_character_visual_profiles --> m_core_util
+    m_core_character_visual_profiles --> m_core_visual_designs
     m_core_cinematic_adaptation --> m_core_lmstudio_json
     m_core_cinematic_adaptation --> m_core_lmstudio_pipeline
     m_core_cinematic_adaptation --> m_core_narrative_choices
@@ -293,7 +297,7 @@ flowchart TD
 | `src/core/__init__.py` | — | — |
 | `src/core/character_evidence.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.util` | `extract_chapter`, `passages`, `read_source`, `validate_document`, `validate_result` |
 | `src/core/character_profiles.py` | `core.character_evidence`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `build_profiles`, `consolidate`, `prepare_evidence` |
-| `src/core/character_visual_profiles.py` | `core.character_profiles`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `affected_fields`, `blocked_fields`, `generate`, `prepare_profiles`, `validate_design` |
+| `src/core/character_visual_profiles.py` | `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util`, `core.visual_designs` | `affected_fields`, `blocked_fields`, `export_visual_designs`, `generate`, `prepare_profiles`, `validate_design` |
 | `src/core/cinematic_adaptation.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.progress` | `adapt_chapter`, `source_chunks` |
 | `src/core/cinematic_references.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.temporal_context`, `core.util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
 | `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
@@ -338,4 +342,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **48**. Internal dependency edges: **182**.
+Modules: **48**. Internal dependency edges: **184**.

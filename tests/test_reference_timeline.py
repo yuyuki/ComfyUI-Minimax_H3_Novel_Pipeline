@@ -281,3 +281,51 @@ def test_catalog_edits_invalidate_loader_cache(tmp_path, monkeypatch):
     assert LoadChapterCatalogsNode.IS_CHANGED(str(tmp_path)) != before
     loaded, _ = LoadChapterCatalogsNode().run(str(path))
     assert loaded == [chapter]
+
+
+def test_node_global_designs_only_import_selected_catalog_characters(mocked_reconcile, tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from minimax_h3_novel_pipeline.nodes import consolidate_references as node
+    from minimax_h3_novel_pipeline.core import lmstudio_pipeline, path_access, run_output, visual_designs
+    from tests.test_image_reference_outputs import design_checks
+
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(run_output, "storage_root", lambda kind: tmp_path)
+    monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "mock"))
+    reconcile_chat = step.chat_json
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        calls.append(schema["name"])
+        if schema is visual_designs.CONFLICT_SCHEMA:
+            return design_checks(user)
+        return reconcile_chat(client, model, system, user, schema, *args)
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    monkeypatch.setattr(step, "generate_picture_assets", lambda *args: [])
+    monkeypatch.setattr(step, "generate_audio_assets", lambda *args: [])
+    current = catalog("selected-chapter", name="Indy")
+    path = tmp_path / "global/visual_designs.json"
+    util.save_json(path, {"schema_version": visual_designs.DESIGN_SCHEMA_VERSION,
+                         "image_style": "cinematic photographic", "entities": [
+        {"global_id": "char_henry", "entity_type": "character", "canonical_name": "Henry Jones",
+         "aliases": ["Indy"], "source_facts": {"stable_visual_description": "Unrelated chapter disguise",
+                                                "distinguishing_features": []},
+         "added_details": {"eyes": "Edited brown eyes."}},
+        {"global_id": "CHAR_001", "entity_type": "character", "canonical_name": "Absent villain",
+         "source_facts": {"stable_visual_description": "", "distinguishing_features": []},
+         "added_details": {"default_outfit": "Other chapter uniform."}},
+    ]})
+    options = {key: value[1]["default"] for key, value in node.ConsolidateReferencesNode.INPUT_TYPES()["required"].items()
+               if len(value) > 1 and "default" in value[1]}
+    options["no_audit"] = True
+    config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261003120000", "thinking": False}
+    result, _ = node.ConsolidateReferencesNode().run([current], config, visual_designs_path=str(path), **options)["result"]
+    character, = result["entities"]
+    assert character["canonical_name"] == "Indy"
+    assert character["timeline"]["selected-chapter"] == current["characters"][0]["state_by_sequence"]
+    imported, = result["visual_designs"]["entities"]
+    assert imported["added_details"] == {"eyes": "Edited brown eyes."}
+    assert imported["source_facts"]["stable_visual_description"] == "Brown hair"
+    assert len(calls) == 2  # Existing reconciliation and conflict check only.
+    assert len(util.load_json(path)["entities"]) == 2

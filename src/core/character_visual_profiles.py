@@ -8,7 +8,8 @@ import re
 from openai import APIError
 
 from . import character_profiles as source
-from . import lmstudio_json, lmstudio_pipeline, prompt_cache, util
+from . import lmstudio_json, lmstudio_pipeline, prompt_cache, util, visual_designs
+from .editable_schemas import export_schema, validate_document, DESIGN_SCHEMA
 
 VERSION = 1
 MODES = ("strict_canon", "balanced", "cinematic")
@@ -181,4 +182,40 @@ def generate(data, profiles, output, client, model, args):
     lmstudio_pipeline.comfy_interrupt_check()
     saved = output / "character_visual_profiles.json"
     util.save_json(saved, result)
+    export_visual_designs(results, output)
     return result, str(saved)
+
+
+def export_visual_designs(profiles, output):
+    """Export every consolidated identity in the existing editable v1 format."""
+    path = output / "visual_designs.json"
+    previous = {}
+    if path.exists():
+        payload = util.load_json(path)
+        validate_document(payload, DESIGN_SCHEMA, "visual_designs.json")
+        previous = {item["global_id"]: item for item in payload["entities"]}
+    entities = []
+    for profile in profiles:
+        records = {e["evidence_id"]: e["observation"] for e in profile["supporting_evidence"]}
+        details = {}
+        for field in FIELDS:
+            descriptions = [trait["description"] for trait in profile[field]
+                            if all(records[ref["evidence_id"]]["persistence"] != "temporary"
+                                   for ref in trait["evidence"])]
+            if descriptions:
+                details[field] = " ".join(descriptions)
+        gid = profile["character_id"]
+        # Rerunning generation must not overwrite the user's edited defaults.
+        if gid in previous:
+            details = dict(previous[gid]["added_details"])
+        entities.append({"global_id": gid, "entity_type": "character",
+                         "canonical_name": profile["canonical_name"], "aliases": profile["aliases"],
+                         "identity_status": profile["identity_status"],
+                         "source_facts": {"stable_visual_description": "", "distinguishing_features": []},
+                         "added_details": details})
+    payload = {"$schema": "./visual_designs.schema.json",
+               "schema_version": visual_designs.DESIGN_SCHEMA_VERSION,
+               "image_style": "cinematic photographic", "entities": entities}
+    validate_document(payload, DESIGN_SCHEMA, "visual_designs.json")
+    export_schema(output, "visual_designs")
+    util.save_json(path, payload)

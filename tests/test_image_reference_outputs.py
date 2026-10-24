@@ -598,17 +598,12 @@ def test_edit_design_then_import_reuses_additions(output_root):
     assert calls == ["visual_design_conflicts"]
 
 
-@pytest.mark.parametrize("change", ["name", "type", "id", "duplicate", "conflict"])
+@pytest.mark.parametrize("change", ["id", "duplicate", "conflict"])
 def test_bad_design_imports_fail_actionably(output_root, change):
     item = entity()
     design = {"global_id": item["global_id"], "canonical_name": item["canonical_name"],
               "entity_type": item["entity_type"], "source_facts": visual_designs.source_facts(item),
               "added_details": {"skin": "Gold instead of silver."}}
-    if change == "name":
-        design["canonical_name"] = "Another character"
-    if change == "type":
-        design["entity_type"] = "location"
-        design["added_details"] = {"colors": "Gold instead of silver."}
     if change == "id":
         design["global_id"] = "CHAR_999"
     util.save_json(output_root / "designs.json", {"schema_version": visual_designs.DESIGN_SCHEMA_VERSION,
@@ -616,7 +611,7 @@ def test_bad_design_imports_fail_actionably(output_root, change):
                                                 "entities": [design, design] if change == "duplicate" else [design]})
     def chat(client, model, system, user, *args):
         return design_checks(user, "conflict", "color contradicts the silver source description")
-    with pytest.raises(ValueError, match="mismatch|Unknown|conflicts"):
+    with pytest.raises(ValueError, match="Duplicate|conflicts"):
         visual_designs.prepare_designs(chat, None, "model", [item], options(), "designs.json")
 
 

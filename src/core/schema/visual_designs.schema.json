@@ -56,6 +56,18 @@
           },
           "added_details": {
             "type": "object"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "identity_status": {
+            "enum": [
+              "confirmed",
+              "ambiguous"
+            ]
           }
         },
         "required": [

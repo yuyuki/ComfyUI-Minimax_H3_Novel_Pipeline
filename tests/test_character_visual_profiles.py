@@ -62,6 +62,9 @@ def test_node_modes_english_exact_evidence_and_json(workspace, monkeypatch, mode
     text = Path(saved).read_text(encoding="utf-8")
     assert '\n  ' in text and "Élise avait les yeux verts." in text
     assert json.loads(text) == result
+    global_designs = json.loads((Path(saved).parent / "visual_designs.json").read_text(encoding="utf-8"))
+    assert [e["global_id"] for e in global_designs["entities"]] == [p["character_id"]]
+    assert global_designs["entities"][0]["added_details"]["eyes"] == "Green eyes."
     assert chat.call_count == 2
     assert json.loads(chat.call_args_list[0].args[3])["mode"] == mode
     assert "English" in chat.call_args_list[0].args[2]

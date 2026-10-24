@@ -326,5 +326,17 @@ file. To reopen the edited copy, use **Load Character Visual Profiles** with
 `profiles_path` set to its JSON path inside `output/minimax_h3_novel` (relative
 paths start there). Its outputs replace the generator's outputs directly.
 Saved edits reload on the next execution, preserving descriptions, IDs, metadata
-and original evidence without LM Studio or file writes. There is no connection
-to Consolidate References.
+and original evidence without LM Studio or file writes. Use the separate
+`visual_designs.json` export for Consolidate References as described below.
+
+The Character Visual Profile Generator also saves a global `visual_designs.json`
+containing every consolidated character, with stable IDs and aliases. Point
+Consolidate References’ `visual_designs_path` at this file to reuse its editable
+`added_details` for the selected chapter catalogs. Only matching chapter entities
+receive designs; other novel characters are ignored. Matching uses exact normalized
+names/aliases or stable character IDs, without LLM calls. Ambiguous matches fail
+explicitly; unmatched chapter characters produce a warning and use normal design
+generation. Temporary observations are excluded from the global export. Manual
+`added_details` edits survive regeneration and are checked against current chapter
+facts on import. The existing `saved_file` output still points to
+`character_visual_profiles.json`.
