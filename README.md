@@ -198,8 +198,28 @@ Outputs are a dictionary (`MINIMAX_CHARACTER_EVIDENCE`) and the saved JSON path
 (`STRING`). `out_dir` defaults to `character_evidence` in the current run folder;
 the complete editable output is `character_evidence.json`. Controls are
 `chunk_chars`, `thinking`, `temperature`, `max_tokens`, `correction_attempts` and
-`force`. Compatible per-chapter caches in that output folder are reused unless
-`force` is enabled; changed text, prompts, model or settings invalidate them.
+`force`, plus `character_scope`:
+
+- `proper_names` (default): scan every selected chapter for Unicode capitalized
+  name candidates, index their occurrences throughout the novel, and batch nearby
+  paragraphs with preceding/following context and consecutive pronoun paragraphs.
+  Overlapping windows are merged. The model excludes places and other non-character
+  entities; ambiguous aliases remain for the existing profile consolidation stage.
+- `all_characters`: process the full text, including unnamed people and role labels.
+
+Proper-name selection is a heuristic (with English/French sentence-start exclusions),
+not language-independent entity recognition. It can miss unnamed descriptions before
+a name is revealed, distant pronoun-only descriptions, or names without capitalization.
+Use `all_characters` when that coverage matters. Both modes inspect all selected chapters;
+neither samples only the beginning of the novel.
+
+Completed batches are cached under `output/minimax_h3_novel/.cache/character_evidence`
+and reused across run folders unless `force` is enabled. Changed batch text/context,
+prompts, scope, model or settings invalidate the affected requests. Exact source offsets
+are rebuilt from the current text, including when earlier text moves. Diagnostics in
+`character_evidence_diagnostics.json` report elapsed/preprocessing time, selected text,
+passages, batches, cache hits, extraction calls and transport requests including retries.
+Input/output tokens are explicitly rough character-based estimates, not tokenizer usage.
 
 Use **Load Character Evidence** with `evidence_path` to reopen this JSON after manual
 edits, independently of the extractor and LM Studio. Paths must stay inside
@@ -214,7 +234,8 @@ Offsets are zero-based Unicode character indices with an exclusive end; lines
 are one-based in the embedded `source_text`. UTF-8 whitespace and line endings
 are retained (a UTF-8 BOM is excluded). PDF offsets refer to the embedded extracted
 text, not PDF byte positions or visual page coordinates. Repeated quotation
-matches retain all candidate locations; overlapping passages may repeat evidence.
+matches retain all candidate locations; identical observations at the same location
+are deduplicated across overlapping chunks. Conflicting observations remain separate.
 Quotation verification establishes text fidelity, not the truth of a model's
 interpretation: review inferences and confidence manually. Unsupported attributes
 must be omitted. Invalid quotes/fields trigger bounded correction attempts;

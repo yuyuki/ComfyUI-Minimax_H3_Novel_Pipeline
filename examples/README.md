@@ -293,7 +293,15 @@ Connect **Select Chapters** and **LM Studio Configuration** (Qwen) to
 **Character Evidence Extractor**. Select all novel chapter files (one chapter per
 file) or their containing folder. The node returns the complete evidence dictionary
 and the path to `character_evidence/character_evidence.json` in the current run.
-Edit that file manually. Use `force` to regenerate compatible cached chapters;
+`character_scope=proper_names` (default) indexes named-character candidates across
+all chapters and batches surrounding paragraphs, including nearby pronoun context.
+Choose `all_characters` for full-text coverage of unnamed people, role labels, and
+descriptions that precede identification. Proper-name selection uses capitalization
+heuristics; it can miss distant pronoun context and names without capitalization.
+Completed batch caches are shared across runs in
+`output/minimax_h3_novel/.cache/character_evidence`; diagnostics alongside the evidence
+report timing, passage selection, cache hits, requests/retries and estimated tokens.
+Edit that file manually. Use `force` to regenerate compatible cached batches;
 adjust `chunk_chars`, `max_tokens` or `correction_attempts` if validation fails.
 The embedded original source text supports exact quotation checks; PDF locations
 refer to extracted text. Recurring characters retain evidence in every chapter.

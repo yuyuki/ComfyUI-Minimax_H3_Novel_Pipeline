@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from contextvars import ContextVar
 import json
 import re
 import time
@@ -18,6 +19,7 @@ QWEN35_TOP_K = lmstudio_model_qwen.DEFAULTS["top_k"]
 QWEN35_MIN_P = lmstudio_model_qwen.DEFAULTS["min_p"]
 QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
 COMPACT_SCHEMA_VERSION = 3
+REQUEST_METRICS = ContextVar("lmstudio_request_metrics", default=None)
 
 # Character counts, not token counts. Preserve visual identity on retries and
 # leave unrelated schema fields alone (this helper is shared by all stages).
@@ -176,6 +178,11 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 top_p=top_p, max_tokens=request_max_tokens, stream=True,
             )
             response_format = {"type": "json_schema", "json_schema": request_schema}
+            metrics = REQUEST_METRICS.get()
+            if metrics is not None:
+                metrics["llm_requests"] += 1
+                metrics["estimated_input_tokens"] += (len(json.dumps(messages, ensure_ascii=False))
+                                                       + len(json.dumps(request_schema, ensure_ascii=False)) + 3) // 4
             if raw_chatml:
                 stream = client.completions.create(
                     **options, **profile.completion_options(messages),
@@ -222,6 +229,9 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 continue
             raise
         finally:
+            metrics = REQUEST_METRICS.get()
+            if metrics is not None:
+                metrics["estimated_output_tokens"] += (content_chars + reasoning_chars + 3) // 4
             if stream is not None:
                 stream.close()
             diagnostics = (
