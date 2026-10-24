@@ -88,24 +88,88 @@ def test_cache_force_source_settings_and_corruption(workspace, monkeypatch):
     {"attribute": "clothing", "persistence": "persistent"},
     {"attribute": "accessory", "persistence": "unknown"}, {"rationale": ""},
 ])
-def test_invalid_evidence_is_rejected(overrides):
-    with pytest.raises(ValueError):
-        evidence.validate_result({"evidence": [observation(**overrides)]}, "Élise avait les yeux verts.")
+def test_invalid_evidence_warns_and_keeps_valid_observations(overrides, caplog):
+    valid = observation()
+    result = evidence.validate_result({"evidence": [observation(**overrides), valid]}, valid["quotation"])
+    assert len(result) == 2
+    assert result[1] == valid
+    assert result[0]["warnings"]
+    assert {k: v for k, v in result[0].items() if k != "warnings"} == observation(**overrides)
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "WARNING"
+    assert "item 1" in caplog.text
 
 
-def test_quote_correction_and_actionable_failure(workspace, monkeypatch):
+@pytest.mark.parametrize("raw", [None, [], {}, {"evidence": None},
+                                 {"evidence": [], "extra": True}])
+def test_invalid_result_warns_without_raising(raw, caplog):
+    result = evidence.validate_result(raw, "Élise attend.")
+    if raw != {"evidence": [], "extra": True}:
+        assert result[0]["warnings"]
+    assert caplog.records
+    assert all(record.levelname == "WARNING" for record in caplog.records)
+
+
+@pytest.mark.parametrize("item", [None, {}, {**observation(), "extra": True}])
+def test_malformed_item_warns_without_losing_valid_evidence(item, caplog):
+    valid = observation()
+    result = evidence.validate_result({"evidence": [item, valid]}, valid["quotation"])
+    assert len(result) == 2
+    assert result[1] == valid
+    assert result[0]["warnings"]
+    if not isinstance(item, dict):
+        assert result[0]["raw_evidence"] == item
+    else:
+        assert {k: v for k, v in result[0].items() if k != "warnings"} == item
+    assert "requested fields" in caplog.text
+
+
+@pytest.mark.parametrize("valid_items", [[], [observation()]])
+def test_validation_warnings_do_not_retry_or_block_extraction(workspace, monkeypatch, caplog, valid_items):
     source, output = workspace
     path = source / "chapter.txt"
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
-    chat = Mock(side_effect=[{"evidence": [observation("translated")]},
-                             {"evidence": [observation()]}])
+    chat = Mock(return_value={"evidence": [observation("translated"), *valid_items]})
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
-    evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
-    assert "Previous response rejected" in chat.call_args.args[3]
-    chat.side_effect = None
-    chat.return_value = {"evidence": [observation("invented")]}
-    with pytest.raises(RuntimeError, match="chapter.txt, passage 1, character offset 0.*Reduce chunk_chars"):
-        evidence.extract_chapter(path, output, None, "qwen3.5", settings(force=True), 1)
+    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
+    assert len(result["evidence"]) == 1 + len(valid_items)
+    assert result["evidence"][0]["quotation"] == "translated"
+    assert result["evidence"][0]["warnings"]
+    assert result["evidence"][0]["provenance"]["locations"] == []
+    assert chat.call_count == 1
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "WARNING"
+    assert "Quotation is not an exact substring" in caplog.text
+    cache = next((output / ".cache").glob("*.json"))
+    assert json.loads(cache.read_text(encoding="utf-8")) == [{"evidence": [observation("translated"), *valid_items]}]
+    assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
+    assert chat.call_count == 1
+    assert len(caplog.records) == 2
+
+
+@pytest.mark.parametrize("item", [None, {}, observation(quote=""), observation(quote=123),
+                                observation(attribute=[], classification={}, persistence=[]),
+                                observation(confidence="unknown")])
+def test_malformed_observations_are_saved_without_blocking(workspace, monkeypatch, item):
+    source, output = workspace
+    path = source / "chapter.txt"
+    path.write_text("Élise avait les yeux verts.", encoding="utf-8")
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(return_value={"evidence": [item]}))
+    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
+    saved = result["evidence"][0]
+    assert saved["warnings"]
+    if isinstance(item, dict):
+        assert {k: v for k, v in saved.items() if k not in {"warnings", "provenance"}} == item
+    else:
+        assert saved["raw_evidence"] == item
+    assert json.loads(json.dumps(result)) == result
+
+
+def test_all_validation_problems_are_recorded(caplog):
+    item = observation(quote="translated", confidence=2, persistence="persistent", attribute="clothing")
+    result = evidence.validate_result({"evidence": [item]}, "Élise attend.")
+    assert len(result[0]["warnings"]) == 3
+    assert [record.message.split(": ", 1)[1] for record in caplog.records] == result[0]["warnings"]
 
 
 def test_chunks_cover_source_with_boundary_overlap():
