@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .consolidate_references import ConsolidateReferencesNode
+from .character_evidence_extractor import CharacterEvidenceExtractorNode
 from .chapter_selection import SelectChaptersNode
 from .cinematic_chapter_adapter import CinematicChapterAdapterNode
 from .extract_chapter_references import ExtractChapterReferencesNode
@@ -15,6 +16,7 @@ from .load_spatial_continuity import LoadSpatialContinuityNode
 
 
 NODE_CLASS_MAPPINGS = {
+    "CharacterEvidenceExtractorNode": CharacterEvidenceExtractorNode,
     "CinematicChapterAdapterNode": CinematicChapterAdapterNode,
     "LMStudioConfigurationNode": LMStudioConfigurationNode,
     "SelectChaptersNode": SelectChaptersNode,
@@ -29,6 +31,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 __all__ = [
+    "CharacterEvidenceExtractorNode",
     "CinematicChapterAdapterNode",
     "ExtractChapterReferencesNode",
     "LMStudioConfigurationNode",

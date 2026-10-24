@@ -137,7 +137,7 @@ def model_settings(client, model):
 
 
 def chat_json(client: OpenAI, model: str, system: str, user: str,
-              schema: dict[str, Any], temperature: float, max_tokens: int) -> dict[str, Any]:
+              schema: dict[str, Any] | None, temperature: float, max_tokens: int) -> dict[str, Any]:
     from .lmstudio_pipeline import comfy_interrupt_check
 
     profile, settings = model_settings(client, model)
@@ -156,7 +156,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     request_max_tokens = max_tokens
     while attempt <= retries:
         comfy_interrupt_check()
-        request_schema = _qwen35_compact_schema(schema) if attempt else schema
+        request_schema = _qwen35_compact_schema(schema) if attempt and schema is not None else schema
         note = (
             "\nReturn compact JSON within the output limit. Shorten summaries and redundant prose; "
             "preserve distinct entities and source-supported visual traits."
@@ -174,7 +174,8 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 temperature=min(temperature, 0.12) if attempt else temperature,
                 top_p=top_p, max_tokens=request_max_tokens, stream=True,
             )
-            response_format = {"type": "json_schema", "json_schema": request_schema}
+            response_format = ({"type": "json_schema", "json_schema": request_schema}
+                               if request_schema is not None else {"type": "json_object"})
             if raw_chatml:
                 stream = client.completions.create(
                     **options, **profile.completion_options(messages),
@@ -236,7 +237,8 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             if not isinstance(result, dict):
                 raise ValueError("Expected a JSON object.")
             try:
-                _validate_canonical_names(result, request_schema["schema"])
+                if request_schema is not None:
+                    _validate_canonical_names(result, request_schema["schema"])
             except ValueError:
                 correction = (
                     "\nYour previous response contained a missing or blank canonical_name. "

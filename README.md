@@ -1,6 +1,6 @@
 # MiniMax H3 Novel Pipeline
 
-Python code is organized into `src/nodes/` (the eleven ComfyUI nodes) and
+Python code is organized into `src/nodes/` (the twelve ComfyUI nodes) and
 `src/core/` (pipeline stages, LM Studio integration, shared helpers and JSON
 schemas). `src/__init__.py` registers the nodes and local HTTP routes. The root
 `__init__.py` remains the ComfyUI checkout entrypoint; browser assets stay in `web/`.
@@ -185,3 +185,31 @@ Temperature, token budget and repair attempts control LM Studio, not H3.
 Actual reference audio files must each be 2–15 seconds and total no more than
 15 seconds. This prompt-only pipeline cannot validate media duration or file size.
 Limits: https://www.minimax.io/news/minimax-h3-open-source
+
+### Character Evidence Extractor
+
+Connect **Select Chapters** (`chapter_selection`) and **LM Studio Configuration**
+(`lmstudio_config`, model family **Qwen**) to **Character Evidence Extractor**.
+Select every chapter file, or a folder containing them; each file is one chapter,
+processed independently in natural filename order. TXT, Markdown and searchable
+PDF inputs are supported. No character profiles are consolidated.
+
+Outputs are a dictionary (`MINIMAX_CHARACTER_EVIDENCE`) and the saved JSON path
+(`STRING`). `out_dir` defaults to `character_evidence` in the current run folder;
+the complete editable output is `character_evidence.json`. Controls are
+`chunk_chars`, `thinking`, `temperature`, `max_tokens`, `correction_attempts` and
+`force`. Compatible per-chapter caches in that output folder are reused unless
+`force` is enabled; changed text, prompts, model or settings invalidate them.
+
+Each observation records its character, attribute, value, explicit/inferred
+classification, confidence, persistence, rationale, original-language quotation
+and chapter/file provenance. Every quotation is checked as an exact substring.
+Offsets are zero-based Unicode character indices with an exclusive end; lines
+are one-based in the embedded `source_text`. UTF-8 whitespace and line endings
+are retained (a UTF-8 BOM is excluded). PDF offsets refer to the embedded extracted
+text, not PDF byte positions or visual page coordinates. Repeated quotation
+matches retain all candidate locations; overlapping passages may repeat evidence.
+Quotation verification establishes text fidelity, not the truth of a model's
+interpretation: review inferences and confidence manually. Unsupported attributes
+must be omitted. Invalid quotes/fields trigger bounded correction attempts;
+persistent failures stop extraction with chapter/passage and retry guidance.
