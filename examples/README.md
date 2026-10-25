@@ -303,6 +303,12 @@ Completed batch caches are reused within the current run in
 report timing, passage selection, cache hits, requests/retries and estimated tokens.
 Edit that file manually. Use `force` to regenerate compatible cached batches;
 adjust `chunk_chars`, `max_tokens` or `correction_attempts` if validation fails.
+`correction_attempts` also bounds targeted repairs of invalid quotations and
+temporary classifications. Set it to zero to retain issues without repair calls.
+Unrepaired observations remain in the output for review, without blocking the
+valid observations. Inspect `character_evidence_review.json` for issues and the
+original values of model-corrected observations. Consolidation writes its exclusion
+details to `character_profiles_validation.json` even if its later LLM request fails.
 The embedded original source text supports exact quotation checks; PDF locations
 refer to extracted text. Recurring characters retain evidence in every chapter.
 To resume after editing, use **Load Character Evidence** with `evidence_path` set

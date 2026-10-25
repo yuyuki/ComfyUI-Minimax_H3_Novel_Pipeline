@@ -252,8 +252,9 @@ matches retain all candidate locations; identical observations at the same locat
 are deduplicated across overlapping chunks. Conflicting observations remain separate.
 Quotation verification establishes text fidelity, not the truth of a model's
 interpretation: review inferences and confidence manually. Unsupported attributes
-must be omitted. Invalid quotes/fields trigger bounded correction attempts;
-persistent failures stop extraction with chapter/passage and retry guidance.
+must be omitted. Invalid observations remain annotated for review after bounded
+quotation/persistence repairs; unrecoverable initial transport or JSON response
+failures stop extraction with chapter/passage and retry guidance.
 
 
 ### Consolidate Character Profiles
@@ -268,8 +269,9 @@ It returns `character_profiles` (`MINIMAX_CHARACTER_PROFILES`) and `saved_file`
 Controls: `thinking`, `temperature`, `max_tokens`, `correction_attempts`, `force`.
 The complete current input, model, prompt and settings determine the disk cache;
 manual Load-node corrections take priority over any earlier extraction. Invalid
-observations or quotation locations stop consolidation with correction guidance.
-Correct them in the evidence JSON and reload. Existing warning metadata is retained.
+observations or quotation locations are excluded from factual consolidation and
+retained in its validation report. Correct them in the evidence JSON and reload.
+Existing warning metadata is retained.
 
 Profiles retain every observation and original quotation/location, separate explicit
 stable traits, temporary appearance, actions and inferred information, and list
