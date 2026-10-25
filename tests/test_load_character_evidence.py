@@ -75,9 +75,33 @@ def test_invalid_paths(saved, value):
     assert math.isnan(Loader.IS_CHANGED(value))
 
 
-def test_directory_and_external_paths_rejected(saved):
+def test_loads_run_directory_and_tracks_edits(saved):
+    path, data, _ = saved
+    directory = path.parent / "20261024163701" / "character_evidence"
+    directory.mkdir(parents=True)
+    target = path.rename(directory / "character_evidence.json")
+    relative = directory.relative_to(path.parent)
+    for value in (str(directory), str(relative), relative.as_posix()):
+        assert Loader().run(value) == (data, str(target))
+        assert Loader.IS_CHANGED(value) == Loader.IS_CHANGED(str(target))
+    before = Loader.IS_CHANGED(str(relative))
+    data["review"] = "manual edit"
+    target.write_text(json.dumps(data), encoding="utf-8")
+    assert Loader.IS_CHANGED(str(relative)) != before
+    assert Loader().run(str(relative)) == (data, str(target))
+
+
+def test_directory_without_default_file_rejected(saved):
     path, _, _ = saved
-    for value in (str(path.parent), str(path.parent.parent / "outside.json")):
+    path.rename(path.with_name("renamed.json"))
+    with pytest.raises(ValueError, match=r"does not exist: .*character_evidence\.json"):
+        Loader().run(str(path.parent))
+    assert math.isnan(Loader.IS_CHANGED(str(path.parent)))
+
+
+def test_external_paths_rejected(saved):
+    path, _, _ = saved
+    for value in (str(path.parent.parent), str(path.parent.parent / "outside.json")):
         with pytest.raises(ValueError):
             Loader().run(value)
 

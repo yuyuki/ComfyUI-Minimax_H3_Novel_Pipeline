@@ -223,7 +223,9 @@ Input/output tokens are explicitly rough character-based estimates, not tokenize
 
 Use **Load Character Evidence** with `evidence_path` to reopen this JSON after manual
 edits, independently of the extractor and LM Studio. Paths must stay inside
-`output/minimax_h3_novel`; relative paths start there. Its `character_evidence`
+`output/minimax_h3_novel`; relative paths start there. You can also pass a directory
+such as `20261024163701/character_evidence` to load its `character_evidence.json`.
+Its `character_evidence`
 and `saved_file` outputs match the extractor. Saved edits reload on the next
 workflow execution; loading preserves all data and never writes to the file.
 

@@ -11,10 +11,12 @@ from ..core.character_evidence import validate_document
 
 def _evidence_path(value: str) -> Path:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("evidence_path must name a saved character evidence JSON file.")
+        raise ValueError("evidence_path must name a saved character evidence JSON file or its directory.")
     path = util.output_path(value.strip())
+    if path.is_dir():
+        path = util.output_path(path / "character_evidence.json")
     if not path.is_file():
-        raise ValueError(f"Character evidence file does not exist: {path}. Select a saved JSON file.")
+        raise ValueError(f"Character evidence file does not exist: {path}. Select a saved JSON file or its directory.")
     return path
 
 
@@ -26,7 +28,8 @@ class LoadCharacterEvidenceNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"evidence_path": ("STRING", {"default": "", "tooltip": (
-            "Saved character evidence JSON file, including renamed copies. Must be inside "
+            "Saved character evidence JSON file (including renamed copies), or a directory containing "
+            "character_evidence.json. Must be inside "
             "output/minimax_h3_novel; relative paths start there. Edits reload on the next execution."
         )})}}
 
