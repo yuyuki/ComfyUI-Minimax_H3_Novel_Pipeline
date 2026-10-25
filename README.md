@@ -214,11 +214,17 @@ Use `all_characters` when that coverage matters. Both modes inspect all selected
 neither samples only the beginning of the novel.
 
 Completed batches are cached under `output/minimax_h3_novel/<timestamp>/.cache/character_evidence`
-and reused within that run unless `force` is enabled. Changed batch text/context,
+and reused within that run unless `force` is enabled. To resume an earlier execution,
+set optional `resume_run` to its timestamp folder name, for example `20261025154413`
+(not a full path). Matching completed batches are read from that run's
+`.cache/character_evidence` and saved into the new run's cache; missing or unreadable
+batches are extracted normally. The previous run stays unchanged. Leave `resume_run`
+empty for no cross-run reuse and keep `force=False` to use caches. Keep the original
+source paths, model and extraction settings for cache matches. Changed batch text/context,
 prompts, scope, model or settings invalidate the affected requests. Exact source offsets
 are rebuilt from the current text, including when earlier text moves. Diagnostics in
 `character_evidence_diagnostics.json` report elapsed/preprocessing time, selected text,
-passages, batches, cache hits, extraction calls and transport requests including retries.
+passages, batches, cache hits (including `resumed_cache_hits`), extraction calls and transport requests including retries.
 Input/output tokens are explicitly rough character-based estimates, not tokenizer usage.
 
 Invalid quotations and temporary classifications receive up to `correction_attempts`

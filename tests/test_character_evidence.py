@@ -79,7 +79,7 @@ def test_overflow_splitting_is_bounded_and_never_caches_partial_result(workspace
     with pytest.raises(RuntimeError, match="character offset 0"):
         evidence.extract_chapter(path, output, None, "qwen3.8",
                                  settings(character_scope="all_characters", correction_attempts=10), 1)
-    assert chat.call_count == 4
+    assert chat.call_count == 3
     assert not list(output.rglob("*.json"))
 
 

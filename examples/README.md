@@ -301,6 +301,12 @@ heuristics; it can miss distant pronoun context and names without capitalization
 Completed batch caches are reused within the current run in
 `output/minimax_h3_novel/<timestamp>/.cache/character_evidence`; diagnostics alongside the evidence
 report timing, passage selection, cache hits, requests/retries and estimated tokens.
+To continue a failed extraction from a previous run, set `resume_run` to just its
+folder name, for example `20261025154413`, and keep `force=False` and the original
+source paths/model/settings. Matching batches from that run's `.cache/character_evidence`
+are copied into the current run's cache; only missing or unreadable batches require
+extraction. New outputs belong to the current run; the previous run is unchanged.
+Leave `resume_run` empty to disable reuse from a previous run.
 Edit that file manually. Use `force` to regenerate compatible cached batches;
 adjust `chunk_chars`, `max_tokens` or `correction_attempts` if validation fails.
 `correction_attempts` also bounds targeted repairs of invalid quotations and
