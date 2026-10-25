@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 from ..core import character_evidence, lmstudio_json, lmstudio_pipeline, progress, util
-from ..core.path_access import output_path
 from ..core.run_output import stage_output
 from .chapter_selection import chapter_path_list
 
@@ -58,6 +57,7 @@ class CharacterEvidenceExtractorNode:
             raise ValueError("No supported chapters found. Select all novel chapter files or their folder.")
         config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(config, out_dir.strip())
+        cache_dir = stage_output(config, ".cache/character_evidence")
         args = argparse.Namespace(chunk_chars=int(chunk_chars), max_tokens=int(max_tokens),
                                   temperature=float(temperature), correction_attempts=int(correction_attempts),
                                   thinking=bool(thinking), force=bool(force), base_url=config["api_url"],
@@ -83,7 +83,7 @@ class CharacterEvidenceExtractorNode:
                         chapters.append(character_evidence.extract_chapter(
                             path, output, client, model, args, index + 1,
                             source=sources[index], occurrences=occurrences[index],
-                            cache_dir=output_path(".cache/character_evidence"), diagnostics=diagnostics["chapters"]))
+                            cache_dir=cache_dir, diagnostics=diagnostics["chapters"]))
         finally:
             lmstudio_json.REQUEST_METRICS.reset(token)
         data = {"format_version": character_evidence.VERSION,

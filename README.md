@@ -213,8 +213,8 @@ a name is revealed, distant pronoun-only descriptions, or names without capitali
 Use `all_characters` when that coverage matters. Both modes inspect all selected chapters;
 neither samples only the beginning of the novel.
 
-Completed batches are cached under `output/minimax_h3_novel/.cache/character_evidence`
-and reused across run folders unless `force` is enabled. Changed batch text/context,
+Completed batches are cached under `output/minimax_h3_novel/<timestamp>/.cache/character_evidence`
+and reused within that run unless `force` is enabled. Changed batch text/context,
 prompts, scope, model or settings invalidate the affected requests. Exact source offsets
 are rebuilt from the current text, including when earlier text moves. Diagnostics in
 `character_evidence_diagnostics.json` report elapsed/preprocessing time, selected text,

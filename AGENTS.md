@@ -94,6 +94,9 @@ Preserve existing node IDs and socket types for workflow compatibility.
 - Registry briefs describe image/audio assets; do not fabricate media or
   introduce video references. Preserve scene-local H3 binding order.
 - Preserve streaming cancellation checks and existing cache/schema behavior.
+- Resolve node outputs and caches through `run_output.stage_output` inside the
+  configured timestamped run folder. Character evidence batch caches belong in
+  `<timestamp>/.cache/character_evidence`, never the shared output root.
 
 ## Packaging and validation
 

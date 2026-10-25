@@ -327,19 +327,26 @@ def test_disjoint_batch_offsets_cache_and_conflicts(workspace, monkeypatch):
     assert second["evidence"][1]["provenance"]["locations"][0]["start_char"] > first["evidence"][1]["provenance"]["locations"][0]["start_char"]
 
 
-def test_node_cache_shared_across_runs_and_diagnostics(workspace, monkeypatch):
+def test_node_cache_isolated_per_run_and_reused_within_run(workspace, monkeypatch):
     source, output = workspace
     (source / "chapter.txt").write_text("Élise attend.", encoding="utf-8")
     chat = Mock(return_value={"evidence": []})
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
     monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "qwen3.5"))
-    for stamp in ("20261024120000", "20261024130000"):
+    for stamp, expected_calls, expected_hits in (
+        ("20261024120000", 1, 0),
+        ("20261024120000", 1, 1),
+        ("20261024130000", 2, 0),
+    ):
         node.CharacterEvidenceExtractorNode().run(
             {"api_url": "http://127.0.0.1:1234/v1", "run_folder": stamp}, {"chapter_paths": [str(source)]})
-    assert chat.call_count == 1
-    stats = json.loads((output / "20261024130000/character_evidence/character_evidence_diagnostics.json").read_text())
-    assert stats["chapters"][0]["cache_hits"] == 1
-    assert stats["llm_requests"] == 0
+        assert chat.call_count == expected_calls
+        assert len(list((output / stamp / ".cache/character_evidence").glob("*.json"))) == 1
+        stats = json.loads((output / stamp / "character_evidence/character_evidence_diagnostics.json").read_text())
+        assert stats["chapters"][0]["cache_hits"] == expected_hits
+        assert stats["chapters"][0]["llm_calls"] == 1 - expected_hits
+        assert stats["llm_requests"] == 0  # The mocked transport emits no request metrics.
+    assert not (output / ".cache").exists()
     assert evidence.lmstudio_json.REQUEST_METRICS.get() is None
 
 

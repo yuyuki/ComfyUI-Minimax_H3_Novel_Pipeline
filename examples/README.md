@@ -298,8 +298,8 @@ all chapters and batches surrounding paragraphs, including nearby pronoun contex
 Choose `all_characters` for full-text coverage of unnamed people, role labels, and
 descriptions that precede identification. Proper-name selection uses capitalization
 heuristics; it can miss distant pronoun context and names without capitalization.
-Completed batch caches are shared across runs in
-`output/minimax_h3_novel/.cache/character_evidence`; diagnostics alongside the evidence
+Completed batch caches are reused within the current run in
+`output/minimax_h3_novel/<timestamp>/.cache/character_evidence`; diagnostics alongside the evidence
 report timing, passage selection, cache hits, requests/retries and estimated tokens.
 Edit that file manually. Use `force` to regenerate compatible cached batches;
 adjust `chunk_chars`, `max_tokens` or `correction_attempts` if validation fails.
