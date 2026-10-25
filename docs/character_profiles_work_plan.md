@@ -411,7 +411,9 @@ l'essai réel avec LM Studio et sa validation utilisateur restent à faire.
 Résultats : voir [le diagnostic de l'étape 2](character_evidence_diagnosis.md).
 Le fichier initial contient 3 112 observations, dont 326 exclues. Les corrections
 ciblées et les rapports sont implémentés ; les fichiers utilisateur sont inchangés.
-La validation réelle du comportement du modèle reste à effectuer avec l'utilisateur.
+L'utilisateur confirme désormais que `character_evidence_extractor.py` est OK
+(reprise du 2026-10-25). L'extracteur est considéré comme validé pour poursuivre
+la consolidation. Cette confirmation ne vaut pas validation de l'étape 3.
 
 ## Étape 3 — Consolider avec des requêtes bornées
 
@@ -449,6 +451,24 @@ Le format courant est v2. Les profils et leur schéma, le chargeur, les budgets,
 les caches et les contrôles hors ligne sont implémentés. La simulation du roman
 conserve 2 786 observations valides et 326 exclusions sur 25 chapitres.
 Elle ne valide pas les décisions narratives du modèle. L'essai réel reste à faire.
+À la reprise du 2026-10-25, le contrôle en lecture seule de l'extraction du run
+`20261025192416` compte 766 observations sur 25 chapitres : 624 utilisables et
+142 exclues par les validations existantes. Ces mesures remplacent les chiffres
+de l'ancienne extraction pour le prochain essai réel, sans invalider la simulation
+historique ci-dessus. Les 58 tests ciblés de consolidation passent.
+Le premier essai réel signalé ensuite échoue sur un profil sans preuves
+(`Every profile needs evidence`). Le schéma de requête et les consignes ont été
+renforcés sans supprimer de profils invalides ni relâcher la couverture ; les
+61 tests ciblés passent. Relance réelle nécessaire pour valider cette correction,
+détaillée dans les contrôles de l'étape 3.
+Après un nouvel échec, l'utilisateur demande de poursuivre avec un avertissement
+en ignorant les informations problématiques. Les réponses du modèle encore
+invalides après correction entraînent désormais une subdivision du lot pour isoler
+les décisions en échec. Les décisions non vérifiées ne sont pas appliquées :
+identités séparées, traits ignorés, comparaisons incertaines. Les observations
+sources restent conservées et le rapport des requêtes contient les avertissements
+et leurs entrées. Les erreurs techniques et l'annulation restent bloquantes.
+Contrôles ciblés : 67 tests réussis ; nouvel essai réel attendu.
 L'étape 4 n'a pas commencé : la consommation visuelle des sélections et des liens,
 le filtrage du chapitre et les états par séquence restent à implémenter après
 validation de l'étape 3.

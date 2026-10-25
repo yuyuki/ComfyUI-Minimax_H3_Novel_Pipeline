@@ -285,12 +285,27 @@ It returns `character_profiles` (`MINIMAX_CHARACTER_PROFILES`) and `saved_file`
 (`STRING`), saving readable UTF-8 `character_profiles.json` under `out_dir`
 (default `character_profiles`) in the current run folder.
 
-Controls: `thinking`, `temperature`, `max_tokens`, `context_tokens` (default
+`persistence_filter` defaults to `persistent`: only observations marked
+`"persistence": "persistent"` enter consolidation. Choose `everything` to include
+temporary and unknown observations. The saved source document contains the selected
+evidence and full chapter text; the upstream evidence is unchanged. Coverage checks
+apply to the selected evidence. Filtering can remove context used to connect aliases.
+`thinking` defaults to `false` for faster consolidation; enable it when comparing
+difficult identity or conflict decisions. Existing nodes may retain their saved value.
+
+Other controls: `thinking`, `temperature`, `max_tokens`, `context_tokens` (default
 65,536), `correction_attempts`, `force`. Set `context_tokens` no higher than the
 context actually loaded in LM Studio. The input budget reserves `max_tokens` for
 the response plus a retry/framing margin and conservatively counts UTF-8 bytes.
 Lowering `context_tokens` makes smaller requests; an indivisible oversized
 observation produces an explicit diagnostic, never truncated evidence.
+
+`correction_attempts` defaults to `0`: invalid decisions are skipped immediately,
+without semantic correction or recursive subdivision requests. Sources remain in
+the output; unverified identities stay separate and unverified traits are not
+promoted. Set existing nodes to `0` manually. Shared JSON transport recovery still
+applies to malformed responses. Progress advances through chapters, identity
+comparisons and character profiles; it is not an estimate of remaining time.
 
 Identity grouping runs first in bounded chapter batches, followed by contextual
 comparisons across batches. Shared names or roles only select comparisons; they
@@ -303,6 +318,13 @@ once, with its complete source quotation and positions; invalid observations
 remain in `character_profiles_validation.json` and `excluded_evidence`.
 
 Validated requests are cached under `<run>/<out_dir>/.cache/character_profiles`.
+If a model response remains invalid after the configured corrections, consolidation
+logs a warning and subdivides the failed batch to recover independent decisions.
+Unresolved identity decisions leave observations separate; invalid trait assignments
+are skipped and invalid comparisons remain uncertain. Original evidence is retained.
+`character_profiles_requests.json` records warnings and their affected inputs.
+These fallbacks are not cached as successful model decisions. Connection, filesystem,
+configuration errors and cancellation still stop execution.
 Cancellation or a later failure leaves completed batches available for retry;
 `force` bypasses them. Input, prompt, schema, model and settings determine each
 cache key. `character_profiles_requests.json` records request/cache counts and

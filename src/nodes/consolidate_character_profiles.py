@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 
 from ..core import character_profiles, lmstudio_pipeline, progress
 from ..core.run_output import stage_output
 
 
 class ConsolidateCharacterProfilesNode:
-    DESCRIPTION = "Reconcile all character evidence with Qwen, retaining exact sources and conflicting observations."
+    DESCRIPTION = "Reconcile selected character evidence with Qwen, retaining exact sources and conflicting observations."
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -16,13 +17,16 @@ class ConsolidateCharacterProfilesNode:
             "character_evidence": ("MINIMAX_CHARACTER_EVIDENCE",),
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "out_dir": ("STRING", {"default": "character_profiles"}),
-            "thinking": ("BOOLEAN", {"default": True}),
+            "thinking": ("BOOLEAN", {"default": False}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0}),
             "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000}),
             "context_tokens": ("INT", {"default": 65536, "min": 8192, "max": 2000000,
                 "tooltip": "Must not exceed the loaded LM Studio context. Includes output and retry reserves."}),
-            "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
+            "correction_attempts": ("INT", {"default": 0, "min": 0, "max": 10,
+                "tooltip": "0 skips invalid decisions immediately, without correction or subdivision requests."}),
             "force": ("BOOLEAN", {"default": False}),
+            "persistence_filter": (["persistent", "everything"], {"default": "persistent",
+                "tooltip": "Consolidate only persistent observations, or include temporary and unknown observations too."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHARACTER_PROFILES", "STRING")
@@ -37,7 +41,8 @@ class ConsolidateCharacterProfilesNode:
 
     @progress.node_progress
     def run(self, character_evidence, lmstudio_config, out_dir="character_profiles",
-            thinking=True, temperature=0.12, max_tokens=16384, correction_attempts=2, force=False, context_tokens=65536):
+            thinking=False, temperature=0.12, max_tokens=16384, correction_attempts=0, force=False, context_tokens=65536,
+            persistence_filter="persistent"):
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         if lmstudio_config.get("model_family", "Qwen") != "Qwen":
@@ -46,7 +51,17 @@ class ConsolidateCharacterProfilesNode:
             raise ValueError("out_dir must be a non-empty relative subfolder.")
         if max_tokens < 1 or correction_attempts < 0 or not 0 <= temperature <= 2:
             raise ValueError("Invalid token budget, correction attempts or temperature.")
+        if persistence_filter not in {"persistent", "everything"}:
+            raise ValueError("persistence_filter must be persistent or everything.")
         records = character_profiles.prepare_evidence(character_evidence)
+        if persistence_filter == "persistent":
+            # Keep the saved source document and its coverage contract aligned with
+            # the selected observations, without mutating the upstream evidence.
+            character_evidence = deepcopy(character_evidence)
+            for chapter in character_evidence["chapters"]:
+                chapter["evidence"] = [item for item in chapter["evidence"]
+                                       if isinstance(item, dict) and item.get("persistence") == "persistent"]
+            records = {key: item for key, item in records.items() if item.get("persistence") == "persistent"}
         config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(config, out_dir.strip())
         args = argparse.Namespace(max_tokens=int(max_tokens), temperature=float(temperature),

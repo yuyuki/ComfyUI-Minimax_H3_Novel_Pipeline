@@ -194,7 +194,7 @@ def test_empty_evidence_saves_empty_profiles_without_request(workspace, monkeypa
     assert Path(saved).is_file()
 
 
-@pytest.mark.parametrize("kind", ["network", "interrupt", "invalid"])
+@pytest.mark.parametrize("kind", ["network", "interrupt"])
 def test_failures_do_not_save_or_cache(workspace, monkeypatch, kind):
     class InterruptProcessingException(RuntimeError):
         pass
@@ -206,7 +206,7 @@ def test_failures_do_not_save_or_cache(workspace, monkeypatch, kind):
     with pytest.raises(RuntimeError) as caught:
         profiles.consolidate(data, profiles.prepare_evidence(data), workspace, None, "qwen3.5", settings())
     assert "private server detail" not in str(caught.value)
-    assert chat.call_count == (2 if kind == "invalid" else 1)
+    assert chat.call_count == 1
     assert not workspace.joinpath(".cache").exists()
     assert not workspace.joinpath("character_profiles.json").exists()
 

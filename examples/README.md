@@ -333,13 +333,21 @@ Saved edits reload on the next workflow execution without rewriting the file.
 
 To consolidate characters, connect either evidence node's `character_evidence`
 output to **Consolidate Character Profiles**, together with **LM Studio
-Configuration** using Qwen. Include all novel chapters. Keep `out_dir` at
+Configuration** using Qwen. Include all novel chapters. `persistence_filter` defaults
+to `persistent`; select `everything` to include temporary and unknown observations.
+Only selected evidence is consolidated and embedded in the saved source document;
+the original evidence stays unchanged. `thinking` defaults to `false` for this node.
+Set it manually on existing nodes that retain `true`. Keep `out_dir` at
 `character_profiles` to save `character_profiles/character_profiles.json` and its
 JSON Schema in the current run. Set `context_tokens` at or below LM Studio's
 loaded context (default 65,536); it includes the response and correction reserves.
 Identity and precise-trait analysis use separate bounded requests, with complete
 evidence coverage and cached completed batches. Lower the control for smaller
 requests. `character_profiles_requests.json` records sizes and request counts.
+Set `correction_attempts=0` (the new default) to skip invalid decisions without
+semantic retries or recursive batch subdivision. Existing nodes may retain `2`.
+Sources are preserved, but rejected decisions remain unverified. Shared JSON
+transport recovery remains active for malformed responses.
 
 Edit a copy of `character_profiles.json`, then connect **Load Character Profiles**
 to it through `profiles_path` (file, renamed copy or containing directory under

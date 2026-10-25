@@ -123,6 +123,7 @@ flowchart TD
     m_core_character_profile_batches --> m_core_editable_schemas
     m_core_character_profile_batches --> m_core_lmstudio_json
     m_core_character_profile_batches --> m_core_lmstudio_pipeline
+    m_core_character_profile_batches --> m_core_progress
     m_core_character_profile_batches --> m_core_prompt_cache
     m_core_character_profile_batches --> m_core_util
     m_core_character_profile_document --> m_core_character_profiles
@@ -316,7 +317,7 @@ flowchart TD
 | `src/__init__.py` | `core.lmstudio_settings`, `core.path_access`, `core.route_access`, `nodes` | — |
 | `src/core/__init__.py` | — | — |
 | `src/core/character_evidence.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.util` | `batch_passages`, `extract_chapter`, `index_names`, `passages`, `read_source`, `repair_observations`, `review_report`, `selected_passages`, `validate_document`, `validate_result` |
-| `src/core/character_profile_batches.py` | `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `Requests`, `analyse_traits`, `compact_record`, `compare_values`, `conflict_choices`, `decision_payload`, `encoded`, `merge_groups`, `partition_identities`, `reconcile`, `reconcile_identities`, `schema` |
+| `src/core/character_profile_batches.py` | `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.prompt_cache`, `core.util` | `Requests`, `analyse_traits`, `compact_record`, `compare_values`, `conflict_choices`, `decision_payload`, `encoded`, `merge_groups`, `partition_identities`, `reconcile`, `reconcile_identities`, `schema` |
 | `src/core/character_profile_document.py` | `core.character_profiles`, `core.editable_schemas` | `make_document`, `validate_change`, `validate_document` |
 | `src/core/character_profiles.py` | `core.character_evidence`, `core.character_profile_batches`, `core.character_profile_document`, `core.editable_schemas`, `core.util` | `build_profiles`, `consolidate`, `prepare_evidence`, `validation_report` |
 | `src/core/character_visual_profiles.py` | `core.character_profile_document`, `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util`, `core.visual_designs` | `affected_fields`, `blocked_fields`, `export_visual_designs`, `generate`, `prepare_profiles`, `validate_design` |
@@ -365,4 +366,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **51**. Internal dependency edges: **198**.
+Modules: **51**. Internal dependency edges: **199**.

@@ -9,7 +9,7 @@ import logging
 
 from openai import APIError
 
-from . import character_profiles as cp, lmstudio_json, lmstudio_pipeline, prompt_cache, util
+from . import character_profiles as cp, lmstudio_json, lmstudio_pipeline, progress, prompt_cache, util
 from .editable_schemas import validate_document
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,8 @@ class Requests:
         self.output, self.client, self.model, self.args = output, client, model, args
         self.context = getattr(args, "context_tokens", 65536)
         self.stats = {"requests": 0, "cache_hits": 0, "max_input_bytes": 0,
-                      "context_tokens": self.context, "response_tokens": args.max_tokens}
+                      "context_tokens": self.context, "response_tokens": args.max_tokens,
+                      "warnings": []}
 
     def capacity(self, system, contract):
         # UTF-8 bytes deliberately overestimate ordinary Qwen tokenization, rather
@@ -157,8 +158,18 @@ class Requests:
             except (ValueError, RuntimeError) as exc:
                 if lmstudio_json._is_comfy_interrupt(exc):
                     raise
+                if isinstance(exc, RuntimeError) and not str(exc).startswith("Invalid structured JSON after "):
+                    raise
                 if attempt == self.args.correction_attempts:
-                    raise RuntimeError(f"Character profile consolidation failed ({contract['name']}): {exc}") from exc
+                    warning = {"schema": contract["name"], "attempts": attempt + 1,
+                               "reason": str(exc)[:1200], "input": payload}
+                    self.stats["warnings"].append(warning)
+                    logger.warning("Character profiles: ignoring invalid model decision (%s) after %s "
+                                   "attempt(s): %s. Sources retained; see character_profiles_requests.json.",
+                                   contract["name"], attempt + 1, str(exc)[:1200])
+                    return None
+                logger.warning("Character profiles: %s response rejected on attempt %s/%s: %s",
+                               contract["name"], attempt + 1, self.args.correction_attempts + 1, str(exc)[:1200])
                 # Only the error prose is bounded; the original independent observations are untouched.
                 correction = "\nRejected: " + str(exc)[:1200] + "\nReturn every input ID in the corrected response."
 
@@ -179,7 +190,7 @@ class Requests:
                 batch.append(job)
             if batch:
                 yield batch
-        for batch in packed():
+        def resolve(batch):
             indexed = {job["job_id"]: job for job in batch}
             def check(result):
                 seen = [d["job_id"] for d in result["decisions"]]
@@ -189,8 +200,33 @@ class Requests:
                     for decision in result["decisions"]:
                         validate(decision, indexed[decision["job_id"]])
             result = self.call(system, contract, decision_payload(batch), check)
+            if result is None:
+                if len(batch) > 1 and self.args.correction_attempts > 0:
+                    middle = len(batch) // 2
+                    yield from resolve(batch[:middle])
+                    yield from resolve(batch[middle:])
+                    return
+                # An unverified comparison must never imply agreement or allow
+                # contradictory values to become global traits.
+                decisions = []
+                for job in batch:
+                    decision = {"job_id": job["job_id"]}
+                    if contract == KEY_PAIRS:
+                        decision["same_trait"] = False
+                    elif contract == IDENTITY_PAIR:
+                        decision.update(relation="uncertain", evidence=[])
+                    else:
+                        decision.update(relation="uncertain", scope="unverified_model_response",
+                                        evidence=[{"evidence_id": job[side]["evidence_id"]}
+                                                  for side in ("left", "right")],
+                                        **dict.fromkeys(("before_id", "after_id", "support_id", "temporal_quote"), ""))
+                    decisions.append(decision)
+                result = {"decisions": decisions}
+                check(result)
             for decision in result["decisions"]:
                 yield decision, indexed[decision["job_id"]]
+        for batch in packed():
+            yield from resolve(batch)
 
 
 def decision_payload(jobs):
@@ -218,17 +254,26 @@ def compact_record(key, item):
 
 def partition_identities(records, requests):
     groups = []
+    def resolve(batch):
+        subset = {item["evidence_id"]: records[item["evidence_id"]] for item in batch}
+        response = requests.call(cp.SYSTEM, cp.SCHEMA, {"observations": batch},
+                                 lambda result: cp.build_profiles(result, subset))
+        if response is not None:
+            return response["profiles"]
+        if len(batch) > 1 and requests.args.correction_attempts > 0:
+            middle = len(batch) // 2
+            return resolve(batch[:middle]) + resolve(batch[middle:])
+        # Keep the source observation without asserting any identity merge.
+        return [{"canonical_name": item["character"], "identity_status": "ambiguous",
+                 "evidence": [{"evidence_id": key}], "identity_support": []} for key, item in subset.items()]
     # Keep chapter context together where it fits. Every observation remains in a
     # validated local identity; later comparisons can link identities across batches.
     chapters = defaultdict(list)
     for key, item in records.items():
         chapters[(item["provenance"]["file"], item["provenance"]["chapter"])].append(compact_record(key, item))
-    for observations in chapters.values():
+    for observations in progress.steps(list(chapters.values())):
         for batch in requests.batches(observations, cp.SYSTEM, cp.SCHEMA, "observations"):
-            subset = {item["evidence_id"]: records[item["evidence_id"]] for item in batch}
-            response = requests.call(cp.SYSTEM, cp.SCHEMA, {"observations": batch},
-                                     lambda result: cp.build_profiles(result, subset))
-            groups.extend(response["profiles"])
+            groups.extend(resolve(batch))
     return groups
 
 
@@ -282,8 +327,9 @@ def reconcile_identities(groups, records, requests):
             merged = merge_groups([groups[job["left_group"]], groups[job["right_group"]]], records, ids)
             cp.build_profiles({"profiles": [merged]}, {r["evidence_id"]: records[r["evidence_id"]]
                                                        for r in merged["evidence"]})
-    for decision, job in requests.decisions(jobs, IDENTITY_SYSTEM, IDENTITY_PAIR, check):
+    for index, (decision, job) in enumerate(requests.decisions(jobs, IDENTITY_SYSTEM, IDENTITY_PAIR, check), 1):
         candidates[(job["left_group"], job["right_group"])].append(decision)
+        progress.report(index / len(jobs))
     forbidden = {pair for pair, ds in candidates.items() if any(d["relation"] == "different" for d in ds)}
     supports = []
     for (left, right), decisions in candidates.items():
@@ -315,7 +361,7 @@ def merge_groups(groups, records, extra_support=()):
 def analyse_traits(profile, records, requests):
     assignments = {}
     rows = [compact_record(key, item) for key, item in records.items()]
-    for batch in requests.batches(rows, TRAIT_SYSTEM, TRAITS, "observations"):
+    def resolve(batch):
         allowed = {row["evidence_id"] for row in batch}
         def check(result):
             ids = [row["evidence_id"] for row in result["observations"]]
@@ -331,7 +377,17 @@ def analyse_traits(profile, records, requests):
                     if (item["persistence"] == "temporary" or item["attribute"] in {"clothing", "accessory"}) and trait["kind"] == "global":
                         raise ValueError("Temporary observations cannot become global traits.")
         result = requests.call(TRAIT_SYSTEM, TRAITS, {"observations": batch}, check)
+        if result is None:
+            if len(batch) > 1 and requests.args.correction_attempts > 0:
+                middle = len(batch) // 2
+                resolve(batch[:middle])
+                resolve(batch[middle:])
+            # Leave failed observations in supporting_evidence, without any
+            # generated trait or propagation beyond their source.
+            return
         assignments.update({row["evidence_id"]: row["traits"] for row in result["observations"]})
+    for batch in requests.batches(rows, TRAIT_SYSTEM, TRAITS, "observations"):
+        resolve(batch)
     keys = sorted({t["trait"] for ts in assignments.values() for t in ts})
     canonical = {key: key for key in keys}
     def root(key):
@@ -438,9 +494,11 @@ def reconcile(records, output, client, model, args):
     records = cp._usable(records)
     requests = Requests(output, client, model, args)
     try:
-        groups = partition_identities(records, requests)
-        profiles = reconcile_identities(groups, records, requests)
-        for i, profile in enumerate(profiles, 1):
+        with progress.scope(0, 0.2):
+            groups = partition_identities(records, requests)
+        with progress.scope(0.2, 0.6):
+            profiles = reconcile_identities(groups, records, requests)
+        for i, profile in enumerate(progress.steps(profiles, 0.6, 0.99), 1):
             lmstudio_pipeline.comfy_interrupt_check()
             logger.info("Character profiles: traits %s/%s (%s observations)", i, len(profiles),
                         len(profile["supporting_evidence"]))

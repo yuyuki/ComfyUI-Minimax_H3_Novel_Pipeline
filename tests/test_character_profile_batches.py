@@ -238,6 +238,134 @@ def test_semantic_retry_full_coverage_and_partial_resume(workspace, monkeypatch)
     assert result["profiles"]
 
 
+def test_empty_identity_profile_corrected_with_schema_and_full_evidence(workspace):
+    data = document(observation(), observation("Élise avait les yeux bleus.", value="yeux bleus"))
+    records = cp.prepare_evidence(data)
+    ids = list(records)
+    payload = {"observations": [batches.compact_record(key, item) for key, item in records.items()]}
+    invalid = {"profiles": [group(ids), group([])]}
+    corrected = plan(ids)
+    client, create = client_for(Stream([json.dumps(invalid)]), Stream([json.dumps(corrected)]))
+    requests = batches.Requests(workspace, client, "qwen3.5", settings())
+    check = lambda result: cp.build_profiles(result, records)
+    result = requests.call(cp.SYSTEM, cp.SCHEMA, payload, check)
+    assert result == corrected
+    assert create.call_count == 2
+    for call in create.call_args_list:
+        contract = call.kwargs["response_format"]
+        assert contract == {"type": "json_schema", "json_schema": cp.SCHEMA}
+        fields = contract["json_schema"]["schema"]["properties"]["profiles"]["items"]["properties"]
+        assert fields["evidence"]["minItems"] == 1
+        assert "minItems" not in fields["identity_support"]
+        assert all(key in str(call.kwargs["messages"]) for key in ids)
+    assert "Rejected:" in str(create.call_args_list[1].kwargs["messages"])
+    cache = list((workspace / ".cache" / "character_profiles").glob("*.json"))
+    assert len(cache) == 1
+    assert json.loads(cache[0].read_text(encoding="utf-8")) == corrected
+
+
+def test_repeated_empty_identity_profile_warns_without_cache(workspace, monkeypatch, caplog):
+    records = cp.prepare_evidence(document(observation()))
+    chat = Mock(return_value={"profiles": [group([])]})
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    requests = batches.Requests(workspace, None, "qwen", settings(correction_attempts=2))
+    payload = {"observations": [batches.compact_record(key, item) for key, item in records.items()]}
+    assert requests.call(cp.SYSTEM, cp.SCHEMA, payload, lambda result: cp.build_profiles(result, records)) is None
+    assert chat.call_count == 3
+    assert "ignoring invalid model decision" in caplog.text
+    assert requests.stats["warnings"][0]["input"] == payload
+    assert not list((workspace / ".cache" / "character_profiles").glob("*.json"))
+    assert not (workspace / "character_profiles.json").exists()
+
+
+def test_empty_identity_profile_direct_validation_identifies_field():
+    records = cp.prepare_evidence(document(observation()))
+    with pytest.raises(ValueError, match=r"profiles\[0\].evidence is empty"):
+        cp.build_profiles({"profiles": [group([])]}, records)
+
+
+def test_inferred_identity_support_warns_and_consolidation_continues(workspace, monkeypatch, caplog):
+    data = document(observation(classification="inferred"),
+                    observation("Élise mesurait un mètre soixante-dix.", value="un mètre soixante-dix"))
+    records = cp.prepare_evidence(data)
+    inferred = next(key for key, item in records.items() if item["classification"] == "inferred")
+    def unsupported(*args):
+        result = fake_model(*args)
+        if args[4] == cp.SCHEMA:
+            for profile in result["profiles"]:
+                profile["identity_support"] = profile["evidence"]
+        return result
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", unsupported)
+    result, saved = cp.consolidate(data, records, workspace, None, "qwen", settings(correction_attempts=2))
+    assert Path(saved).is_file()
+    assert validate_document(result) is result
+    reason = "Identity support must cite explicit physical evidence."
+    assert reason in caplog.text
+    report = json.loads((workspace / "character_profiles_requests.json").read_text())
+    assert any(w["reason"] == reason and w["attempts"] == 3 for w in report["warnings"])
+    assert {r["evidence_id"] for p in result["profiles"] for r in p["supporting_evidence"]} == set(records)
+    assert all(inferred not in p["identity_support"] for p in result["profiles"])
+    assert any(t["trait"] == "height" for p in result["profiles"] for t in p["global_traits"])
+
+
+@pytest.mark.parametrize("contract", [cp.SCHEMA, batches.TRAITS, batches.IDENTITY_PAIR,
+                                     batches.KEY_PAIRS, batches.RELATIONS])
+def test_invalid_decisions_do_not_block_export_or_lose_sources(workspace, monkeypatch, contract):
+    def broken(*args):
+        if args[4] == contract:
+            return {}
+        return fake_model(*args)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", broken)
+    data = fixture_document()
+    records = cp.prepare_evidence(data)
+    result, saved = cp.consolidate(data, records, workspace, None, "qwen", settings(correction_attempts=0))
+    assert Path(saved).is_file()
+    assert validate_document(result) is result
+    assert {r["evidence_id"] for p in result["profiles"] for r in p["supporting_evidence"]} == set(records)
+    report = json.loads((workspace / "character_profiles_requests.json").read_text())
+    assert report["warnings"]
+    assert all(w["schema"] == contract["name"] for w in report["warnings"])
+    if contract == batches.TRAITS:
+        assert all(not p["global_traits"] and not p["temporary_states"] for p in result["profiles"])
+    if contract == batches.IDENTITY_PAIR:
+        assert len(result["profiles"]) == len(data["chapters"])
+
+
+@pytest.mark.parametrize("corrections", [0, 1])
+def test_trait_batch_failure_respects_correction_setting(workspace, monkeypatch, corrections):
+    records = cp.prepare_evidence(fixture_document())
+    bad = next(iter(records))
+    calls = []
+    def broken(*args):
+        if args[4] == batches.TRAITS:
+            payload = request_payload(args[3])
+            ids = {row["evidence_id"] for row in payload["observations"]}
+            calls.append(ids)
+            if bad in ids:
+                return {"observations": []}
+        return fake_model(*args)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", broken)
+    requests = batches.Requests(workspace, None, "qwen", settings(correction_attempts=corrections))
+    profile = cp.build_profiles(plan(list(records)), records)[0]
+    batches.analyse_traits(profile, records, requests)
+    if corrections:
+        assert {bad} in calls
+    else:
+        assert len(calls) == 1
+    assert any(len(ids) > 1 and bad in ids for ids in calls)
+    applied = {key for field in ("global_traits", "temporary_states")
+               for row in profile[field] for key in row["evidence_ids"]}
+    assert applied == (set(records) - {bad} if corrections else set())
+    assert len(profile["supporting_evidence"]) == len(records)
+
+
+def test_unexpected_runtime_error_is_not_silenced(workspace, monkeypatch):
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(side_effect=RuntimeError("technical failure")))
+    with pytest.raises(RuntimeError, match="technical failure"):
+        run_data = document(observation())
+        cp.consolidate(run_data, cp.prepare_evidence(run_data), workspace, None, "qwen", settings())
+
+
 def test_cancel_between_batches_resumes_completed_requests(workspace, monkeypatch):
     class InterruptProcessingException(RuntimeError):
         pass
@@ -392,6 +520,12 @@ def test_invented_temporal_quote_is_rejected(workspace, monkeypatch):
                                 temporal_quote="Invented healing chronology")
         return result
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", fabricated)
-    with pytest.raises(RuntimeError, match="exact explicit"):
-        cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings())
-    assert not (workspace / "character_profiles.json").exists()
+    result, saved = cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings())
+    assert Path(saved).is_file()
+    assert validate_document(result) is result
+    profile = result["profiles"][0]
+    assert not profile["chronological_changes"]
+    assert not profile["global_traits"]
+    assert profile["trait_relations"][0]["relation"] == "uncertain"
+    report = json.loads((workspace / "character_profiles_requests.json").read_text())
+    assert "exact explicit" in report["warnings"][0]["reason"]
