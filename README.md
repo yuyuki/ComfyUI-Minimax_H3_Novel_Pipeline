@@ -221,6 +221,18 @@ are rebuilt from the current text, including when earlier text moves. Diagnostic
 passages, batches, cache hits, extraction calls and transport requests including retries.
 Input/output tokens are explicitly rough character-based estimates, not tokenizer usage.
 
+Invalid quotations and temporary classifications receive up to `correction_attempts`
+targeted repair requests per batch (zero disables repairs). Each correction preserves
+the observation's character, fact and classification, and must quote one supplied
+passage exactly. Missing or rejected corrections remain available for manual review;
+valid observations are never dropped. Repairs are cached and their original values
+are retained in `extraction_correction`. Console warnings are grouped by chapter;
+`character_evidence_review.json` contains the detailed remaining issues and corrections.
+Exact quotation matching verifies source location, not the semantic correctness of
+every model interpretation; review the generated evidence before consolidation.
+Consolidation also saves `character_profiles_validation.json` before its LLM request,
+so exclusion details remain available even if that request fails.
+
 Use **Load Character Evidence** with `evidence_path` to reopen this JSON after manual
 edits, independently of the extractor and LM Studio. Paths must stay inside
 `output/minimax_h3_novel`; relative paths start there. You can also pass a directory

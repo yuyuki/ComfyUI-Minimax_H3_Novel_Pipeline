@@ -85,7 +85,7 @@ def prepare_evidence(data):
             quotation = item.get("quotation")
             raw = {key: item[key] for key in character_evidence.FIELDS if key in item}
             validated = character_evidence.validate_result(
-                {"evidence": [raw]}, text, validate_quotation=False)[0]
+                {"evidence": [raw]}, text, validate_quotation=False, log_warnings=False)[0]
             warnings.extend(validated.get("warnings", []))
             if not isinstance(quotation, str) or not quotation.strip():
                 warnings.append("Quotation is empty or is not text.")
@@ -117,13 +117,6 @@ def prepare_evidence(data):
                 confidence = "low"
             item["validation_confidence"] = confidence
             item["validation_warnings"] = warnings
-            for warning in warnings:
-                logger.warning(
-                    "Chapter %s, evidence %s, character %s: %s Excluded from factual consolidation.",
-                    chapter["chapter"], index, item.get("character", "<unknown>"), warning,
-                    extra={"chapter": chapter["chapter"], "evidence_index": index,
-                           "character": item.get("character"), "validation_confidence": confidence,
-                           "validation_warning": warning})
             # IDs use original content, independent of validation annotations and list order.
             base = "e_" + _digest([chapter["chapter"], chapter["source_file"], original])[:24]
             evidence_id = base
@@ -132,7 +125,25 @@ def prepare_evidence(data):
                 occurrence += 1
                 evidence_id = f"{base}_{occurrence}"
             records[evidence_id] = item
+    excluded = sum(item["validation_confidence"] == "low" for item in records.values())
+    if excluded:
+        logger.warning("Character profiles: %s/%s observations excluded from factual consolidation; "
+                       "details are retained in character_profiles_validation.json.", excluded, len(records))
     return dict(sorted(records.items(), key=lambda pair: _source_order(pair[0], pair[1])))
+
+
+def validation_report(records):
+    reasons = defaultdict(int)
+    excluded = []
+    for key, item in records.items():
+        if item["validation_confidence"] != "low":
+            continue
+        for warning in item["validation_warnings"]:
+            reasons[warning] += 1
+        excluded.append({"evidence_id": key, "observation": deepcopy(item)})
+    return {"observations": len(records), "excluded_observations": len(excluded),
+            "usable_observations": len(records) - len(excluded),
+            "warning_counts": dict(reasons), "excluded_evidence": excluded}
 
 
 def _source_order(evidence_id, item):
@@ -264,6 +275,8 @@ def build_profiles(plan, records):
 
 
 def consolidate(data, records, output, client, model, args):
+    # Persist validation even if the subsequent model request fails.
+    util.save_json(output / "character_profiles_validation.json", validation_report(records))
     excluded = [{"evidence_id": key, "observation": deepcopy(item)}
                 for key, item in records.items() if item.get("validation_confidence") == "low"]
     records = _usable(records)

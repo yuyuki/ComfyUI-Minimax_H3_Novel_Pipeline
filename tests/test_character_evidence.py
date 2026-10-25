@@ -125,7 +125,7 @@ def test_malformed_item_warns_without_losing_valid_evidence(item, caplog):
 
 
 @pytest.mark.parametrize("valid_items", [[], [observation()]])
-def test_validation_warnings_do_not_retry_or_block_extraction(workspace, monkeypatch, caplog, valid_items):
+def test_failed_repairs_keep_all_observations_and_do_not_block(workspace, monkeypatch, caplog, valid_items):
     source, output = workspace
     path = source / "chapter.txt"
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
@@ -136,14 +136,14 @@ def test_validation_warnings_do_not_retry_or_block_extraction(workspace, monkeyp
     assert result["evidence"][0]["quotation"] == "translated"
     assert result["evidence"][0]["warnings"]
     assert result["evidence"][0]["provenance"]["locations"] == []
-    assert chat.call_count == 1
+    assert chat.call_count == 2
     assert len(caplog.records) == 1
     assert caplog.records[0].levelname == "WARNING"
-    assert "Quotation is not an exact substring" in caplog.text
+    assert "observations need review" in caplog.text
     cache = next((output / ".cache").glob("*.json"))
     assert json.loads(cache.read_text(encoding="utf-8")) == [{"evidence": [observation("translated"), *valid_items]}]
     assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
-    assert chat.call_count == 1
+    assert chat.call_count == 2
     assert len(caplog.records) == 2
 
 
@@ -400,3 +400,85 @@ def test_overlap_dedup_preserves_conflicting_observations(workspace, monkeypatch
     assert len(result["evidence"]) == 2
     assert {item["value"] for item in result["evidence"]} == {"green", "blue"}
     assert all(len(item["provenance"]["locations"]) == 1 for item in result["evidence"])
+
+
+def test_targeted_repair_preserves_facts_provenance_and_cache(workspace, monkeypatch):
+    source, output = workspace
+    path = source / "chapter.txt"
+    quote = "Élise portait une robe rouge."
+    path.write_text(quote + "\n" + observation()["quotation"], encoding="utf-8")
+    invalid = observation("Elle portait une robe rouge.", attribute="clothing", value="robe rouge")
+    chat = Mock(side_effect=[{"evidence": [invalid, observation()]}, {"corrections": [
+        {"observation_index": 0, "quotation": quote, "persistence": "temporary"}]}])
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
+    assert len(result["evidence"]) == 2
+    fixed, valid = result["evidence"]
+    assert fixed["quotation"] == quote
+    assert fixed["persistence"] == "temporary"
+    assert fixed["extraction_correction"]["original_quotation"] == invalid["quotation"]
+    assert all(fixed[k] == invalid[k] for k in evidence.FIELDS - {"quotation", "persistence"})
+    assert all(valid[k] == observation()[k] for k in evidence.FIELDS)
+    loc = fixed["provenance"]["locations"][0]
+    assert result["source_text"][loc["start_char"]:loc["end_char"]] == quote
+    payload = json.loads(chat.call_args_list[1].args[3])
+    assert [item["observation_index"] for item in payload["observations"]] == [0]
+    assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
+    assert chat.call_count == 2
+    report = evidence.review_report({"chapters": [result]})
+    assert report["corrected_observations"] == 1
+    assert report["observations_for_review"] == 0
+
+
+def test_repair_never_joins_disjoint_passages_or_drops_missing_indices(monkeypatch):
+    raw = {"evidence": [observation("bad one"), observation("bad two"), observation("bad three")]}
+    correction = {"observation_index": 0, "quotation": "left\n\nright", "persistence": "persistent"}
+    chat = Mock(return_value={"corrections": [correction,
+        {"observation_index": 99, "quotation": "left", "persistence": "persistent"}]})
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    result = evidence.repair_observations(raw, ["left", "right"], None, "qwen", settings(), {"llm_calls": 0})
+    assert [i["quotation"] for i in result] == [i["quotation"] for i in raw["evidence"]]
+    assert all(i["warnings"] for i in result)
+    assert len(json.loads(chat.call_args.args[3])["observations"]) == 3
+
+
+def test_repair_duplicate_indices_and_empty_quote_remain_for_review(monkeypatch):
+    correction = {"observation_index": 0, "quotation": "exact", "persistence": "persistent"}
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(return_value={"corrections": [
+        correction, correction, {"observation_index": 1, "quotation": "", "persistence": "persistent"}]}))
+    result = evidence.repair_observations({"evidence": [observation("bad"), observation("missing")]},
+                                        ["exact"], None, "qwen", settings(), {"llm_calls": 0})
+    assert [i["quotation"] for i in result] == ["bad", "missing"]
+    assert all(i["warnings"] for i in result)
+
+
+def test_repair_failure_does_not_block_but_cancellation_propagates(monkeypatch):
+    stats = {"llm_calls": 0}
+    chat = Mock(side_effect=APIConnectionError(request=httpx.Request("POST", "http://localhost/v1")))
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    raw = {"evidence": [observation("bad")]}
+    result = evidence.repair_observations(raw, ["exact"], None, "qwen", settings(), stats)
+    assert result[0]["quotation"] == "bad"
+    assert stats["repair_failures"] == 1
+
+    class InterruptProcessingException(RuntimeError):
+        pass
+
+    chat.side_effect = InterruptProcessingException()
+    with pytest.raises(InterruptProcessingException):
+        evidence.repair_observations(raw, ["exact"], None, "qwen", settings(), stats)
+
+
+def test_repair_transport_schema_and_compact_retry_keep_all_pending(monkeypatch):
+    monkeypatch.setattr(evidence.lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    corrections = {"corrections": [
+        {"observation_index": i, "quotation": "exact", "persistence": "persistent"} for i in range(3)]}
+    client, create = client_for(Stream(['{"corrections":']), Stream([json.dumps(corrections)]))
+    raw = {"evidence": [observation(f"bad {i}") for i in range(3)]}
+    result = evidence.repair_observations(raw, ["exact"], client, "qwen3.5", settings(), {"llm_calls": 0})
+    assert len(result) == 3 and all(i["quotation"] == "exact" for i in result)
+    assert create.call_count == 2
+    for call in create.call_args_list:
+        assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.REPAIR_SCHEMA}
+        messages = json.dumps(call.kwargs["messages"])
+        assert all(f"bad {i}" in messages for i in range(3))

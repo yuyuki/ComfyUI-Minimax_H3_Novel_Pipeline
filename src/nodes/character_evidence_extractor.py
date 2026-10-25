@@ -91,6 +91,7 @@ class CharacterEvidenceExtractorNode:
                 "chapters": chapters}
         saved = output / "character_evidence.json"
         util.save_json(saved, data)
+        util.save_json(output / "character_evidence_review.json", character_evidence.review_report(data))
         diagnostics["elapsed_seconds"] = round(time.perf_counter() - started, 3)
         util.save_json(output / "character_evidence_diagnostics.json", diagnostics)
         return {"ui": {"text": [str(saved)]}, "result": (data, str(saved))}

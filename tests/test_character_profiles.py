@@ -184,9 +184,26 @@ def test_invalid_input_is_retained_with_low_confidence(field, value, caplog):
     assert item["validation_confidence"] == "low"
     assert item["validation_warnings"]
     assert data == original
-    warning = next(r for r in caplog.records if hasattr(r, "evidence_index"))
-    assert (warning.chapter, warning.evidence_index, warning.character) == (1, 1, "Élise")
+    assert len(caplog.records) == 1
+    assert "1/1 observations excluded" in caplog.text
+    report = profiles.validation_report(records)
+    assert report["excluded_observations"] == 1
+    assert report["excluded_evidence"][0]["observation"] == item
     assert profiles.build_profiles({"profiles": []}, records) == []
+
+
+def test_validation_report_survives_failed_consolidation(workspace, monkeypatch):
+    data = document(observation(), observation("invalid"))
+    data["chapters"][1]["evidence"][0]["quotation"] = "invented"
+    records = profiles.prepare_evidence(data)
+    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", Mock(side_effect=APIConnectionError(
+        request=httpx.Request("POST", "http://localhost/v1"))))
+    with pytest.raises(RuntimeError, match="request failed"):
+        profiles.consolidate(data, records, workspace, None, "qwen", settings())
+    report = json.loads((workspace / "character_profiles_validation.json").read_text(encoding="utf-8"))
+    assert report["observations"] == 2
+    assert report["usable_observations"] == report["excluded_observations"] == 1
+    assert report["excluded_evidence"][0]["observation"]["quotation"] == "invented"
 
 
 def test_node_json_loader_edits_cache_force_and_corruption(workspace, monkeypatch):
