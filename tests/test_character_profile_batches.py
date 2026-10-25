@@ -51,7 +51,8 @@ def fake_model(*args):
         rows = []
         for row in payload["observations"]:
             item = row["observation"]
-            trait = "height" if "mètre" in item["value"] else "eye_color"
+            trait = ("height" if "mètre" in item["value"] else
+                     "build" if "corpulent" in item["value"] else "eye_color")
             kind = "global" if item["persistence"] == "persistent" and item["classification"] == "explicit" else "context"
             if item["attribute"] in {"clothing", "accessory"} or item["persistence"] == "temporary":
                 trait, kind = item["attribute"], "temporary"
@@ -108,6 +109,19 @@ def test_complete_pipeline_precise_conflicts_and_schema(workspace, monkeypatch):
     assert validate_document(result) is result
 
 
+def test_later_build_is_global_while_earlier_outfit_stays_temporary(workspace, monkeypatch):
+    data = document(
+        observation("Doumas portait un manteau.", character="Doumas", attribute="clothing",
+                    value="manteau", persistence="temporary"),
+        observation("Doumas était corpulent.", character="Doumas", value="corpulent"))
+    result, _, _ = run(data, workspace, monkeypatch)
+    profile = result["profiles"][0]
+    assert [trait["trait"] for trait in profile["global_traits"]] == ["build"]
+    assert len(profile["temporary_states"]) == 1
+    assert not profile["unresolved_conflicts"]
+    assert validate_document(result) is result
+
+
 def test_batches_reconcile_distant_values_no_loss_and_resume(workspace, monkeypatch):
     data = document(*(observation("Élise avait les yeux verts. " + "x" * 2500, value="yeux verts") for _ in range(8)),
                     observation("Élise avait les yeux bleus. " + "x" * 2500, value="yeux bleus"))
@@ -152,17 +166,9 @@ def test_homonyms_do_not_merge_on_shared_name(workspace, monkeypatch):
 
 
 def test_alias_reconciliation_requires_connecting_quote(workspace, monkeypatch):
-    data = document(observation("Élise était aussi appelée Lise.", attribute="alias", value="Lise"),
+    data = document(observation("Élise, aussi appelée Lise, avait les yeux verts."),
                     observation("Lise avait les yeux verts.", character="Lise"))
-    def alias(*args):
-        response = fake_model(*args)
-        if args[4] == batches.TRAITS:
-            payload = request_payload(args[3])
-            for row, original in zip(response["observations"], payload["observations"]):
-                if original["observation"]["attribute"] == "alias":
-                    row["traits"] = [{"trait": "alias", "kind": "context"}]
-        return response
-    monkeypatch.setattr(batches.lmstudio_json, "chat_json", alias)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", fake_model)
     result, _ = cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings())
     assert len(result["profiles"]) == 1
     assert result["profiles"][0]["aliases"] == ["Lise"]

@@ -114,7 +114,7 @@ def test_canonical_coverage_refs_and_temporary_traits():
     response["eyes"][0]["evidence"][0]["evidence_id"] = "invented"
     with pytest.raises(ValueError, match="unknown evidence"):
         vp.validate_design(response, data["profiles"][0], "strict_canon")
-    for attribute in ("clothing", "accessory", "action"):
+    for attribute in ("clothing", "accessory"):
         data = consolidated(observation(attribute=attribute, persistence="temporary"))
         response = {f: [] for f in vp.FIELDS}
         response["accessories"] = design(data)["eyes"]

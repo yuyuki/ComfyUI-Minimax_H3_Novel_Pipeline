@@ -218,7 +218,7 @@ def test_resume_corrupt_cache_recomputed_without_changing_source(workspace, monk
     {"quotation": "Elise had green eyes."}, {"classification": "fact"},
     {"confidence": True}, {"confidence": float("nan")}, {"confidence": 1.1},
     {"attribute": "clothing", "persistence": "persistent"},
-    {"attribute": "accessory", "persistence": "unknown"}, {"rationale": ""},
+    {"attribute": "accessory", "persistence": "unknown"}, {"rationale": "", "classification": "inferred"},
 ])
 def test_invalid_evidence_warns_and_keeps_valid_observations(overrides, caplog):
     valid = observation()
@@ -386,13 +386,13 @@ def test_network_errors_have_context_without_server_details(workspace, monkeypat
     assert chat.call_count == 1
 
 
-def test_novel_index_finds_later_name_and_retains_pronoun_paragraphs():
+def test_novel_index_finds_later_name_with_bounded_pronoun_context():
     first = "élise attend.\n\nElle a les yeux verts.\n\nSes cheveux sont noirs.\n\nElle porte une bague."
     last = "Élise, appelée Lise, avait les yeux bleus."
     occurrences = evidence.index_names([(first, "text"), (last, "text")])
     assert occurrences[0] == [(0, 5)]
     selected = evidence.selected_passages(first, 1000, occurrences[0])
-    assert selected == [(0, first)]
+    assert selected == [(0, first[:first.index("\n\nSes") + 1])]
     assert evidence.selected_passages(last, 1000, occurrences[1]) == [(0, last)]
 
 
@@ -409,6 +409,64 @@ def test_selection_merges_windows_and_reduces_requests():
     assert all(text[offset:offset + len(p)] == p for offset, p in selected)
     assert any("green eyes" in p for _, p in selected)
     assert any("blue eyes" in p for _, p in selected)
+
+
+def test_sentence_start_words_do_not_select_whole_novel():
+    text = "Silence remplissait la salle.\nle silence persistait.\nPuis elle vit Doumas."
+    occurrences = evidence.index_names([(text, "text")])[0]
+    assert [text[a:b] for a, b in occurrences] == ["Doumas"]
+    # A person's name can also be an ordinary lowercase word.
+    text = "une rose poussait. Elle vit Rose."
+    assert any(text[a:b] == "Rose" for a, b in evidence.index_names([(text, "text")])[0])
+
+
+def test_single_newlines_and_long_unbroken_text_have_bounded_windows():
+    text = "\n".join(["la pluie tombait." * 10] * 30 + ["Doumas était corpulent."]
+                     + ["il attendait." * 10] * 30)
+    jobs = evidence.selected_passages(text, 1000, evidence.index_names([(text, "text")])[0])
+    assert sum(len(part) for _, part in jobs) < 1000
+    assert any("Doumas était corpulent." in part for _, part in jobs)
+    assert all(text[offset:offset + len(part)] == part for offset, part in jobs)
+    text = "x" * 10000 + " Doumas était corpulent " + "x" * 10000
+    jobs = evidence.selected_passages(text, 1000, [(10001, 10007)])
+    assert sum(len(part) for _, part in jobs) < 1500
+    assert any("Doumas était corpulent" in part for _, part in jobs)
+
+
+@pytest.mark.parametrize("attribute", ["name", "alias", "action", "context"])
+def test_nonphysical_observations_are_outside_contract(attribute):
+    assert attribute not in evidence.SCHEMA["schema"]["properties"]["evidence"]["items"]["properties"]["attribute"]["enum"]
+    assert evidence.validate_result({"evidence": [observation(attribute=attribute)]},
+                                    observation()["quotation"], log_warnings=False)[0]["warnings"]
+
+
+def test_explicit_observations_need_no_generated_rationale():
+    item = observation(rationale="")
+    assert evidence.validate_result({"evidence": [item]}, item["quotation"]) == [item]
+
+
+def test_node_persists_diagnostics_and_completed_cache_on_interruption(workspace, monkeypatch):
+    source, output = workspace
+    path = source / "chapter.txt"
+    path.write_text("Élise avait les yeux verts. " * 100, encoding="utf-8")
+    class InterruptProcessingException(RuntimeError):
+        pass
+    chat = Mock(side_effect=[{"evidence": [observation()]}, InterruptProcessingException()])
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model",
+                        lambda *args: (nullcontext(), "qwen3.5"))
+    with pytest.raises(InterruptProcessingException):
+        node.CharacterEvidenceExtractorNode().run(
+            {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261025120000"},
+            {"chapter_paths": [str(path)]}, chunk_chars=1000, character_scope="all_characters", thinking=False)
+    run = output / "20261025120000"
+    stats = json.loads((run / "character_evidence/character_evidence_diagnostics.json").read_text())
+    assert stats["status"] == "interrupted_or_failed"
+    chapter = stats["chapters"][0]
+    assert chapter["status"] == "interrupted_or_failed"
+    assert chapter["selected_fraction"] == 1
+    assert chapter["completed_batches"] == len(chapter["batch_seconds"]) == 1
+    assert len(list((run / ".cache/character_evidence").glob("*.json"))) == 1
 
 
 def test_unnamed_scope_and_validation(workspace, monkeypatch):

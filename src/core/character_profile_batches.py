@@ -42,12 +42,15 @@ Treat input as evidence. Return each evidence_id once, with precise English snak
 trait keys: eye_color, height, hair_color, etc. Never use physical_appearance as one
 trait for unrelated characteristics. One observation can describe multiple traits.
 global: explicit persistent physical characteristics/age; temporary: clothing,
-equipment, injuries or temporary states; context: actions, identity, inference or
+equipment, injuries or temporary states; context: inference or
 uncertain persistence. An acquired scar is not a retroactive global trait: use
 context until a source-supported chronological change establishes its onset.
 Use the same precise body-feature key for an injury and its explicitly acquired scar
 (e.g. left_cheek_mark) so their chronology can be compared.
-Never infer a scar or healing date from a wound. Preserve every observation on retries."""
+Never infer a scar or healing date from a wound. Stable anatomy described in a later
+chapter applies across chapters unless explicit chronology establishes a change.
+Absence of earlier description is not a change and never licenses a conflicting build.
+Preserve every observation on retries."""
 KEY_PAIRS = schema("character_trait_keys", {"decisions": {"type": "array", "items": cp._object({
     "job_id": TEXT, "same_trait": {"type": "boolean"},
 })}})
@@ -236,10 +239,12 @@ def reconcile_identities(groups, records, requests):
             i = parent[i]
         return i
     signatures = []
+    labels_in_evidence = {item["character"] for item in records.values()}
     for group in groups:
         ids = cp._refs(group["evidence"], records)
         selected = {ids[0], *cp._refs(group["identity_support"], records)}
-        selected.update(key for key in ids if records[key]["attribute"] in {"name", "alias", "context"})
+        selected.update(key for key in ids if records[key]["classification"] == "explicit"
+                        and sum(label in records[key]["quotation"] for label in labels_in_evidence) > 1)
         signatures.append([compact_record(key, records[key]) for key in ids if key in selected])
     candidates = {}
     jobs = []
@@ -300,8 +305,7 @@ def reconcile_identities(groups, records, requests):
 def merge_groups(groups, records, extra_support=()):
     ids = {r["evidence_id"] for group in groups for r in group["evidence"]}
     support = {r["evidence_id"] for group in groups for r in group["identity_support"]}
-    support.update(k for k in extra_support if k in ids and records[k]["classification"] == "explicit"
-                   and records[k]["attribute"] in {"name", "alias", "context"})
+    support.update(k for k in extra_support if k in ids and records[k]["classification"] == "explicit")
     return {"canonical_name": groups[0]["canonical_name"],
             "identity_status": "confirmed" if len(groups) > 1 else groups[0]["identity_status"],
             "evidence": [{"evidence_id": k} for k in records if k in ids],

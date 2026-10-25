@@ -63,7 +63,7 @@ def workspace(tmp_path, monkeypatch):
 
 def test_aliases_all_chapters_provenance_and_stable_ids():
     data = document(observation(),
-                    observation("Élise était aussi appelée Lise.", attribute="alias", value="Lise"),
+                    observation("Élise, aussi appelée Lise, avait les yeux verts."),
                     observation("Lise avait les yeux verts.  \r\n", character="Lise"))
     original = deepcopy(data)
     records = profiles.prepare_evidence(data)
@@ -97,8 +97,7 @@ def test_ambiguous_alias_merge_rejected_but_separate_profiles_allowed():
 
 
 def test_same_name_can_remain_distinct():
-    records = profiles.prepare_evidence(document(observation(), observation("Élise la boulangère attend.",
-                                                                              attribute="context", value="boulangère")))
+    records = profiles.prepare_evidence(document(observation(), observation("Élise la boulangère avait les yeux bleus.", value="yeux bleus")))
     response = {"profiles": [group([key], identity_status="ambiguous") for key in records]}
     result = profiles.build_profiles(response, records)
     assert len({item["local_id"] for item in result}) == 2
@@ -110,16 +109,16 @@ def test_same_name_can_remain_distinct():
 
 
 
-def test_inferences_unknowns_actions_and_equipment_are_separate():
+def test_inferences_unknowns_and_equipment_are_separate():
     records = profiles.prepare_evidence(document(
         observation(classification="inferred"),
         observation("Élise porte une épée.", attribute="accessory", value="épée", persistence="temporary"),
-        observation("Élise court.", attribute="action", value="court", persistence="temporary")))
+        observation("Élise avait le visage pâle.", value="visage pâle", persistence="unknown")))
     result = profiles.build_profiles(plan(records), records)[0]
     assert result["attributes"]["stable_physical"] == []
     assert result["attributes"]["inferred_information"][0]["classification"] == "inferred"
     assert result["attributes"]["temporary_appearance"][0]["value"] == "épée"
-    assert result["attributes"]["actions"][0]["value"] == "court"
+    assert result["attributes"]["other_information"][0]["value"] == "visage pâle"
     assert "unknown_characteristics" not in result
 
 

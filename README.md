@@ -202,16 +202,26 @@ the complete editable output is `character_evidence.json`. Controls are
 
 - `proper_names` (default): scan every selected chapter for Unicode capitalized
   name candidates, index their occurrences throughout the novel, and batch nearby
-  paragraphs with preceding/following context and consecutive pronoun paragraphs.
+  paragraphs with one preceding/following paragraph, bounded around each occurrence
+  by `chunk_chars`. Single newlines delimit paragraphs; oversized lines are split
+  at sentence boundaries. Pronouns do not extend windows indefinitely.
   Overlapping windows are merged. The model excludes places and other non-character
   entities; ambiguous aliases remain for the existing profile consolidation stage.
 - `all_characters`: process the full text, including unnamed people and role labels.
 
-Proper-name selection is a heuristic (with English/French sentence-start exclusions),
-not language-independent entity recognition. It can miss unnamed descriptions before
+Proper-name selection uses heuristics, including English/French sentence-start
+exclusions and lowercase occurrences to reject ordinary sentence-start words.
+It is not language-independent entity recognition. It can miss unnamed descriptions before
 a name is revealed, distant pronoun-only descriptions, or names without capitalization.
 Use `all_characters` when that coverage matters. Both modes inspect all selected chapters;
-neither samples only the beginning of the novel.
+neither samples only the beginning of the novel. Only physical appearance is extracted:
+age, build, skin, hair, eyes, distinguishing features, clothing and accessories.
+Names identify observations; names, actions and plot context are not observations.
+Clothing, accessories, visible fatigue and injuries are contextual/temporary; lasting
+physical changes require explicit evidence. Stable anatomy described in a later
+chapter informs the global profile unless an explicit change is established.
+Explicit observations use an empty `rationale` to reduce output tokens.
+Try `thinking=False` for faster extraction and compare source fidelity on your model.
 
 Completed batches are cached under `output/minimax_h3_novel/<timestamp>/.cache/character_evidence`
 and reused within that run unless `force` is enabled. To resume an earlier execution,
@@ -226,6 +236,9 @@ are rebuilt from the current text, including when earlier text moves. Diagnostic
 `character_evidence_diagnostics.json` report elapsed/preprocessing time, selected text,
 passages, batches, cache hits (including `resumed_cache_hits`), extraction calls and transport requests including retries.
 Input/output tokens are explicitly rough character-based estimates, not tokenizer usage.
+Diagnostics are saved before extraction, after each batch and on interruption, including
+the selected fraction, completed batches and per-batch durations. Changed extraction
+contracts invalidate old caches; a previous broad extraction is not reused.
 
 Invalid quotations and temporary classifications receive up to `correction_attempts`
 targeted repair requests per batch (zero disables repairs). Each correction preserves
@@ -353,7 +366,7 @@ The seven fields `age_appearance`, `skin`, `hair`, `eyes`, `build`,
 `default_outfit` and `accessories` contain lists of individual English traits
 with `description`, `classification` (`canonical`, `inferred`, `creative`) and
 `evidence` references. Empty lists mean unspecified. IDs, exact original-language
-quotations, provenance, temporary observations, actions and conflicts are retained
+quotations, provenance, temporary physical observations and conflicts are retained
 unchanged, together with the complete input document. Temporary observations do
 not establish habitual clothing or permanent physical traits.
 

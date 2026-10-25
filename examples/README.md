@@ -294,7 +294,13 @@ Connect **Select Chapters** and **LM Studio Configuration** (Qwen) to
 file) or their containing folder. The node returns the complete evidence dictionary
 and the path to `character_evidence/character_evidence.json` in the current run.
 `character_scope=proper_names` (default) indexes named-character candidates across
-all chapters and batches surrounding paragraphs, including nearby pronoun context.
+all chapters and batches each occurrence with one preceding/following paragraph,
+bounded by `chunk_chars`, without extending through chains of pronouns. Single
+newlines delimit paragraphs; oversized lines use sentence boundaries.
+Only physical descriptions are extracted. Clothing, accessories, fatigue and injuries
+remain contextual; enduring anatomy feeds the global cross-chapter profile.
+Try `thinking=False` to reduce generation time. Diagnostics are saved after each
+batch and on interruption, with selected text fraction and per-batch durations.
 Choose `all_characters` for full-text coverage of unnamed people, role labels, and
 descriptions that precede identification. Proper-name selection uses capitalization
 heuristics; it can miss distant pronoun context and names without capitalization.

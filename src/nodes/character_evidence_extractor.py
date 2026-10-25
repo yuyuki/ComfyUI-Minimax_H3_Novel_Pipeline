@@ -89,6 +89,10 @@ class CharacterEvidenceExtractorNode:
         client, model = lmstudio_pipeline.make_client_and_model(lmstudio_pipeline.load("extract"),
                                                                config["api_url"], config)
         chapters = []
+        def checkpoint():
+            diagnostics["elapsed_seconds"] = round(time.perf_counter() - started, 3)
+            util.save_json(output / "character_evidence_diagnostics.json", diagnostics)
+
         token = lmstudio_json.REQUEST_METRICS.set(diagnostics)
         try:
             with client:
@@ -99,9 +103,14 @@ class CharacterEvidenceExtractorNode:
                             path, output, client, model, args, index + 1,
                             source=sources[index], occurrences=occurrences[index],
                             cache_dir=cache_dir, resume_cache_dir=resume_cache_dir,
-                            diagnostics=diagnostics["chapters"]))
+                            diagnostics=diagnostics["chapters"], checkpoint=checkpoint))
         finally:
             lmstudio_json.REQUEST_METRICS.reset(token)
+            diagnostics["status"] = "complete" if len(chapters) == len(paths) else "interrupted_or_failed"
+            for chapter_stats in diagnostics["chapters"]:
+                if chapter_stats["status"] == "running":
+                    chapter_stats["status"] = "interrupted_or_failed"
+            checkpoint()
         data = {"format_version": character_evidence.VERSION,
                 "location_convention": "Zero-based Unicode character offsets, exclusive end; one-based lines in source_text.",
                 "chapters": chapters}

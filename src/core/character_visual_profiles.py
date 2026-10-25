@@ -106,8 +106,6 @@ def validate_design(design, profile, mode):
                        field not in affected_fields(records[k]) for k in ids):
                     raise ValueError("Canonical traits require explicit non-temporary evidence in the matching category.")
                 covered.update(ids)
-            if any(records[k]["attribute"] == "action" for k in ids):
-                raise ValueError("Actions cannot support stable visual traits.")
     required = {k for k, item in records.items() if item["classification"] == "explicit"
                 and item["persistence"] != "temporary" and affected_fields(item)
                 and not set(affected_fields(item)) & blocked}

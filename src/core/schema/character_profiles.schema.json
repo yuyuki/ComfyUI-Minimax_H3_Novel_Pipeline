@@ -91,7 +91,6 @@
             "required": [
               "stable_physical",
               "temporary_appearance",
-              "actions",
               "other_information",
               "inferred_information"
             ],
@@ -133,42 +132,6 @@
                 }
               },
               "temporary_appearance": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "attribute",
-                    "value",
-                    "classification",
-                    "persistence",
-                    "evidence_id"
-                  ],
-                  "properties": {
-                    "attribute": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "value": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "classification": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "persistence": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "evidence_id": {
-                      "type": "string",
-                      "minLength": 1
-                    }
-                  }
-                }
-              },
-              "actions": {
                 "type": "array",
                 "items": {
                   "type": "object",
