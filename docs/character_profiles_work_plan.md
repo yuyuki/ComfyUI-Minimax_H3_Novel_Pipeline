@@ -66,12 +66,12 @@ case distincte. La création de ce document ne vaut pas validation du plan.
   indiquée. Décision : limiter l'application aux scènes attestées.
 - [x] Décider du traitement des contradictions réelles. Décision : proposer une
   collection de choix avec un flag `selected` modifiable manuellement.
-- [ ] Valider les règles détaillées de sélection ci-dessous et le format de la
+- [x] Valider les règles détaillées de sélection ci-dessous et le format de la
   collection de choix.
 - [x] Distinguer l'ordre des chapitres de la chronologie du récit, notamment pour
   les retours en arrière.
 - [x] Présenter l'exemple et les règles de propagation pour validation.
-- [ ] **Validation utilisateur de l'étape 1 avant de commencer l'étape 2.**
+- [x] **Validation utilisateur de l'étape 1 avant de commencer l'étape 2.**
 
 Décisions validées le 2026-10-25 : propagation rétroactive des traits stables,
 portée des états temporaires limitée aux scènes attestées, premier choix de
@@ -373,7 +373,7 @@ Il contient six séquences, sans nécessiter les séquences du reste du livre.
 
 ### Critères d'acceptation de l'étape 1
 
-- [ ] L'utilisateur valide l'exemple et la distinction entre socle rétroactif,
+- [x] L'utilisateur valide l'exemple et la distinction entre socle rétroactif,
   état temporaire et évolution durable datée dans le récit.
 - [x] L'utilisateur fixe la présélection du premier choix et l'ignorance du trait
   par le générateur visuel lorsque rien n'est sélectionné.
@@ -381,32 +381,37 @@ Il contient six séquences, sans nécessiter les séquences du reste du livre.
   `selected: true`, sans bloquer la génération.
 - [x] L'utilisateur demande un socle global simple, sans portée redondante, et
   la réutilisation du mécanisme existant de `visual_designs.json` pour les ajouts.
-- [ ] Valider le câblage : base globale indépendante, puis chapitre cinématique
+- [x] Valider le câblage : base globale indépendante, puis chapitre cinématique
   sélectionné en entrée de l'enrichissement et du générateur visuel.
-- [ ] Valider les deux résultats : designs réutilisables et états locaux du chapitre,
+- [x] Valider les deux résultats : designs réutilisables et états locaux du chapitre,
   avec réutilisation des compléments visuels entre chapitres.
-- [ ] L'utilisateur valide les règles complémentaires, notamment les identités
+- [x] L'utilisateur valide les règles complémentaires, notamment les identités
   liées par `link_to_local_id`, les retours en arrière et le circuit JSON éditable.
 
-L'étape 1 est préparée et soumise à validation. Aucune modification du code
-exécutable ni aucun démarrage de l'étape 2 ne fait partie de cette préparation.
+L'étape 1 est validée : l'utilisateur a autorisé le passage à la suite après
+l'ajout du chargeur de profils. L'étape 2 est réalisée hors ligne et attend sa
+validation ; l'étape 3 n'a pas commencé.
 
 ## Étape 2 — Diagnostiquer et fiabiliser l'extraction
 
-- [ ] Identifier le fichier `character_evidence.json` de l'exécution concernée et
+- [x] Identifier le fichier `character_evidence.json` de l'exécution concernée et
   les textes sources correspondants.
-- [ ] Examiner des rejets représentatifs : citations, positions, provenance et
+- [x] Examiner des rejets représentatifs : citations, positions, provenance et
   distinction entre informations durables et temporaires.
-- [ ] Déterminer les causes des rejets avant de choisir les corrections.
-- [ ] Corriger les causes vérifiables sans accepter de citations inventées ni
+- [x] Déterminer les causes des rejets avant de choisir les corrections.
+- [x] Corriger les causes vérifiables sans accepter de citations inventées ni
   affaiblir les contrôles de provenance.
-- [ ] Produire un bilan lisible des exclusions et conserver leurs détails dans
+- [x] Produire un bilan lisible des exclusions et conserver leurs détails dans
   un rapport.
-- [ ] Ajouter les tests de régression ciblés avec appels réseau simulés.
-- [ ] Vérifier les résultats sur quelques chapitres représentatifs.
+- [x] Ajouter les tests de régression ciblés avec appels réseau simulés.
+- [x] Vérifier hors ligne des observations des trois premiers chapitres avec des
+  corrections simulées et vérifiées contre la source. Essai réel LM Studio restant.
 - [ ] **Validation utilisateur de l'étape 2 avant de commencer l'étape 3.**
 
-Résultats et décisions : à compléter.
+Résultats : voir [le diagnostic de l'étape 2](character_evidence_diagnosis.md).
+Le fichier initial contient 3 112 observations, dont 326 exclues. Les corrections
+ciblées et les rapports sont implémentés ; les fichiers utilisateur sont inchangés.
+La validation réelle du comportement du modèle reste à effectuer avec l'utilisateur.
 
 ## Étape 3 — Consolider avec des requêtes bornées
 
