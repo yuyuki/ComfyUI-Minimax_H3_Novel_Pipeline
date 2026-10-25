@@ -68,7 +68,9 @@ def test_aliases_all_chapters_provenance_and_stable_ids():
     result = profiles.build_profiles(response, records)[0]
     assert result["aliases"] == ["Lise"]
     assert len(result["supporting_evidence"]) == 3
-    assert [s["observation"] for s in result["supporting_evidence"]] == [c["evidence"][0] for c in data["chapters"]]
+    assert [s["observation"] for s in result["supporting_evidence"]] == [
+        {**c["evidence"][0], "validation_confidence": "high", "validation_warnings": []}
+        for c in data["chapters"]]
     response["profiles"][0]["evidence"].reverse()
     data["chapters"].reverse()
     assert profiles.build_profiles(response, profiles.prepare_evidence(data)) == [result]
@@ -167,7 +169,7 @@ def test_rejects_lost_or_fabricated_evidence(mutation):
 
 @pytest.mark.parametrize("field,value", [("quotation", "translated"), ("classification", "fact"),
                                         ("location", -1), ("provenance", 99)])
-def test_invalid_input_requires_manual_correction(field, value):
+def test_invalid_input_is_retained_with_low_confidence(field, value, caplog):
     data = document(observation())
     item = data["chapters"][0]["evidence"][0]
     if field == "location":
@@ -176,8 +178,15 @@ def test_invalid_input_requires_manual_correction(field, value):
         item["provenance"]["chapter"] = value
     else:
         item[field] = value
-    with pytest.raises(ValueError, match="Chapter 1"):
-        profiles.prepare_evidence(data)
+    original = deepcopy(data)
+    records = profiles.prepare_evidence(data)
+    item = next(iter(records.values()))
+    assert item["validation_confidence"] == "low"
+    assert item["validation_warnings"]
+    assert data == original
+    warning = next(r for r in caplog.records if hasattr(r, "evidence_index"))
+    assert (warning.chapter, warning.evidence_index, warning.character) == (1, 1, "Élise")
+    assert profiles.build_profiles({"profiles": []}, records) == []
 
 
 def test_node_json_loader_edits_cache_force_and_corruption(workspace, monkeypatch):
@@ -276,3 +285,89 @@ def test_failures_do_not_save_or_cache(workspace, monkeypatch, kind):
     assert chat.call_count == (2 if kind == "invalid" else 1)
     assert not workspace.joinpath(".cache").exists()
     assert not workspace.joinpath("character_profiles.json").exists()
+
+
+@pytest.mark.parametrize("quotation", [
+    "Élise avait les yeux verts.",
+    "E\u0301lise avait les yeux verts.",
+    "Élise\tavait les yeux verts.",
+])
+def test_normalized_quotation_retains_original_source_and_confidence(quotation):
+    data = document(observation("Élise  avait\r\nles yeux verts."))
+    data["chapters"][0]["evidence"][0]["quotation"] = quotation
+    original = deepcopy(data)
+    records = profiles.prepare_evidence(data)
+    result = profiles.build_profiles(plan(records), records)[0]
+    evidence = result["supporting_evidence"][0]["observation"]
+    assert evidence["validation_confidence"] == "medium"
+    assert evidence["quotation"] == quotation
+    assert evidence["provenance"] == original["chapters"][0]["evidence"][0]["provenance"]
+    assert len(result["attributes"]["stable_physical"]) == 1
+    assert data == original
+
+
+@pytest.mark.parametrize("bad", ["fabricated", "", None, "ÉLISE AVAIT LES YEUX BLEUS.",
+                               "Élise avait les yeux bleus!"])
+def test_partial_consolidation_excludes_invalid_quotes(workspace, monkeypatch, bad):
+    data = document(observation(), observation("Élise avait les yeux bleus.", value="yeux bleus"))
+    data["chapters"][1]["evidence"][0]["quotation"] = bad
+    records = profiles.prepare_evidence(data)
+    def respond(*args):
+        supplied = json.loads(args[3])["observations"]
+        assert len(supplied) == 1
+        assert supplied[0]["observation"]["validation_confidence"] == "high"
+        return plan([item["evidence_id"] for item in supplied])
+    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", respond)
+    result, saved = profiles.consolidate(data, records, workspace, None, "qwen3.5", settings())
+    assert len(result["profiles"]) == 1
+    profile = result["profiles"][0]
+    assert len(profile["attributes"]["stable_physical"]) == 1
+    assert profile["unresolved_conflicts"] == []
+    excluded = result["excluded_evidence"][0]["observation"]
+    assert excluded["quotation"] == bad
+    assert excluded["validation_confidence"] == "low"
+    assert excluded["validation_warnings"]
+    assert result["source_document"] == data
+    assert json.loads(Path(saved).read_text(encoding="utf-8")) == result
+    from minimax_h3_novel_pipeline.core.character_visual_profiles import prepare_profiles
+    assert prepare_profiles(result) == result["profiles"]
+
+
+@pytest.mark.parametrize("bad", [None, {"quotation": "x"}, {"provenance": {}}])
+def test_malformed_item_does_not_block_valid_siblings(workspace, monkeypatch, bad):
+    data = document(observation())
+    data["chapters"][0]["evidence"].append(bad)
+    records = profiles.prepare_evidence(data)
+    valid = [key for key, item in records.items() if item["validation_confidence"] == "high"]
+    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", lambda *a: plan(valid))
+    result, _ = profiles.consolidate(data, records, workspace, None, "qwen3.5", settings())
+    assert len(result["profiles"][0]["supporting_evidence"]) == 1
+    assert len(result["excluded_evidence"]) == 1
+
+
+def test_all_unusable_evidence_skips_model(workspace, monkeypatch):
+    data = document(observation())
+    data["chapters"][0]["evidence"][0]["quotation"] = "unverified"
+    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", Mock(side_effect=AssertionError))
+    result, _ = profiles.consolidate(data, profiles.prepare_evidence(data), workspace, None, "qwen3.5", settings())
+    assert result["profiles"] == []
+    assert result["excluded_evidence"][0]["observation"]["validation_confidence"] == "low"
+
+
+def test_structural_document_failure_remains_blocking():
+    data = document(observation())
+    del data["chapters"][0]["source_text"]
+    with pytest.raises(ValueError, match="source_text"):
+        profiles.prepare_evidence(data)
+
+
+def test_bad_first_item_does_not_skip_remaining_chapter_evidence():
+    data = document(observation())
+    valid = deepcopy(data["chapters"][0]["evidence"][0])
+    data["chapters"][0]["evidence"][0]["quotation"] = "fabricated"
+    data["chapters"][0]["evidence"].append(valid)
+    records = profiles.prepare_evidence(data)
+    usable = [key for key, item in records.items() if item["validation_confidence"] == "high"]
+    result = profiles.build_profiles(plan(usable), records)
+    assert len(result[0]["attributes"]["stable_physical"]) == 1
+    assert len(result[0]["supporting_evidence"]) == 1

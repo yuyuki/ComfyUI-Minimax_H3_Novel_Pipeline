@@ -162,7 +162,7 @@ def passages(text: str, size: int):
         start = end - min(500, size // 4)
 
 
-def validate_result(result, passage: str) -> list[dict]:
+def validate_result(result, passage: str, *, validate_quotation=True) -> list[dict]:
     """Keep every observation and annotate validation problems for manual review."""
     result_warnings = []
     if not isinstance(result, dict) or set(result) != {"evidence"} or not isinstance(result["evidence"], list):
@@ -190,7 +190,7 @@ def validate_result(result, passage: str) -> list[dict]:
             if item.get("attribute") in ("clothing", "accessory", "action") and item.get("persistence") != "temporary":
                 warnings.append("Clothing, accessories and actions must be temporary observations.")
             quotation = item.get("quotation")
-            if not isinstance(quotation, str) or not quotation or quotation not in passage:
+            if validate_quotation and (not isinstance(quotation, str) or not quotation or quotation not in passage):
                 warnings.append("Quotation is not an exact substring of the supplied passage. Copy it verbatim.")
         observation = dict(item) if isinstance(item, dict) else {"raw_evidence": item}
         if warnings:

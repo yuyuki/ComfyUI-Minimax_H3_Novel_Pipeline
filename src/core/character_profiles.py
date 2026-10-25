@@ -5,10 +5,14 @@ from collections import defaultdict
 from copy import deepcopy
 import hashlib
 import json
+import logging
+import unicodedata
 
 from openai import APIError
 
 from . import character_evidence, lmstudio_json, lmstudio_pipeline, prompt_cache, util
+
+logger = logging.getLogger(__name__)
 
 VERSION = 1
 SYSTEM = """Reconcile ALL supplied novel character observations across ALL chapters.
@@ -57,44 +61,89 @@ def _digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def _normalized(text):
+    """Canonical Unicode and whitespace only; never repair wording or punctuation."""
+    return " ".join(unicodedata.normalize("NFC", text).split())
+
+
 def prepare_evidence(data):
-    """Validate current input, without reopening extractor caches or source files."""
-    character_evidence.validate_document(data)
+    """Retain original observations; isolate invalid items from factual consolidation."""
+    # Document/chapter structure is required, but a damaged item must not block siblings.
+    envelope = deepcopy(data)
+    if isinstance(envelope, dict) and isinstance(envelope.get("chapters"), list):
+        for chapter in envelope["chapters"]:
+            if isinstance(chapter, dict) and isinstance(chapter.get("evidence"), list):
+                chapter["evidence"] = []
+    character_evidence.validate_document(envelope)
     records = {}
     for chapter in data["chapters"]:
-        for index, item in enumerate(chapter["evidence"]):
-            where = f"Chapter {chapter['chapter']}, evidence {index + 1}"
-            raw = {key: item[key] for key in character_evidence.FIELDS if key in item}
-            validated = character_evidence.validate_result({"evidence": [raw]}, chapter["source_text"])[0]
-            if validated.get("warnings"):
-                raise ValueError(f"{where}: correct the evidence JSON with Load Character Evidence: "
-                                 + "; ".join(validated["warnings"]))
-            provenance = item["provenance"]
-            if (provenance["chapter"] != chapter["chapter"]
-                    or provenance["chapter_name"] != chapter["chapter_name"]
-                    or provenance["file"] != chapter["source_file"] or not provenance["locations"]):
-                raise ValueError(f"{where}: restore matching chapter/file provenance and quotation locations.")
+        for index, original in enumerate(chapter["evidence"], 1):
+            item = deepcopy(original) if isinstance(original, dict) else {"raw_evidence": original}
+            warnings = []
+            confidence = "high"
             text = chapter["source_text"]
-            for loc in provenance["locations"]:
-                start, end = loc["start_char"], loc["end_char"]
-                if (not 0 <= start < end <= len(text) or text[start:end] != item["quotation"]
-                        or loc["start_line"] != text.count("\n", 0, start) + 1
-                        or loc["end_line"] != text.count("\n", 0, end - 1) + 1):
-                    raise ValueError(f"{where}: quotation/location mismatch; correct the saved evidence JSON.")
-            # Content IDs are independent of chapter/list order and preserve duplicate occurrences.
-            base = "e_" + _digest([chapter["chapter"], chapter["source_file"], item])[:24]
+            quotation = item.get("quotation")
+            raw = {key: item[key] for key in character_evidence.FIELDS if key in item}
+            validated = character_evidence.validate_result(
+                {"evidence": [raw]}, text, validate_quotation=False)[0]
+            warnings.extend(validated.get("warnings", []))
+            if not isinstance(quotation, str) or not quotation.strip():
+                warnings.append("Quotation is empty or is not text.")
+            elif quotation not in text:
+                if _normalized(quotation) in _normalized(text):
+                    confidence = "medium"
+                else:
+                    warnings.append("Quotation does not match the source, including after safe normalization.")
+            try:
+                character_evidence.validate_document({**data, "chapters": [{**chapter, "evidence": [original]}]})
+                provenance = item["provenance"]
+                if (provenance["chapter"] != chapter["chapter"]
+                        or provenance["chapter_name"] != chapter["chapter_name"]
+                        or provenance["file"] != chapter["source_file"] or not provenance["locations"]):
+                    warnings.append("Missing or inconsistent chapter/file provenance or quotation locations.")
+                for loc in provenance["locations"]:
+                    start, end = loc["start_char"], loc["end_char"]
+                    if (not 0 <= start < end <= len(text)
+                            or not isinstance(quotation, str)
+                            or _normalized(text[start:end]) != _normalized(quotation)
+                            or loc["start_line"] != text.count("\n", 0, start) + 1
+                            or loc["end_line"] != text.count("\n", 0, end - 1) + 1):
+                        warnings.append("Quotation/location mismatch.")
+                    elif text[start:end] != quotation:
+                        confidence = "medium"
+            except ValueError as exc:
+                warnings.append(str(exc))
+            if warnings:
+                confidence = "low"
+            item["validation_confidence"] = confidence
+            item["validation_warnings"] = warnings
+            for warning in warnings:
+                logger.warning(
+                    "Chapter %s, evidence %s, character %s: %s Excluded from factual consolidation.",
+                    chapter["chapter"], index, item.get("character", "<unknown>"), warning,
+                    extra={"chapter": chapter["chapter"], "evidence_index": index,
+                           "character": item.get("character"), "validation_confidence": confidence,
+                           "validation_warning": warning})
+            # IDs use original content, independent of validation annotations and list order.
+            base = "e_" + _digest([chapter["chapter"], chapter["source_file"], original])[:24]
             evidence_id = base
             occurrence = 1
             while evidence_id in records:
                 occurrence += 1
                 evidence_id = f"{base}_{occurrence}"
-            records[evidence_id] = deepcopy(item)
+            records[evidence_id] = item
     return dict(sorted(records.items(), key=lambda pair: _source_order(pair[0], pair[1])))
 
 
 def _source_order(evidence_id, item):
-    p = item["provenance"]
+    p = item.get("provenance")
+    if not isinstance(p, dict) or item["validation_confidence"] == "low":
+        return (0, "", 0, evidence_id)
     return (p["chapter"], p["file"], min(loc["start_char"] for loc in p["locations"]), evidence_id)
+
+
+def _usable(records):
+    return {key: item for key, item in records.items() if item.get("validation_confidence") != "low"}
 
 
 def _validate_shape(value, schema):
@@ -123,6 +172,7 @@ def _refs(value, allowed):
 
 def build_profiles(plan, records):
     """Reject lost evidence and unsupported merges; copy all facts from current input."""
+    records = _usable(records)
     _validate_shape(plan, SCHEMA["schema"])
     assigned, profiles = [], []
     rank = {key: index for index, key in enumerate(records)}
@@ -214,7 +264,10 @@ def build_profiles(plan, records):
 
 
 def consolidate(data, records, output, client, model, args):
-    key = prompt_cache.fingerprint(model, args, VERSION, SYSTEM, SCHEMA, data, client=client)
+    excluded = [{"evidence_id": key, "observation": deepcopy(item)}
+                for key, item in records.items() if item.get("validation_confidence") == "low"]
+    records = _usable(records)
+    key = prompt_cache.fingerprint(model, args, VERSION, SYSTEM, SCHEMA, data, records, client=client)
     cache = output / ".cache" / f"{key}.json"
     plan = None
     if cache.exists() and not args.force:
@@ -251,7 +304,7 @@ def consolidate(data, records, output, client, model, args):
     profiles = build_profiles(plan, records)
     util.save_json(cache, plan)
     result = {"format_version": VERSION, "source_digest": _digest(data),
-              "source_document": deepcopy(data), "profiles": profiles,
+              "source_document": deepcopy(data), "profiles": profiles, "excluded_evidence": excluded,
               "review_note": "Identity and chronology are model interpretations. Distinct values remain unresolved "
                              "for review even when an explicit temporal change is cited. Unknown categories mean "
                              "no explicit observation; unmentioned individual traits remain unknown."}
