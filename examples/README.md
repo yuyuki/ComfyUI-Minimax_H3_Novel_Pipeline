@@ -322,13 +322,25 @@ Saved edits reload on the next workflow execution without rewriting the file.
 To consolidate characters, connect either evidence node's `character_evidence`
 output to **Consolidate Character Profiles**, together with **LM Studio
 Configuration** using Qwen. Include all novel chapters. Keep `out_dir` at
-`character_profiles` to save `character_profiles/character_profiles.json` in the
-current run. Outputs are the structured `character_profiles` dictionary and
-`saved_file` path. Review the editable JSON's source evidence, unresolved conflicts,
-inferred information and chronological changes. Correct input evidence with
-**Load Character Evidence** and rerun to invalidate the consolidation cache;
-`force` bypasses it explicitly. Increase LM Studio context capacity and `max_tokens`
-if the complete novel evidence does not fit. No corresponding profile Load node is included.
+`character_profiles` to save `character_profiles/character_profiles.json` and its
+JSON Schema in the current run. Set `context_tokens` at or below LM Studio's
+loaded context (default 65,536); it includes the response and correction reserves.
+Identity and precise-trait analysis use separate bounded requests, with complete
+evidence coverage and cached completed batches. Lower the control for smaller
+requests. `character_profiles_requests.json` records sizes and request counts.
+
+Edit a copy of `character_profiles.json`, then connect **Load Character Profiles**
+to it through `profiles_path` (file, renamed copy or containing directory under
+`output/minimax_h3_novel`). It returns `character_profiles` and `saved_file` without
+network calls. Change conflict `choices[].selected` and direct `link_to_local_id`
+links as needed. No selection and multiple selections are both accepted; links
+must target a principal entry, without chains or cycles. Saved edits reload on
+execution and are never replaced by an old model response. Correct invalid
+source evidence through **Load Character Evidence** and reconsolidate instead.
+
+The visual generator's use of these choices/links and the selected cinematic
+chapter remains work-plan stage 4. Its current behavior still blocks conflicting
+visual fields. Keep the edited consolidation for that next stage.
 
 For stable visual designs, connect consolidation's `character_profiles` output
 to **Character Visual Profile Generator** and connect the same Qwen configuration.

@@ -9,6 +9,7 @@ from .chapter_selection import SelectChaptersNode
 from .cinematic_chapter_adapter import CinematicChapterAdapterNode
 from .extract_chapter_references import ExtractChapterReferencesNode
 from .generate_h3_prompts import GenerateH3PromptsNode
+from .load_character_profiles import LoadCharacterProfilesNode
 from .load_character_evidence import LoadCharacterEvidenceNode
 from .load_character_visual_profiles import LoadCharacterVisualProfilesNode
 from .load_chapter_catalogs import LoadChapterCatalogsNode
@@ -24,6 +25,7 @@ NODE_CLASS_MAPPINGS = {
     "CharacterVisualProfileGeneratorNode": CharacterVisualProfileGeneratorNode,
     "ConsolidateCharacterProfilesNode": ConsolidateCharacterProfilesNode,
     "LoadCharacterEvidenceNode": LoadCharacterEvidenceNode,
+    "LoadCharacterProfilesNode": LoadCharacterProfilesNode,
     "CharacterEvidenceExtractorNode": CharacterEvidenceExtractorNode,
     "CinematicChapterAdapterNode": CinematicChapterAdapterNode,
     "LMStudioConfigurationNode": LMStudioConfigurationNode,
@@ -43,6 +45,7 @@ __all__ = [
     "CharacterVisualProfileGeneratorNode",
     "ConsolidateCharacterProfilesNode",
     "LoadCharacterEvidenceNode",
+    "LoadCharacterProfilesNode",
     "CharacterEvidenceExtractorNode",
     "CinematicChapterAdapterNode",
     "ExtractChapterReferencesNode",

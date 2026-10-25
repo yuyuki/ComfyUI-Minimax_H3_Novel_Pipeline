@@ -266,28 +266,57 @@ It returns `character_profiles` (`MINIMAX_CHARACTER_PROFILES`) and `saved_file`
 (`STRING`), saving readable UTF-8 `character_profiles.json` under `out_dir`
 (default `character_profiles`) in the current run folder.
 
-Controls: `thinking`, `temperature`, `max_tokens`, `correction_attempts`, `force`.
-The complete current input, model, prompt and settings determine the disk cache;
-manual Load-node corrections take priority over any earlier extraction. Invalid
-observations or quotation locations are excluded from factual consolidation and
-retained in its validation report. Correct them in the evidence JSON and reload.
-Existing warning metadata is retained.
+Controls: `thinking`, `temperature`, `max_tokens`, `context_tokens` (default
+65,536), `correction_attempts`, `force`. Set `context_tokens` no higher than the
+context actually loaded in LM Studio. The input budget reserves `max_tokens` for
+the response plus a retry/framing margin and conservatively counts UTF-8 bytes.
+Lowering `context_tokens` makes smaller requests; an indivisible oversized
+observation produces an explicit diagnostic, never truncated evidence.
 
-Profiles retain every observation and original quotation/location, separate explicit
-stable traits, temporary appearance, actions and inferred information, and list
-unknown attribute categories. Identity aliases require explicit connecting source
-quotations; ambiguous identities remain separate. IDs and ordering are deterministic
-for the same evidence and grouping. The original input document is also embedded.
-Differing values are conservatively flagged for review, even if they may coexist;
-model-detected contradictions and explicitly supported temporal interpretations are
-retained without deleting or overwriting observations. Chapter order alone is not
-assumed to be story chronology. Quote validation proves fidelity, not semantic truth:
-review model identity and chronology interpretations before using them as facts.
+Identity grouping runs first in bounded chapter batches, followed by contextual
+comparisons across batches. Shared names or roles only select comparisons; they
+do not automatically merge identities. Trait analysis then runs per character
+in bounded batches. Precise trait keys are reconciled before comparing values
+across all batches and chapters. Repeated quotations are sent once per comparison
+request, with every job referencing the shared evidence table. Large characters
+can still require many comparisons. Every valid observation is retained exactly
+once, with its complete source quotation and positions; invalid observations
+remain in `character_profiles_validation.json` and `excluded_evidence`.
 
-All evidence is sent together for cross-chapter reconciliation. For large novels,
-configure enough LM Studio context and output tokens; failure never silently drops
-chapters or truncates evidence. No profile loader, exported JSON Schema or cinematic
-visual generation is provided by this node.
+Validated requests are cached under `<run>/<out_dir>/.cache/character_profiles`.
+Cancellation or a later failure leaves completed batches available for retry;
+`force` bypasses them. Input, prompt, schema, model and settings determine each
+cache key. `character_profiles_requests.json` records request/cache counts and
+maximum input size. No live server context size is inferred from the UI control.
+
+The editable v2 document exports `character_profiles.schema.json` beside it.
+`global_traits` records explicit stable physical evidence; `temporary_states`
+retains local observations without cinematic sequence numbers. Source-supported
+`chronological_changes` distinguish acquired traits from retroactive defaults.
+Uncertain relationships stay available for review. Chapter order is never proof
+of story chronology, and a wound does not establish a scar or a healing date.
+`unresolved_conflicts` concerns precise traits and story scopes, with a `choices`
+array: the first choice starts with `selected: true`; alternatives and sources
+remain present. Each profile has `local_id` and editable `link_to_local_id`.
+
+### Load Character Profiles
+
+Use `profiles_path` to load a saved or renamed JSON, or a directory containing
+`character_profiles.json`, inside `output/minimax_h3_novel`. Relative paths start
+there. Outputs are `character_profiles` (`MINIMAX_CHARACTER_PROFILES`) and
+`saved_file` (`STRING`). The loader validates with the bundled schema and checks
+source references, unique IDs and direct links to principal identities. It never
+fetches the document's `$schema`, calls LM Studio, rewrites the file or reconstructs
+model selections. Saved content changes invalidate the loader on the next run.
+Zero or multiple selected choices are valid; self-links, missing targets, chains
+and cycles are rejected with a field-specific error.
+
+The chapter-specific visual generator changes are the next work-plan stage.
+For now it validates this new document but still blocks conflicting visual fields;
+consuming `selected` and identity links, chapter filtering and sequence-local
+states are not implemented yet. Review and retain the editable consolidation
+before that stage. Rerunning consolidation replaces its output, so keep manual
+edits in a renamed copy when needed.
 
 ### Character Visual Profile Generator
 

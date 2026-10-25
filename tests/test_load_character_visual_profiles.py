@@ -57,7 +57,7 @@ def test_preserves_all_manual_edits_and_metadata(saved):
     path, data = saved
     data.update(review={"author": "éditeur", "notes": ["retain everything"]}, source_digest="manual-digest")
     profile = data["profiles"][0]
-    profile.update(character_id="my-character", canonical_name="Élise, reviewed", review={"approved": True})
+    profile.update(local_id="my-character", canonical_name="Élise, reviewed", review={"approved": True})
     trait = profile["eyes"][0]
     trait.update(description="Blue or green eyes / yeux verts.  ", review={"notes": "manual override"})
     trait["evidence"][0].update(evidence_id="manual-evidence", notes="keep reference metadata")
@@ -99,13 +99,13 @@ def test_invalid_json(saved, contents, message):
 
 
 @pytest.mark.parametrize("change, message", [
-    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 1"),
+    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 2"),
     (lambda d: d.update(format_version=True), "format_version must be int"),
     (lambda d: d.update(mode="unknown"), "mode must be one of"),
     (lambda d: d.update(profiles={}), "profiles must be list"),
     (lambda d: d.update(source_document={}), "missing required field 'format_version'"),
     (lambda d: d["profiles"].append(None), "must be an object"),
-    (lambda d: d["profiles"][0].pop("character_id"), "missing required field 'character_id'"),
+    (lambda d: d["profiles"][0].pop("local_id"), "missing required field 'local_id'"),
     (lambda d: d["profiles"][0].pop("hair"), "missing required field 'hair'"),
     (lambda d: d["profiles"][0].update(supporting_evidence=[{}]), "missing required field 'evidence_id'"),
     (lambda d: d["profiles"][0].update(eyes={}), "eyes must be list"),

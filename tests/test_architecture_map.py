@@ -71,6 +71,8 @@ def test_pipeline_labels_follow_comfyui_registration() -> None:
     assert 'evidence_json --> evidence_loader["Load Character Evidence"]' in pipeline
     assert 'evidence --> profiles["Consolidate Character Profiles"]' in pipeline
     assert 'evidence_loader --> profiles' in pipeline
+    assert 'profiles_json --> profiles_loader["Load Character Profiles"]' in pipeline
+    assert 'profiles_loader --> visual_profiles' in pipeline
     assert 'profiles --> visual_profiles["Character Visual Profile Generator"]' in pipeline
     assert 'visual_json --> visual_loader["Load Character Visual Profiles"]' in pipeline
     assert "Novel Cinematic Simplifier" not in rendered

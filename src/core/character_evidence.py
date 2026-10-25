@@ -13,7 +13,7 @@ from pathlib import Path
 from openai import APIError
 
 from . import lmstudio_json, lmstudio_pipeline, progress, prompt_cache, util
-from .path_access import input_path
+from .path_access import confined_path, input_path
 
 logger = logging.getLogger(__name__)
 
@@ -303,8 +303,39 @@ def repair_observations(raw, parts, client, model, args, stats):
     return observations
 
 
+def _extract_parts(client, model, system, chapter, parts, args, stats, correction=""):
+    """Retry output overflow on smaller excerpts, retaining overlapping context."""
+    lmstudio_pipeline.comfy_interrupt_check()
+    prompt = json.dumps({"chapter": chapter, "passages": parts}, ensure_ascii=False)
+    try:
+        stats["llm_calls"] += 1
+        return lmstudio_json.chat_json(client, model, system, prompt + correction, SCHEMA,
+                                       args.temperature, args.max_tokens)
+    except lmstudio_json.StructuredOutputLengthError:
+        if len(parts) > 1:
+            middle = len(parts) // 2
+            groups = [parts[:middle], parts[middle:]]
+        elif len(parts[0]) > 500:
+            part = parts[0]
+            middle = len(part) // 2
+            overlap = min(250, len(part) // 8)
+            groups = [[part[:middle + overlap]], [part[middle - overlap:]]]
+        else:
+            raise
+        stats["overflow_splits"] = stats.get("overflow_splits", 0) + 1
+        logger.warning("Character evidence: output limit reached; splitting %s source characters.",
+                       sum(map(len, parts)))
+        items = []
+        for group in groups:
+            raw = _extract_parts(client, model, system, chapter, group, args, stats)
+            # Retain malformed observations for the normal review/repair path too.
+            items.extend(raw["evidence"] if isinstance(raw, dict)
+                         and isinstance(raw.get("evidence"), list) else [raw])
+        return {"evidence": items}
+
+
 def extract_chapter(path, output, client, model, args, index, *, source=None, occurrences=None,
-                    cache_dir=None, diagnostics=None):
+                    cache_dir=None, resume_cache_dir=None, diagnostics=None):
     started = time.perf_counter()
     text, basis = source if source is not None else read_source(path)
     scope = getattr(args, "character_scope", "proper_names")
@@ -325,7 +356,8 @@ def extract_chapter(path, output, client, model, args, index, *, source=None, oc
         covered_end = max(covered_end, offset + len(part))
     stats = {"chapter": index, "source_chars": len(text), "selected_chars": selected_chars,
              "submitted_chars": sum(len(p) for _, p in jobs),
-             "passages_selected": len(jobs), "batches": len(batches), "cache_hits": 0, "llm_calls": 0}
+             "passages_selected": len(jobs), "batches": len(batches), "cache_hits": 0,
+             "resumed_cache_hits": 0, "llm_calls": 0}
     evidence, seen = [], set()
     newlines = [i for i, char in enumerate(text) if char == "\n"]
     for part_index, batch in enumerate(progress.steps(batches)):
@@ -336,23 +368,30 @@ def extract_chapter(path, output, client, model, args, index, *, source=None, oc
         key = prompt_cache.fingerprint(model, args, VERSION, SELECTION_VERSION, REPAIR_VERSION,
                                        system, SCHEMA, REPAIR_SYSTEM, REPAIR_SCHEMA,
                                        str(path), prompt, client=client)
-        cache = (cache_dir if cache_dir is not None else output / ".cache") / f"{key}.json"
+        cache = confined_path(f"{key}.json", cache_dir if cache_dir is not None else output / ".cache")
         hit, raw = False, None
-        if cache.exists() and not args.force:
-            try:
-                candidate = util.load_json(cache)
-                if isinstance(candidate, list) and len(candidate) == 1:
-                    raw, hit = candidate[0], True
-                    stats["cache_hits"] += 1
-            except (ValueError, TypeError, OSError):
-                pass
+        if not args.force:
+            roots = [cache.parent]
+            if resume_cache_dir is not None:
+                roots.append(resume_cache_dir)
+            for root in roots:
+                cached_file = confined_path(f"{key}.json", root)
+                try:
+                    candidate = util.load_json(cached_file)
+                    if isinstance(candidate, list) and len(candidate) == 1:
+                        raw, hit = candidate[0], True
+                        stats["cache_hits"] += 1
+                        break
+                except (ValueError, TypeError, OSError):
+                    pass
+            if hit and cached_file != cache:
+                util.save_json(cache, [raw])
+                stats["resumed_cache_hits"] += 1
         if not hit:
             correction = ""
             for attempt in range(args.correction_attempts + 1):
                 try:
-                    stats["llm_calls"] += 1
-                    raw = lmstudio_json.chat_json(client, model, system, prompt + correction, SCHEMA,
-                                                  args.temperature, args.max_tokens)
+                    raw = _extract_parts(client, model, system, path.stem, parts, args, stats, correction)
                     break
                 except APIError:
                     raise RuntimeError(
@@ -362,11 +401,11 @@ def extract_chapter(path, output, client, model, args, index, *, source=None, oc
                 except (ValueError, RuntimeError) as exc:
                     if lmstudio_json._is_comfy_interrupt(exc):
                         raise
-                    if attempt == args.correction_attempts:
+                    if isinstance(exc, lmstudio_json.StructuredOutputLengthError) or attempt == args.correction_attempts:
                         raise RuntimeError(
                             f"Character evidence failed: {path.name}, passage {part_index + 1}, "
                             f"character offset {offset}. {exc} Reduce chunk_chars, increase max_tokens "
-                            "or correction_attempts, and retry."
+                            "and retry."
                         ) from exc
                     correction = f"\nPrevious response rejected: {exc}\nReturn the complete corrected JSON."
             observations = repair_observations(raw, parts, client, model, args, stats)

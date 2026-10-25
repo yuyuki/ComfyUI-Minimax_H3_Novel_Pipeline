@@ -1,6 +1,5 @@
 """Cross-chapter reconciliation, provenance, conservative identities and shared transport."""
 import argparse
-from contextlib import nullcontext
 from copy import deepcopy
 import hashlib
 import json
@@ -11,12 +10,9 @@ import httpx
 from openai import APIConnectionError
 import pytest
 
-from minimax_h3_novel_pipeline import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 from minimax_h3_novel_pipeline.core import character_profiles as profiles, path_access
-from minimax_h3_novel_pipeline.nodes import consolidate_character_profiles as node
-from minimax_h3_novel_pipeline.nodes import LoadCharacterEvidenceNode
+from minimax_h3_novel_pipeline.core import character_profile_batches as batches
 from tests.test_character_evidence import observation
-from tests.test_structured_json import Stream, client_for
 
 
 def document(*items):
@@ -39,11 +35,19 @@ def refs(ids):
 
 def group(ids, **overrides):
     return {"canonical_name": "Élise", "identity_status": "confirmed", "evidence": refs(ids),
-            "identity_support": [], "conflicts": [], "changes": [], **overrides}
+            "identity_support": [], **overrides}
 
 
 def plan(records):
     return {"profiles": [group(records)] if records else []}
+
+
+def respond(*args):
+    payload = json.JSONDecoder().raw_decode(args[3])[0]
+    if args[4] == profiles.SCHEMA:
+        return plan(row["evidence_id"] for row in payload["observations"])
+    return {"observations": [{"evidence_id": row["evidence_id"],
+        "traits": [{"trait": "eye_color", "kind": "global"}]} for row in payload["observations"]]}
 
 
 def settings(**overrides):
@@ -97,43 +101,13 @@ def test_same_name_can_remain_distinct():
                                                                               attribute="context", value="boulangère")))
     response = {"profiles": [group([key], identity_status="ambiguous") for key in records]}
     result = profiles.build_profiles(response, records)
-    assert len({item["character_id"] for item in result}) == 2
+    assert len({item["local_id"] for item in result}) == 2
     response["profiles"].reverse()
     assert profiles.build_profiles(response, records) == result
 
 
-def test_conflicts_retained_even_when_model_omits_them():
-    records = profiles.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.", value="yeux bleus")))
-    result = profiles.build_profiles(plan(records), records)[0]
-    assert len(result["attributes"]["stable_physical"]) == 2
-    assert result["unresolved_conflicts"][0]["status"] == "unresolved"
-    assert set(result["unresolved_conflicts"][0]["evidence_ids"]) == set(records)
-    response = plan(records)
-    response["profiles"][0]["conflicts"] = [{"evidence": refs(records)}]
-    assert profiles.build_profiles(response, records)[0]["unresolved_conflicts"][0]["detected_by"] == "model"
 
 
-def test_temporal_changes_require_exact_explicit_support():
-    data = document(observation("Élise portait du rouge.", attribute="clothing", value="rouge", persistence="temporary"),
-                    observation("Plus tard, Élise remplaça sa robe rouge par une bleue.",
-                                attribute="clothing", value="bleue", persistence="temporary"))
-    records = profiles.prepare_evidence(data)
-    before, after = records
-    response = plan(records)
-    change = {"before_id": before, "after_id": after, "support_id": after,
-              "temporal_quote": "Plus tard, Élise remplaça sa robe rouge par une bleue."}
-    response["profiles"][0]["changes"] = [change]
-    result = profiles.build_profiles(response, records)[0]
-    assert result["chronological_changes"][0]["temporal_quote"] == change["temporal_quote"]
-    assert result["unresolved_conflicts"]  # No prior state is overwritten by chronology.
-    assert len(result["attributes"]["temporary_appearance"]) == 2
-    change["temporal_quote"] = "The next day she wore blue."
-    with pytest.raises(ValueError, match="Temporal change"):
-        profiles.build_profiles(response, records)
-    change["temporal_quote"] = "Plus tard"
-    records[after]["classification"] = "inferred"
-    with pytest.raises(ValueError, match="Temporal change"):
-        profiles.build_profiles(response, records)
 
 
 def test_inferences_unknowns_actions_and_equipment_are_separate():
@@ -146,7 +120,7 @@ def test_inferences_unknowns_actions_and_equipment_are_separate():
     assert result["attributes"]["inferred_information"][0]["classification"] == "inferred"
     assert result["attributes"]["temporary_appearance"][0]["value"] == "épée"
     assert result["attributes"]["actions"][0]["value"] == "court"
-    assert "physical_appearance" in result["unknown_characteristics"]
+    assert "unknown_characteristics" not in result
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "foreign", "fabrication", "extra_quote"])
@@ -196,7 +170,7 @@ def test_validation_report_survives_failed_consolidation(workspace, monkeypatch)
     data = document(observation(), observation("invalid"))
     data["chapters"][1]["evidence"][0]["quotation"] = "invented"
     records = profiles.prepare_evidence(data)
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", Mock(side_effect=APIConnectionError(
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(side_effect=APIConnectionError(
         request=httpx.Request("POST", "http://localhost/v1"))))
     with pytest.raises(RuntimeError, match="request failed"):
         profiles.consolidate(data, records, workspace, None, "qwen", settings())
@@ -206,81 +180,15 @@ def test_validation_report_survives_failed_consolidation(workspace, monkeypatch)
     assert report["excluded_evidence"][0]["observation"]["quotation"] == "invented"
 
 
-def test_node_json_loader_edits_cache_force_and_corruption(workspace, monkeypatch):
-    workspace.mkdir()
-    data = document(observation())
-    path = workspace / "evidence.json"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    def respond(*args):
-        observations = json.loads(args[3])["observations"]
-        return plan([item["evidence_id"] for item in observations])
-    chat = Mock(side_effect=respond)
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", chat)
-    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen3.5"))
-    config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261024120000"}
-    cls = NODE_CLASS_MAPPINGS["ConsolidateCharacterProfilesNode"]
-    def run(**kwargs):
-        loaded, _ = LoadCharacterEvidenceNode().run(str(path))
-        return cls().run(loaded, config, **kwargs)["result"]
-    result, saved = run()
-    assert run() == (result, saved)
-    assert chat.call_count == 1
-    assert json.loads(Path(saved).read_text(encoding="utf-8")) == result
-    assert Path(saved).name == "character_profiles.json"
-    assert result["source_document"] == data
-    item = data["chapters"][0]["evidence"][0]
-    item.update(value="vert sombre", classification="inferred", notes="manually corrected", warnings=["old warning"])
-    path.write_text(json.dumps(data), encoding="utf-8")
-    result, _ = run()
-    assert chat.call_count == 2
-    assert result["profiles"][0]["attributes"]["inferred_information"][0]["value"] == "vert sombre"
-    assert result["source_document"] == data
-    run(force=True)
-    run(temperature=0.2)
-    assert chat.call_count == 4
-    for cache in Path(saved).parent.joinpath(".cache").glob("*.json"):
-        cache.write_text('{"profiles": []}', encoding="utf-8")
-    run()
-    assert chat.call_count == 5
-    assert cls.RETURN_TYPES == ("MINIMAX_CHARACTER_PROFILES", "STRING")
-    assert cls.INPUT_TYPES()["required"]["character_evidence"] == ("MINIMAX_CHARACTER_EVIDENCE",)
-    assert NODE_DISPLAY_NAME_MAPPINGS["ConsolidateCharacterProfilesNode"] == "Consolidate Character Profiles"
-    assert "api_key" not in cls.INPUT_TYPES()["required"]
-    with pytest.raises(ValueError, match="requires Qwen"):
-        cls().run(data, {"model_family": "Mistral"})
 
 
-def test_structured_transport_compact_retry_preserves_all_evidence(workspace, monkeypatch):
-    monkeypatch.setattr(profiles.lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
-    data = document(*(observation(value=f"observation {i}") for i in range(7)))
-    records = profiles.prepare_evidence(data)
-    first, second = Stream(['{"profiles":']), Stream([json.dumps(plan(records))])
-    client, create = client_for(first, second)
-    result, _ = profiles.consolidate(data, records, workspace, client, "qwen3.5", settings())
-    assert len(result["profiles"][0]["supporting_evidence"]) == 7
-    assert create.call_count == 2
-    for call in create.call_args_list:
-        assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": profiles.SCHEMA}
-        prompt = str(call.kwargs["messages"])
-        assert all(key in prompt for key in records)
-    assert first.closed and second.closed
 
 
-def test_semantic_retry_keeps_full_input_and_rejects_bad_cache(workspace, monkeypatch):
-    data = document(observation(), observation())
-    records = profiles.prepare_evidence(data)
-    chat = Mock(side_effect=[{"profiles": []}, plan(records)])
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", chat)
-    profiles.consolidate(data, records, workspace, None, "qwen3.5", settings())
-    assert chat.call_count == 2
-    for call in chat.call_args_list:
-        assert all(key in call.args[3] for key in records)
-        assert call.args[4] == profiles.SCHEMA
 
 
 def test_empty_evidence_saves_empty_profiles_without_request(workspace, monkeypatch):
     chat = Mock(side_effect=AssertionError("No model request needed"))
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
     data = document()
     result, saved = profiles.consolidate(data, {}, workspace, None, "qwen3.5", settings())
     assert result["profiles"] == []
@@ -294,7 +202,7 @@ def test_failures_do_not_save_or_cache(workspace, monkeypatch, kind):
     error = {"network": APIConnectionError(message="private server detail", request=httpx.Request("POST", "http://localhost")),
              "interrupt": InterruptProcessingException(), "invalid": ValueError("invalid JSON")}[kind]
     chat = Mock(side_effect=error)
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
     data = document(observation())
     with pytest.raises(RuntimeError) as caught:
         profiles.consolidate(data, profiles.prepare_evidence(data), workspace, None, "qwen3.5", settings())
@@ -323,31 +231,6 @@ def test_normalized_quotation_retains_original_source_and_confidence(quotation):
     assert data == original
 
 
-@pytest.mark.parametrize("bad", ["fabricated", "", None, "ÉLISE AVAIT LES YEUX BLEUS.",
-                               "Élise avait les yeux bleus!"])
-def test_partial_consolidation_excludes_invalid_quotes(workspace, monkeypatch, bad):
-    data = document(observation(), observation("Élise avait les yeux bleus.", value="yeux bleus"))
-    data["chapters"][1]["evidence"][0]["quotation"] = bad
-    records = profiles.prepare_evidence(data)
-    def respond(*args):
-        supplied = json.loads(args[3])["observations"]
-        assert len(supplied) == 1
-        assert supplied[0]["observation"]["validation_confidence"] == "high"
-        return plan([item["evidence_id"] for item in supplied])
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", respond)
-    result, saved = profiles.consolidate(data, records, workspace, None, "qwen3.5", settings())
-    assert len(result["profiles"]) == 1
-    profile = result["profiles"][0]
-    assert len(profile["attributes"]["stable_physical"]) == 1
-    assert profile["unresolved_conflicts"] == []
-    excluded = result["excluded_evidence"][0]["observation"]
-    assert excluded["quotation"] == bad
-    assert excluded["validation_confidence"] == "low"
-    assert excluded["validation_warnings"]
-    assert result["source_document"] == data
-    assert json.loads(Path(saved).read_text(encoding="utf-8")) == result
-    from minimax_h3_novel_pipeline.core.character_visual_profiles import prepare_profiles
-    assert prepare_profiles(result) == result["profiles"]
 
 
 @pytest.mark.parametrize("bad", [None, {"quotation": "x"}, {"provenance": {}}])
@@ -355,8 +238,7 @@ def test_malformed_item_does_not_block_valid_siblings(workspace, monkeypatch, ba
     data = document(observation())
     data["chapters"][0]["evidence"].append(bad)
     records = profiles.prepare_evidence(data)
-    valid = [key for key, item in records.items() if item["validation_confidence"] == "high"]
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", lambda *a: plan(valid))
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", respond)
     result, _ = profiles.consolidate(data, records, workspace, None, "qwen3.5", settings())
     assert len(result["profiles"][0]["supporting_evidence"]) == 1
     assert len(result["excluded_evidence"]) == 1
@@ -365,7 +247,7 @@ def test_malformed_item_does_not_block_valid_siblings(workspace, monkeypatch, ba
 def test_all_unusable_evidence_skips_model(workspace, monkeypatch):
     data = document(observation())
     data["chapters"][0]["evidence"][0]["quotation"] = "unverified"
-    monkeypatch.setattr(profiles.lmstudio_json, "chat_json", Mock(side_effect=AssertionError))
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(side_effect=AssertionError))
     result, _ = profiles.consolidate(data, profiles.prepare_evidence(data), workspace, None, "qwen3.5", settings())
     assert result["profiles"] == []
     assert result["excluded_evidence"][0]["observation"]["validation_confidence"] == "low"

@@ -27,7 +27,7 @@ def plugin():
 def test_root_registration_and_frontend(plugin):
     assert set(plugin.NODE_CLASS_MAPPINGS) == {
         "CharacterEvidenceExtractorNode", "LoadCharacterEvidenceNode",
-        "ConsolidateCharacterProfilesNode", "CharacterVisualProfileGeneratorNode",
+        "ConsolidateCharacterProfilesNode", "LoadCharacterProfilesNode", "CharacterVisualProfileGeneratorNode",
         "LoadCharacterVisualProfilesNode",
         "LMStudioConfigurationNode", "SelectChaptersNode", "ExtractChapterReferencesNode",
         "LoadChapterCatalogsNode", "LoadConsolidatedReferencesNode",
@@ -69,9 +69,13 @@ def test_installed_package_import_outside_checkout(tmp_path):
     result = subprocess.run(
         [sys.executable, "-c",
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
+         "from minimax_h3_novel_pipeline.nodes.load_character_profiles import LoadCharacterProfilesNode; "
+         "from minimax_h3_novel_pipeline.core.character_profile_document import SCHEMA; "
+         "assert SCHEMA['properties']['format_version']['const'] == 2; "
+         "assert p.NODE_CLASS_MAPPINGS['LoadCharacterProfilesNode'] is LoadCharacterProfilesNode; "
          "from minimax_h3_novel_pipeline.nodes.load_character_evidence import LoadCharacterEvidenceNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCharacterEvidenceNode'] is LoadCharacterEvidenceNode; "
-         "assert len(p.NODE_CLASS_MAPPINGS) == 16; "
+         "assert len(p.NODE_CLASS_MAPPINGS) == 17; "
          "from minimax_h3_novel_pipeline.nodes.load_character_visual_profiles import LoadCharacterVisualProfilesNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCharacterVisualProfilesNode'] is LoadCharacterVisualProfilesNode; "
          "from minimax_h3_novel_pipeline.nodes.character_visual_profile_generator import CharacterVisualProfileGeneratorNode; "

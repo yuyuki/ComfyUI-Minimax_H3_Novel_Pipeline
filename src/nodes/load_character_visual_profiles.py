@@ -43,10 +43,10 @@ def _validate_profiles(data, location, visual=False):
         character_evidence.validate_document(data["source_document"])
     for index, profile in enumerate(data["profiles"]):
         where = f"{location}.profiles[{index}]"
-        _fields(profile, {"character_id": str, "canonical_name": str, "aliases": list,
+        _fields(profile, {"local_id": str, "canonical_name": str, "aliases": list,
                           "identity_status": str, "identity_support": list, "attributes": dict,
                           "supporting_evidence": list, "unresolved_conflicts": list,
-                          "chronological_changes": list, "unknown_characteristics": list}, where)
+                          "chronological_changes": list}, where)
         for evidence_index, item in enumerate(profile["supporting_evidence"]):
             _fields(item, {"evidence_id": str, "observation": dict}, f"{where}.supporting_evidence[{evidence_index}]")
         if not visual:

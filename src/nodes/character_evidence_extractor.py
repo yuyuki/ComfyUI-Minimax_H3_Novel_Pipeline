@@ -24,6 +24,10 @@ class CharacterEvidenceExtractorNode:
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
             "force": ("BOOLEAN", {"default": False}),
             "character_scope": (list(character_evidence.SCOPES), {"default": "proper_names"}),
+        }, "optional": {
+            "resume_run": ("STRING", {"default": "", "tooltip":
+                "Previous run folder, e.g. 20261025154413. Reuse matching character evidence batches; "
+                "leave empty for a fresh run. Keep the original settings and force disabled."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHARACTER_EVIDENCE", "STRING")
@@ -40,7 +44,7 @@ class CharacterEvidenceExtractorNode:
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="character_evidence",
             chunk_chars=5500, thinking=True, temperature=0.15, max_tokens=8192,
-            correction_attempts=2, force=False, character_scope="proper_names"):
+            correction_attempts=2, force=False, character_scope="proper_names", resume_run=""):
         started = time.perf_counter()
         if character_scope not in character_evidence.SCOPES:
             raise ValueError("Invalid character_scope.")
@@ -58,6 +62,16 @@ class CharacterEvidenceExtractorNode:
         config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(config, out_dir.strip())
         cache_dir = stage_output(config, ".cache/character_evidence")
+        if not isinstance(resume_run, str):
+            raise ValueError("resume_run must be a run folder name such as 20261025154413.")
+        resume_run = resume_run.strip()
+        resume_cache_dir = None
+        if resume_run:
+            resume_cache_dir = stage_output({"run_folder": resume_run}, ".cache/character_evidence")
+            if resume_cache_dir == cache_dir:
+                raise ValueError("resume_run must refer to a previous run, not the current run.")
+            if not resume_cache_dir.is_dir():
+                raise ValueError(f"resume_run {resume_run} has no character evidence cache directory.")
         args = argparse.Namespace(chunk_chars=int(chunk_chars), max_tokens=int(max_tokens),
                                   temperature=float(temperature), correction_attempts=int(correction_attempts),
                                   thinking=bool(thinking), force=bool(force), base_url=config["api_url"],
@@ -67,7 +81,8 @@ class CharacterEvidenceExtractorNode:
             lmstudio_pipeline.comfy_interrupt_check()
             sources.append(character_evidence.read_source(path))
         occurrences = character_evidence.index_names(sources) if character_scope == "proper_names" else [[] for _ in paths]
-        diagnostics = {"character_scope": character_scope, "chapters": [], "llm_requests": 0,
+        diagnostics = {"character_scope": character_scope, "resume_run": resume_run,
+                       "chapters": [], "llm_requests": 0,
                        "estimated_input_tokens": 0, "estimated_output_tokens": 0,
                        "token_estimation": "ceil(characters / 4); includes transport retries; not tokenizer usage",
                        "preprocessing_seconds": round(time.perf_counter() - started, 3)}
@@ -83,7 +98,8 @@ class CharacterEvidenceExtractorNode:
                         chapters.append(character_evidence.extract_chapter(
                             path, output, client, model, args, index + 1,
                             source=sources[index], occurrences=occurrences[index],
-                            cache_dir=cache_dir, diagnostics=diagnostics["chapters"]))
+                            cache_dir=cache_dir, resume_cache_dir=resume_cache_dir,
+                            diagnostics=diagnostics["chapters"]))
         finally:
             lmstudio_json.REQUEST_METRICS.reset(token)
         data = {"format_version": character_evidence.VERSION,

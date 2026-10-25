@@ -25,8 +25,8 @@ def workspace(tmp_path, monkeypatch):
 def consolidated(*items):
     data = document(*(items or (observation(),)))
     records = cp.prepare_evidence(data)
-    return {"format_version": 1, "source_digest": cp._digest(data), "source_document": data,
-            "profiles": cp.build_profiles(plan(records), records)}
+    from minimax_h3_novel_pipeline.core.character_profile_document import make_document
+    return make_document(data, records, cp.build_profiles(plan(records), records))
 
 
 def design(data):
@@ -55,7 +55,7 @@ def test_node_modes_english_exact_evidence_and_json(workspace, monkeypatch, mode
     assert result["source_document"] == original
     assert result["mode"] == mode
     p = result["profiles"][0]
-    assert p["character_id"] == data["profiles"][0]["character_id"]
+    assert p["local_id"] == data["profiles"][0]["local_id"]
     assert p["supporting_evidence"] == data["profiles"][0]["supporting_evidence"]
     assert p["eyes"][0]["description"] == "Green eyes."
     assert p["hair"] == []
@@ -63,7 +63,7 @@ def test_node_modes_english_exact_evidence_and_json(workspace, monkeypatch, mode
     assert '\n  ' in text and "Élise avait les yeux verts." in text
     assert json.loads(text) == result
     global_designs = json.loads((Path(saved).parent / "visual_designs.json").read_text(encoding="utf-8"))
-    assert [e["global_id"] for e in global_designs["entities"]] == [p["character_id"]]
+    assert [e["global_id"] for e in global_designs["entities"]] == [p["local_id"]]
     assert global_designs["entities"][0]["added_details"]["eyes"] == "Green eyes."
     assert chat.call_count == 2
     assert json.loads(chat.call_args_list[0].args[3])["mode"] == mode
@@ -91,6 +91,10 @@ def test_mode_classifications(mode, kind, valid):
 def test_conflicts_and_chronology_never_choose_values(workspace, monkeypatch):
     data = consolidated(observation(), observation("Élise avait les yeux bleus.", value="yeux bleus"))
     profile = data["profiles"][0]
+    ids = [r["evidence_id"] for r in profile["supporting_evidence"]]
+    profile["unresolved_conflicts"] = [{"conflict_id": "eyes", "trait": "eye_color", "scope": "same period",
+        "evidence_ids": ids, "choices": [{"id": str(i), "value": str(i), "evidence_ids": [key],
+                                        "selected": i == 0} for i, key in enumerate(ids)]}]
     with pytest.raises(ValueError, match="contradictions"):
         vp.validate_design(design(data), profile, "cinematic")
     empty = {f: [] for f in vp.FIELDS}
@@ -158,7 +162,7 @@ def test_invalid_input_before_client(monkeypatch):
     monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", client)
     data = consolidated()
     data["profiles"][0]["supporting_evidence"][0]["observation"]["quotation"] = "changed"
-    with pytest.raises(ValueError, match="do not match"):
+    with pytest.raises(ValueError, match="differs from its validated source"):
         node.CharacterVisualProfileGeneratorNode().run(data, {"api_url": "http://127.0.0.1:1234/v1"})
     client.assert_not_called()
 
@@ -192,7 +196,8 @@ def test_rejected_review_does_not_save_output(workspace, monkeypatch):
 
 def test_empty_input_and_precise_values(workspace, monkeypatch):
     source = document()
-    data = {"format_version": 1, "source_digest": cp._digest(source), "source_document": source, "profiles": []}
+    from minimax_h3_novel_pipeline.core.character_profile_document import make_document
+    data = make_document(source, {}, [])
     chat = Mock()
     monkeypatch.setattr(vp.lmstudio_json, "chat_json", chat)
     result, saved = vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", settings(mode="balanced"))

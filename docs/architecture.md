@@ -25,6 +25,8 @@ flowchart TD
     global_designs --> consolidate
     visual_json --> visual_loader["Load Character Visual Profiles"]
     profiles --> profiles_json["Source-grounded editable character profiles JSON"]
+    profiles_json --> profiles_loader["Load Character Profiles"]
+    profiles_loader --> visual_profiles
     adapter --> adapted["Per-chapter sequence/source/adaptation JSON"]
     adapted --> extract
     adapted --> loader["Load Cinematic Chapters"]
@@ -43,6 +45,7 @@ flowchart TD
 ```
 
 The node wrappers coordinate filesystem access, configuration snapshots and run outputs. The three `pipeline_step*` modules contain the LLM-facing stage implementations.
+`character_profile_batches` separates bounded identity and precise-trait requests with resumable per-request caches. `character_profile_document` validates editable profiles, selections, sources and direct identity links against the bundled schema. Chapter-local visual enrichment remains a later work-plan stage.
 The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its ordered phases feed extraction; catalogs and registries retain temporal observations.
 `narrative_validation` reviews adaptation source fidelity and transitions before targeted sequence repairs, and reviews extracted phases using only earlier identity context. Rejected phase results are not cached; persistent semantic defects stop the stage.
 Adaptation repairs use the full passage source and neighboring sequences as context. When enabled targeted corrections are exhausted, one final source-bound reconstruction of the passage is reviewed before acceptance.
@@ -58,6 +61,8 @@ Only modules with incoming or outgoing internal dependency edges are shown. Labe
 flowchart TD
     m_package_init["package_init"]
     m_core_character_evidence["core.character_evidence"]
+    m_core_character_profile_batches["core.character_profile_batches"]
+    m_core_character_profile_document["core.character_profile_document"]
     m_core_character_profiles["core.character_profiles"]
     m_core_character_visual_profiles["core.character_visual_profiles"]
     m_core_cinematic_adaptation["core.cinematic_adaptation"]
@@ -98,6 +103,7 @@ flowchart TD
     m_nodes_lmstudio_config["nodes.lmstudio_config<br/>LM Studio Configuration"]
     m_nodes_load_chapter_catalogs["nodes.load_chapter_catalogs<br/>Load Chapter Catalogs"]
     m_nodes_load_character_evidence["nodes.load_character_evidence<br/>Load Character Evidence"]
+    m_nodes_load_character_profiles["nodes.load_character_profiles<br/>Load Character Profiles"]
     m_nodes_load_character_visual_profiles["nodes.load_character_visual_profiles<br/>Load Character Visual Profiles"]
     m_nodes_load_cinematic_chapters["nodes.load_cinematic_chapters<br/>Load Cinematic Chapters"]
     m_nodes_load_consolidated_references["nodes.load_consolidated_references<br/>Load Consolidated References"]
@@ -113,11 +119,20 @@ flowchart TD
     m_core_character_evidence --> m_core_progress
     m_core_character_evidence --> m_core_prompt_cache
     m_core_character_evidence --> m_core_util
+    m_core_character_profile_batches --> m_core_character_profiles
+    m_core_character_profile_batches --> m_core_editable_schemas
+    m_core_character_profile_batches --> m_core_lmstudio_json
+    m_core_character_profile_batches --> m_core_lmstudio_pipeline
+    m_core_character_profile_batches --> m_core_prompt_cache
+    m_core_character_profile_batches --> m_core_util
+    m_core_character_profile_document --> m_core_character_profiles
+    m_core_character_profile_document --> m_core_editable_schemas
     m_core_character_profiles --> m_core_character_evidence
-    m_core_character_profiles --> m_core_lmstudio_json
-    m_core_character_profiles --> m_core_lmstudio_pipeline
-    m_core_character_profiles --> m_core_prompt_cache
+    m_core_character_profiles --> m_core_character_profile_batches
+    m_core_character_profiles --> m_core_character_profile_document
+    m_core_character_profiles --> m_core_editable_schemas
     m_core_character_profiles --> m_core_util
+    m_core_character_visual_profiles --> m_core_character_profile_document
     m_core_character_visual_profiles --> m_core_character_profiles
     m_core_character_visual_profiles --> m_core_editable_schemas
     m_core_character_visual_profiles --> m_core_lmstudio_json
@@ -199,6 +214,7 @@ flowchart TD
     m_nodes --> m_nodes_lmstudio_config
     m_nodes --> m_nodes_load_chapter_catalogs
     m_nodes --> m_nodes_load_character_evidence
+    m_nodes --> m_nodes_load_character_profiles
     m_nodes --> m_nodes_load_character_visual_profiles
     m_nodes --> m_nodes_load_cinematic_chapters
     m_nodes --> m_nodes_load_consolidated_references
@@ -265,6 +281,9 @@ flowchart TD
     m_nodes_load_character_evidence --> m_core_character_evidence
     m_nodes_load_character_evidence --> m_core_progress
     m_nodes_load_character_evidence --> m_core_util
+    m_nodes_load_character_profiles --> m_core_character_profile_document
+    m_nodes_load_character_profiles --> m_core_progress
+    m_nodes_load_character_profiles --> m_core_util
     m_nodes_load_character_visual_profiles --> m_core_character_evidence
     m_nodes_load_character_visual_profiles --> m_core_character_profiles
     m_nodes_load_character_visual_profiles --> m_core_character_visual_profiles
@@ -297,8 +316,10 @@ flowchart TD
 | `src/__init__.py` | `core.lmstudio_settings`, `core.path_access`, `core.route_access`, `nodes` | — |
 | `src/core/__init__.py` | — | — |
 | `src/core/character_evidence.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.util` | `batch_passages`, `extract_chapter`, `index_names`, `passages`, `read_source`, `repair_observations`, `review_report`, `selected_passages`, `validate_document`, `validate_result` |
-| `src/core/character_profiles.py` | `core.character_evidence`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `build_profiles`, `consolidate`, `prepare_evidence`, `validation_report` |
-| `src/core/character_visual_profiles.py` | `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util`, `core.visual_designs` | `affected_fields`, `blocked_fields`, `export_visual_designs`, `generate`, `prepare_profiles`, `validate_design` |
+| `src/core/character_profile_batches.py` | `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `Requests`, `analyse_traits`, `compact_record`, `compare_values`, `conflict_choices`, `decision_payload`, `encoded`, `merge_groups`, `partition_identities`, `reconcile`, `reconcile_identities`, `schema` |
+| `src/core/character_profile_document.py` | `core.character_profiles`, `core.editable_schemas` | `make_document`, `validate_change`, `validate_document` |
+| `src/core/character_profiles.py` | `core.character_evidence`, `core.character_profile_batches`, `core.character_profile_document`, `core.editable_schemas`, `core.util` | `build_profiles`, `consolidate`, `prepare_evidence`, `validation_report` |
+| `src/core/character_visual_profiles.py` | `core.character_profile_document`, `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util`, `core.visual_designs` | `affected_fields`, `blocked_fields`, `export_visual_designs`, `generate`, `prepare_profiles`, `validate_design` |
 | `src/core/cinematic_adaptation.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.progress` | `adapt_chapter`, `source_chunks` |
 | `src/core/cinematic_references.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.temporal_context`, `core.util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
 | `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
@@ -325,7 +346,7 @@ flowchart TD
 | `src/core/temporal_context.py` | — | `normalize`, `prompt` |
 | `src/core/util.py` | `core.path_access` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
 | `src/core/visual_designs.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_requests`, `core.temporal_context`, `core.util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
-| `src/nodes/__init__.py` | `nodes.chapter_selection`, `nodes.character_evidence_extractor`, `nodes.character_visual_profile_generator`, `nodes.cinematic_chapter_adapter`, `nodes.consolidate_character_profiles`, `nodes.consolidate_references`, `nodes.extract_chapter_references`, `nodes.generate_h3_prompts`, `nodes.lmstudio_config`, `nodes.load_chapter_catalogs`, `nodes.load_character_evidence`, `nodes.load_character_visual_profiles`, `nodes.load_cinematic_chapters`, `nodes.load_consolidated_references`, `nodes.load_spatial_continuity`, `nodes.spatial_continuity` | — |
+| `src/nodes/__init__.py` | `nodes.chapter_selection`, `nodes.character_evidence_extractor`, `nodes.character_visual_profile_generator`, `nodes.cinematic_chapter_adapter`, `nodes.consolidate_character_profiles`, `nodes.consolidate_references`, `nodes.extract_chapter_references`, `nodes.generate_h3_prompts`, `nodes.lmstudio_config`, `nodes.load_chapter_catalogs`, `nodes.load_character_evidence`, `nodes.load_character_profiles`, `nodes.load_character_visual_profiles`, `nodes.load_cinematic_chapters`, `nodes.load_consolidated_references`, `nodes.load_spatial_continuity`, `nodes.spatial_continuity` | — |
 | `src/nodes/chapter_selection.py` | `core.progress`, `core.util` | `SelectChaptersNode`, `chapter_path_list`, `saved_chapter_choices` |
 | `src/nodes/character_evidence_extractor.py` | `core.character_evidence`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.run_output`, `core.util`, `nodes.chapter_selection` | `CharacterEvidenceExtractorNode` |
 | `src/nodes/character_visual_profile_generator.py` | `core.character_visual_profiles`, `core.lmstudio_pipeline`, `core.progress`, `core.run_output` | `CharacterVisualProfileGeneratorNode` |
@@ -337,10 +358,11 @@ flowchart TD
 | `src/nodes/lmstudio_config.py` | `core.lmstudio_models`, `core.lmstudio_settings`, `core.progress`, `core.run_output` | `LMStudioConfigurationNode` |
 | `src/nodes/load_chapter_catalogs.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.progress`, `core.util` | `LoadChapterCatalogsNode` |
 | `src/nodes/load_character_evidence.py` | `core.character_evidence`, `core.progress`, `core.util` | `LoadCharacterEvidenceNode` |
+| `src/nodes/load_character_profiles.py` | `core.character_profile_document`, `core.progress`, `core.util` | `LoadCharacterProfilesNode` |
 | `src/nodes/load_character_visual_profiles.py` | `core.character_evidence`, `core.character_profiles`, `core.character_visual_profiles`, `core.progress`, `core.util` | `LoadCharacterVisualProfilesNode` |
 | `src/nodes/load_cinematic_chapters.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.progress`, `core.util` | `LoadCinematicChaptersNode` |
 | `src/nodes/load_consolidated_references.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.progress`, `core.util` | `LoadConsolidatedReferencesNode` |
 | `src/nodes/load_spatial_continuity.py` | `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **48**. Internal dependency edges: **185**.
+Modules: **51**. Internal dependency edges: **198**.

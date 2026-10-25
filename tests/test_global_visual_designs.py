@@ -19,7 +19,7 @@ def global_profiles():
     alice = {**deepcopy(data["profiles"][0]), **design(data)}
     alice["aliases"] = ["Lise"]
     absent = deepcopy(alice)
-    absent.update(character_id="char_absent", canonical_name="Robert", aliases=[])
+    absent.update(local_id="char_absent", canonical_name="Robert", aliases=[])
     absent["eyes"][0]["description"] = "Blue eyes."
     return [alice, absent]
 
@@ -83,9 +83,9 @@ def test_stable_id_and_unmatched_chapter_character(output):
     profiles = global_profiles()
     vp.export_visual_designs(profiles, output)
     chapter = {**entity(), "canonical_name": "Different spelling", "aliases": [],
-               "character_id": profiles[0]["character_id"]}
+               "character_id": profiles[0]["local_id"]}
     path = output / "visual_designs.json"
-    assert vd.load_designs(path, [chapter])[chapter["global_id"]]["global_id"] == profiles[0]["character_id"]
+    assert vd.load_designs(path, [chapter])[chapter["global_id"]]["global_id"] == profiles[0]["local_id"]
     chapter.pop("character_id")
     with pytest.warns(UserWarning, match="Unmatched chapter character"):
         assert vd.load_designs(path, [chapter]) == {}

@@ -3,6 +3,7 @@ import argparse
 from contextlib import nullcontext
 import json
 from unittest.mock import Mock
+from types import SimpleNamespace
 
 import httpx
 from openai import APIConnectionError
@@ -31,6 +32,67 @@ def workspace(tmp_path, monkeypatch):
 def settings(**overrides):
     return argparse.Namespace(**{**dict(chunk_chars=1000, temperature=0.15, max_tokens=8192,
                                       force=False, correction_attempts=1), **overrides})
+
+
+def test_output_overflow_splits_with_overlap_and_preserves_cache(workspace, monkeypatch):
+    monkeypatch.setattr(evidence.lmstudio_json, "THINKING_ENABLED", True)
+    monkeypatch.setattr(evidence.lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    source, output = workspace
+    path = source / "chapter.txt"
+    quote = "Élise avait les yeux verts."
+    text = quote + " " * 350 + quote + " " * 350 + quote
+    path.write_text(text, encoding="utf-8")
+    truncated = SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content='{"evidence":[' + ' ' * 1000, reasoning_content="brief"),
+        finish_reason="length")])
+    streams = [Stream([truncated]), Stream([truncated]),
+               Stream([json.dumps({"evidence": [observation()]})]),
+               Stream([json.dumps({"evidence": [observation()]})])]
+    client, create = client_for(*streams)
+    diagnostics = []
+    args = settings(character_scope="all_characters")
+    result = evidence.extract_chapter(path, output, client, "qwen3.8", args, 1, diagnostics=diagnostics)
+    assert create.call_count == 4
+    assert all(s.closed for s in streams)
+    for call in create.call_args_list:
+        schema = call.kwargs["response_format"]
+        assert schema == {"type": "json_schema", "json_schema": evidence.SCHEMA}
+        assert call.kwargs["max_tokens"] == args.max_tokens
+    left, right = [json.loads(call.kwargs["messages"][-1]["content"])["passages"][0]
+                   for call in create.call_args_list[-2:]]
+    assert text.startswith(left) and text.endswith(right)
+    assert len(left) + len(right) > len(text)
+    locations = [loc for item in result["evidence"] for loc in item["provenance"]["locations"]]
+    assert len(locations) == 3
+    assert all(text[loc["start_char"]:loc["end_char"]] == quote for loc in locations)
+    assert diagnostics[0]["overflow_splits"] == 1
+    assert evidence.extract_chapter(path, output, client, "qwen3.8", args, 1) == result
+    assert create.call_count == 4
+
+
+def test_overflow_splitting_is_bounded_and_never_caches_partial_result(workspace, monkeypatch):
+    source, output = workspace
+    path = source / "chapter.txt"
+    path.write_text("Élise " * 150, encoding="utf-8")
+    chat = Mock(side_effect=evidence.lmstudio_json.StructuredOutputLengthError("output limit"))
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    with pytest.raises(RuntimeError, match="character offset 0"):
+        evidence.extract_chapter(path, output, None, "qwen3.8",
+                                 settings(character_scope="all_characters", correction_attempts=10), 1)
+    assert chat.call_count == 4
+    assert not list(output.rglob("*.json"))
+
+
+def test_overflow_splits_disjoint_parts_without_joining_them(monkeypatch):
+    chat = Mock(side_effect=[evidence.lmstudio_json.StructuredOutputLengthError("output limit"),
+                            {"evidence": [observation("first")]},
+                            {"evidence": [observation("second")]}])
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    result = evidence._extract_parts(None, "qwen3.8", evidence.SYSTEM, "chapter",
+                                     ["first", "second"], settings(), {"llm_calls": 0})
+    assert [item["quotation"] for item in result["evidence"]] == ["first", "second"]
+    assert [json.loads(call.args[3])["passages"] for call in chat.call_args_list] == [
+        ["first", "second"], ["first"], ["second"]]
 
 
 def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch):
@@ -80,6 +142,76 @@ def test_cache_force_source_settings_and_corruption(workspace, monkeypatch):
         cache.write_text('{"broken": true}', encoding="utf-8")
     run()
     assert chat.call_count == 5
+
+
+@pytest.mark.parametrize("overrides,expected_hits", [({}, 1), ({"force": True}, 0),
+                                                    ({"max_tokens": 4096}, 0)])
+def test_resume_run_reuses_completed_work_and_copies_cache(workspace, monkeypatch, overrides, expected_hits):
+    source, output = workspace
+    first = source / "chapter1.txt"
+    second = source / "chapter2.txt"
+    for path in (first, second):
+        path.write_text("Élise avait les yeux verts.", encoding="utf-8")
+    chat = Mock(return_value={"evidence": [observation()]})
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model",
+                        lambda *args: (nullcontext(), "qwen3.5"))
+    extractor = node.CharacterEvidenceExtractorNode()
+    def run(stamp, paths, **kwargs):
+        return extractor.run({"api_url": "http://127.0.0.1:1234/v1", "run_folder": stamp},
+                             {"chapter_paths": [str(p) for p in paths]}, **kwargs)["result"][0]
+    old_stamp, new_stamp = "20261025154413", "20261025160000"
+    run(old_stamp, [first])
+    previous = output / old_stamp
+    original = {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()}
+    result = run(new_stamp, [first, second], resume_run=old_stamp, **overrides)
+    assert chat.call_count == 3 - expected_hits
+    assert len(result["chapters"]) == 2
+    diagnostics = json.loads((output / new_stamp / "character_evidence/character_evidence_diagnostics.json").read_text())
+    assert diagnostics["resume_run"] == old_stamp
+    assert sum(c["resumed_cache_hits"] for c in diagnostics["chapters"]) == expected_hits
+    assert len(list((output / new_stamp / ".cache/character_evidence").glob("*.json"))) == 2
+    assert original == {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()}
+    # The new run contains both recovered and newly extracted batches, so it can
+    # itself be the only resume source on the next execution.
+    calls = chat.call_count
+    run("20261025170000", [first, second], resume_run=new_stamp,
+        **{k: v for k, v in overrides.items() if k != "force"})
+    assert chat.call_count == calls
+
+
+@pytest.mark.parametrize("resume_run", ["../20261025154413", "20261025154413/.cache", "C:\\cache",
+                                       "unknown", None, "20261025154413", "20261025160000"])
+def test_resume_run_rejects_invalid_missing_or_current_run(workspace, monkeypatch, resume_run):
+    source, output = workspace
+    path = source / "chapter.txt"
+    path.write_text("Élise attend.", encoding="utf-8")
+    make_client = Mock(side_effect=AssertionError("must validate before client creation"))
+    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", make_client)
+    with pytest.raises(ValueError):
+        node.CharacterEvidenceExtractorNode().run(
+            {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261025160000"},
+            {"chapter_paths": [str(path)]}, resume_run=resume_run)
+    make_client.assert_not_called()
+    assert not output.exists()
+
+
+def test_resume_corrupt_cache_recomputed_without_changing_source(workspace, monkeypatch):
+    source, output = workspace
+    path = source / "chapter.txt"
+    path.write_text("Élise avait les yeux verts.", encoding="utf-8")
+    chat = Mock(return_value={"evidence": [observation()]})
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    previous = output / "20261025154413/.cache/character_evidence"
+    evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1, cache_dir=previous)
+    cached_file = next(previous.glob("*.json"))
+    cached_file.write_text("broken", encoding="utf-8")
+    current = output / "20261025160000/.cache/character_evidence"
+    evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1,
+                             cache_dir=current, resume_cache_dir=previous)
+    assert chat.call_count == 2
+    assert cached_file.read_text() == "broken"
+    assert json.loads(next(current.glob("*.json")).read_text(encoding="utf-8")) == [{"evidence": [observation()]}]
 
 
 @pytest.mark.parametrize("overrides", [

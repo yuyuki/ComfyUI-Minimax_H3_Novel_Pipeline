@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Bound character-profile consolidation requests with separate identity and precise-trait
+  passes, cross-batch reconciliation, shared quotation tables and resumable caches.
+  Export editable v2 profiles and their schema; add Load Character Profiles with
+  source/reference checks, editable selections and direct identity links. Add offline
+  coverage for batching, retries, cancellation and manual edits; refresh wiring docs.
+
 - Move `thinking` from shared LM Studio configuration to each processing node;
   enable it by default except for H3 prompt generation. Update execution records,
   the example workflow, documentation and offline regression coverage.

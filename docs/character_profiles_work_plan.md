@@ -388,9 +388,9 @@ Il contient six séquences, sans nécessiter les séquences du reste du livre.
 - [x] L'utilisateur valide les règles complémentaires, notamment les identités
   liées par `link_to_local_id`, les retours en arrière et le circuit JSON éditable.
 
-L'étape 1 est validée : l'utilisateur a autorisé le passage à la suite après
-l'ajout du chargeur de profils. L'étape 2 est réalisée hors ligne et attend sa
-validation ; l'étape 3 n'a pas commencé.
+L'étape 1 est validée. Le 2026-10-25, l'utilisateur a autorisé la suite du plan
+après le travail hors ligne de l'étape 2. L'étape 3 est implémentée hors ligne ;
+l'essai réel avec LM Studio et sa validation utilisateur restent à faire.
 
 ## Étape 2 — Diagnostiquer et fiabiliser l'extraction
 
@@ -406,7 +406,7 @@ validation ; l'étape 3 n'a pas commencé.
 - [x] Ajouter les tests de régression ciblés avec appels réseau simulés.
 - [x] Vérifier hors ligne des observations des trois premiers chapitres avec des
   corrections simulées et vérifiées contre la source. Essai réel LM Studio restant.
-- [ ] **Validation utilisateur de l'étape 2 avant de commencer l'étape 3.**
+- [x] **Validation utilisateur de l'étape 2 avant de commencer l'étape 3.**
 
 Résultats : voir [le diagnostic de l'étape 2](character_evidence_diagnosis.md).
 Le fichier initial contient 3 112 observations, dont 326 exclues. Les corrections
@@ -415,34 +415,43 @@ La validation réelle du comportement du modèle reste à effectuer avec l'utili
 
 ## Étape 3 — Consolider avec des requêtes bornées
 
-- [ ] Séparer le rapprochement des identités de l'analyse des caractéristiques.
-- [ ] Organiser les preuves par personnage sans confondre les homonymes et les
+- [x] Séparer le rapprochement des identités de l'analyse des caractéristiques.
+- [x] Organiser les preuves par personnage sans confondre les homonymes et les
   identités ambiguës.
-- [ ] Découper les personnages très présents en lots respectant le budget de
+- [x] Découper les personnages très présents en lots respectant le budget de
   contexte, avec une marge pour la réponse et les corrections.
-- [ ] Réconcilier les résultats entre lots, y compris les alias, les évolutions
+- [x] Réconcilier les résultats entre lots, y compris les alias, les évolutions
   et les contradictions entre chapitres éloignés.
-- [ ] Vérifier que chaque observation valide est conservée et correctement
+- [x] Vérifier que chaque observation valide est conservée et correctement
   rattachée, sans troncature des tableaux d'observations indépendantes.
-- [ ] Utiliser le transport partagé et un schéma JSON explicite pour chaque
+- [x] Utiliser le transport partagé et un schéma JSON explicite pour chaque
   requête initiale et chaque nouvelle tentative.
-- [ ] Prévoir cache, reprise et contrôles d'annulation dans le dossier du run.
-- [ ] Afficher un diagnostic utile en cas de dépassement du contexte.
-- [ ] Tester les lots, leur réconciliation, la couverture des preuves et les
+- [x] Prévoir cache, reprise et contrôles d'annulation dans le dossier du run.
+- [x] Afficher un diagnostic utile en cas de dépassement du contexte.
+- [x] Tester les lots, leur réconciliation, la couverture des preuves et les
   nouvelles tentatives avec LM Studio simulé.
-- [ ] Vérifier la consolidation sur l'ensemble du roman.
-- [ ] Exporter le JSON éditable avec son schéma copié à côté, ses choix `selected`
+- [ ] Vérifier la consolidation sur l'ensemble du roman avec LM Studio.
+- [x] Vérifier hors ligne la couverture et les budgets sur l'ensemble du roman
+  avec réponses simulées ; cela ne valide pas les décisions narratives réelles.
+- [x] Exporter le JSON éditable avec son schéma copié à côté, ses choix `selected`
   et ses liens `link_to_local_id`.
-- [ ] Créer et enregistrer `LoadCharacterProfilesNode` pour charger et valider
+- [x] Créer et enregistrer `LoadCharacterProfilesNode` pour charger et valider
   ce JSON éditable, avec une sortie `MINIMAX_CHARACTER_PROFILES` et le chemin chargé.
-- [ ] Tester le chargeur sans réseau : fichier édité ou renommé, dossier, erreurs
+- [x] Tester le chargeur sans réseau : fichier édité ou renommé, dossier, erreurs
   de structure et de références, rechargement après modification, absence de
   sélection et sélections multiples acceptées.
-- [ ] Conserver les observations temporaires avec leurs sources et positions,
+- [x] Conserver les observations temporaires avec leurs sources et positions,
   sans dépendre du découpage cinématique des chapitres.
 - [ ] **Validation utilisateur de l'étape 3 avant de commencer l'étape 4.**
 
-Résultats et décisions : à compléter.
+Résultats : voir [les contrôles de l'étape 3](character_profiles_stage3_validation.md).
+Le format courant est v2. Les profils et leur schéma, le chargeur, les budgets,
+les caches et les contrôles hors ligne sont implémentés. La simulation du roman
+conserve 2 786 observations valides et 326 exclusions sur 25 chapitres.
+Elle ne valide pas les décisions narratives du modèle. L'essai réel reste à faire.
+L'étape 4 n'a pas commencé : la consommation visuelle des sélections et des liens,
+le filtrage du chapitre et les états par séquence restent à implémenter après
+validation de l'étape 3.
 
 ## Étape 4 — Adapter la génération visuelle et son utilisation en aval
 

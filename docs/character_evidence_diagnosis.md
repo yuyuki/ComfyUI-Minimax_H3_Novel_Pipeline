@@ -7,16 +7,16 @@ Date : 2026-10-25. Validation utilisateur de l'étape encore attendue.
 Fichier lu sans modification :
 `E:\AI\ComfyUI\output\minimax_h3_novel\20261024163701\character_evidence\character_evidence.json`.
 
-| Mesure hors ligne | Résultat |
-| --- | ---: |
-| Chapitres | 25 |
-| Observations | 3 112 |
-| Observations utilisables par la validation actuelle | 2 786 |
-| Observations exclues | 326 |
-| Observations sans position de citation | 304 |
-| Citations absentes du texte, même après normalisation Unicode/espaces | 301 |
-| Classements invalides de vêtements, accessoires ou actions | 29 |
-| Textes embarqués dont le hash diffère du hash enregistré | 0 |
+| Mesure hors ligne                                                     | Résultat |
+| --------------------------------------------------------------------- | -------: |
+| Chapitres                                                             |       25 |
+| Observations                                                          |    3 112 |
+| Observations utilisables par la validation actuelle                   |    2 786 |
+| Observations exclues                                                  |      326 |
+| Observations sans position de citation                                |      304 |
+| Citations absentes du texte, même après normalisation Unicode/espaces |      301 |
+| Classements invalides de vêtements, accessoires ou actions            |       29 |
+| Textes embarqués dont le hash diffère du hash enregistré              |        0 |
 
 Les causes se recoupent : une citation incorrecte provoque aussi l'absence de
 positions. Ces nombres ne doivent donc pas être additionnés. Parmi les 303

@@ -11,7 +11,7 @@ from . import character_profiles as source
 from . import lmstudio_json, lmstudio_pipeline, prompt_cache, util, visual_designs
 from .editable_schemas import export_schema, validate_document, DESIGN_SCHEMA
 
-VERSION = 1
+VERSION = 2
 MODES = ("strict_canon", "balanced", "cinematic")
 FIELDS = ("age_appearance", "skin", "hair", "eyes", "build", "default_outfit", "accessories")
 PHYSICAL = FIELDS[:5]
@@ -65,26 +65,10 @@ REVIEW_SCHEMA = {"name": "character_visual_review", "strict": True,
 
 
 def prepare_profiles(data):
-    """Check the consolidation contract against its retained source document."""
-    try:
-        if data["format_version"] != source.VERSION:
-            raise ValueError("Unsupported character profiles version.")
-        records = source.prepare_evidence(data["source_document"])
-        plan = {"profiles": [{
-            "canonical_name": p["canonical_name"], "identity_status": p["identity_status"],
-            "evidence": [{"evidence_id": e["evidence_id"]} for e in p["supporting_evidence"]],
-            "identity_support": [{"evidence_id": e} for e in p["identity_support"]],
-            "conflicts": [{"evidence": [{"evidence_id": e} for e in c["evidence_ids"]]}
-                          for c in p["unresolved_conflicts"] if c["detected_by"] == "model"],
-            "changes": [{k: c[k] for k in ("before_id", "after_id", "support_id", "temporal_quote")}
-                        for c in p["chronological_changes"]],
-        } for p in data["profiles"]]}
-        rebuilt = source.build_profiles(plan, records)
-        if rebuilt != data["profiles"] or data["source_digest"] != source._digest(data["source_document"]):
-            raise ValueError("Consolidated profiles do not match their source evidence.")
-        return rebuilt
-    except (KeyError, TypeError) as exc:
-        raise ValueError("Expected structured output from Consolidate Character Profiles.") from exc
+    """Read the current editable contract without reconstructing model decisions."""
+    from .character_profile_document import validate_document
+    validate_document(data)
+    return deepcopy(data["profiles"])
 
 
 def affected_fields(observation):
@@ -204,7 +188,7 @@ def export_visual_designs(profiles, output):
                                    for ref in trait["evidence"])]
             if descriptions:
                 details[field] = " ".join(descriptions)
-        gid = profile["character_id"]
+        gid = profile["local_id"]
         # Rerunning generation must not overwrite the user's edited defaults.
         if gid in previous:
             details = dict(previous[gid]["added_details"])

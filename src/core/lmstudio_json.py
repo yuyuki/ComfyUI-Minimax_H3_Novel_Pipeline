@@ -35,6 +35,10 @@ COMPACT_FIELD_LIMITS = {
     "evidence": 120,
 }
 
+class StructuredOutputLengthError(RuntimeError):
+    """Structured output remained incomplete at the server's output limit."""
+
+
 def _is_comfy_interrupt(error: BaseException) -> bool:
     """Do not retry a ComfyUI Stop request as though it were an LLM error."""
     return error.__class__.__name__ == "InterruptProcessingException"
@@ -264,14 +268,18 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
         except (ValueError, TypeError) as error:
             reasoning_truncated = (
                 profile.NAME == "Qwen" and settings["thinking"]
-                and reasoning_chars > 0 and finish_reason == "length"
+                and reasoning_chars > content_chars and finish_reason == "length"
             )
             if attempt == retries:
                 hint = (
-                    " Thinking exhausted the output budget. Increase the output/context limit "
-                    "in LM Studio, reduce passage size, or disable thinking in LM Studio Configuration."
-                ) if reasoning_truncated else ""
-                raise RuntimeError(
+                    " Thinking exhausted the output budget. Increase max_tokens, reduce passage size, "
+                    "or disable thinking in the node/configuration controlling this request."
+                ) if reasoning_truncated else (
+                    " Structured JSON reached the output token limit. Reduce passage size or increase "
+                    "max_tokens; a larger context window alone does not increase the output budget."
+                ) if finish_reason == "length" else ""
+                error_type = StructuredOutputLengthError if finish_reason == "length" else RuntimeError
+                raise error_type(
                     f"Invalid structured JSON after {attempt + 1} attempt(s). {diagnostics}{hint}"
                 ) from error
             if reasoning_truncated:

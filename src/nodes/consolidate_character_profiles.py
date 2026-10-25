@@ -19,6 +19,8 @@ class ConsolidateCharacterProfilesNode:
             "thinking": ("BOOLEAN", {"default": True}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0}),
             "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000}),
+            "context_tokens": ("INT", {"default": 65536, "min": 8192, "max": 2000000,
+                "tooltip": "Must not exceed the loaded LM Studio context. Includes output and retry reserves."}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
             "force": ("BOOLEAN", {"default": False}),
         }}
@@ -35,7 +37,7 @@ class ConsolidateCharacterProfilesNode:
 
     @progress.node_progress
     def run(self, character_evidence, lmstudio_config, out_dir="character_profiles",
-            thinking=True, temperature=0.12, max_tokens=16384, correction_attempts=2, force=False):
+            thinking=True, temperature=0.12, max_tokens=16384, correction_attempts=2, force=False, context_tokens=65536):
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         if lmstudio_config.get("model_family", "Qwen") != "Qwen":
@@ -49,7 +51,7 @@ class ConsolidateCharacterProfilesNode:
         output = stage_output(config, out_dir.strip())
         args = argparse.Namespace(max_tokens=int(max_tokens), temperature=float(temperature),
                                   correction_attempts=int(correction_attempts), thinking=bool(thinking),
-                                  force=bool(force), base_url=config["api_url"])
+                                  force=bool(force), context_tokens=int(context_tokens), base_url=config["api_url"])
         client, model = lmstudio_pipeline.make_client_and_model(lmstudio_pipeline.load("consolidate"),
                                                                config["api_url"], config)
         with client:
