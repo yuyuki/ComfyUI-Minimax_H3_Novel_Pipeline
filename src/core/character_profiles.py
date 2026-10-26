@@ -67,7 +67,8 @@ def prepare_evidence(data):
     for chapter in data["chapters"]:
         for index, original in enumerate(chapter["evidence"], 1):
             item = deepcopy(original) if isinstance(original, dict) else {"raw_evidence": original}
-            warnings = []
+            warnings = ["Semantic review: " + str(issue)
+                        for issue in item.get("semantic_review", {}).get("issues", [])]
             confidence = "high"
             text = chapter["source_text"]
             quotation = item.get("quotation")

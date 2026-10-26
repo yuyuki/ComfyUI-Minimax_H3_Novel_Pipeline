@@ -15,6 +15,13 @@ from minimax_h3_novel_pipeline.nodes import character_evidence_extractor as node
 from tests.test_structured_json import Stream, client_for
 
 
+@pytest.fixture(autouse=True)
+def isolate_semantic_audit(monkeypatch):
+    # These tests exercise extraction, repair and transport independently.
+    # Full semantic-audit integration is covered in test_character_evidence_audit.
+    monkeypatch.setattr(evidence, "audit_observations", lambda observations, *args: observations)
+
+
 def observation(quote="Élise avait les yeux verts.", **overrides):
     return {"character": "Élise", "attribute": "physical_appearance", "value": "yeux verts",
             "classification": "explicit", "confidence": 0.95, "persistence": "persistent",

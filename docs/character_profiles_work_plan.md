@@ -444,7 +444,7 @@ la consolidation. Cette confirmation ne vaut pas validation de l'étape 3.
   sélection et sélections multiples acceptées.
 - [x] Conserver les observations temporaires avec leurs sources et positions,
   sans dépendre du découpage cinématique des chapitres.
-- [ ] **Validation utilisateur de l'étape 3 avant de commencer l'étape 4.**
+- [x] **Validation utilisateur de l'étape 3 avant de commencer l'étape 4.**
 
 Résultats : voir [les contrôles de l'étape 3](character_profiles_stage3_validation.md).
 Le format courant est v2. Les profils et leur schéma, le chargeur, les budgets,
