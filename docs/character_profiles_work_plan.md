@@ -389,8 +389,8 @@ Il contient six séquences, sans nécessiter les séquences du reste du livre.
   liées par `link_to_local_id`, les retours en arrière et le circuit JSON éditable.
 
 L'étape 1 est validée. Le 2026-10-25, l'utilisateur a autorisé la suite du plan
-après le travail hors ligne de l'étape 2. L'étape 3 est implémentée hors ligne ;
-l'essai réel avec LM Studio et sa validation utilisateur restent à faire.
+après le travail hors ligne de l'étape 2. Le 2026-10-27, l'utilisateur confirme
+l'essai réel de consolidation sur tout le roman et le passage à l'étape 4.
 
 ## Étape 2 — Diagnostiquer et fiabiliser l'extraction
 
@@ -432,7 +432,7 @@ la consolidation. Cette confirmation ne vaut pas validation de l'étape 3.
 - [x] Afficher un diagnostic utile en cas de dépassement du contexte.
 - [x] Tester les lots, leur réconciliation, la couverture des preuves et les
   nouvelles tentatives avec LM Studio simulé.
-- [ ] Vérifier la consolidation sur l'ensemble du roman avec LM Studio.
+- [x] Vérifier la consolidation sur l'ensemble du roman avec LM Studio.
 - [x] Vérifier hors ligne la couverture et les budgets sur l'ensemble du roman
   avec réponses simulées ; cela ne valide pas les décisions narratives réelles.
 - [x] Exporter le JSON éditable avec son schéma copié à côté, ses choix `selected`
@@ -472,6 +472,19 @@ Contrôles ciblés : 67 tests réussis ; nouvel essai réel attendu.
 L'étape 4 n'a pas commencé : la consommation visuelle des sélections et des liens,
 le filtrage du chapitre et les états par séquence restent à implémenter après
 validation de l'étape 3.
+
+### Essai réel confirmé le 2026-10-27
+
+L'utilisateur confirme la consolidation du roman entier dans
+`E:\AI\ComfyUI\output\minimax_h3_novel\20261027104049\character_profiles\character_profiles.json`.
+Le contrôle en lecture seule avec `validate_document`, partagé avec le chargeur,
+réussit : format v2, 25 chapitres sources et 48 profils. Le rapport compte
+174 observations, dont 157 utilisables et 17 exclues. Le rapport des requêtes
+enregistre 380 requêtes, 137 avertissements, 102 réponses partielles récupérées
+et 10 identifiants de preuves non classées. Ces avertissements restent à prendre
+en compte ; la validation structurelle ne certifie pas les décisions narratives.
+Cette confirmation remplace les mentions historiques d'essai réel restant
+ci-dessus. L'étape 3 est validée pour poursuivre l'étape 4.
 
 ## Étape 4 — Adapter la génération visuelle et son utilisation en aval
 

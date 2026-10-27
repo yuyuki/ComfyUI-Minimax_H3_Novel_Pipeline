@@ -74,6 +74,21 @@ expose le nombre d'appels, les lectures de cache et la taille maximale d'entrée
 
 ## Validation et suite
 
+### Essai réel confirmé le 2026-10-27
+
+L'utilisateur confirme avoir consolidé le roman entier dans
+`E:\AI\ComfyUI\output\minimax_h3_novel\20261027104049\character_profiles\character_profiles.json`.
+Contrôle en lecture seule avec le validateur partagé `validate_document` :
+réussi, format v2, 25 chapitres sources, 48 profils. Le rapport de validation
+compte 174 observations, 157 utilisables et 17 exclues. Le rapport des requêtes
+contient 380 requêtes, 137 avertissements, 102 réponses partielles récupérées
+et 10 identifiants de preuves non classées. Aucun appel réseau ni réécriture
+des sorties utilisateur pendant ce contrôle. La conformité du document ne
+certifie pas les décisions narratives du modèle.
+
+L'utilisateur valide le passage à l'étape 4. Les mentions d'essai réel restant
+dans les sections historiques ci-dessous sont désormais dépassées.
+
 ### Reprise du 2026-10-25 sur l'extraction validée
 
 L'utilisateur confirme que le node d'extraction est OK. Contrôle en lecture seule
