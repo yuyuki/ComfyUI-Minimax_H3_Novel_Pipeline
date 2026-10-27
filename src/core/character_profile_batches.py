@@ -113,6 +113,7 @@ def encoded(value):
 class Requests:
     def __init__(self, output, client, model, args):
         self.output, self.client, self.model, self.args = output, client, model, args
+        self.cache_dir = output / ".cache"
         self.context = getattr(args, "context_tokens", 65536)
         self.stats = {"requests": 0, "cache_hits": 0, "max_input_bytes": 0,
                       "context_tokens": self.context, "response_tokens": args.max_tokens,
@@ -150,7 +151,7 @@ class Requests:
         if len(prompt.encode()) > self.capacity(system, contract):
             raise ValueError("Character profile request exceeds configured context budget; no evidence truncated.")
         key = prompt_cache.fingerprint(self.model, self.args, cp.VERSION, DECISION_VERSION, system, contract, payload, client=self.client)
-        cache = self.output / ".cache" / f"{key}.json"
+        cache = self.cache_dir / f"{key}.json"
         lmstudio_pipeline.comfy_interrupt_check()
         if cache.exists() and not self.args.force:
             try:

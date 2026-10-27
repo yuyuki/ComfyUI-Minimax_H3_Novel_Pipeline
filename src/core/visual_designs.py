@@ -157,6 +157,7 @@ def load_designs(path, entities):
 
 def prepare_designs(chat, client, model, entities, args, path=""):
     imported = load_designs(path, entities)
+    imported.update(getattr(args, "character_designs", {}))
     designs = []
     for entity in progress.steps(entities):
         comfy_interrupt_check()

@@ -1,0 +1,193 @@
+{
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "format_version": {
+      "const": 1
+    },
+    "source_file": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chapter_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chapter_digest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profiles_digest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "characters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "local_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "presence": {
+                  "enum": [
+                    "visible",
+                    "offscreen",
+                    "mentioned",
+                    "uncertain"
+                  ]
+                },
+                "source_quote": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "local_id",
+                "presence",
+                "source_quote",
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_quote": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "label",
+                "source_quote"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "trait": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "kind": {
+                  "enum": [
+                    "temporary",
+                    "evolution"
+                  ]
+                },
+                "chronology": {
+                  "type": "object"
+                },
+                "state_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "evidence_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "observation": {
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "evidence_id",
+                      "observation"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "local_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_quote": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "trait",
+                "value",
+                "evidence_ids",
+                "kind",
+                "chronology",
+                "state_id",
+                "evidence",
+                "local_id",
+                "source_quote",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "sequence",
+          "characters",
+          "unresolved",
+          "states"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "$schema",
+    "format_version",
+    "source_file",
+    "chapter_name",
+    "chapter_digest",
+    "profiles_digest",
+    "sequences"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

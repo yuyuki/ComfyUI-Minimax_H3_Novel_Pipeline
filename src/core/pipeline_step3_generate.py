@@ -18,6 +18,7 @@ from .lmstudio_json import chat_json, select_model as select_model
 from .path_access import confined_path
 from .prompt_cache import fingerprint as cache_fingerprint
 from . import temporal_context
+from .character_visual_integration import sequence_context
 from .cinematic_references import PHASES, parse_chapters
 from .reference_timeline import state_at
 
@@ -1415,7 +1416,9 @@ def process_chapter(
                       if spatial_plan is not None else {})
     # Spatial plans may infer future/offscreen geometry; they cannot select story beats.
     period = temporal_context.prompt(refs["chapter_timelines"][chapter_id].get("default_temporal_context", ""))
-    chunks = [json.dumps({**sequence, **({"temporal_context": period} if period else {})}, ensure_ascii=False)
+    chunks = [json.dumps({**sequence, **({"temporal_context": period} if period else {}),
+                          **({"character_enrichment": sequence_context(refs, chapter_id, sequence['sequence'])}
+                             if refs.get('character_enrichment') else {})}, ensure_ascii=False)
               for sequence in sequences]
     chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
@@ -1486,6 +1489,10 @@ def process_chapter(
     for i, scene in enumerate(progress.steps(scenes, 0.45 if anchors is not None else 0.3, 0.98), start=1):
         continuity = ({"operator_anchors": anchors, "visual_designs": visual_designs, **continuity_states[i - 1]}
                       if anchors is not None else None)
+        character_context = sequence_context(refs, chapter_id, scene.sequence)
+        if character_context is not None:
+            continuity = {**(continuity or {}), "visual_designs": visual_designs,
+                          "character_enrichment": character_context}
         print(f"  [{i}/{len(scenes)}] {scene.title}")
         bindings = build_bindings(refs, scene, chapter_id, args)
         if continuity is not None:

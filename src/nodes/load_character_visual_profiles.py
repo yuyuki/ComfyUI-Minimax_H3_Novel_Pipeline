@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from ..core import character_evidence, character_profiles, character_visual_profiles, progress, util
+from ..core.editable_schemas import DESIGN_SCHEMA, SCHEMA_DIR, validate_document
 
 
 def _profile_path(value: str) -> Path:
@@ -39,6 +40,13 @@ def _validate_profiles(data, location, visual=False):
         if data["mode"] not in character_visual_profiles.MODES:
             raise ValueError(f"{location}.mode must be one of {character_visual_profiles.MODES}.")
         _validate_profiles(data["source_document"], f"{location}.source_document")
+        _fields(data, {"visual_designs": dict}, location)
+        validate_document(data['visual_designs'], DESIGN_SCHEMA, 'visual_designs.json')
+        if 'chapter_enrichment' not in data:
+            raise ValueError(f'{location}: missing required field chapter_enrichment.')
+        if data['chapter_enrichment'] is not None:
+            schema = json.loads((SCHEMA_DIR / 'character_chapter_enrichment.schema.json').read_text(encoding='utf-8'))
+            validate_document(data['chapter_enrichment'], schema, 'character_chapter_enrichment.json')
     else:
         character_evidence.validate_document(data["source_document"])
     for index, profile in enumerate(data["profiles"]):

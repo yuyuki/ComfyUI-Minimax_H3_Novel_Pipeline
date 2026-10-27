@@ -9,6 +9,7 @@ import argparse
 from typing import Any, Iterable
 
 from ..core import configuration_snapshot, lmstudio_pipeline, util
+from ..core import character_visual_integration
 from ..core.run_output import stage_output
 from ..core.visual_designs import IMAGE_STYLES, prepare_designs, resolve_designs_path
 from ..core.image_prompt_export import export_image_prompts
@@ -44,6 +45,7 @@ class ConsolidateReferencesNode:
             "audit_similarity": ("FLOAT", {"default": 0.68, "min": 0.0, "max": 1.0, "step": 0.01}),
             "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
         }, "optional": {
+            "character_visual_profiles": ("MINIMAX_CHARACTER_VISUAL_PROFILES",),
             "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional chapter or global visual_designs.json inside output/minimax_h3_novel; only matching chapter entities are imported. Leave empty on the first run; consolidation saves this file automatically."}),
         }}
@@ -75,6 +77,8 @@ class ConsolidateReferencesNode:
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
         validate_catalogs(chapters)
         chapters = parse_chapters(chapters)
+        character_visual_profiles = params.get("character_visual_profiles")
+        character_visual_integration.validate_input(character_visual_profiles, chapters)
         designs_path = resolve_designs_path(params.get("visual_designs_path", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
@@ -92,6 +96,8 @@ class ConsolidateReferencesNode:
             snapshot = configuration_snapshot.start(
                 output, "consolidate", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapter_catalogs_sha256": configuration_snapshot.content_digest(chapters),
+                        "character_visual_profiles_sha256": configuration_snapshot.content_digest(character_visual_profiles)
+                        if character_visual_profiles is not None else None,
                         "chapter_ids": [chapter["chapter_id"] for chapter in chapters],
                         "visual_designs_sha256": configuration_snapshot.file_digest(designs_path) if designs_path else None},
                 extra={"visual_designs_path": str(designs_path) if designs_path else ""},
@@ -111,6 +117,12 @@ class ConsolidateReferencesNode:
                 c["chapter_id"]: {"default_temporal_context": c.get("default_temporal_context", ""),
                                   "sequences": c["sequences"]} for c in chapters
             }
+            character_enrichment = character_visual_integration.apply(character_visual_profiles, chapters, registry)
+            args.character_designs = {}
+            if character_visual_profiles is not None:
+                global_designs = {d['global_id']: d for d in character_visual_profiles['visual_designs']['entities']}
+                args.character_designs = {e['global_id']: global_designs[e['character_id']]
+                                          for e in registry if e.get('character_id') in global_designs}
             with progress.scope(0.4, 0.55):
                 designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
                                           designs_path)
@@ -131,6 +143,8 @@ class ConsolidateReferencesNode:
                 "references": {kind: c.get(kind, []) for kind in ("characters", "locations", "objects")},
             } for c in chapters}
             payload["visual_designs"] = designs
+            if character_enrichment:
+                payload["character_enrichment"] = character_enrichment
             payload["image_style"] = args.image_style
             util.save_json(output / "consolidated_references.json", payload)
             export_image_prompts(payload, output / "image_prompts")

@@ -26,7 +26,20 @@ def consolidated(*items):
     data = document(*(items or (observation(),)))
     records = cp.prepare_evidence(data)
     from minimax_h3_novel_pipeline.core.character_profile_document import make_document
-    return make_document(data, records, cp.build_profiles(plan(records), records))
+    profiles = cp.build_profiles(plan(records), records)
+    for profile in profiles:
+        profile['global_traits'] = [{'trait': 'eye_color', 'value': r['observation']['value'],
+                                     'evidence_ids': [r['evidence_id']]}
+                                    for r in profile['supporting_evidence']
+                                    if r['observation']['persistence'] == 'persistent']
+    return make_document(data, records, profiles)
+
+
+def cinematic(data):
+    source = data['source_document']['chapters'][0]
+    return [{'source_file': source['source_file'], 'chapter_name': source['chapter_name'],
+             'sequences': [{'sequence': 1, 'source': source['source_text'],
+                            'adaptation': {p: source['source_text'] for p in ('initialState', 'event', 'endingState')}}]}]
 
 
 def design(data):
@@ -47,10 +60,16 @@ def test_node_modes_english_exact_evidence_and_json(workspace, monkeypatch, mode
     data = consolidated()
     original = deepcopy(data)
     chat = chat_mock(monkeypatch, design(data))
+    monkeypatch.setattr(node.character_chapter_enrichment, 'enrich', lambda *a: {
+        '$schema': './character_chapter_enrichment.schema.json', 'format_version': 1,
+        'source_file': 'chapter1.txt', 'chapter_name': 'chapter1', 'chapter_digest': 'test',
+        'profiles_digest': 'test', 'sequences': [{'sequence': 1, 'characters': [{
+            'local_id': data['profiles'][0]['local_id'], 'presence': 'visible', 'source_quote': 'Élise', 'label': 'Élise'}],
+            'states': [], 'unresolved': []}]})
     monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen"))
     monkeypatch.setattr(node, "stage_output", lambda *a: workspace)
     result, saved = node.CharacterVisualProfileGeneratorNode().run(
-        data, {"api_url": "http://127.0.0.1:1234/v1"}, mode=mode)["result"]
+        data, {"api_url": "http://127.0.0.1:1234/v1"}, mode=mode, cinematic_chapters=cinematic(data))["result"]
     assert data == original
     assert result["source_document"] == original
     assert result["mode"] == mode
@@ -64,7 +83,7 @@ def test_node_modes_english_exact_evidence_and_json(workspace, monkeypatch, mode
     assert json.loads(text) == result
     global_designs = json.loads((Path(saved).parent / "visual_designs.json").read_text(encoding="utf-8"))
     assert [e["global_id"] for e in global_designs["entities"]] == [p["local_id"]]
-    assert global_designs["entities"][0]["added_details"]["eyes"] == "Green eyes."
+    assert global_designs["entities"][0]["source_facts"]["stable_visual_description"] == "Green eyes."
     assert chat.call_count == 2
     assert json.loads(chat.call_args_list[0].args[3])["mode"] == mode
     assert "English" in chat.call_args_list[0].args[2]
@@ -82,26 +101,27 @@ def test_mode_classifications(mode, kind, valid):
     response["hair"] = [{"description": "Neatly cropped hair.", "classification": kind,
                          "evidence": response["eyes"][0]["evidence"]}]
     if valid:
-        vp.validate_design(response, data["profiles"][0], mode)
+        vp.validate_design(response, vp.prepare_profiles(data)[0], mode)
     else:
         with pytest.raises(ValueError, match="generation mode"):
-            vp.validate_design(response, data["profiles"][0], mode)
+            vp.validate_design(response, vp.prepare_profiles(data)[0], mode)
 
 
-def test_conflicts_and_chronology_never_choose_values(workspace, monkeypatch):
+@pytest.mark.parametrize('selected', [(True, False), (True, True), (False, False)])
+def test_edited_conflict_selections(workspace, monkeypatch, selected):
     data = consolidated(observation(), observation("Élise avait les yeux bleus.", value="yeux bleus"))
-    profile = data["profiles"][0]
-    ids = [r["evidence_id"] for r in profile["supporting_evidence"]]
-    profile["unresolved_conflicts"] = [{"conflict_id": "eyes", "trait": "eye_color", "scope": "same period",
-        "evidence_ids": ids, "choices": [{"id": str(i), "value": str(i), "evidence_ids": [key],
-                                        "selected": i == 0} for i, key in enumerate(ids)]}]
-    with pytest.raises(ValueError, match="contradictions"):
-        vp.validate_design(design(data), profile, "cinematic")
-    empty = {f: [] for f in vp.FIELDS}
-    chat_mock(monkeypatch, empty)
-    result, _ = vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", settings(mode="cinematic"))
-    assert result["profiles"][0]["unresolved_conflicts"] == profile["unresolved_conflicts"]
-    assert set(result["profiles"][0]["blocked_fields"]) == set(vp.PHYSICAL)
+    profile = data['profiles'][0]
+    ids = [r['evidence_id'] for r in profile['supporting_evidence']]
+    profile['unresolved_conflicts'] = [{'conflict_id': 'eyes', 'trait': 'eye_color', 'scope': 'same period',
+        'evidence_ids': ids, 'choices': [{'id': str(i), 'value': str(i), 'evidence_ids': [key],
+                                        'selected': selected[i]} for i, key in enumerate(ids)]}]
+    projected = vp.prepare_profiles(data)[0]
+    expected = design(data) if any(selected) else {f: [] for f in vp.FIELDS}
+    chat_mock(monkeypatch, expected)
+    result, _ = vp.generate(data, [projected], workspace, None, 'qwen', settings(mode='cinematic'))
+    assert result['profiles'][0]['unresolved_conflicts'] == profile['unresolved_conflicts']
+    assert result['profiles'][0]['eyes'] == expected['eyes']
+    assert bool(projected['ignored_traits']) == (not any(selected))
 
 
 def test_canonical_coverage_refs_and_temporary_traits():
@@ -109,17 +129,17 @@ def test_canonical_coverage_refs_and_temporary_traits():
     response = design(data)
     response["eyes"] = []
     with pytest.raises(ValueError, match="every unblocked"):
-        vp.validate_design(response, data["profiles"][0], "strict_canon")
+        vp.validate_design(response, vp.prepare_profiles(data)[0], "strict_canon")
     response = design(data)
     response["eyes"][0]["evidence"][0]["evidence_id"] = "invented"
     with pytest.raises(ValueError, match="unknown evidence"):
-        vp.validate_design(response, data["profiles"][0], "strict_canon")
+        vp.validate_design(response, vp.prepare_profiles(data)[0], "strict_canon")
     for attribute in ("clothing", "accessory"):
         data = consolidated(observation(attribute=attribute, persistence="temporary"))
         response = {f: [] for f in vp.FIELDS}
         response["accessories"] = design(data)["eyes"]
-        with pytest.raises(ValueError, match="explicit non-temporary"):
-            vp.validate_design(response, data["profiles"][0], "strict_canon")
+        with pytest.raises(ValueError, match="unknown evidence"):
+            vp.validate_design(response, vp.prepare_profiles(data)[0], "strict_canon")
 
 
 @pytest.mark.parametrize("issue,bad", [("Description is not English", "Les yeux verts."),
@@ -148,13 +168,13 @@ def test_cache_mode_invalidation_and_invalid_cache(workspace, monkeypatch):
     cache = next((workspace / ".cache").glob("*.json"))
     cache.write_text('{}')
     vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", args)
-    assert chat.call_count == 4
+    assert chat.call_count == 3  # The independently validated review remains cached.
     args.mode = "cinematic"
     vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", args)
-    assert chat.call_count == 6
+    assert chat.call_count == 5
     args.force = True
     vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", args)
-    assert chat.call_count == 8
+    assert chat.call_count == 7
 
 
 def test_invalid_input_before_client(monkeypatch):
@@ -187,11 +207,11 @@ def test_rejected_review_does_not_save_output(workspace, monkeypatch):
     data = consolidated()
     chat = Mock(side_effect=[design(data), {"issues": ["Unsupported canonical detail"]}])
     monkeypatch.setattr(vp.lmstudio_json, "chat_json", chat)
-    with pytest.raises(RuntimeError, match="Unsupported canonical detail"):
+    with pytest.raises(ValueError, match="no valid decision"):
         vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen",
                     settings(mode="strict_canon", correction_attempts=0))
     assert not (workspace / "character_visual_profiles.json").exists()
-    assert not (workspace / ".cache").exists()
+    assert not list((workspace / ".cache").glob("*character_visual_profile*"))
 
 
 def test_empty_input_and_precise_values(workspace, monkeypatch):
@@ -207,4 +227,4 @@ def test_empty_input_and_precise_values(workspace, monkeypatch):
     value = design(data)
     value["eyes"][0]["description"] = "Green or blue eyes."
     with pytest.raises(ValueError, match="alternatives"):
-        vp.validate_design(value, data["profiles"][0], "balanced")
+        vp.validate_design(value, vp.prepare_profiles(data)[0], "balanced")

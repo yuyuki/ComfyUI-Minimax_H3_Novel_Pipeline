@@ -469,9 +469,8 @@ identités séparées, traits ignorés, comparaisons incertaines. Les observatio
 sources restent conservées et le rapport des requêtes contient les avertissements
 et leurs entrées. Les erreurs techniques et l'annulation restent bloquantes.
 Contrôles ciblés : 67 tests réussis ; nouvel essai réel attendu.
-L'étape 4 n'a pas commencé : la consommation visuelle des sélections et des liens,
-le filtrage du chapitre et les états par séquence restent à implémenter après
-validation de l'étape 3.
+À ce stade historique, l'étape 4 n'avait pas commencé. Son implémentation
+et ses contrôles du 2026-10-27 sont décrits ci-dessous.
 
 ### Essai réel confirmé le 2026-10-27
 
@@ -488,53 +487,64 @@ ci-dessus. L'étape 3 est validée pour poursuivre l'étape 4.
 
 ## Étape 4 — Adapter la génération visuelle et son utilisation en aval
 
-- [ ] Ajouter le chapitre cinématique sélectionné en entrée de l'enrichissement,
+- [x] Ajouter le chapitre cinématique sélectionné en entrée de l'enrichissement,
   sans nécessiter l'adaptation cinématique de tout le roman.
-- [ ] Identifier ses personnages via les noms, alias, liens et pronoms en contexte,
+- [x] Identifier ses personnages via les noms, alias, liens et pronoms en contexte,
   puis filtrer la base globale en conservant leurs traits révélés ailleurs.
-- [ ] Distinguer les personnages visibles, entendus hors champ et simplement
+- [x] Distinguer les personnages visibles, entendus hors champ et simplement
   mentionnés dans chaque séquence.
-- [ ] Construire une description globale cohérente à partir des traits durables.
-- [ ] Conserver séparément les variantes temporaires et leur portée justifiée.
-- [ ] Rattacher ces variantes aux séquences du chapitre ou au chapitre entier
+- [x] Construire une description globale cohérente à partir des traits durables.
+- [x] Conserver séparément les variantes temporaires et leur portée justifiée.
+- [x] Rattacher ces variantes aux séquences du chapitre ou au chapitre entier
   uniquement lorsque les preuves justifient cette portée.
-- [ ] Définir et exporter le résultat JSON d'enrichissement local avec son schéma,
+- [x] Définir et exporter le résultat JSON d'enrichissement local avec son schéma,
   ses identités et ses références aux preuves ; préciser son raccordement en aval.
-- [ ] Préserver les informations inconnues et les contradictions non résolues.
-- [ ] Consommer les profils édités transmis par `LoadCharacterProfilesNode`
+- [x] Préserver les informations inconnues et les contradictions non résolues.
+- [x] Consommer les profils édités transmis par `LoadCharacterProfilesNode`
   avant la génération de `visual_designs.json`, avec les mêmes validations partagées
   si les données viennent directement du consolidateur.
-- [ ] Appliquer les choix `selected: true`, ignorer les traits sans sélection et
+- [x] Appliquer les choix `selected: true`, ignorer les traits sans sélection et
   conserver les alternatives avec leurs sources.
-- [ ] En cas de sélections multiples, retenir le premier choix sélectionné sans
+- [x] En cas de sélections multiples, retenir le premier choix sélectionné sans
   bloquer la génération ; couvrir ce comportement par un test ciblé.
-- [ ] Réutiliser `source_facts` et `added_details` de `visual_designs.json`, sans
+- [x] Réutiliser `source_facts` et `added_details` de `visual_designs.json`, sans
   recréer les traits que l'utilisateur a choisi d'ignorer.
-- [ ] Réutiliser les designs existants et leurs éditions d'un chapitre à l'autre,
+- [x] Réutiliser les designs existants et leurs éditions d'un chapitre à l'autre,
   sans effacer ceux des personnages absents ni régénérer leurs détails arbitrairement.
-- [ ] Appliquer les liens `link_to_local_id` du JSON, qu'ils viennent du modèle ou
+- [x] Appliquer les liens `link_to_local_id` du JSON, qu'ils viennent du modèle ou
   d'une édition manuelle, et traiter les conflits entre les observations rattachées.
-- [ ] Gérer les profils trop volumineux pour une seule requête de génération ou
+- [x] Gérer les profils trop volumineux pour une seule requête de génération ou
   de vérification visuelle.
-- [ ] Vérifier le chemin suivi par ces informations jusqu'aux prompts des chapitres.
-- [ ] Adapter les échanges nécessaires en préservant les identifiants des nodes
+- [x] Vérifier le chemin suivi par ces informations jusqu'aux prompts des chapitres.
+- [x] Adapter les échanges nécessaires en préservant les identifiants des nodes
   et leurs types de sockets.
-- [ ] Tester qu'un trait durable révélé tardivement enrichit un chapitre antérieur
+- [x] Tester qu'un trait durable révélé tardivement enrichit un chapitre antérieur
   conformément aux règles validées à l'étape 1.
-- [ ] Tester qu'une tenue de soirée ne se propage pas aux scènes non concernées.
-- [ ] Tester qu'une évolution physique documentée respecte la chronologie du récit.
-- [ ] Tester qu'une blessure sans cicatrice explicite ne crée aucun trait durable.
-- [ ] Tester les éditions manuelles du JSON, l'absence de sélection, les liens
+- [x] Tester qu'une tenue de soirée ne se propage pas aux scènes non concernées.
+- [x] Tester qu'une évolution physique documentée respecte la chronologie du récit.
+- [x] Tester qu'une blessure sans cicatrice explicite ne crée aucun trait durable.
+- [x] Tester les éditions manuelles du JSON, l'absence de sélection, les liens
   d'identité et l'export des schémas associés.
-- [ ] Tester le traitement d'un seul chapitre avec une base couvrant tout le livre,
+- [x] Tester le traitement d'un seul chapitre avec une base couvrant tout le livre,
   les alias et pronoms, et l'absence de personnages non concernés dans le résultat local.
-- [ ] Vérifier sur le prologue fourni le rapprochement Indy/Jones, les mentions de
+- [x] Vérifier hors ligne, avec décisions simulées, sur le prologue fourni le rapprochement Indy/Jones, les mentions de
   Doriane et Doumas et le rattachement des observations locales aux six séquences.
-- [ ] Tester la cohérence des `added_details` lorsque deux chapitres sont enrichis
+- [x] Tester la cohérence des `added_details` lorsque deux chapitres sont enrichis
   séparément avec les mêmes personnages.
 - [ ] **Validation utilisateur de l'étape 4 avant de commencer l'étape 5.**
 
-Résultats et décisions : à compléter.
+Implémentation et contrôles hors ligne terminés le 2026-10-27. Voir
+[les contrôles de l'étape 4](character_profiles_stage4_validation.md).
+Le générateur reçoit un chapitre cinématique et les profils globaux édités ; sa
+sortie existante transmet aussi l'enrichissement local à `Consolidate References`.
+Les identifiants et types de sorties existants sont conservés. Le fichier de profils
+visuels passe au format v3 ; les profils consolidés restent au format v2.
+
+Les six séquences du prologue ont été contrôlées avec réponses simulées, sans
+appel LM Studio ni modification des fichiers utilisateur. Les décisions narratives
+réelles, notamment les identités encore séparées dans la base, restent à vérifier
+lors de l'essai utilisateur. La validation de l'étape 4 reste ouverte ; l'étape 5
+n'est pas démarrée.
 
 ## Étape 5 — Valider l'ensemble et documenter
 

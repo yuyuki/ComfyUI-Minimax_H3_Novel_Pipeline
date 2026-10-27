@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Enrich one cinematic chapter from edited global character profiles: apply selections
+  and identity links, preserve reusable designs, and export source-linked local states
+  with a schema. Bound visual generation/review requests and pass character enrichment
+  through reference consolidation to H3 prompts. Add offline regression coverage and
+  update workflow and architecture documentation.
+
 - Bound character-profile consolidation requests with separate identity and precise-trait
   passes, cross-batch reconciliation, shared quotation tables and resumable caches.
   Export editable v2 profiles and their schema; add Load Character Profiles with

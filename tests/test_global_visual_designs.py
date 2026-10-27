@@ -16,10 +16,10 @@ def output(tmp_path, monkeypatch):
 
 def global_profiles():
     data = consolidated()
-    alice = {**deepcopy(data["profiles"][0]), **design(data)}
+    alice = {**deepcopy(vp.prepare_profiles(data)[0]), **design(data)}
     alice["aliases"] = ["Lise"]
     absent = deepcopy(alice)
-    absent.update(local_id="char_absent", canonical_name="Robert", aliases=[])
+    absent.update(local_id="char_absent", canonical_name="Robert", aliases=[], linked_local_ids=["char_absent"])
     absent["eyes"][0]["description"] = "Blue eyes."
     return [alice, absent]
 

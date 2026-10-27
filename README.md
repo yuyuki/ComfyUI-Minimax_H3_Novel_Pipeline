@@ -50,8 +50,14 @@ The chapter picker supports TXT, Markdown and searchable PDF files. You can also
 | **Load Character Evidence** | Loads saved or manually edited character evidence. |
 | **Consolidate Character Profiles** | Groups evidence into source-linked character profiles. |
 | **Load Character Profiles** | Loads and validates saved character profiles. |
-| **Character Visual Profile Generator** | Creates visual descriptions from character profiles. |
-| **Load Character Visual Profiles** | Loads saved visual descriptions for reuse. |
+| **Character Visual Profile Generator** | Enriches one cinematic chapter from global profiles and creates reusable character designs. |
+| **Load Character Visual Profiles** | Loads saved character designs and chapter enrichment for Consolidate References. |
+
+For consistent characters across chapters, connect edited **Load Character Profiles**
+and one chapter from **Cinematic Chapter Adapter** to **Character Visual Profile Generator**.
+Connect its `character_visual_profiles` output to **Consolidate References** alongside
+the catalogs for the same chapter. Reuse an earlier `visual_designs.json` through the
+generator's `visual_designs_path` to keep your edited defaults between chapters.
 
 ## Major changes by release
 

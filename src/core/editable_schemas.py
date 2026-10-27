@@ -30,7 +30,7 @@ def validate_document(payload, schema, filename):
 
 
 def export_schema(output, name):
-    if name not in ("visual_designs", "spatial_continuity", "character_profiles"):
+    if name not in ("visual_designs", "spatial_continuity", "character_profiles", "character_chapter_enrichment"):
         raise ValueError(f"Unknown bundled schema: {name}")
     output = output_path(output)
     output.mkdir(parents=True, exist_ok=True)

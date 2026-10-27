@@ -99,7 +99,7 @@ def test_invalid_json(saved, contents, message):
 
 
 @pytest.mark.parametrize("change, message", [
-    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 2"),
+    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 3"),
     (lambda d: d.update(format_version=True), "format_version must be int"),
     (lambda d: d.update(mode="unknown"), "mode must be one of"),
     (lambda d: d.update(profiles={}), "profiles must be list"),
