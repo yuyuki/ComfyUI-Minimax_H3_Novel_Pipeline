@@ -41,3 +41,36 @@ et le schéma d’audit : les anciens résultats ne seront pas réutilisés.
 Examiner `character_evidence_review.json`, notamment les rejets sémantiques,
 puis relancer la consolidation sur cette nouvelle extraction. L’étape 4 reste
 conditionnée à une vérification des résultats réels.
+
+## Ciblage et accélération après l’essai 20261026204533
+
+- [x] Limiter le schéma d’extraction à `physical_appearance`, incluant âge et cicatrices.
+- [x] Séparer anatomie durable et coiffures ; clarifier les cas de Shannon dans les consignes.
+- [x] Remplacer les réparations LLM par une restauration locale des citations :
+  guillemets ajoutés, apostrophes et espaces, uniquement avec correspondance unique.
+- [x] Remplacer les commentaires d’audit libres par verdict explicite et code d’erreur.
+- [x] Conserver thinking pour l’extraction ; audit court sans thinking par défaut,
+  réglable avec `audit_thinking`, sans modifier les paramètres des autres requêtes.
+- [x] Séparer les appels d’extraction et d’audit dans les diagnostics.
+- [ ] Mesurer temps et justesse sur un nouvel essai réel avec les cinq fichiers.
+
+Le gain provient des sorties plus ciblées, de la suppression des appels de réparation
+et de l’audit sans raisonnement par défaut. Aucun facteur d’accélération n’est promis
+sans mesure réelle. Les citations qui nécessitent une correction de sens restent
+à réviser ; elles ne sont pas remplacées par un autre passage choisi par le modèle.
+
+### Vérification des changements de performance
+
+216 tests ciblés réussis, incluant transport structuré, thinking isolé par requête,
+reprises compactes sans perte d’observations, restauration locale, caches et annulation.
+Ruff, contrôle d’architecture et `git diff --check` réussissent. La suite complète
+compte 758 réussites, 2 ignorés et le même échec de privilège Windows pour créer
+un lien symbolique ; trois tests supplémentaires ont ensuite été ajoutés et passent
+dans la sélection ciblée.
+
+Relecture locale du JSON 20261026204533, en mémoire et sans écriture : 12 citations
+retrouvent un extrait exact via la restauration typographique, dont celles de
+Shannon et de l’âge de Ted Conrad. Cela ne valide pas leurs verdicts sémantiques.
+Aucun nouvel appel à LM Studio ; vitesse réelle et qualité de l’audit sans thinking
+restent à mesurer. Réglage proposé : thinking=true, audit_thinking=false ; conserver
+les autres budgets lors de la comparaison sur les mêmes cinq fichiers.

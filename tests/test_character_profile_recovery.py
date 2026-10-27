@@ -1,0 +1,122 @@
+"""Narrative context, independent recovery and bounded physical classification."""
+import hashlib
+from unittest.mock import Mock
+
+from minimax_h3_novel_pipeline.core import character_profiles as cp, character_profile_batches as batches
+from minimax_h3_novel_pipeline.core.character_profile_document import validate_document
+from tests.test_character_evidence import observation
+from tests.test_character_profiles import document, group, refs, settings
+from tests.test_character_profile_batches import fake_model, request_payload
+
+
+def narrative_document(text, *items):
+    data = document(*items)
+    chapter = data["chapters"][0]
+    chapter["source_text"] = text
+    chapter["source_text_sha256"] = hashlib.sha256(text.encode()).hexdigest()
+    rows = []
+    for item in items:
+        start = text.index(item["quotation"])
+        end = start + len(item["quotation"])
+        rows.append({**item, "provenance": {
+            "file": chapter["source_file"], "chapter": chapter["chapter"], "chapter_name": chapter["chapter_name"],
+            "passage": 1, "locations": [{"start_char": start, "end_char": end,
+                "start_line": text.count("\n", 0, start) + 1, "end_line": text.count("\n", 0, end - 1) + 1}]}})
+    chapter["evidence"] = rows
+    data["chapters"] = [chapter]
+    return data
+
+
+def test_verbatim_context_connects_short_quotes_and_aliases(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline.core import path_access
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    text = "Henry Jones Jr. était appelé Indy. Il avait les yeux noisette. Indy avait de larges épaules."
+    data = narrative_document(text,
+        observation("les yeux noisette", character="Henry Jones Jr.", value="hazel eyes"),
+        observation("de larges épaules", character="Indy", value="broad shoulders"))
+    records = cp.prepare_evidence(data)
+    for item in records.values():
+        for ctx in item["_source_context"]:
+            assert text[ctx["start_char"]:ctx["end_char"]] == ctx["text"]
+    captured = []
+    def model(*args):
+        captured.append(args)
+        return fake_model(*args)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", model)
+    result, _ = cp.consolidate(data, records, tmp_path, None, "qwen", settings(correction_attempts=0))
+    assert len(result["profiles"]) == 1
+    profile = result["profiles"][0]
+    assert profile["canonical_name"] == "Henry Jones Jr."
+    assert profile["aliases"] == ["Indy"]
+    assert len(profile["supporting_evidence"]) == 2
+    pairs = [request_payload(a[3]) for a in captured if a[4] == batches.IDENTITY_PAIR]
+    assert pairs and all(row["observation"]["source_context"] for row in pairs[0]["observations"])
+    assert validate_document(result) is result
+
+
+def test_source_context_is_recomputed_not_trusted():
+    text = "Élise entra. Élise avait les yeux verts. Elle sourit."
+    item = observation(source_context=[{"text": "Invented alias"}])
+    data = narrative_document(text, item)
+    record = next(iter(cp.prepare_evidence(data).values()))
+    assert "Invented alias" not in str(record["_source_context"])
+    assert data["chapters"][0]["evidence"][0]["source_context"] == [{"text": "Invented alias"}]
+
+
+def test_invalid_identity_does_not_fragment_valid_neighbor(tmp_path, monkeypatch):
+    data = narrative_document("Élise avait les yeux verts. Élise était grande. Paul était petit.",
+        observation(), observation("Élise était grande.", value="grande"),
+        observation("Paul était petit.", character="Paul", value="petit"))
+    records = cp.prepare_evidence(data)
+    ids = list(records)
+    response = {"profiles": [group(ids[:2]), group(ids[2:], canonical_name="Invented") ]}
+    chat = Mock(return_value=response)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    groups = batches.partition_identities(records, requests)
+    assert sorted(len(g["evidence"]) for g in groups) == [1, 2]
+    assert {ref["evidence_id"] for g in groups for ref in g["evidence"]} == set(records)
+    assert chat.call_count == 1
+    assert not list(tmp_path.rglob("*.json"))  # Never cache a partial response as complete.
+
+
+def test_partial_identity_pairs_keep_valid_decision(tmp_path, monkeypatch):
+    records = cp.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.")))
+    rows = [batches.compact_record(k, v) for k, v in records.items()]
+    jobs = [{"job_id": str(i), "left": [rows[0]], "right": [rows[1]]} for i in range(2)]
+    good = {"job_id": "0", "relation": "same", "evidence": refs(records)}
+    bad = {"job_id": "1", "relation": "same", "evidence": []}
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(return_value={"decisions": [good, bad]}))
+    def check(row, job):
+        if row["relation"] == "same" and len(row["evidence"]) != 2:
+            raise ValueError("Both sides required")
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    decisions = list(requests.decisions(jobs, batches.IDENTITY_SYSTEM, batches.IDENTITY_PAIR, check))
+    assert {d["job_id"]: d["relation"] for d, _ in decisions} == {"0": "same", "1": "uncertain"}
+
+
+def test_invalid_trait_key_does_not_remove_valid_traits(tmp_path, monkeypatch):
+    records = cp.prepare_evidence(document(observation(), observation("Élise était dégingandée.", value="dégingandée")))
+    ids = list(records)
+    response = {"observations": [
+        {"evidence_id": ids[0], "traits": [{"trait": "eye_color", "kind": "global"}]},
+        {"evidence_id": ids[1], "traits": [{"trait": "exposed_skin", "kind": "global"}]}]}
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(return_value=response))
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    assignments = batches.classify_traits(records, requests)
+    assert set(assignments) == {ids[0]}
+    assert requests.stats["partial_responses_salvaged"] == 1
+
+
+def test_global_trait_classification_batches_across_characters(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline.core import path_access
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    data = document(*(observation(f"Person{i} avait les yeux verts.", character=f"Person{i}") for i in range(5)))
+    chat = Mock(side_effect=fake_model)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    result, _ = cp.consolidate(data, cp.prepare_evidence(data), tmp_path, None, "qwen", settings())
+    assert len(result["profiles"]) == 5
+    calls = [c for c in chat.call_args_list if c.args[4] == batches.TRAITS]
+    assert len(calls) == 1
+    assert len(request_payload(calls[0].args[3])["observations"]) == 5
+    assert not any(c.args[4]["name"] == "character_trait_keys" for c in chat.call_args_list)

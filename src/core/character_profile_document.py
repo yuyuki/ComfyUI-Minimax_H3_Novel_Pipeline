@@ -37,7 +37,7 @@ def validate_document(data):
             key = row["evidence_id"]
             if key in assigned or key not in records or records[key]["validation_confidence"] == "low":
                 raise ValueError(f"{where}.supporting_evidence: duplicate, excluded or unknown evidence_id {key}.")
-            if row["observation"] != records[key]:
+            if row["observation"] != cp._source_observation(records[key]):
                 raise ValueError(f"{where}.supporting_evidence.{key}: observation differs from its validated source.")
             assigned.add(key)
             own[key] = row["observation"]

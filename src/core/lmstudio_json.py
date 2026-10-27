@@ -19,6 +19,7 @@ QWEN35_TOP_K = lmstudio_model_qwen.DEFAULTS["top_k"]
 QWEN35_MIN_P = lmstudio_model_qwen.DEFAULTS["min_p"]
 QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
 COMPACT_SCHEMA_VERSION = 3
+REQUEST_THINKING = ContextVar("lmstudio_request_thinking", default=None)
 REQUEST_METRICS = ContextVar("lmstudio_request_metrics", default=None)
 
 # Character counts, not token counts. Preserve visual identity on retries and
@@ -140,6 +141,9 @@ def model_settings(client, model):
         thinking=THINKING_ENABLED, length_retries=QWEN35_LENGTH_RETRIES,
         top_k=QWEN35_TOP_K, min_p=QWEN35_MIN_P, repeat_penalty=QWEN35_REPEAT_PENALTY,
     )
+    thinking = REQUEST_THINKING.get()
+    if thinking is not None:
+        settings = {**settings, "thinking": bool(thinking)}
     return profile, settings
 
 

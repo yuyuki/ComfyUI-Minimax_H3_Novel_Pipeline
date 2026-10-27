@@ -275,14 +275,14 @@ def test_failed_repairs_keep_all_observations_and_do_not_block(workspace, monkey
     assert result["evidence"][0]["quotation"] == "translated"
     assert result["evidence"][0]["warnings"]
     assert result["evidence"][0]["provenance"]["locations"] == []
-    assert chat.call_count == 2
+    assert chat.call_count == 1
     assert len(caplog.records) == 1
     assert caplog.records[0].levelname == "WARNING"
     assert "observations need review" in caplog.text
     cache = next((output / ".cache").glob("*.json"))
     assert json.loads(cache.read_text(encoding="utf-8")) == [{"evidence": [observation("translated"), *valid_items]}]
     assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
-    assert chat.call_count == 2
+    assert chat.call_count == 1
     assert len(caplog.records) == 2
 
 
@@ -599,83 +599,64 @@ def test_overlap_dedup_preserves_conflicting_observations(workspace, monkeypatch
     assert all(len(item["provenance"]["locations"]) == 1 for item in result["evidence"])
 
 
-def test_targeted_repair_preserves_facts_provenance_and_cache(workspace, monkeypatch):
+def test_local_repair_preserves_facts_provenance_and_cache(workspace, monkeypatch):
     source, output = workspace
     path = source / "chapter.txt"
-    quote = "Élise portait une robe rouge."
-    path.write_text(quote + "\n" + observation()["quotation"], encoding="utf-8")
-    invalid = observation("Elle portait une robe rouge.", attribute="clothing", value="robe rouge")
-    chat = Mock(side_effect=[{"evidence": [invalid, observation()]}, {"corrections": [
-        {"observation_index": 0, "quotation": quote, "persistence": "temporary"}]}])
+    quote = "Élise avait l’œil vert."
+    path.write_text(quote, encoding="utf-8")
+    invalid = observation('"Élise avait l’œil vert."')
+    chat = Mock(return_value={"evidence": [invalid]})
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
     result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
-    assert len(result["evidence"]) == 2
-    fixed, valid = result["evidence"]
+    fixed = result["evidence"][0]
     assert fixed["quotation"] == quote
-    assert fixed["persistence"] == "temporary"
     assert fixed["extraction_correction"]["original_quotation"] == invalid["quotation"]
-    assert all(fixed[k] == invalid[k] for k in evidence.FIELDS - {"quotation", "persistence"})
-    assert all(valid[k] == observation()[k] for k in evidence.FIELDS)
+    assert all(fixed[k] == invalid[k] for k in evidence.FIELDS - {"quotation"})
     loc = fixed["provenance"]["locations"][0]
     assert result["source_text"][loc["start_char"]:loc["end_char"]] == quote
-    payload = json.loads(chat.call_args_list[1].args[3])
-    assert [item["observation_index"] for item in payload["observations"]] == [0]
     assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
-    assert chat.call_count == 2
-    report = evidence.review_report({"chapters": [result]})
-    assert report["corrected_observations"] == 1
-    assert report["observations_for_review"] == 0
+    assert chat.call_count == 1
+    assert evidence.review_report({"chapters": [result]})["corrected_observations"] == 1
 
 
-def test_repair_never_joins_disjoint_passages_or_drops_missing_indices(monkeypatch):
-    raw = {"evidence": [observation("bad one"), observation("bad two"), observation("bad three")]}
-    correction = {"observation_index": 0, "quotation": "left\n\nright", "persistence": "persistent"}
-    chat = Mock(return_value={"corrections": [correction,
-        {"observation_index": 99, "quotation": "left", "persistence": "persistent"}]})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
-    result = evidence.repair_observations(raw, ["left", "right"], None, "qwen", settings(), {"llm_calls": 0})
-    assert [i["quotation"] for i in result] == [i["quotation"] for i in raw["evidence"]]
-    assert all(i["warnings"] for i in result)
-    assert len(json.loads(chat.call_args.args[3])["observations"]) == 3
-
-
-def test_repair_duplicate_indices_and_empty_quote_remain_for_review(monkeypatch):
-    correction = {"observation_index": 0, "quotation": "exact", "persistence": "persistent"}
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(return_value={"corrections": [
-        correction, correction, {"observation_index": 1, "quotation": "", "persistence": "persistent"}]}))
-    result = evidence.repair_observations({"evidence": [observation("bad"), observation("missing")]},
-                                        ["exact"], None, "qwen", settings(), {"llm_calls": 0})
-    assert [i["quotation"] for i in result] == ["bad", "missing"]
-    assert all(i["warnings"] for i in result)
-
-
-def test_repair_failure_does_not_block_but_cancellation_propagates(monkeypatch):
+@pytest.mark.parametrize("quote,parts,expected", [
+    ('"Shannon avait les cheveux roux."', ["Shannon avait les cheveux roux."], "Shannon avait les cheveux roux."),
+    ("L'homme avait l'oeil bleu.", ["L’homme avait l’œil bleu."], None),  # No lexical normalization.
+    ("L'homme était grand.", ["L’homme était grand."], "L’homme était grand."),
+    ("Élise avait les yeux verts.", ["Élise  avait\r\nles yeux verts."], "Élise  avait\r\nles yeux verts."),
+    ("left right", ["left", "right"], None),
+    ("Elle avait les yeux verts.", ["Élise avait les yeux verts."], None),
+    ("Elle était là.", ["Elle n’était pas là."], None),
+    ("L'homme est grand.", ["L’homme est grand.", "L‘homme est grand."], None),
+])
+def test_local_repair_only_maps_unambiguous_typography(quote, parts, expected):
+    original = observation(quote)
     stats = {"llm_calls": 0}
-    chat = Mock(side_effect=APIConnectionError(request=httpx.Request("POST", "http://localhost/v1")))
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
-    raw = {"evidence": [observation("bad")]}
-    result = evidence.repair_observations(raw, ["exact"], None, "qwen", settings(), stats)
-    assert result[0]["quotation"] == "bad"
-    assert stats["repair_failures"] == 1
-
-    class InterruptProcessingException(RuntimeError):
-        pass
-
-    chat.side_effect = InterruptProcessingException()
-    with pytest.raises(InterruptProcessingException):
-        evidence.repair_observations(raw, ["exact"], None, "qwen", settings(), stats)
+    result = evidence.repair_observations({"evidence": [original]}, parts, stats)[0]
+    assert result["quotation"] == (expected or quote)
+    assert bool(result.get("warnings")) == (expected is None)
+    assert stats["llm_calls"] == 0
+    assert result["value"] == original["value"]
 
 
-def test_repair_transport_schema_and_compact_retry_keep_all_pending(monkeypatch):
-    monkeypatch.setattr(evidence.lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
-    corrections = {"corrections": [
-        {"observation_index": i, "quotation": "exact", "persistence": "persistent"} for i in range(3)]}
-    client, create = client_for(Stream(['{"corrections":']), Stream([json.dumps(corrections)]))
-    raw = {"evidence": [observation(f"bad {i}") for i in range(3)]}
-    result = evidence.repair_observations(raw, ["exact"], client, "qwen3.5", settings(), {"llm_calls": 0})
-    assert len(result) == 3 and all(i["quotation"] == "exact" for i in result)
-    assert create.call_count == 2
-    for call in create.call_args_list:
-        assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.REPAIR_SCHEMA}
-        messages = json.dumps(call.kwargs["messages"])
-        assert all(f"bad {i}" in messages for i in range(3))
+def test_local_repair_keeps_independent_invalid_observations():
+    items = [observation("bad one"), observation("bad two")]
+    result = evidence.repair_observations({"evidence": items}, ["source"], {})
+    assert [i["quotation"] for i in result] == [i["quotation"] for i in items]
+    assert all(i["warnings"] for i in result)
+
+
+def test_extraction_schema_focuses_on_physical_appearance():
+    assert evidence.SCHEMA["schema"]["properties"]["evidence"]["items"]["properties"]["attribute"]["enum"] == [
+        "physical_appearance"]
+
+
+def test_shannon_typography_repair_preserves_all_enduring_traits():
+    source = "Son corps dégingandé faisait oublier ses pieds démesurés et son long cou à la pomme d’Adam proéminente."
+    quote = '"' + source.replace("’", "'") + '"'
+    values = ["corps dégingandé", "pieds démesurés", "long cou à la pomme d’Adam proéminente"]
+    items = [observation(quote, character="Shannon", value=value) for value in values]
+    result = evidence.repair_observations({"evidence": items}, [source], {})
+    assert [item["value"] for item in result] == values
+    assert all(item["quotation"] == source and item["persistence"] == "persistent" for item in result)
+    assert all(not item.get("warnings") for item in result)

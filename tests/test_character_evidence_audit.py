@@ -12,7 +12,8 @@ from tests.test_structured_json import Stream, client_for
 
 
 def verdicts(*issues):
-    return {"verdicts": [{"observation_index": i, "issues": issue} for i, issue in enumerate(issues)]}
+    return {"verdicts": [{"observation_index": i, "verdict": "invalid" if issue else "valid",
+                          "issue": "unsupported" if issue else "none"} for i, issue in enumerate(issues)]}
 
 
 @pytest.mark.parametrize("quote,value,issue", [
@@ -58,10 +59,8 @@ def test_failed_audit_retains_every_observation_for_review(monkeypatch):
 def test_repair_audit_and_cache_integration(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     quote = "Élise portait une chemise blanche."
-    invalid = observation("invented", value="blonde hair")
-    chat = Mock(side_effect=[{"evidence": [invalid]}, {"corrections": [
-        {"observation_index": 0, "quotation": quote, "persistence": "persistent"}]},
-        verdicts(["Shirt does not support hair color"])])
+    invalid = observation('"' + quote + '"', value="blonde hair")
+    chat = Mock(side_effect=[{"evidence": [invalid]}, verdicts(["Shirt does not support hair color"])])
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
     args = settings(character_scope="all_characters")
     path = tmp_path / "chapter.txt"
@@ -71,7 +70,7 @@ def test_repair_audit_and_cache_integration(tmp_path, monkeypatch):
     assert result["evidence"][0]["warnings"]
     assert evidence.extract_chapter(path, tmp_path, None, "qwen", args, 1,
                                     source=(quote, "utf8_decoded_text")) == result
-    assert chat.call_count == 3
+    assert chat.call_count == 2
     assert next(iter(character_profiles.prepare_evidence({"format_version": 1,
         "location_convention": "offsets", "chapters": [result]}).values()))["validation_confidence"] == "low"
 
@@ -82,6 +81,7 @@ def test_audit_cancellation_propagates(monkeypatch):
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(side_effect=InterruptProcessingException()))
     with pytest.raises(InterruptProcessingException):
         evidence.audit_observations([observation()], ["source"], None, "qwen", settings(), {"llm_calls": 0})
+    assert evidence.lmstudio_json.REQUEST_THINKING.get() is None
 
 
 def test_audit_compact_transport_retry_keeps_all_observations(monkeypatch):
@@ -94,3 +94,40 @@ def test_audit_compact_transport_retry_keeps_all_observations(monkeypatch):
     for call in create.call_args_list:
         assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.AUDIT_SCHEMA}
         assert all(f'"observation_index": {i}' in call.kwargs["messages"][-1]["content"] for i in range(3))
+
+
+@pytest.mark.parametrize("status,issue", [("valid", "unsupported"), ("invalid", "none"),
+                                         ("valid", "This observation passes all checks.")])
+def test_audit_rejects_inconsistent_verdicts(monkeypatch, status, issue):
+    response = {"verdicts": [{"observation_index": 0, "verdict": status, "issue": issue}]}
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(return_value=response))
+    item = evidence.audit_observations([observation()], ["source"], None, "qwen",
+                                       settings(correction_attempts=0), {"llm_calls": 0})[0]
+    assert item["semantic_review"]["verdict"] == "uncertain"
+    assert item["warnings"]
+
+
+def test_audit_thinking_override_is_scoped_and_restored(monkeypatch):
+    monkeypatch.setattr(evidence.lmstudio_json, "THINKING_ENABLED", True)
+    def chat(client, model, system, prompt, schema, temperature, budget):
+        assert evidence.lmstudio_json.model_settings(client, model)[1]["thinking"] is False
+        assert budget == 512
+        return verdicts([])
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    evidence.audit_observations([observation()], ["source"], None, "qwen", settings(), {"llm_calls": 0})
+    assert evidence.lmstudio_json.model_settings(None, "qwen")[1]["thinking"] is True
+    assert evidence.lmstudio_json.REQUEST_THINKING.get() is None
+
+
+@pytest.mark.parametrize("audit_thinking", [False, True])
+def test_audit_transport_uses_separate_thinking_and_restores_client(audit_thinking):
+    from minimax_h3_novel_pipeline.core import lmstudio_model_qwen
+    client, create = client_for(Stream([json.dumps(verdicts([]))]), Stream(['{"evidence": []}']))
+    client._minimax_h3_settings = {**lmstudio_model_qwen.DEFAULTS, "thinking": True}
+    args = settings(audit_thinking=audit_thinking)
+    evidence.audit_observations([observation()], [observation()["quotation"]], client, "qwen3.5", args,
+                                {"llm_calls": 0})
+    evidence.lmstudio_json.chat_json(client, "qwen3.5", evidence.SYSTEM, "source", evidence.SCHEMA, 0.15, 8192)
+    assert [call.kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"]
+            for call in create.call_args_list] == [audit_thinking, True]
+    assert client._minimax_h3_settings["thinking"] is True

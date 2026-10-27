@@ -24,7 +24,12 @@ Shared names, roles or appearance alone do not establish identity. Use quotation
 context; keep uncertain identities separate with identity_status ambiguous.
 canonical_name must be a supplied character label.
 identity_support contains explicit physical observations with identifying quotation context. Different
-labels need a connected chain of quotations naming both labels. No invented facts.
+labels need a connected chain of quotations or source_context naming both labels.
+source_context is verbatim text around the observation, with source offsets. Use it
+to resolve pronouns, aliases and narrative continuity. It is not a new physical fact.
+Group observations belonging to the same person when context establishes continuity;
+do not split a person into one profile per body feature. Keep homonyms separate.
+Prefer the most complete supplied name for canonical_name. Never invent a longer name.
 Do not analyse traits yet. Preserve all IDs, also on compact retries.
 """
 
@@ -106,6 +111,21 @@ def prepare_evidence(data):
                 confidence = "low"
             item["validation_confidence"] = confidence
             item["validation_warnings"] = warnings
+            if not warnings:
+                # Derive context from validated source locations, never trust an
+                # extractor-supplied contextual claim or change the quoted fact.
+                ranges = []
+                for loc in sorted(item["provenance"]["locations"], key=lambda loc: loc["start_char"]):
+                    start, end = max(0, loc["start_char"] - 900), min(len(text), loc["end_char"] + 900)
+                    if ranges and start <= ranges[-1][1]:
+                        ranges[-1] = (ranges[-1][0], max(end, ranges[-1][1]))
+                    else:
+                        ranges.append((start, end))
+                contexts = [{"start_char": start, "end_char": end, "text": text[start:end]}
+                            for start, end in ranges if text[start:end].strip() != quotation.strip()]
+                item.pop("_source_context", None)
+                if contexts:
+                    item["_source_context"] = contexts
             # IDs use original content, independent of validation annotations and list order.
             base = "e_" + _digest([chapter["chapter"], chapter["source_file"], original])[:24]
             evidence_id = base
@@ -119,6 +139,12 @@ def prepare_evidence(data):
         logger.warning("Character profiles: %s/%s observations excluded from factual consolidation; "
                        "details are retained in character_profiles_validation.json.", excluded, len(records))
     return dict(sorted(records.items(), key=lambda pair: _source_order(pair[0], pair[1])))
+
+
+
+def _source_observation(item):
+    """Keep request-only context out of saved observations and their edit contract."""
+    return deepcopy({key: value for key, value in item.items() if key != "_source_context"})
 
 
 def validation_report(records):
@@ -199,7 +225,9 @@ def build_profiles(plan, records):
         while True:
             before = set(connected)
             for key in support:
-                quoted = {name for name in names if name in records[key]["quotation"]}
+                contexts = [records[key]["quotation"],
+                            *(part["text"] for part in records[key].get("_source_context", []))]
+                quoted = {name for name in names if any(name in text for text in contexts)}
                 if quoted & connected:
                     connected.update(quoted)
             if before == connected:
@@ -226,7 +254,7 @@ def build_profiles(plan, records):
                          "canonical_name": group["canonical_name"], "aliases": sorted(labels - {group["canonical_name"]}),
                          "identity_status": group["identity_status"], "identity_support": support,
                          "attributes": buckets, "supporting_evidence": [
-                             {"evidence_id": key, "observation": deepcopy(records[key])} for key in ids],
+                             {"evidence_id": key, "observation": _source_observation(records[key])} for key in ids],
                          "local_id": "char_" + _digest(sorted(ids))[:24],
                          "link_to_local_id": None,
                          "global_traits": [], "temporary_states": [],

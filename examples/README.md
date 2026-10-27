@@ -297,10 +297,13 @@ and the path to `character_evidence/character_evidence.json` in the current run.
 all chapters and batches each occurrence with one preceding/following paragraph,
 bounded by `chunk_chars`, without extending through chains of pronouns. Single
 newlines delimit paragraphs; oversized lines use sentence boundaries.
-Only physical descriptions are extracted. Clothing, accessories, fatigue and injuries
-remain contextual; enduring anatomy feeds the global cross-chapter profile.
-Try `thinking=False` to reduce generation time. Diagnostics are saved after each
-batch and on interruption, with selected text fraction and per-batch durations.
+The extraction schema is restricted to `physical_appearance`, including age, scars
+and visible injuries. Clothing, accessories, actions and expressions are excluded.
+Separate temporary hairstyles from enduring hair color/texture and anatomy.
+Use `thinking=True` for extraction and leave `audit_thinking=False` for the shorter
+semantic audit. Enable audit thinking only if its verdict quality requires it.
+Diagnostics are saved after each batch and on interruption, with selected text
+fraction, extraction/audit call counts and per-batch durations.
 Choose `all_characters` for full-text coverage of unnamed people, role labels, and
 descriptions that precede identification. Proper-name selection uses capitalization
 heuristics; it can miss distant pronoun context and names without capitalization.
@@ -315,11 +318,13 @@ extraction. New outputs belong to the current run; the previous run is unchanged
 Leave `resume_run` empty to disable reuse from a previous run.
 Edit that file manually. Use `force` to regenerate compatible cached batches;
 adjust `chunk_chars`, `max_tokens` or `correction_attempts` if validation fails.
-`correction_attempts` also bounds targeted repairs of invalid quotations and
-temporary classifications. Set it to zero to retain issues without repair calls.
-Unrepaired observations remain in the output for review, without blocking the
-valid observations. Inspect `character_evidence_review.json` for issues and the
-original values of model-corrected observations. Consolidation writes its exclusion
+`correction_attempts` bounds malformed extraction/audit response retries. Citation
+repairs now use local, unambiguous typography/whitespace matching, with no LLM calls.
+No name, word or negation is substituted. Unrepairable quotations remain flagged.
+The audit returns a compact verdict and issue code per observation. Rejected or
+uncertain observations stay available for review but are excluded from consolidation.
+Inspect `character_evidence_review.json` for issues and original quotations.
+Consolidation writes its exclusion
 details to `character_profiles_validation.json` even if its later LLM request fails.
 The embedded original source text supports exact quotation checks; PDF locations
 refer to extracted text. Recurring characters retain evidence in every chapter.
@@ -341,8 +346,12 @@ Set it manually on existing nodes that retain `true`. Keep `out_dir` at
 `character_profiles` to save `character_profiles/character_profiles.json` and its
 JSON Schema in the current run. Set `context_tokens` at or below LM Studio's
 loaded context (default 65,536); it includes the response and correction reserves.
-Identity and precise-trait analysis use separate bounded requests, with complete
-evidence coverage and cached completed batches. Lower the control for smaller
+Identity requests include verbatim context around each source location to resolve
+short quotations and aliases. Physical classification uses a fixed trait vocabulary
+and shared batches across characters, without synonym-comparison requests.
+Value comparisons attach both source IDs from their inputs. Independent valid
+decisions survive a malformed neighbor; unresolved decisions remain flagged.
+Requests preserve complete evidence coverage and cache completed validated batches. Lower the control for smaller
 requests. `character_profiles_requests.json` records sizes and request counts.
 Set `correction_attempts=0` (the new default) to skip invalid decisions without
 semantic retries or recursive batch subdivision. Existing nodes may retain `2`.

@@ -63,12 +63,9 @@ def fake_model(*args):
         if contract == batches.IDENTITY_PAIR:
             decisions.append({"job_id": job["job_id"], "relation": "same",
                               "evidence": refs([job["left"][0]["evidence_id"], job["right"][0]["evidence_id"]])})
-        elif contract == batches.KEY_PAIRS:
-            decisions.append({"job_id": job["job_id"], "same_trait": False})
         else:
             relation = "independent" if job["left"]["observation"]["persistence"] == "temporary" else "conflict"
             decisions.append({"job_id": job["job_id"], "relation": relation, "scope": "same_story_period",
-                              "evidence": refs([job["left"]["evidence_id"], job["right"]["evidence_id"]]),
                               **dict.fromkeys(("before_id", "after_id", "support_id", "temporal_quote"), "")})
     return {"decisions": decisions}
 
@@ -104,7 +101,7 @@ def test_complete_pipeline_precise_conflicts_and_schema(workspace, monkeypatch):
     assert (workspace / "character_profiles.schema.json").is_file()
     assert {c.args[4]["name"] for c in chat.call_args_list} == {
         cp.SCHEMA["name"], batches.IDENTITY_PAIR["name"], batches.TRAITS["name"],
-        batches.KEY_PAIRS["name"], batches.RELATIONS["name"]}
+        batches.RELATIONS["name"]}
     assert all(c.args[4]["strict"] for c in chat.call_args_list)
     assert validate_document(result) is result
 
@@ -203,10 +200,8 @@ def test_explicit_chronology_and_uncertainty_are_not_global(workspace, monkeypat
      {"observations": [{"evidence_id": k, "traits": [{"trait": "eye_color", "kind": "global"}]} for k in ("e1", "e2")]}),
     (batches.IDENTITY_PAIR, {"jobs": [{"job_id": "e1"}, {"job_id": "e2"}]},
      {"decisions": [{"job_id": k, "relation": "uncertain", "evidence": []} for k in ("e1", "e2")]}),
-    (batches.KEY_PAIRS, {"jobs": [{"job_id": "e1"}, {"job_id": "e2"}]},
-     {"decisions": [{"job_id": k, "same_trait": False} for k in ("e1", "e2")]}),
     (batches.RELATIONS, {"jobs": [{"job_id": "e1"}, {"job_id": "e2"}]},
-     {"decisions": [{"job_id": k, "relation": "uncertain", "scope": "unknown", "evidence": [],
+     {"decisions": [{"job_id": k, "relation": "uncertain", "scope": "unknown",
         **dict.fromkeys(("before_id", "after_id", "support_id", "temporal_quote"), "")} for k in ("e1", "e2")]}),
 ])
 def test_actual_transport_compact_retry_preserves_schema_and_ids(workspace, contract, payload, response):
@@ -309,7 +304,7 @@ def test_inferred_identity_support_warns_and_consolidation_continues(workspace, 
 
 
 @pytest.mark.parametrize("contract", [cp.SCHEMA, batches.TRAITS, batches.IDENTITY_PAIR,
-                                     batches.KEY_PAIRS, batches.RELATIONS])
+                                     batches.RELATIONS])
 def test_invalid_decisions_do_not_block_export_or_lose_sources(workspace, monkeypatch, contract):
     def broken(*args):
         if args[4] == contract:

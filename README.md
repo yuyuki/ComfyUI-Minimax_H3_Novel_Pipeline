@@ -198,7 +198,7 @@ Outputs are a dictionary (`MINIMAX_CHARACTER_EVIDENCE`) and the saved JSON path
 (`STRING`). `out_dir` defaults to `character_evidence` in the current run folder;
 the complete editable output is `character_evidence.json`. Controls are
 `chunk_chars`, `thinking`, `temperature`, `max_tokens`, `correction_attempts` and
-`force`, plus `character_scope`:
+`force`, plus optional `audit_thinking` (default false) and `character_scope`:
 
 - `proper_names` (default): scan every selected chapter for Unicode capitalized
   name candidates, index their occurrences throughout the novel, and batch nearby
@@ -214,14 +214,17 @@ exclusions and lowercase occurrences to reject ordinary sentence-start words.
 It is not language-independent entity recognition. It can miss unnamed descriptions before
 a name is revealed, distant pronoun-only descriptions, or names without capitalization.
 Use `all_characters` when that coverage matters. Both modes inspect all selected chapters;
-neither samples only the beginning of the novel. Only physical appearance is extracted:
-age, build, skin, hair, eyes, distinguishing features, clothing and accessories.
-Names identify observations; names, actions and plot context are not observations.
-Clothing, accessories, visible fatigue and injuries are contextual/temporary; lasting
-physical changes require explicit evidence. Stable anatomy described in a later
-chapter informs the global profile unless an explicit change is established.
-Explicit observations use an empty `rationale` to reduce output tokens.
-Try `thinking=False` for faster extraction and compare source fidelity on your model.
+neither samples only the beginning of the novel. The extraction schema requests only
+`physical_appearance`: age/age appearance, build, skin, hair, eyes, facial anatomy,
+teeth, scars and visible injuries. Clothing, accessories, equipment, actions, poses,
+expressions, sweating and plot context are excluded. Each observation describes one
+trait; hairstyles remain separate from enduring hair color/texture. Anatomy remains
+persistent even when described during movement or when less noticeable. Injuries
+are temporary unless a lasting transformation is explicitly established.
+Keep `thinking=True` for extraction when your Qwen model needs reasoning for attribution.
+`audit_thinking=False` runs the separate short semantic audit without reasoning;
+set it to true if needed after inspecting verdict quality. Both requests still use
+the shared structured-JSON transport and its cancellation/ChatML safeguards.
 
 Completed batches are cached under `output/minimax_h3_novel/<timestamp>/.cache/character_evidence`
 and reused within that run unless `force` is enabled. To resume an earlier execution,
@@ -240,15 +243,21 @@ Diagnostics are saved before extraction, after each batch and on interruption, i
 the selected fraction, completed batches and per-batch durations. Changed extraction
 contracts invalidate old caches; a previous broad extraction is not reused.
 
-Invalid quotations and temporary classifications receive up to `correction_attempts`
-targeted repair requests per batch (zero disables repairs). Each correction preserves
-the observation's character, fact and classification, and must quote one supplied
-passage exactly. Missing or rejected corrections remain available for manual review;
-valid observations are never dropped. Repairs are cached and their original values
-are retained in `extraction_correction`. Console warnings are grouped by chapter;
-`character_evidence_review.json` contains the detailed remaining issues and corrections.
-Exact quotation matching verifies source location, not the semantic correctness of
-every model interpretation; review the generated evidence before consolidation.
+Quotation repairs are local and require no model request: matching outer quotation
+marks, apostrophe typography and whitespace can be mapped to a uniquely matching
+verbatim source substring. Words, names and negation are never changed. Ambiguous
+or unsupported quotations remain flagged for review. Original quotations are kept
+in `extraction_correction`, and offsets always refer to the exact restored source.
+
+Each nonempty batch receives one semantic audit, normally without thinking. Its
+compact verdict is `valid`, `invalid` or `uncertain`, with an issue code rather than
+long commentary. `correction_attempts` bounds retries for malformed extraction/audit
+responses; zero still performs the initial audit and local quotation repair.
+Rejected or unaudited facts are retained for review and excluded from consolidation.
+`character_evidence_review.json` records issues and local corrections. Diagnostics
+separate extraction and audit calls; transport retries remain separately counted.
+The audit is a model judgment, not a guarantee of narrative accuracy; inspect the
+physical traits retained as well as the rejections before proceeding.
 Consolidation also saves `character_profiles_validation.json` before its LLM request,
 so exclusion details remain available even if that request fails.
 
@@ -289,7 +298,9 @@ It returns `character_profiles` (`MINIMAX_CHARACTER_PROFILES`) and `saved_file`
 `"persistence": "persistent"` enter consolidation. Choose `everything` to include
 temporary and unknown observations. The saved source document contains the selected
 evidence and full chapter text; the upstream evidence is unchanged. Coverage checks
-apply to the selected evidence. Filtering can remove context used to connect aliases.
+apply to the selected evidence. Identity requests also receive verbatim source
+context around each validated location (up to 900 characters on each side), so
+filtering observations does not remove the surrounding narrative text.
 `thinking` defaults to `false` for faster consolidation; enable it when comparing
 difficult identity or conflict decisions. Existing nodes may retain their saved value.
 
@@ -308,19 +319,28 @@ applies to malformed responses. Progress advances through chapters, identity
 comparisons and character profiles; it is not an estimate of remaining time.
 
 Identity grouping runs first in bounded chapter batches, followed by contextual
-comparisons across batches. Shared names or roles only select comparisons; they
-do not automatically merge identities. Trait analysis then runs per character
-in bounded batches. Precise trait keys are reconciled before comparing values
-across all batches and chapters. Repeated quotations are sent once per comparison
-request, with every job referencing the shared evidence table. Large characters
-can still require many comparisons. Every valid observation is retained exactly
-once, with its complete source quotation and positions; invalid observations
-remain in `character_profiles_validation.json` and `excluded_evidence`.
+comparisons across batches. Short quotations retain their original meaning and
+provenance; surrounding text is derived from the embedded chapter source for requests
+only. Shared names or roles select comparisons, never automatic merges. Confirmed
+alias merges still require source-supported connecting names and evidence from both
+sides. The most complete supplied label is used for a merged identity.
+
+Physical traits are classified in shared bounded batches across characters, using
+a fixed vocabulary (hair_color, hair_thickness, build, neck, adams_apple, etc.).
+There is no separate model pass comparing arbitrary trait-key synonyms. Values are
+compared only within one character and the same precise category, across chapters.
+Both evidence references for each value comparison are attached directly from its
+input pair; the model cannot omit or substitute them. Chronological claims still
+require exact source testimony. Repeated quotations are sent once per comparison
+request. Every valid observation is retained exactly once, even if no trait is
+accepted; invalid observations remain in the validation report and excluded_evidence.
 
 Validated requests are cached under `<run>/<out_dir>/.cache/character_profiles`.
 If a model response remains invalid after the configured corrections, consolidation
-logs a warning and subdivides the failed batch to recover independent decisions.
-Unresolved identity decisions leave observations separate; invalid trait assignments
+logs a warning and retains independently valid, non-duplicated decisions from the
+response. Only remaining failures are subdivided when correction_attempts is positive;
+zero performs no retry/subdivision. Unresolved identity decisions leave observations
+separate; invalid trait assignments
 are skipped and invalid comparisons remain uncertain. Original evidence is retained.
 `character_profiles_requests.json` records warnings and their affected inputs.
 These fallbacks are not cached as successful model decisions. Connection, filesystem,

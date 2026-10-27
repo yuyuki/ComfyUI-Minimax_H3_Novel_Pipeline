@@ -11,6 +11,8 @@ from .chapter_selection import chapter_path_list
 
 
 class CharacterEvidenceExtractorNode:
+    DESCRIPTION = "Extract physical appearance only (including age and scars); audit concise verdicts separately."
+
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
@@ -25,6 +27,8 @@ class CharacterEvidenceExtractorNode:
             "force": ("BOOLEAN", {"default": False}),
             "character_scope": (list(character_evidence.SCOPES), {"default": "proper_names"}),
         }, "optional": {
+            "audit_thinking": ("BOOLEAN", {"default": False, "tooltip":
+                "Enable reasoning for the semantic audit too. Slower; extraction keeps its own thinking setting."}),
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Previous run folder, e.g. 20261025154413. Reuse matching character evidence batches; "
                 "leave empty for a fresh run. Keep the original settings and force disabled."}),
@@ -44,7 +48,7 @@ class CharacterEvidenceExtractorNode:
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="character_evidence",
             chunk_chars=5500, thinking=True, temperature=0.15, max_tokens=8192,
-            correction_attempts=2, force=False, character_scope="proper_names", resume_run=""):
+            correction_attempts=2, force=False, character_scope="proper_names", resume_run="", audit_thinking=False):
         started = time.perf_counter()
         if character_scope not in character_evidence.SCOPES:
             raise ValueError("Invalid character_scope.")
@@ -75,13 +79,14 @@ class CharacterEvidenceExtractorNode:
         args = argparse.Namespace(chunk_chars=int(chunk_chars), max_tokens=int(max_tokens),
                                   temperature=float(temperature), correction_attempts=int(correction_attempts),
                                   thinking=bool(thinking), force=bool(force), base_url=config["api_url"],
-                                  character_scope=character_scope)
+                                  character_scope=character_scope, audit_thinking=bool(audit_thinking))
         sources = []
         for path in paths:
             lmstudio_pipeline.comfy_interrupt_check()
             sources.append(character_evidence.read_source(path))
         occurrences = character_evidence.index_names(sources) if character_scope == "proper_names" else [[] for _ in paths]
-        diagnostics = {"character_scope": character_scope, "resume_run": resume_run,
+        diagnostics = {"extraction_focus": "physical_appearance", "thinking": bool(thinking),
+                       "audit_thinking": bool(audit_thinking), "character_scope": character_scope, "resume_run": resume_run,
                        "chapters": [], "llm_requests": 0,
                        "estimated_input_tokens": 0, "estimated_output_tokens": 0,
                        "token_estimation": "ceil(characters / 4); includes transport retries; not tokenizer usage",
