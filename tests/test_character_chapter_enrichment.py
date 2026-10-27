@@ -293,6 +293,57 @@ def test_invalid_presence_saves_diagnostics_before_generation_fails(output, monk
     assert warning['input']['sequence']['source'] == cinematic(data)[0]['sequences'][0]['source']
 
 
+def test_presence_bounds_48_candidates_without_losing_any(output, monkeypatch):
+    data = consolidated()
+    chapter = ce.selected_chapter(data, cinematic(data))
+    profile = vp.prepare_profiles(data)[0]
+    profiles = [{**deepcopy(profile), 'local_id': f'char_{i}', 'canonical_name': f'Person {i}'} for i in range(48)]
+    seen = []
+    def chat(client, model, system, prompt, schema, *args):
+        assert schema == ce.PRESENCE
+        payload = json.loads(prompt)
+        assert payload['sequence'] == chapter['sequences'][0]
+        assert 1 <= len(payload['candidates']) <= 8
+        seen.extend(c['local_id'] for c in payload['candidates'])
+        return {'characters': [{'local_id': c['local_id'], 'presence': 'mentioned',
+                'label': c['canonical_name'], 'source_quote': payload['sequence']['source']}
+                for c in payload['candidates']], 'unresolved': []}
+    monkeypatch.setattr(vp.lmstudio_json, 'chat_json', chat)
+    result = ce.enrich(data, profiles, chapter, batches.Requests(output, None, 'qwen', settings(mode='strict_canon')))
+    assert seen == [p['local_id'] for p in profiles]
+    assert [r['local_id'] for r in result['sequences'][0]['characters']] == seen
+
+
+@pytest.mark.parametrize('defect', ['missing', 'duplicate', 'unknown'])
+def test_presence_splits_failed_batches_with_schema_and_full_context(output, defect):
+    from tests.test_structured_json import Stream, client_for
+    candidates = [{'local_id': 'char_a', 'canonical_name': 'Same name'},
+                  {'local_id': 'char_b', 'canonical_name': 'Same name'}]
+    context = {'sequence': {'sequence': 2, 'source': 'He waits.', 'adaptation': {'event': 'Waiting.'}},
+               'previous_context': [{'sequence': 1, 'source': 'Earlier identity evidence.'}]}
+    rows = [{'local_id': c['local_id'], 'presence': 'mentioned', 'label': 'Same name',
+             'source_quote': 'He waits.'} for c in candidates]
+    invalid = {'missing': rows[:1], 'duplicate': [rows[0], rows[0], rows[1]],
+               'unknown': [*rows, {**rows[0], 'local_id': 'char_unknown'}]}[defect]
+    client, create = client_for(*(Stream([json.dumps(response)]) for response in [
+        {'characters': invalid, 'unresolved': []}, {'characters': invalid, 'unresolved': []},
+        {'characters': rows[:1], 'unresolved': []}, {'characters': rows[1:], 'unresolved': []}]))
+    requests = batches.Requests(output, client, 'qwen', settings(mode='strict_canon', correction_attempts=1))
+    results = list(ce._presence_decisions(requests, context, candidates))
+    assert [r for result in results for r in result['characters']] == rows
+    assert create.call_count == 4
+    for call in create.call_args_list:
+        assert call.kwargs['response_format'] == {'type': 'json_schema', 'json_schema': ce.PRESENCE}
+        messages = str(call.kwargs['messages'])
+        assert 'Earlier identity evidence.' in messages and 'He waits.' in messages
+    correction = str(create.call_args_list[1].kwargs['messages'])
+    assert {'missing': 'Missing:', 'duplicate': 'duplicate:', 'unknown': 'unknown:'}[defect] in correction
+    assert ('char_unknown' if defect == 'unknown' else 'char_a' if defect == 'duplicate' else 'char_b') in correction
+    warning = util.load_json(output / 'character_profiles_requests.json')['warnings'][0]
+    assert warning['input']['candidates'] == candidates
+    assert warning['response']['characters'] == invalid
+
+
 def test_local_injury_is_sourced_without_creating_a_global_scar(output, monkeypatch):
     data = consolidated(observation('Her arm is burned.', persistence='temporary', attribute='distinguishing_feature'))
     chapter = ce.selected_chapter(data, cinematic(data))
