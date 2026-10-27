@@ -19,6 +19,10 @@ Never merge homonyms on a name alone. Linked aliases are the operator's confirme
 visible means depicted, offscreen means heard but not seen, mentioned means only referred to.
 Use uncertain when the context cannot establish identity. Absent characters need empty quote
 and label. Every other result requires an exact quote from CURRENT source, not adaptation.
+Copy one contiguous passage from sequence.source, preserving words and punctuation.
+Never quote previous_context or join passages with ellipses. Use absent with empty
+quote and label when the candidate is not in the current source; uncertain still
+requires a current-source mention whose identity is ambiguous.
 label is the contextual name of the character, not a pronoun. Preserve source spelling.
 Unknown characters go in unresolved with exact current source quotes. A mention never adds
 a person to the image. Adaptation determines depiction, original text determines identity.
@@ -103,10 +107,31 @@ def selected_chapter(data, chapters):
 
 
 def request(requests, system, contract, payload, check):
-    result = requests.call(system, contract, payload, check)
+    try:
+        result = requests.call(system, contract, payload, check)
+    finally:
+        util.save_json(requests.output / 'character_profiles_requests.json', requests.stats)
     if result is None:
         raise ValueError(f"{contract['name']}: no valid decision after corrections; inspect source and retry.")
     return result
+
+
+def presence_quote(row, source, location):
+    """Restore source whitespace without accepting changes to evidence wording."""
+    quote = row['source_quote']
+    if quote.strip() and quote in source:
+        return
+    parts = re.split(r'\s+', quote.strip())
+    match = re.search(r'\s+'.join(re.escape(part) for part in parts), source) if quote.strip() else None
+    if match is not None:
+        row['source_quote'] = match.group()
+        return
+    raise ValueError(
+        f'Presence {location}: source_quote {quote[:160]!r} is not a contiguous quote from sequence.source. '
+        'Copy the exact current-source words and punctuation, not adaptation or previous_context; '
+        'do not paraphrase or join passages. If the candidate is absent, return presence="absent" '
+        'with empty source_quote and label. Uncertain identities still require a current-source mention.'
+    )
 
 
 def batches(requests, rows, system, contract, context, field, fraction=1.0):
@@ -144,9 +169,10 @@ def enrich(data, profiles, chapter, requests):
                 ids = [r['local_id'] for r in value['characters']]
                 if len(ids) != len(set(ids)) or set(ids) != {p['local_id'] for p in batch}:
                     raise ValueError('Return every candidate local_id exactly once.')
-                for r in value['characters'] + value['unresolved']:
-                    if r.get('presence') != 'absent' and (not r['source_quote'] or r['source_quote'] not in seq['source']):
-                        raise ValueError('Presence requires an exact current source quote.')
+                for i, r in enumerate(value['characters'] + value['unresolved']):
+                    if r.get('presence') != 'absent':
+                        presence_quote(r, seq['source'], f"sequence {seq['sequence']}, row {i}, "
+                                       f"identity {r.get('local_id', r['label'])!r}")
             response = request(requests, PRESENCE_SYSTEM, PRESENCE, {**context, 'candidates': batch}, check)
             characters.extend(r for r in response['characters'] if r['presence'] != 'absent')
             for row in response['unresolved']:

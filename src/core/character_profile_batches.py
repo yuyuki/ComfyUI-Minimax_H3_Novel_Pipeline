@@ -191,7 +191,7 @@ class Requests:
                     raise
                 if attempt == self.args.correction_attempts:
                     warning = {"schema": contract["name"], "attempts": attempt + 1,
-                               "reason": str(exc)[:1200], "input": payload}
+                               "reason": str(exc)[:1200], "input": payload, "response": deepcopy(result)}
                     self.stats["warnings"].append(warning)
                     logger.warning("Character profiles: ignoring invalid model decision (%s) after %s "
                                    "attempt(s): %s. Sources retained; see character_profiles_requests.json.",

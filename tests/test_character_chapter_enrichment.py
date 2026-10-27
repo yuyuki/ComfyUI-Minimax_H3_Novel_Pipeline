@@ -241,6 +241,58 @@ def test_whitespace_mapping_preserves_original_offsets():
     assert ce.source_span('She waits. She waits.', 'She waits.') is None
 
 
+@pytest.mark.parametrize('quote', ['She wears a red dress.', 'She\nwears a red dress.'])
+def test_presence_restores_source_whitespace(quote):
+    row = {'source_quote': quote}
+    source = 'Start. She wears\t a red dress.\r\nEnd.'
+    ce.presence_quote(row, source, 'hero')
+    assert row['source_quote'] == 'She wears\t a red dress.'
+
+
+@pytest.mark.parametrize('quote', ['', '  ', 'She wears a blue dress.', 'She wears ... dress.',
+                                  'She wears a red dress!'])
+def test_presence_rejects_changed_or_empty_evidence(quote):
+    with pytest.raises(ValueError, match='Presence hero:'):
+        ce.presence_quote({'source_quote': quote}, 'She wears a red dress.', 'hero')
+
+
+def test_presence_correction_identifies_row_and_preserves_candidates(output, monkeypatch):
+    data = consolidated()
+    chapter = ce.selected_chapter(data, cinematic(data))
+    pid = data['profiles'][0]['local_id']
+    prompts = []
+    def chat(client, model, system, prompt, schema, *args):
+        assert schema == ce.PRESENCE
+        prompts.append(prompt)
+        return {'characters': [{'local_id': pid, 'presence': 'mentioned', 'label': 'Hero',
+                'source_quote': 'Invented quote.' if len(prompts) == 1 else chapter['sequences'][0]['source']}],
+                'unresolved': []}
+    monkeypatch.setattr(vp.lmstudio_json, 'chat_json', chat)
+    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+                       batches.Requests(output, None, 'qwen', settings(mode='strict_canon', correction_attempts=1)))
+    assert result['sequences'][0]['characters'][0]['presence'] == 'mentioned'
+    assert len(prompts) == 2
+    assert json.loads(prompts[0]) == json.loads(prompts[1].split('\nRejected:')[0])
+    correction = prompts[1].split('\nRejected:')[1]
+    assert pid in correction and 'Invented quote.' in correction and 'sequence.source' in correction
+
+
+def test_invalid_presence_saves_diagnostics_before_generation_fails(output, monkeypatch):
+    data = consolidated()
+    pid = data['profiles'][0]['local_id']
+    response = {'characters': [{'local_id': pid, 'presence': 'uncertain', 'source_quote': '',
+                                'label': 'Hero'}], 'unresolved': []}
+    monkeypatch.setattr(vp.lmstudio_json, 'chat_json', lambda *args: deepcopy(response))
+    with pytest.raises(ValueError, match='no valid decision'):
+        vp.generate(data, vp.prepare_profiles(data), output, None, 'qwen',
+                    settings(mode='strict_canon', correction_attempts=1), ce.selected_chapter(data, cinematic(data)))
+    warning = util.load_json(output / 'character_profiles_requests.json')['warnings'][0]
+    assert warning['attempts'] == 2
+    assert warning['response'] == response
+    assert pid in warning['reason']
+    assert warning['input']['sequence']['source'] == cinematic(data)[0]['sequences'][0]['source']
+
+
 def test_local_injury_is_sourced_without_creating_a_global_scar(output, monkeypatch):
     data = consolidated(observation('Her arm is burned.', persistence='temporary', attribute='distinguishing_feature'))
     chapter = ce.selected_chapter(data, cinematic(data))
