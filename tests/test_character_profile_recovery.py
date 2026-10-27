@@ -262,3 +262,84 @@ def test_shannon_merges_across_chapters_with_side_support_and_no_color_style_con
     assert not profile["unresolved_conflicts"]
     assert len(profile["identity_support"]) == 2
     assert validate_document(result) is result
+
+
+@pytest.mark.parametrize("text", [
+    "Ted Conrad, son professeur, portait une moustache. Indy avait les jambes poilues.",
+    "Indy regardait Ted Conrad. Ted Conrad portait une moustache. Indy avait les jambes poilues.",
+])
+def test_conrad_indy_cooccurrence_cannot_validate_initial_or_pair_merge(tmp_path, monkeypatch, text):
+    data = narrative_document(text,
+        observation("portait une moustache", character="Ted Conrad", value="moustache"),
+        observation("avait les jambes poilues", character="Indy", value="jambes poilues"))
+    records = cp.prepare_evidence(data)
+    ids = list(records)
+    merged = group(ids, canonical_name="Ted Conrad", identity_support=[{"evidence_id": k} for k in ids])
+    with pytest.raises(ValueError, match="connecting quotations"):
+        cp.build_profiles({"profiles": [merged]}, records)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", fake_model)
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    groups = [group([k], canonical_name=records[k]["character"]) for k in ids]
+    result = batches.reconcile_identities(groups, records, requests)
+    assert len(result) == 2
+    assert all(not p["aliases"] for p in result)
+    assert sum(len(p["supporting_evidence"]) for p in result) == 2
+
+
+@pytest.mark.parametrize("left,right,text", [
+    ("Doriane", "Doriane Belecamus", "Doriane Belecamus était Miss Glaçon."),
+    ("Belecamus", "Doriane Belecamus", "Doriane Belecamus était Miss Glaçon."),
+    ("Henry Jones Jr.", "Indy", "Henry Jones Jr. Mais ceux qui le connaissaient l’appelaient Indy."),
+])
+def test_explicit_name_links_remain_usable(left, right, text):
+    assert cp._alias_link(left, right, [text])
+    assert cp._alias_link(right, left, [text])
+
+
+def test_doriane_name_expansion_can_merge_across_chapters(tmp_path, monkeypatch):
+    data = document(observation("Doriane était jeune.", character="Doriane", value="jeune"),
+        observation("Doriane Belecamus avait les cheveux noirs.", character="Doriane Belecamus", value="cheveux noirs"))
+    records = cp.prepare_evidence(data)
+    groups = [group([k], canonical_name=v["character"]) for k, v in records.items()]
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", fake_model)
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    result = batches.reconcile_identities(groups, records, requests)
+    assert len(result) == 1
+    assert result[0]["aliases"] == ["Doriane"]
+
+
+def test_partial_traits_complete_only_missing_shannon_feet_once(tmp_path, monkeypatch):
+    data = document(observation("Shannon avait les cheveux roux.", character="Shannon", value="cheveux roux"),
+        observation("Shannon avait des pieds démesurés.", character="Shannon", value="pieds démesurés"))
+    records = cp.prepare_evidence(data)
+    ids = list(records)
+    calls = []
+    def model(*args):
+        assert args[4] == batches.TRAITS
+        payload = request_payload(args[3])
+        calls.append([r["evidence_id"] for r in payload["observations"]])
+        key, trait = (ids[0], "hair_color") if len(calls) == 1 else (ids[1], "foot_size")
+        return {"observations": [{"evidence_id": key, "traits": [{"trait": trait, "kind": "global"}]}]}
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", model)
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    result = batches.classify_traits(records, requests)
+    assert calls == [ids, [ids[1]]]
+    assert result[ids[1]] == [{"trait": "foot_size", "kind": "global"}]
+    assert set(result) == set(ids)
+
+
+def test_partial_identity_completion_only_resends_missing_job(tmp_path, monkeypatch):
+    records = cp.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.")))
+    rows = [batches.compact_record(k, v) for k, v in records.items()]
+    jobs = [{"job_id": str(i), "left": rows[:1], "right": rows[1:]} for i in range(2)]
+    calls = []
+    def model(*args):
+        assert args[4] == batches.IDENTITY_PAIR
+        payload = request_payload(args[3])
+        calls.append([j["job_id"] for j in payload["jobs"]])
+        return {"decisions": [{"job_id": calls[-1][0], "relation": "same", "left_support": [0], "right_support": [0]}]}
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", model)
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    result = list(requests.decisions(jobs, batches.IDENTITY_SYSTEM, batches.IDENTITY_PAIR))
+    assert calls == [["0", "1"], ["1"]]
+    assert len(result) == 2 and all(d["relation"] == "same" for d, _ in result)

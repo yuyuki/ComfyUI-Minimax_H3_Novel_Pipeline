@@ -311,8 +311,10 @@ the response plus a retry/framing margin and conservatively counts UTF-8 bytes.
 Lowering `context_tokens` makes smaller requests; an indivisible oversized
 observation produces an explicit diagnostic, never truncated evidence.
 
-`correction_attempts` defaults to `0`: invalid decisions are skipped immediately,
-without semantic correction or recursive subdivision requests. Sources remain in
+`correction_attempts` defaults to `0`: there are no full-response semantic retries
+or recursive subdivision requests. A partially valid identity-comparison or trait
+batch gets one completion pass containing only its missing/invalid rows, including
+a single missing row. This bounded pass also runs at zero corrections. Sources remain in
 the output; unverified identities stay separate and unverified traits are not
 promoted. Set existing nodes to `0` manually. Shared JSON transport recovery still
 applies to malformed responses. Progress advances through chapters, identity
@@ -322,8 +324,11 @@ Identity grouping runs first in bounded chapter batches, followed by contextual
 comparisons across batches. Short quotations retain their original meaning and
 provenance; surrounding text is derived from the embedded chapter source for requests
 only. Shared names or roles select comparisons, never automatic merges. Confirmed
-alias merges still require source-supported connecting names and evidence from both
-sides. Identity comparisons select zero-based supporting observation positions
+alias merges require evidence from both sides and an explicit source-bound name
+link: a full name containing the short name, or supported French/English alias
+wording. Merely appearing together in a passage is insufficient, including in the
+initial chapter grouping. This conservative check is a necessary condition, not an
+automatic merge rule; unfamiliar narrative links can remain separate. Identity comparisons select zero-based supporting observation positions
 separately from the left and right inputs. Code maps these positions to source IDs;
 empty, duplicate and out-of-range selections are rejected. Shared names alone
 still cannot confirm identity. The most complete supplied label is used for a merged identity.
@@ -352,8 +357,10 @@ accepted; invalid observations remain in the validation report and excluded_evid
 Validated requests are cached under `<run>/<out_dir>/.cache/character_profiles`.
 If a model response remains invalid after the configured corrections, consolidation
 logs a warning and retains independently valid, non-duplicated decisions from the
-response. Only remaining failures are subdivided when correction_attempts is positive;
-zero performs no retry/subdivision. Unresolved identity decisions leave observations
+response. Partial identity-comparison/trait batches receive one targeted completion
+pass; full failures are subdivided only when correction_attempts is positive.
+Unclassified observations are listed in `unclassified_evidence_ids` in the request
+report. Unresolved identity decisions leave observations
 separate; invalid trait assignments
 are skipped and invalid comparisons remain uncertain. Original evidence is retained.
 `character_profiles_requests.json` records warnings and their affected inputs.

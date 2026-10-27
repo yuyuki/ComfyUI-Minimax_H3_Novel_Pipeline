@@ -6,6 +6,7 @@ from copy import deepcopy
 import hashlib
 import json
 import logging
+import re
 import unicodedata
 
 from . import character_evidence, util
@@ -24,7 +25,10 @@ Shared names, roles or appearance alone do not establish identity. Use quotation
 context; keep uncertain identities separate with identity_status ambiguous.
 canonical_name must be a supplied character label.
 identity_support contains explicit physical observations with identifying quotation context. Different
-labels need a connected chain of quotations or source_context naming both labels.
+labels need explicit alias wording or a full name containing the short name.
+Co-occurrence is NOT an alias: a teacher and student, speakers in a conversation,
+or a person observing another person must remain separate. Never merge them merely
+because both names occur in source_context. Keep unsupported aliases separate.
 source_context is verbatim text around the observation, with source offsets. Use it
 to resolve pronouns, aliases and narrative continuity. It is not a new physical fact.
 Group observations belonging to the same person when context establishes continuity;
@@ -196,6 +200,33 @@ def _refs(value, allowed):
     return ids
 
 
+def _alias_link(left, right, contexts):
+    """Require name expansion or explicit alias syntax, never narrative co-occurrence.
+
+    This is a conservative necessary condition, not an automatic merge decision.
+    Unknown narrative links remain separate for model/user review.
+    """
+    left, right = _normalized(left), _normalized(right)
+    for first, second in ((left, right), (right, left)):
+        name = r"(?<!\w)" + re.escape(first) + r"(?!\w)"
+        # A supplied full name can anchor its first/surname abbreviation.
+        if first != second and re.search(name, second):
+            if any(re.search(r"(?<!\w)" + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
+                return True
+        connector = (r"\s*,?\s*(?:(?:aussi |également )?(?:appelé[e]?|surnommé[e]?|nommé[e]?)"
+                     r"|(?:était|est) (?:aussi |également )?(?:appelé[e]?|surnommé[e]?|nommé[e]?)"
+                     r"|alias|(?:also )?known as|(?:was |is )(?:also )?(?:called|known as))\s+"
+                     r"[\"«]?\s*")
+        if any(re.search(name + connector + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
+            return True
+        # Explicit anaphoric naming after a formal name (e.g. diploma -> nickname).
+        naming = (r"\s*\.?\s*(?:Mais |But )?(?:ceux qui (?:le|la) connaissaient "
+                  r"l[’']appelaient|those who knew (?:him|her) called (?:him|her))\s+")
+        if any(re.search(name + naming + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
+            return True
+    return False
+
+
 def build_profiles(plan, records):
     """Reject lost evidence and unsupported merges; copy all facts from current input."""
     records = _usable(records)
@@ -227,9 +258,9 @@ def build_profiles(plan, records):
             for key in support:
                 contexts = [records[key]["quotation"],
                             *(part["text"] for part in records[key].get("_source_context", []))]
-                quoted = {name for name in names if any(name in text for text in contexts)}
-                if quoted & connected:
-                    connected.update(quoted)
+                for name in names - connected:
+                    if any(_alias_link(known, name, contexts) for known in connected):
+                        connected.add(name)
             if before == connected:
                 break
         if not names <= connected:

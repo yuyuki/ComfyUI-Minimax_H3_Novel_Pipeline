@@ -90,3 +90,23 @@ Le rapprochement Shannon apparaissait dans un lot signalant un support d’ident
 incomplet ; le journal ne conserve pas la réponse brute rejetée permettant d’attribuer
 précisément l’erreur à cette paire. Le nouveau contrat élimine la recopie des IDs,
 mais ne fusionne jamais automatiquement deux personnes sur leur seul nom.
+
+
+## Correction après le run 20261027082041
+
+- Fusion erronée Ted Conrad/Indy : la cooccurrence de noms dans le contexte ne
+  constitue plus une preuve d'alias, dès la partition initiale et à la réconciliation.
+  Le contrôle exige une expansion de nom présente dans la source ou une formulation
+  d'alias explicite reconnue. Il ne fusionne jamais automatiquement les homonymes.
+- Les expansions Doriane/Doriane Belecamus et les alias explicites restent possibles.
+  Les formulations narratives non reconnues restent séparées : ce contrôle prudent
+  n'est pas un analyseur sémantique universel.
+- Les lots partiellement valides de comparaisons d'identités et de classifications
+  reçoivent une passe ciblée sur les seuls éléments manquants, même avec zéro
+  correction. Une observation isolée peut être récupérée. Les réponses déjà validées
+  ne sont pas renvoyées. Les observations encore non classées sont listées dans
+  `unclassified_evidence_ids` du rapport de requêtes.
+- Version de cache des décisions portée à 6. Aucun changement du format sauvegardé.
+- Régressions hors ligne : fusion Conrad/Indy rejetée, liens de noms explicites
+  acceptés, regroupement Doriane, récupération des pieds de Shannon et d'un job
+  d'identité manquant. Confirmation LM Studio à effectuer par une nouvelle consolidation.
