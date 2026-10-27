@@ -2,6 +2,8 @@
 import hashlib
 from unittest.mock import Mock
 
+import pytest
+
 from minimax_h3_novel_pipeline.core import character_profiles as cp, character_profile_batches as batches
 from minimax_h3_novel_pipeline.core.character_profile_document import validate_document
 from tests.test_character_evidence import observation
@@ -120,3 +122,81 @@ def test_global_trait_classification_batches_across_characters(tmp_path, monkeyp
     assert len(calls) == 1
     assert len(request_payload(calls[0].args[3])["observations"]) == 5
     assert not any(c.args[4]["name"] == "character_trait_keys" for c in chat.call_args_list)
+
+
+@pytest.mark.parametrize("value,quote,trait,kind", [
+    ("cheveux noirs", "cheveux noirs et yeux sombres", "eye_color", "global"),
+    ("pleines", "ses lèvres pleines", "hair_color", "global"),
+    ("pleines", "ses lèvres pleines", "leg_shape", "global"),
+    ("pleines", "ses lèvres pleines", "cheekbones", "global"),
+    ("yeux brillants", "ses yeux brillants", "hair_style", "global"),
+    ("yeux brillants", "ses yeux brillants", "eye_color", "global"),
+    ("petit homme", "un petit homme mal habillé", "facial_hair", "temporary"),
+    ("barbe de deux jours", "barbe de deux jours", "facial_hair", "global"),
+    ("éclat glacial", "Ses yeux avaient un éclat glacial", "eye_color", "global"),
+    ("épaisse", "son épaisse chevelure aile-de-corbeau", "hair_color", "global"),
+    ("aile-de-corbeau", "son épaisse chevelure aile-de-corbeau", "hair_thickness", "global"),
+    ("pieds démesurés", "ses pieds démesurés", "build", "global"),
+])
+def test_physical_subject_guard_rejects_observed_pollution(value, quote, trait, kind):
+    with pytest.raises(ValueError):
+        batches.validate_trait_subject(observation(quote, value=value), {"trait": trait, "kind": kind})
+
+
+@pytest.mark.parametrize("value,quote,trait,kind", [
+    ("cheveux noirs", "cheveux noirs et yeux sombres", "hair_color", "global"),
+    ("pleines", "ses lèvres pleines", "lips", "global"),
+    ("yeux brillants", "ses yeux brillants", "eye_appearance", "global"),
+    ("petit homme", "un petit homme mal habillé", "height", "global"),
+    ("barbe de deux jours", "barbe de deux jours", "facial_hair", "temporary"),
+    ("épaisse", "son épaisse chevelure aile-de-corbeau", "hair_thickness", "global"),
+    ("aile-de-corbeau", "son épaisse chevelure aile-de-corbeau", "hair_color", "global"),
+    ("long cou à la pomme d’Adam proéminente", "long cou à la pomme d’Adam proéminente", "adams_apple", "global"),
+    ("long black hair and green eyes", "long black hair and green eyes", "eye_color", "global"),
+])
+def test_physical_subject_guard_preserves_supported_traits(value, quote, trait, kind):
+    batches.validate_trait_subject(observation(quote, value=value), {"trait": trait, "kind": kind})
+
+
+def test_polluted_classification_keeps_good_assignments_without_false_conflicts(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline.core import path_access
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    data = narrative_document("Elle avait les cheveux noirs, les lèvres pleines et les yeux brillants.",
+        observation("cheveux noirs", value="cheveux noirs"),
+        observation("les lèvres pleines", value="pleines"),
+        observation("les yeux brillants", value="yeux brillants"))
+    records = cp.prepare_evidence(data)
+    choices = {"cheveux noirs": ["hair_color", "eye_color"],
+               "pleines": ["lips", "hair_color", "hair_style", "leg_shape", "cheekbones"],
+               "yeux brillants": ["eye_appearance", "hair_style", "eye_color"]}
+    def model(*args):
+        if args[4] == batches.TRAITS:
+            payload = request_payload(args[3])
+            assert all("source_context" not in row["observation"] for row in payload["observations"])
+            return {"observations": [{"evidence_id": row["evidence_id"], "traits": [
+                {"trait": key, "kind": "global"} for key in choices[row["observation"]["value"]]]}
+                for row in payload["observations"]]}
+        assert args[4] != batches.RELATIONS  # Distinct body properties must never be compared.
+        return fake_model(*args)
+    chat = Mock(side_effect=model)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    result, _ = cp.consolidate(data, records, tmp_path, None, "qwen", settings(correction_attempts=0))
+    profile = result["profiles"][0]
+    assert {r["trait"] for r in profile["global_traits"]} == {"hair_color", "lips", "eye_appearance"}
+    assert not profile["unresolved_conflicts"]
+    assert len(profile["supporting_evidence"]) == 3
+    assert validate_document(result) is result
+
+
+def test_value_comparison_excludes_narrative_context(tmp_path, monkeypatch):
+    data = narrative_document("Élise était là. Ses cheveux noirs luisaient. Ses cheveux bruns étaient longs.",
+        observation("cheveux noirs", value="cheveux noirs"), observation("cheveux bruns", value="cheveux bruns"))
+    records = cp.prepare_evidence(data)
+    assert all(r.get("_source_context") for r in records.values())
+    def respond(*args):
+        assert "source_context" not in args[3]
+        return fake_model(*args)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", respond)
+    requests = batches.Requests(tmp_path, None, "qwen", settings())
+    rows = batches.compare_values("hair_color", dict.fromkeys(records, "global"), records, requests)
+    assert rows and {r["evidence_id"] for r in rows[0]["evidence"]} == set(records)

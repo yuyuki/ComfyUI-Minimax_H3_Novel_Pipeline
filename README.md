@@ -326,6 +326,14 @@ alias merges still require source-supported connecting names and evidence from b
 sides. The most complete supplied label is used for a merged identity.
 
 Physical traits are classified in shared bounded batches across characters, using
+only each value and its own quotation: the surrounding identity context is excluded
+from both classification and value comparisons. Local conservative French/English
+body-feature checks reject clear cross-category pollution (hair as eye color, lips
+as legs, brightness as a color) and transient stubble promoted to a global trait.
+Unknown wording still depends on the model; these checks are not a universal
+semantic parser. Independently valid assignments survive other rejected assignments
+for the same observation. Rejected facts remain in supporting_evidence and the
+request report, without being used to manufacture conflicts. Classification uses
 a fixed vocabulary (hair_color, hair_thickness, build, neck, adams_apple, etc.).
 There is no separate model pass comparing arbitrary trait-key synonyms. Values are
 compared only within one character and the same precise category, across chapters.

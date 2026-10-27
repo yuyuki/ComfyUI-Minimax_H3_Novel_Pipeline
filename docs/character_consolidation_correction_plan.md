@@ -48,3 +48,26 @@ Ruff, contrôle d’architecture et git diff --check réussissent.
 Le document réel 20261026222208 passe toujours la validation du chargeur, sans
 modification du fichier. Aucun essai LM Studio effectué : la qualité des décisions
 et le temps total restent à vérifier lors de la relance de la consolidation.
+
+## Correction après le run 20261027073525
+
+Les identités ont progressé (27 → 16 profils, 53 → 27 requêtes), mais des catégories
+valides syntaxiquement se sont retrouvées associées aux mauvais faits. Les lèvres,
+les yeux et les cheveux de Doriane/Madeleine produisaient des conflits artificiels.
+
+- [x] Conserver le contexte narratif uniquement pour les identités.
+- [x] Limiter classification et comparaison aux valeurs et citations propres.
+- [x] Ajouter des garde-fous locaux FR/EN sur les sujets physiques et certaines
+  propriétés non ambiguës : cheveux/yeux/lèvres/jambes, couleur/épaisseur,
+  éclat des yeux et barbe de deux jours. Aucun fait nouveau n’est déduit.
+- [x] Sauver les affectations valides même si une autre catégorie de la même
+  observation est rejetée. Ne pas comparer les affectations de simple contexte.
+- [x] Invalider les caches de décisions précédents.
+- [ ] Vérifier sur la prochaine relance réelle la qualité des décisions du modèle.
+
+Les garde-fous ne prétendent pas comprendre tout vocabulaire ni toute langue.
+En cas de rejet, les observations sources restent intactes ; elles ne sont pas
+converties automatiquement en un portrait supposé correct. Aucun appel LLM
+supplémentaire n’est ajouté. Réutiliser l’extraction existante pour la relance.
+
+Validation de cette correction : 101 tests ciblés réussis ; suite complète : 788 réussis, 2 ignorés, 83 sous-tests réussis. Seul échec : privilège Windows de création de lien symbolique, inchangé. Ruff, architecture et vérification du diff réussissent. Pas de validation LM Studio dans cette session.

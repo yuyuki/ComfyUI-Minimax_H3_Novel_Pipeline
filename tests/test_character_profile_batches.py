@@ -51,7 +51,8 @@ def fake_model(*args):
         rows = []
         for row in payload["observations"]:
             item = row["observation"]
-            trait = ("height" if "mètre" in item["value"] else
+            trait = ("distinguishing_mark" if any(word in item["value"] for word in ("marque", "cicatrice")) else
+                     "height" if "mètre" in item["value"] else
                      "build" if "corpulent" in item["value"] else "eye_color")
             kind = "global" if item["persistence"] == "persistent" and item["classification"] == "explicit" else "context"
             if item["attribute"] in {"clothing", "accessory"} or item["persistence"] == "temporary":

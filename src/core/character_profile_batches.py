@@ -6,6 +6,8 @@ from copy import deepcopy
 from itertools import combinations, product
 import json
 import logging
+import re
+import unicodedata
 
 from openai import APIError
 
@@ -13,7 +15,7 @@ from . import character_profiles as cp, lmstudio_json, lmstudio_pipeline, progre
 from .editable_schemas import validate_document
 
 logger = logging.getLogger(__name__)
-DECISION_VERSION = 3
+DECISION_VERSION = 4
 RESERVE = 8192  # ChatML, compact retry instructions and bounded semantic corrections.
 TEXT = {"type": "string", "minLength": 1}
 REFS = cp._REFS
@@ -56,13 +58,18 @@ global: explicit persistent physical characteristics/age; temporary: clothing,
 equipment, injuries or temporary states; context: inference or
 uncertain persistence. An acquired scar is not a retroactive global trait: use
 context until a source-supported chronological change establishes its onset.
-Use the same precise body-feature key for an injury and its explicitly acquired scar
-(e.g. left_cheek_mark) so their chronology can be compared.
+Use distinguishing_mark for scars and injury for wounds; never invent a key.
+Describe only the supplied observation, not other features present in its quotation.
 Never infer a scar or healing date from a wound. Stable anatomy described in a later
 chapter applies across chapters unless explicit chronology establishes a change.
 Absence of earlier description is not a change and never licenses a conflicting build.
-Classify the value itself; context and quotations help disambiguate short values,
-but do not add neighboring facts. "épaisse" with a hair quotation is hair_thickness,
+Classify the value itself; its quotation only disambiguates short values.
+No surrounding narrative is supplied in this stage. Never assign features from
+another observation or from neighboring words describing a different body part.
+Prefer one trait per observation; use several only for independent details actually
+present in its value. "cheveux noirs" cannot be eye_color, and "yeux brillants"
+is eye_appearance, never eye_color or hair_style. Full lips cannot describe legs,
+hair or cheekbones. "épaisse" with a hair quotation is hair_thickness,
 not hair_color; "aile-de-corbeau" is hair_color, not hair_thickness.
 A lanky body is build, not skin. An Adam's apple is adams_apple, not chin.
 A short man is height, never clothing. Beard/stubble is facial_hair, not hair_style.
@@ -290,11 +297,11 @@ def decision_payload(jobs):
     return {"jobs": rows, "observations": list(observations.values())}
 
 
-def compact_record(key, item):
+def compact_record(key, item, *, identity_context=True):
     return {"evidence_id": key, "observation": {
         **{field: item[field] for field in ("character", "attribute", "value", "classification", "persistence", "quotation")},
         "source_file": item["provenance"]["file"], "chapter": item["provenance"]["chapter"],
-        "source_context": item.get("_source_context", []),
+        **({"source_context": item.get("_source_context", [])} if identity_context else {}),
     }}
 
 
@@ -429,20 +436,92 @@ def merge_groups(groups, records, extra_support=()):
             "identity_support": [{"evidence_id": k} for k in records if k in support]}
 
 
+
+# Conservative FR/EN checks for explicit anatomical cues. Unknown wording remains
+# a model decision; these rules never infer new facts or use neighboring narrative.
+_BODY_CUES = {
+    "hair": r"\b(?:cheveux?|chevelure|hair)\b",
+    "eyes": r"\b(?:yeux|oeil|eyes?|iris|regard|gaze)\b",
+    "lips": r"\b(?:levres?|lips?)\b",
+    "cheekbones": r"\b(?:pommettes?|cheekbones?)\b",
+    "teeth": r"\b(?:dents?|teeth|tooth)\b",
+    "neck": r"\b(?:cou|neck|adam)\b",
+    "legs": r"\b(?:jambes?|legs?)\b",
+    "arms": r"\b(?:bras|arms?)\b",
+    "feet": r"\b(?:pieds?|feet|foot)\b",
+    "shoulders": r"\b(?:epaules?|shoulders?)\b",
+    "build": r"\b(?:degingande\w*|lanky|corpulent\w*|musculeu\w*|muscular|charpente\w*|silhouette)\b",
+    "facial_hair": r"\b(?:barbe|moustache|mustache|beard|stubble)\b",
+}
+_BODY_TRAITS = {
+    "hair": {"hair_color", "hair_length", "hair_texture", "hair_thickness", "hair_style"},
+    "eyes": {"eye_color", "eye_size", "eye_shape", "eye_appearance"},
+    "lips": {"lips"}, "cheekbones": {"cheekbones"}, "teeth": {"teeth"},
+    "neck": {"neck", "adams_apple"}, "legs": {"leg_shape", "body_hair", "skin_color", "injury"},
+    "arms": {"arm_build", "body_hair", "skin_color", "injury"}, "feet": {"foot_size"},
+    "shoulders": {"shoulder_width", "build"}, "build": {"build"}, "facial_hair": {"facial_hair"},
+}
+_COLOR = r"\b(?:noir\w*|blanc\w*|brun\w*|roux|rousse|blond\w*|bleu\w*|vert\w*|gris\w*|noisette|sombre\w*|black|white|brown|red|auburn|blond\w*|blue|green|grey|gray|hazel|dark|raven|corbeau)\b"
+
+
+def _plain(text):
+    return "".join(c for c in unicodedata.normalize("NFKD", text.casefold())
+                   if not unicodedata.combining(c))
+
+
+def validate_trait_subject(item, assignment):
+    """Reject clear body/property mismatches without pretending to parse all prose."""
+    value, quote = _plain(item["value"]), _plain(item["quotation"])
+    trait, kind = assignment["trait"], assignment["kind"]
+    if trait == "context" and kind == "context":
+        return
+    bodies = {body for body, pattern in _BODY_CUES.items() if re.search(pattern, value)}
+    # A short adjective can borrow its referent from an unambiguous own quotation.
+    if not bodies:
+        quoted = {body for body, pattern in _BODY_CUES.items() if re.search(pattern, quote)}
+        if len(quoted) == 1:
+            bodies = quoted
+    allowed = set().union(*(_BODY_TRAITS[body] for body in bodies)) if bodies else None
+    if re.search(r"\b(?:cicatrice\w*|scar\w*)\b", value):
+        allowed = {"distinguishing_mark"}
+    elif re.search(r"\b(?:blessure\w*|wound\w*|injur\w*|brulure\w*|burns?)\b", value):
+        allowed = {"injury"}
+    elif re.fullmatch(r"(?:un |a )?(?:petit|grand|short|small|tall) (?:homme|man)", value):
+        allowed = {"height"}
+    if allowed is not None and trait not in allowed:
+        raise ValueError(f"Trait {trait} does not describe the observation's body feature.")
+    if bodies == {"hair"}:
+        has_color = bool(re.search(_COLOR, value))
+        has_thickness = bool(re.search(r"\b(?:epais\w*|thick\w*|thin|fin[es]*)\b", value))
+        if trait == "hair_color" and has_thickness and not has_color:
+            raise ValueError("Hair thickness is not a hair color.")
+        if trait == "hair_thickness" and has_color and not has_thickness:
+            raise ValueError("Hair color is not hair thickness.")
+    if trait == "eye_color" and re.search(r"\b(?:brillant\w*|bright|glacial|icy)\b", value) and not re.search(_COLOR, value):
+        raise ValueError("Eye brightness/expression is not eye color.")
+    if kind == "global" and (re.search(r"\b(?:stubble|barbe de (?:deux|[0-9]+) jours?|two.day beard)\b", value)
+                             or re.search(r"\b(?:eclat glacial|icy gaze|cold gaze)\b", value)):
+        raise ValueError("Transient beard or expression cannot become a global trait.")
+
+
 def classify_traits(records, requests):
     assignments = {}
-    rows = [compact_record(key, item) for key, item in records.items()]
+    rows = [compact_record(key, item, identity_context=False) for key, item in records.items()]
     def resolve(batch):
         allowed = {row["evidence_id"] for row in batch}
+        def check_trait(key, trait):
+            item = records[key]
+            if trait["kind"] == "global" and (item["classification"] != "explicit"
+                    or item["persistence"] != "persistent" or item["attribute"] not in
+                    {"age", "physical_appearance", "distinguishing_feature"}):
+                raise ValueError("Global traits require explicit persistent physical evidence.")
+            if (item["persistence"] == "temporary" or item["attribute"] in {"clothing", "accessory"}) and trait["kind"] == "global":
+                raise ValueError("Temporary observations cannot become global traits.")
+            if item["attribute"] in {"age", "physical_appearance", "distinguishing_feature"}:
+                validate_trait_subject(item, trait)
         def check_row(row):
-            item = records[row["evidence_id"]]
             for trait in row["traits"]:
-                if trait["kind"] == "global" and (item["classification"] != "explicit"
-                        or item["persistence"] != "persistent" or item["attribute"] not in
-                        {"age", "physical_appearance", "distinguishing_feature"}):
-                    raise ValueError("Global traits require explicit persistent physical evidence.")
-                if (item["persistence"] == "temporary" or item["attribute"] in {"clothing", "accessory"}) and trait["kind"] == "global":
-                    raise ValueError("Temporary observations cannot become global traits.")
+                check_trait(row["evidence_id"], trait)
         def check(result):
             ids = [row["evidence_id"] for row in result["observations"]]
             if len(ids) != len(set(ids)) or set(ids) != allowed:
@@ -450,8 +529,20 @@ def classify_traits(records, requests):
             for row in result["observations"]:
                 check_row(row)
         def salvage(result):
-            rows = valid_rows(result, "observations", "evidence_id", allowed, TRAITS, check_row)
-            return {"observations": rows} if rows else None
+            rows = valid_rows(result, "observations", "evidence_id", allowed, TRAITS, lambda row: None)
+            kept = []
+            for row in rows:
+                traits = []
+                for trait in row["traits"]:
+                    try:
+                        check_trait(row["evidence_id"], trait)
+                        if trait not in traits:
+                            traits.append(trait)
+                    except ValueError:
+                        continue
+                if traits:
+                    kept.append({"evidence_id": row["evidence_id"], "traits": traits})
+            return {"observations": kept} if kept else None
         result = requests.call(TRAIT_SYSTEM, TRAITS, {"observations": batch}, check, salvage)
         kept = result["observations"] if result else []
         assignments.update({row["evidence_id"]: row["traits"] for row in kept})
@@ -502,7 +593,7 @@ def compare_values(trait, items, records, requests):
     # an unsourced prose summary. Same-value repetitions retain their source IDs.
     values = defaultdict(list)
     for key in items:
-        if records[key]["classification"] == "explicit" and records[key]["attribute"] in {
+        if items[key] != "context" and records[key]["classification"] == "explicit" and records[key]["attribute"] in {
                 "age", "physical_appearance", "distinguishing_feature", "clothing", "accessory"}:
             values[records[key]["value"]].append(key)
     def jobs():
@@ -510,7 +601,8 @@ def compare_values(trait, items, records, requests):
         for left, right in combinations(values.values(), 2):
             for a, b in product(left, right):
                 yield {"job_id": str(counter), "trait": trait,
-                       "left": compact_record(a, records[a]), "right": compact_record(b, records[b])}
+                       "left": compact_record(a, records[a], identity_context=False),
+                       "right": compact_record(b, records[b], identity_context=False)}
                 counter += 1
     def check(decision, job):
         allowed = {job["left"]["evidence_id"], job["right"]["evidence_id"]}
