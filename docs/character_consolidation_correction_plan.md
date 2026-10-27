@@ -71,3 +71,22 @@ converties automatiquement en un portrait supposé correct. Aucun appel LLM
 supplémentaire n’est ajouté. Réutiliser l’extraction existante pour la relance.
 
 Validation de cette correction : 101 tests ciblés réussis ; suite complète : 788 réussis, 2 ignorés, 83 sous-tests réussis. Seul échec : privilège Windows de création de lien symbolique, inchangé. Ruff, architecture et vérification du diff réussissent. Pas de validation LM Studio dans cette session.
+
+## Correction après le run 20261027080257
+
+- [x] Distinguer couleur, texture, épaisseur, longueur et coiffure dans les
+  valeurs physiques explicites ; roux et chevelure indisciplinée ne se comparent pas.
+- [x] Distinguer pilosité, couleur de peau et forme des membres ; refuser de
+  propager globalement une valeur qui mélange bronzage et exposition vestimentaire.
+- [x] Distinguer grand/hauteur et élancé/corpulence.
+- [x] Remplacer la recopie des identifiants par des positions de support séparées
+  à gauche et à droite pour les comparaisons d’identité. Le code attache les IDs
+  correspondants ; les deux côtés, la provenance et les règles d’alias restent validés.
+- [x] Tester un regroupement Shannon entre chapitres sans faux conflit couleur/coiffure,
+  ainsi que les supports absents, étrangers, dupliqués et les homonymes.
+- [ ] Revalider les décisions narratives et le temps avec LM Studio.
+
+Le rapprochement Shannon apparaissait dans un lot signalant un support d’identité
+incomplet ; le journal ne conserve pas la réponse brute rejetée permettant d’attribuer
+précisément l’erreur à cette paire. Le nouveau contrat élimine la recopie des IDs,
+mais ne fusionne jamais automatiquement deux personnes sur leur seul nom.

@@ -12,7 +12,7 @@ from minimax_h3_novel_pipeline.core.character_profile_document import make_docum
 from minimax_h3_novel_pipeline.core import path_access
 from minimax_h3_novel_pipeline.nodes import LoadCharacterProfilesNode
 from minimax_h3_novel_pipeline.nodes import consolidate_character_profiles as node
-from tests.test_character_profiles import document, group, plan, refs, settings
+from tests.test_character_profiles import document, group, plan, settings
 from tests.test_character_evidence import observation
 from tests.test_structured_json import Stream, client_for
 
@@ -63,7 +63,7 @@ def fake_model(*args):
     for job in payload["jobs"]:
         if contract == batches.IDENTITY_PAIR:
             decisions.append({"job_id": job["job_id"], "relation": "same",
-                              "evidence": refs([job["left"][0]["evidence_id"], job["right"][0]["evidence_id"]])})
+                              "left_support": [0], "right_support": [0]})
         else:
             relation = "independent" if job["left"]["observation"]["persistence"] == "temporary" else "conflict"
             decisions.append({"job_id": job["job_id"], "relation": relation, "scope": "same_story_period",
@@ -154,7 +154,7 @@ def test_homonyms_do_not_merge_on_shared_name(workspace, monkeypatch):
         result = fake_model(*args)
         if args[4] == batches.IDENTITY_PAIR:
             for decision in result["decisions"]:
-                decision.update(relation="uncertain", evidence=[])
+                decision.update(relation="uncertain")
         return result
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", separate)
     data = document(observation(), observation("Élise la boulangère avait les yeux bleus.", value="yeux bleus"))
@@ -200,7 +200,7 @@ def test_explicit_chronology_and_uncertainty_are_not_global(workspace, monkeypat
     (batches.TRAITS, {"observations": [{"evidence_id": "e1"}, {"evidence_id": "e2"}]},
      {"observations": [{"evidence_id": k, "traits": [{"trait": "eye_color", "kind": "global"}]} for k in ("e1", "e2")]}),
     (batches.IDENTITY_PAIR, {"jobs": [{"job_id": "e1"}, {"job_id": "e2"}]},
-     {"decisions": [{"job_id": k, "relation": "uncertain", "evidence": []} for k in ("e1", "e2")]}),
+     {"decisions": [{"job_id": k, "relation": "uncertain", "left_support": [0], "right_support": [0]} for k in ("e1", "e2")]}),
     (batches.RELATIONS, {"jobs": [{"job_id": "e1"}, {"job_id": "e2"}]},
      {"decisions": [{"job_id": k, "relation": "uncertain", "scope": "unknown",
         **dict.fromkeys(("before_id", "after_id", "support_id", "temporal_quote"), "")} for k in ("e1", "e2")]}),

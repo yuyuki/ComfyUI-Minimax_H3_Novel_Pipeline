@@ -323,13 +323,19 @@ comparisons across batches. Short quotations retain their original meaning and
 provenance; surrounding text is derived from the embedded chapter source for requests
 only. Shared names or roles select comparisons, never automatic merges. Confirmed
 alias merges still require source-supported connecting names and evidence from both
-sides. The most complete supplied label is used for a merged identity.
+sides. Identity comparisons select zero-based supporting observation positions
+separately from the left and right inputs. Code maps these positions to source IDs;
+empty, duplicate and out-of-range selections are rejected. Shared names alone
+still cannot confirm identity. The most complete supplied label is used for a merged identity.
 
 Physical traits are classified in shared bounded batches across characters, using
 only each value and its own quotation: the surrounding identity context is excluded
 from both classification and value comparisons. Local conservative French/English
 body-feature checks reject clear cross-category pollution (hair as eye color, lips
 as legs, brightness as a color) and transient stubble promoted to a global trait.
+Property checks also separate hair colour/texture/style, body hair/skin tone/limb
+shape, and height/build. Values mixing exposed clothing state with skin tone cannot
+become global traits without separating the source observation.
 Unknown wording still depends on the model; these checks are not a universal
 semantic parser. Independently valid assignments survive other rejected assignments
 for the same observation. Rejected facts remain in supporting_evidence and the

@@ -7,7 +7,7 @@ import pytest
 from minimax_h3_novel_pipeline.core import character_profiles as cp, character_profile_batches as batches
 from minimax_h3_novel_pipeline.core.character_profile_document import validate_document
 from tests.test_character_evidence import observation
-from tests.test_character_profiles import document, group, refs, settings
+from tests.test_character_profiles import document, group, settings
 from tests.test_character_profile_batches import fake_model, request_payload
 
 
@@ -86,8 +86,8 @@ def test_partial_identity_pairs_keep_valid_decision(tmp_path, monkeypatch):
     records = cp.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.")))
     rows = [batches.compact_record(k, v) for k, v in records.items()]
     jobs = [{"job_id": str(i), "left": [rows[0]], "right": [rows[1]]} for i in range(2)]
-    good = {"job_id": "0", "relation": "same", "evidence": refs(records)}
-    bad = {"job_id": "1", "relation": "same", "evidence": []}
+    good = {"job_id": "0", "relation": "same", "left_support": [0], "right_support": [0]}
+    bad = {"job_id": "1", "relation": "same", "left_support": [0], "right_support": []}
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(return_value={"decisions": [good, bad]}))
     def check(row, job):
         if row["relation"] == "same" and len(row["evidence"]) != 2:
@@ -200,3 +200,65 @@ def test_value_comparison_excludes_narrative_context(tmp_path, monkeypatch):
     requests = batches.Requests(tmp_path, None, "qwen", settings())
     rows = batches.compare_values("hair_color", dict.fromkeys(records, "global"), records, requests)
     assert rows and {r["evidence_id"] for r in rows[0]["evidence"]} == set(records)
+
+
+@pytest.mark.parametrize("value,quote,good,bad", [
+    ("roux", "ses cheveux roux", "hair_color", "hair_style"),
+    ("red hair", "red hair", "hair_color", "hair_texture"),
+    ("folle chevelure", "la folle chevelure", "hair_style", "hair_color"),
+    ("cheveux ondulés", "ses cheveux ondulés", "hair_texture", "hair_style"),
+    ("jambes poilues", "ses jambes poilues", "body_hair", "leg_shape"),
+    ("hairy legs", "hairy legs", "body_hair", "leg_shape"),
+    ("jambes brunies", "ses jambes brunies", "skin_color", "leg_shape"),
+    ("grand", "grand et élancé", "height", "build"),
+    ("élancé", "grand et élancé", "build", "height"),
+])
+def test_properties_of_same_body_part_remain_distinct(value, quote, good, bad):
+    item = observation(quote, value=value)
+    batches.validate_trait_subject(item, {"trait": good, "kind": "global"})
+    with pytest.raises(ValueError):
+        batches.validate_trait_subject(item, {"trait": bad, "kind": "global"})
+
+
+def test_mixed_tan_and_clothing_state_cannot_be_global():
+    item = observation("ses jambes brunies, dévoilées presque jusqu’aux genoux",
+                       value="jambes brunies, dévoilées presque jusqu’aux genoux")
+    with pytest.raises(ValueError):
+        batches.validate_trait_subject(item, {"trait": "skin_color", "kind": "global"})
+    batches.validate_trait_subject(item, {"trait": "skin_color", "kind": "temporary"})
+
+
+@pytest.mark.parametrize("positions", [[], [1], [0, 0], [-1], [True]])
+def test_identity_side_support_rejects_missing_foreign_duplicate_positions(tmp_path, monkeypatch, positions):
+    records = cp.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.")))
+    rows = [batches.compact_record(k, v) for k, v in records.items()]
+    jobs = [{"job_id": "0", "left": rows[:1], "right": rows[1:]}]
+    result = {"decisions": [{"job_id": "0", "relation": "same", "left_support": [0], "right_support": positions}]}
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(return_value=result))
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    decisions = list(requests.decisions(jobs, batches.IDENTITY_SYSTEM, batches.IDENTITY_PAIR, lambda d, j: None))
+    assert decisions[0][0]["relation"] == "uncertain"
+
+
+def test_shannon_merges_across_chapters_with_side_support_and_no_color_style_conflict(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline.core import path_access
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    data = document(observation("Shannon avait les cheveux roux.", character="Shannon", value="roux"),
+                    observation("Shannon avait une folle chevelure.", character="Shannon", value="folle chevelure"))
+    def model(*args):
+        if args[4] == batches.TRAITS:
+            payload = request_payload(args[3])
+            return {"observations": [{"evidence_id": row["evidence_id"], "traits": [
+                {"trait": key, "kind": "global"} for key in
+                (["hair_color", "hair_style"] if row["observation"]["value"] == "roux" else ["hair_style"])]}
+                for row in payload["observations"]]}
+        assert args[4] != batches.RELATIONS
+        return fake_model(*args)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", model)
+    result, _ = cp.consolidate(data, cp.prepare_evidence(data), tmp_path, None, "qwen", settings(correction_attempts=0))
+    assert len(result["profiles"]) == 1
+    profile = result["profiles"][0]
+    assert {t["trait"] for t in profile["global_traits"]} == {"hair_color", "hair_style"}
+    assert not profile["unresolved_conflicts"]
+    assert len(profile["identity_support"]) == 2
+    assert validate_document(result) is result

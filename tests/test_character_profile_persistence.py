@@ -69,7 +69,7 @@ def test_invalid_identity_pairs_are_not_retried_or_subdivided(tmp_path, monkeypa
         if args[4] == batches.IDENTITY_PAIR:
             rejected.append(request_payload(args[3]))
             for decision in result["decisions"]:
-                decision["evidence"] = []  # "same" without supporting both sides
+                decision["right_support"] = []  # "same" without supporting both sides
         return result
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", respond)
     updates = []
