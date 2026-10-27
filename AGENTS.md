@@ -10,6 +10,8 @@
 - Do not retain or introduce legacy code, obsolete formats, migration shims or
   compatibility paths for removed features. Remove their unused tests and docs;
   support only the current pipeline contracts.
+- Follow [.github/README.md](.github/README.md) when writing or updating the
+  root user-facing README.
 
 ## Changelog maintenance
 
@@ -37,7 +39,7 @@
 
 - Root `__init__.py` is the ComfyUI checkout entrypoint. It re-exports mappings
   from `src/` and serves `./web/js`.
-- `src/__init__.py` registers eleven nodes and four
+- `src/__init__.py` registers seventeen nodes and four
   local HTTP routes. `src/nodes/__init__.py` exports the node classes.
 - Nodes live in `src/nodes/`, each in its own module: `lmstudio_config.py`,
   `extract_chapter_references.py`, `load_chapter_catalogs.py`,
