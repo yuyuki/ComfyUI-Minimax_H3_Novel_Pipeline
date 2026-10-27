@@ -61,7 +61,7 @@ def test_sequence_order_cache_invalidation_and_repeated_beats(tmp_path, monkeypa
     step.process_chapter(path, refs, None, "mock", args)
     assert len(calls) == 3
     assert calls[-1]["sequence"] == 3
-    cached = json.loads((args.out_dir / "chapter/.cache/plan_002.json").read_text())
+    cached = json.loads((args.out_dir / ".cache/chapter/plan_002.json").read_text())
     assert cached["scenes"][0]["sequence"] == 3
     assert "A changed ending." in cached["scenes"][0]["adaptation_notes"]
     assert not path.exists()
@@ -82,7 +82,7 @@ def test_temporal_context_reaches_planning_and_prompt_notes(tmp_path, monkeypatc
     step.process_chapter(path, refs, None, "mock", args)
     assert "1925" in calls[0]["temporal_context"]
     assert "flashbacks" in calls[0]["temporal_context"]
-    cached = json.loads((args.out_dir / "chapter/.cache/plan_001.json").read_text())
+    cached = json.loads((args.out_dir / ".cache/chapter/plan_001.json").read_text())
     assert "1925" in cached["scenes"][0]["adaptation_notes"]
     refs["chapter_timelines"]["chapter"]["default_temporal_context"] = "2040"
     step.process_chapter(path, refs, None, "mock", args)

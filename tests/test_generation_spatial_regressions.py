@@ -99,7 +99,7 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
     assert histories == [[], [], [], []]
     assert chunks == refs['chapter_timelines']['chapter']['sequences']
     assert refs['visual_designs'] == designs
-    cached = json.loads((args.out_dir / 'chapter/.cache/prompt_001.json').read_text())
+    cached = json.loads((args.out_dir / '.cache/chapter/prompt_001.json').read_text())
     assert cached['valid'] is False
 
 

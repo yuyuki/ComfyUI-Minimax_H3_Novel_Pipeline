@@ -94,9 +94,14 @@ Preserve existing node IDs and socket types for workflow compatibility.
 - Registry briefs describe image/audio assets; do not fabricate media or
   introduce video references. Preserve scene-local H3 binding order.
 - Preserve streaming cancellation checks and existing cache/schema behavior.
-- Resolve node outputs and caches through `run_output.stage_output` inside the
-  configured timestamped run folder. Character evidence batch caches belong in
-  `<timestamp>/.cache/character_evidence`, never the shared output root.
+- Resolve each node's output directory through `run_output.stage_output` inside
+  the configured timestamped run folder. All nodes that use a cache must keep it
+  directly under their own output directory: `<timestamp>/<out_dir>/.cache/`.
+  Chapter-specific cache entries belong in `.cache/<chapter_id>/`, not beside
+  chapter outputs. Do not repeat the node name inside `.cache`, create a cache
+  at the run/shared output root, or add empty caches to nodes that do not use one.
+  Character evidence resume reads the same `out_dir/.cache` in the selected
+  previous run. Support only this layout; do not add legacy-path fallbacks.
 
 ## Packaging and validation
 

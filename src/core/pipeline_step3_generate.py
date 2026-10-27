@@ -1419,8 +1419,8 @@ def process_chapter(
               for sequence in sequences]
     chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
-    cache_dir = confined_path(chapter_dir / ".cache", chapter_dir)
-    cache_dir.mkdir(exist_ok=True)
+    cache_dir = confined_path(args.out_dir / ".cache" / chapter_id, args.out_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"{path.name}: {len(chunks)} planning chunk(s)")
     scenes: list[Scene] = []
@@ -1429,7 +1429,7 @@ def process_chapter(
         catalog = sequence_catalog(refs, chapter_id, sequence["sequence"])
         cache_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, PLAN_SYSTEM, SCENE_SCHEMA,
                                       refs.get("source_digest", ""), catalog, i, len(chunks), chunk, client=client)
-        cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", chapter_dir)
+        cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", args.out_dir)
         chunk_scenes = None
         if cache_path.exists() and not args.force:
             try:
@@ -1506,7 +1506,7 @@ def process_chapter(
         prompt_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, H3_RULES, PROMPT_SCHEMA,
                                        "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v2",
                                        scene_to_dict(scene), bindings, continuity, previous_prompts, client=client)
-        prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", chapter_dir)
+        prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", args.out_dir)
         prompt = None
         camera_warnings: list[str] = []
         from_cache = False

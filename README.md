@@ -226,11 +226,11 @@ Keep `thinking=True` for extraction when your Qwen model needs reasoning for att
 set it to true if needed after inspecting verdict quality. Both requests still use
 the shared structured-JSON transport and its cancellation/ChatML safeguards.
 
-Completed batches are cached under `output/minimax_h3_novel/<timestamp>/.cache/character_evidence`
+Completed batches are cached under `output/minimax_h3_novel/<timestamp>/character_evidence/.cache`
 and reused within that run unless `force` is enabled. To resume an earlier execution,
 set optional `resume_run` to its timestamp folder name, for example `20261025154413`
 (not a full path). Matching completed batches are read from that run's
-`.cache/character_evidence` and saved into the new run's cache; missing or unreadable
+`character_evidence/.cache` and saved into the new run's cache; missing or unreadable
 batches are extracted normally. The previous run stays unchanged. Leave `resume_run`
 empty for no cross-run reuse and keep `force=False` to use caches. Keep the original
 source paths, model and extraction settings for cache matches. Changed batch text/context,
@@ -354,7 +354,7 @@ require exact source testimony. Repeated quotations are sent once per comparison
 request. Every valid observation is retained exactly once, even if no trait is
 accepted; invalid observations remain in the validation report and excluded_evidence.
 
-Validated requests are cached under `<run>/<out_dir>/.cache/character_profiles`.
+Validated requests are cached under `<run>/<out_dir>/.cache`.
 If a model response remains invalid after the configured corrections, consolidation
 logs a warning and retains independently valid, non-duplicated decisions from the
 response. Partial identity-comparison/trait batches receive one targeted completion
@@ -457,3 +457,11 @@ generation. Temporary observations are excluded from the global export. Manual
 `added_details` edits survive regeneration and are checked against current chapter
 facts on import. The existing `saved_file` output still points to
 `character_visual_profiles.json`.
+
+
+All node caches live directly under their configured output directory:
+`<timestamp>/<out_dir>/.cache/`. Chapter-specific caches use `.cache/<chapter_id>/`.
+Nodes without caching do not create this directory. Character evidence `resume_run`
+uses the same `out_dir` in the selected previous run, including custom output paths.
+Only this cache layout is read; existing caches at older locations are not moved
+or reused automatically.

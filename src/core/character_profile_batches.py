@@ -150,7 +150,7 @@ class Requests:
         if len(prompt.encode()) > self.capacity(system, contract):
             raise ValueError("Character profile request exceeds configured context budget; no evidence truncated.")
         key = prompt_cache.fingerprint(self.model, self.args, cp.VERSION, DECISION_VERSION, system, contract, payload, client=self.client)
-        cache = self.output / ".cache" / "character_profiles" / f"{key}.json"
+        cache = self.output / ".cache" / f"{key}.json"
         lmstudio_pipeline.comfy_interrupt_check()
         if cache.exists() and not self.args.force:
             try:

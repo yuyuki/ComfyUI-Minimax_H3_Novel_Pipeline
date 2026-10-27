@@ -143,7 +143,7 @@ def test_batches_reconcile_distant_values_no_loss_and_resume(workspace, monkeypa
     repeated, _ = cp.consolidate(data, records, workspace, None, "qwen", settings(context_tokens=24000, max_tokens=1024))
     assert repeated == result
     chat.assert_not_called()
-    cache = next((workspace / ".cache" / "character_profiles").glob("*.json"))
+    cache = next((workspace / ".cache").glob("*.json"))
     cache.write_text('{}', encoding="utf-8")
     cp.consolidate(data, records, workspace, None, "qwen", settings(context_tokens=24000, max_tokens=1024))
     assert chat.call_count == 1
@@ -255,7 +255,7 @@ def test_empty_identity_profile_corrected_with_schema_and_full_evidence(workspac
         assert "minItems" not in fields["identity_support"]
         assert all(key in str(call.kwargs["messages"]) for key in ids)
     assert "Rejected:" in str(create.call_args_list[1].kwargs["messages"])
-    cache = list((workspace / ".cache" / "character_profiles").glob("*.json"))
+    cache = list((workspace / ".cache").glob("*.json"))
     assert len(cache) == 1
     assert json.loads(cache[0].read_text(encoding="utf-8")) == corrected
 
@@ -270,7 +270,7 @@ def test_repeated_empty_identity_profile_warns_without_cache(workspace, monkeypa
     assert chat.call_count == 3
     assert "ignoring invalid model decision" in caplog.text
     assert requests.stats["warnings"][0]["input"] == payload
-    assert not list((workspace / ".cache" / "character_profiles").glob("*.json"))
+    assert not list((workspace / ".cache").glob("*.json"))
     assert not (workspace / "character_profiles.json").exists()
 
 
@@ -374,7 +374,7 @@ def test_cancel_between_batches_resumes_completed_requests(workspace, monkeypatc
     records = cp.prepare_evidence(data)
     with pytest.raises(InterruptProcessingException):
         cp.consolidate(data, records, workspace, None, "qwen", settings())
-    assert len(list((workspace / ".cache" / "character_profiles").glob("*.json"))) == 1
+    assert len(list((workspace / ".cache").glob("*.json"))) == 1
     assert not (workspace / "character_profiles.json").exists()
     chat = Mock(side_effect=fake_model)
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..core import character_evidence, lmstudio_json, lmstudio_pipeline, progress, util
 from ..core.run_output import stage_output
+from ..core.path_access import confined_path
 from .chapter_selection import chapter_path_list
 
 
@@ -65,13 +66,13 @@ class CharacterEvidenceExtractorNode:
             raise ValueError("No supported chapters found. Select all novel chapter files or their folder.")
         config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(config, out_dir.strip())
-        cache_dir = stage_output(config, ".cache/character_evidence")
+        cache_dir = confined_path(".cache", output)
         if not isinstance(resume_run, str):
             raise ValueError("resume_run must be a run folder name such as 20261025154413.")
         resume_run = resume_run.strip()
         resume_cache_dir = None
         if resume_run:
-            resume_cache_dir = stage_output({"run_folder": resume_run}, ".cache/character_evidence")
+            resume_cache_dir = confined_path(".cache", stage_output({"run_folder": resume_run}, out_dir.strip()))
             if resume_cache_dir == cache_dir:
                 raise ValueError("resume_run must refer to a previous run, not the current run.")
             if not resume_cache_dir.is_dir():

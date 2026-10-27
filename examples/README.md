@@ -308,11 +308,11 @@ Choose `all_characters` for full-text coverage of unnamed people, role labels, a
 descriptions that precede identification. Proper-name selection uses capitalization
 heuristics; it can miss distant pronoun context and names without capitalization.
 Completed batch caches are reused within the current run in
-`output/minimax_h3_novel/<timestamp>/.cache/character_evidence`; diagnostics alongside the evidence
+`output/minimax_h3_novel/<timestamp>/character_evidence/.cache`; diagnostics alongside the evidence
 report timing, passage selection, cache hits, requests/retries and estimated tokens.
 To continue a failed extraction from a previous run, set `resume_run` to just its
 folder name, for example `20261025154413`, and keep `force=False` and the original
-source paths/model/settings. Matching batches from that run's `.cache/character_evidence`
+source paths/model/settings. Matching batches from that run's `character_evidence/.cache`
 are copied into the current run's cache; only missing or unreadable batches require
 extraction. New outputs belong to the current run; the previous run is unchanged.
 Leave `resume_run` empty to disable reuse from a previous run.
@@ -396,3 +396,11 @@ generation. Temporary observations are excluded from the global export. Manual
 `added_details` edits survive regeneration and are checked against current chapter
 facts on import. The existing `saved_file` output still points to
 `character_visual_profiles.json`.
+
+
+All node caches live directly under their configured output directory:
+`<timestamp>/<out_dir>/.cache/`. Chapter-specific caches use `.cache/<chapter_id>/`.
+Nodes without caching do not create this directory. Character evidence `resume_run`
+uses the same `out_dir` in the selected previous run, including custom output paths.
+Only this cache layout is read; existing caches at older locations are not moved
+or reused automatically.

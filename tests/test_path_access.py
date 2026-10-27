@@ -192,7 +192,7 @@ def test_extraction_existing_cache_still_loads(roots):
 
 @pytest.mark.parametrize("step_name,linked_dir", [
     ("extract", ".cache"), ("extract", ".cache/chapter"),
-    ("generate", "chapter"), ("generate", "chapter/.cache"),
+    ("generate", "chapter"), ("generate", ".cache"), ("generate", ".cache/chapter"),
 ])
 def test_bundled_steps_reject_nested_directory_escape(roots, tmp_path, step_name, linked_dir, cinematic_registry):
     source, output = roots

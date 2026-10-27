@@ -153,7 +153,8 @@ def test_cache_force_source_settings_and_corruption(workspace, monkeypatch):
 
 @pytest.mark.parametrize("overrides,expected_hits", [({}, 1), ({"force": True}, 0),
                                                     ({"max_tokens": 4096}, 0)])
-def test_resume_run_reuses_completed_work_and_copies_cache(workspace, monkeypatch, overrides, expected_hits):
+@pytest.mark.parametrize("out_dir", ["character_evidence", "custom/evidence"])
+def test_resume_run_reuses_completed_work_and_copies_cache(workspace, monkeypatch, overrides, expected_hits, out_dir):
     source, output = workspace
     first = source / "chapter1.txt"
     second = source / "chapter2.txt"
@@ -166,7 +167,7 @@ def test_resume_run_reuses_completed_work_and_copies_cache(workspace, monkeypatc
     extractor = node.CharacterEvidenceExtractorNode()
     def run(stamp, paths, **kwargs):
         return extractor.run({"api_url": "http://127.0.0.1:1234/v1", "run_folder": stamp},
-                             {"chapter_paths": [str(p) for p in paths]}, **kwargs)["result"][0]
+                             {"chapter_paths": [str(p) for p in paths]}, out_dir=out_dir, **kwargs)["result"][0]
     old_stamp, new_stamp = "20261025154413", "20261025160000"
     run(old_stamp, [first])
     previous = output / old_stamp
@@ -174,10 +175,11 @@ def test_resume_run_reuses_completed_work_and_copies_cache(workspace, monkeypatc
     result = run(new_stamp, [first, second], resume_run=old_stamp, **overrides)
     assert chat.call_count == 3 - expected_hits
     assert len(result["chapters"]) == 2
-    diagnostics = json.loads((output / new_stamp / "character_evidence/character_evidence_diagnostics.json").read_text())
+    diagnostics = json.loads((output / new_stamp / out_dir / "character_evidence_diagnostics.json").read_text())
     assert diagnostics["resume_run"] == old_stamp
     assert sum(c["resumed_cache_hits"] for c in diagnostics["chapters"]) == expected_hits
-    assert len(list((output / new_stamp / ".cache/character_evidence").glob("*.json"))) == 2
+    assert len(list((output / new_stamp / out_dir / ".cache").glob("*.json"))) == 2
+    assert not (output / new_stamp / ".cache").exists()
     assert original == {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()}
     # The new run contains both recovered and newly extracted batches, so it can
     # itself be the only resume source on the next execution.
@@ -209,11 +211,11 @@ def test_resume_corrupt_cache_recomputed_without_changing_source(workspace, monk
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
     chat = Mock(return_value={"evidence": [observation()]})
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
-    previous = output / "20261025154413/.cache/character_evidence"
+    previous = output / "20261025154413/character_evidence/.cache"
     evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1, cache_dir=previous)
     cached_file = next(previous.glob("*.json"))
     cached_file.write_text("broken", encoding="utf-8")
-    current = output / "20261025160000/.cache/character_evidence"
+    current = output / "20261025160000/character_evidence/.cache"
     evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1,
                              cache_dir=current, resume_cache_dir=previous)
     assert chat.call_count == 2
@@ -473,7 +475,7 @@ def test_node_persists_diagnostics_and_completed_cache_on_interruption(workspace
     assert chapter["status"] == "interrupted_or_failed"
     assert chapter["selected_fraction"] == 1
     assert chapter["completed_batches"] == len(chapter["batch_seconds"]) == 1
-    assert len(list((run / ".cache/character_evidence").glob("*.json"))) == 1
+    assert len(list((run / "character_evidence/.cache").glob("*.json"))) == 1
 
 
 def test_unnamed_scope_and_validation(workspace, monkeypatch):
@@ -538,7 +540,7 @@ def test_node_cache_isolated_per_run_and_reused_within_run(workspace, monkeypatc
         node.CharacterEvidenceExtractorNode().run(
             {"api_url": "http://127.0.0.1:1234/v1", "run_folder": stamp}, {"chapter_paths": [str(source)]})
         assert chat.call_count == expected_calls
-        assert len(list((output / stamp / ".cache/character_evidence").glob("*.json"))) == 1
+        assert len(list((output / stamp / "character_evidence/.cache").glob("*.json"))) == 1
         stats = json.loads((output / stamp / "character_evidence/character_evidence_diagnostics.json").read_text())
         assert stats["chapters"][0]["cache_hits"] == expected_hits
         assert stats["chapters"][0]["llm_calls"] == 1 - expected_hits

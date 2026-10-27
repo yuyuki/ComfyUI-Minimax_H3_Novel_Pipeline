@@ -26,7 +26,7 @@ réel LM Studio encore attendus. L'étape 4 n'est pas engagée.
   Une observation/comparaison indivisible trop grande provoque un diagnostic,
   sans découpe destructive ni suppression silencieuse.
 - Les réponses validées sont mises en cache dans
-  `<run>/<out_dir>/.cache/character_profiles`. Une annulation ou un échec tardif
+  `<run>/<out_dir>/.cache`. Une annulation ou un échec tardif
   conserve les lots terminés. Les clés incluent entrée utile, schéma, instructions,
   modèle et réglages ; `force` impose de refaire les requêtes.
 - `character_profiles.json` est désormais au format v2 et référence son schéma
