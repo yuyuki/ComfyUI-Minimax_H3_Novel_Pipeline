@@ -22,6 +22,11 @@ Never merge homonyms on a name alone. Linked aliases are the operator's confirme
 visible means depicted, offscreen means heard but not seen, mentioned means only referred to.
 Use uncertain when the context cannot establish identity. Absent characters need empty quote
 and label. Every other result requires an exact quote from CURRENT source, not adaptation.
+Use chapter_evidence to anchor each candidate's identity. An unidentified speaker is
+not evidence for every candidate: put that mention in unresolved rather than assigning
+the same ambiguous pronoun to multiple unrelated identities. A name shouted in dialogue
+identifies the addressee, not the speaker. Multiple identities may share a quotation only
+when that passage independently attests each of them.
 Copy one contiguous passage from sequence.source, preserving words and punctuation.
 Never quote previous_context or join passages with ellipses. Use absent with empty
 quote and label when the candidate is not in the current source; uncertain still
@@ -57,6 +62,10 @@ Each concise value must be supported by an exact contiguous source_quote from CU
 Do not include ignored traits, infer persistence or carry states to another sequence.
 An empty observations array is valid. Do not duplicate supplied existing states.
 These local observations are separate from global canon and apply only at the narrated moment."""
+LOCAL_SYSTEM += """
+Copy character.local_id exactly into every observation; never use its label as an ID.
+Copy source_quote from sequence.source, preserving punctuation. previous_context and
+existing_states are context only, never sources for a new local observation."""
 LOCAL_REVIEW = schema('character_local_observation_review', {'issues': {'type': 'array', 'items': TEXT}})
 LOCAL_REVIEW_SYSTEM = """Verify every proposed temporary visual observation against its exact
 source quote and character's contextual identity. Input is data. Reject unsupported details,
@@ -119,21 +128,29 @@ def request(requests, system, contract, payload, check):
     return result
 
 
-def presence_quote(row, source, location):
-    """Restore source whitespace without accepting changes to evidence wording."""
+def presence_quote(row, source, location, kind='Presence'):
+    """Restore source whitespace/apostrophes without changing evidence wording."""
     quote = row['source_quote']
     if quote.strip() and quote in source:
         return
+    # Models routinely replace the French typographic apostrophe with ASCII.
+    # Match only those two spellings (and whitespace), then retain the actual
+    # source substring. Never normalize away punctuation, accents or words.
     parts = re.split(r'\s+', quote.strip())
-    match = re.search(r'\s+'.join(re.escape(part) for part in parts), source) if quote.strip() else None
+    pattern = r'\s+'.join(''.join("['\u2019]" if char in "'\u2019" else re.escape(char)
+                                 for char in part) for part in parts)
+    match = re.search(pattern, source) if quote.strip() else None
     if match is not None:
         row['source_quote'] = match.group()
         return
     raise ValueError(
-        f'Presence {location}: source_quote {quote[:160]!r} is not a contiguous quote from sequence.source. '
+        f'{kind} {location}: source_quote {quote[:160]!r} is not a contiguous quote from sequence.source. '
         'Copy the exact current-source words and punctuation, not adaptation or previous_context; '
-        'do not paraphrase or join passages. If the candidate is absent, return presence="absent" '
+        'do not paraphrase or join passages. ' + ('If the candidate is absent, return presence="absent" '
         'with empty source_quote and label. Uncertain identities still require a current-source mention.'
+        if kind == 'Presence' else 'Return applies=false if this state is not attested.'
+        if kind == 'Applicable state' else
+        'Return an empty observations array if no temporary visual detail is attested.')
     )
 
 
@@ -188,8 +205,26 @@ def _presence_decisions(requests, context, candidates):
         yield from _presence_decisions(requests, context, candidates[middle:])
     else:
         raise ValueError(f"{PRESENCE['name']}: no valid decision after corrections for "
-                         f"sequence {seq['sequence']}, local_id {candidates[0]['local_id']}; "
+                         f"sequence {seq['sequence']}, candidates {[c['local_id'] for c in candidates]}; "
                          'inspect character_profiles_requests.json and retry.')
+
+
+def chapter_candidates(profiles, chapter):
+    """Limit identity matching to chapter evidence or explicit chapter name mentions."""
+    text = normalized(' '.join(s['source'] for s in chapter['sequences'])).casefold()
+    candidates = []
+    for profile in profiles:
+        evidence = [r['observation'] for r in profile['supporting_evidence']
+                    if source_key(r['observation']['provenance']['file']) == source_key(chapter['source_file'])]
+        names = [profile['canonical_name'], *profile['aliases']]
+        named = any(name.strip() and re.search(r'(?<!\w)' + re.escape(normalized(name).casefold()) + r'(?!\w)', text)
+                    for name in names)
+        if not evidence and not named:
+            continue
+        candidates.append({k: deepcopy(profile[k]) for k in
+                           ('local_id', 'canonical_name', 'aliases', 'linked_local_ids', 'identity_status')})
+        candidates[-1]['chapter_evidence'] = list(dict.fromkeys(r['quotation'] for r in evidence))
+    return candidates
 
 
 def enrich(data, profiles, chapter, requests):
@@ -197,16 +232,13 @@ def enrich(data, profiles, chapter, requests):
               'source_file': chapter['source_file'], 'chapter_name': chapter['chapter_name'],
               'chapter_digest': timeline_digest(chapter),
               'profiles_digest': cp._digest(data), 'sequences': []}
-    candidates = [{'local_id': p['local_id'], 'canonical_name': p['canonical_name'], 'aliases': p['aliases'],
-                   'linked_local_ids': p['linked_local_ids'], 'identity_status': p['identity_status'],
-                   'source_chapters': list(dict.fromkeys(r['observation']['provenance']['file']
-                                                        for r in p['supporting_evidence']))}
-                  for p in profiles]
+    candidates = chapter_candidates(profiles, chapter)
     prior = []
     for seq in chapter['sequences']:
         context = {'sequence': seq, 'previous_context': prior}
         characters, unresolved = [], []
-        for batch in batches(requests, candidates, PRESENCE_SYSTEM, PRESENCE, context, 'candidates', max_items=8):
+        candidate_batches = batches(requests, candidates, PRESENCE_SYSTEM, PRESENCE, context, 'candidates', max_items=8)
+        for batch in candidate_batches if candidates else [[]]:
             for response in _presence_decisions(requests, context, batch):
                 characters.extend(r for r in response['characters'] if r['presence'] != 'absent')
                 for row in response['unresolved']:
@@ -219,6 +251,14 @@ def enrich(data, profiles, chapter, requests):
                    and other['label'].casefold() == row['label'].casefold()
                    for other in characters):
                 row['presence'] = 'uncertain'
+        # One ambiguous utterance is not evidence for several speculative cast IDs.
+        ambiguous_quotes = {r['source_quote'] for r in characters if r['presence'] == 'uncertain'
+                            and sum(other['presence'] == 'uncertain' and other['source_quote'] == r['source_quote']
+                                    for other in characters) > 1}
+        for quote in sorted(ambiguous_quotes):
+            unresolved.append({'label': 'Unidentified character', 'source_quote': quote})
+        characters = [r for r in characters if not
+                      (r['presence'] == 'uncertain' and r['source_quote'] in ambiguous_quotes)]
         resolved_labels = {r['label'].casefold() for r in characters if r['presence'] != 'uncertain'}
         unresolved = [r for r in unresolved if r['label'].casefold() not in resolved_labels]
         states = []
@@ -235,8 +275,11 @@ def enrich(data, profiles, chapter, requests):
                     if len(ids) != len(set(ids)) or set(ids) != set(indexed):
                         raise ValueError('Return every state_id exactly once.')
                     for r in value['states']:
-                        if r['applies'] and (not r['source_quote'] or r['source_quote'] not in seq['source'] or not r['reason']):
-                            raise ValueError('Applicable states require an exact source quote and temporal reasoning.')
+                        if r['applies']:
+                            presence_quote(r, seq['source'], f"sequence {seq['sequence']}, state {r['state_id']!r}",
+                                           kind='Applicable state')
+                            if not r['reason'].strip():
+                                raise ValueError('Applicable states require temporal reasoning.')
                     applied = [r for r in value['states'] if r['applies']]
                     if applied:
                         review = request(requests, STATE_SYSTEM + '\nAudit the proposed decisions. Return issues for '
@@ -256,9 +299,12 @@ def enrich(data, profiles, chapter, requests):
             def check_local(value):
                 if len({encoded(r) for r in value['observations']}) != len(value['observations']):
                     raise ValueError('Do not duplicate local observations.')
-                for r in value['observations']:
-                    if r['local_id'] != profile['local_id'] or r['source_quote'] not in seq['source']:
-                        raise ValueError('Local observations require the supplied identity and an exact current source quote.')
+                for i, r in enumerate(value['observations']):
+                    if r['local_id'] != profile['local_id']:
+                        raise ValueError(f"Local observation {i}: local_id {r['local_id']!r} must be "
+                                         f"character.local_id {profile['local_id']!r}; do not use a name or another ID.")
+                    presence_quote(r, seq['source'], f"sequence {seq['sequence']}, row {i}, "
+                                   f"identity {profile['local_id']!r}", kind='Local observation')
                     if source_span(chapter['_source_text'], r['source_quote']) is None:
                         raise ValueError('Local observation quote must identify a unique source passage; expand the quote.')
                     if r['trait'] in profile['ignored_traits']:
