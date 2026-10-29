@@ -2,23 +2,15 @@
 
 ## Working rules
 
-- Be concise; do not provide summaries unless explicitly requested.
-- Follow user, repository and system instructions strictly. Do not silently
-  weaken or bypass requirements.
-- Ask for clarification only when necessary for safety or a material choice.
-- Preserve existing user edits and the scaffold's `src/` layout.
-- Do not retain or introduce legacy code, obsolete formats, migration shims or
-  compatibility paths for removed features. Remove their unused tests and docs;
-  support only the current pipeline contracts.
-- Before researching or changing indexed code, use CodeGraph to locate the
-  relevant symbols and retrieve their dependencies and affected callers. Prefer
-  `codegraph_explore` for the initial question or target; then use `deps` /
-  `rdeps`, `refs`, or `calls` as needed to trace dependencies and impact. Read
-  the returned source and check freshness or coverage limitations before
-  relying on the results. Use plain text search for exact strings, logs,
-  configuration keys, and prose; skip CodeGraph when `.codegraph/` is absent.
-- Follow [.github/README.md](.github/README.md) when writing or updating the
-  root user-facing README.
+## Operational rules
+- Focus on working environments and setup, not source-code development. Prefer small, validated setup changes over broad rewrites.
+- Do not modify user data, model files, or outputs without explicit permission. Preserve existing edits and the scaffold’s src/ layout.
+- If a workflow requires custom nodes, document the missing dependency and provide explicit installation steps.
+- Follow user, repository, and system instructions. Do not weaken or bypass requirements. Ask for clarification when safety or a material choice requires it.
+- Do not add or retain legacy code, obsolete formats, or compatibility paths for removed features. Remove related unused tests and documentation; support only current pipeline contracts.
+- Keep responses concise. Do not provide summaries unless requested.
+- Before researching or changing code in a repository with .codegraph/, use CodeGraph to locate relevant symbols and trace dependencies and callers. Check its source, freshness, and coverage before relying on it. Use text search for exact strings, logs, configuration keys, and prose. Skip CodeGraph if .codegraph/ is absent.
+- Follow [README.md](.github/README.md) when updating the root README.
 
 ## Changelog maintenance
 
