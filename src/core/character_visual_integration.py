@@ -31,6 +31,11 @@ def validate_input(data):
     validate_profiles(data['visual_designs']['character_profiles'])
 
 
+def _names(item):
+    return {name.strip().casefold() for name in
+            [item['canonical_name'], *item.get('aliases', [])] if name.strip()}
+
+
 def apply(designs, chapters, registry, output, client, model, args):
     if not designs or 'character_profiles' not in designs:
         return {}, {}
@@ -44,11 +49,17 @@ def apply(designs, chapters, registry, output, client, model, args):
     known = {p['local_id'] for p in profiles}
     if not set(items) <= known:
         raise ValueError('Unknown character identity in visual_designs.json.')
-    profiles = [p for p in profiles if p['local_id'] in items]
     for profile in profiles:
+        # A chapter-scoped export can omit people whose physical evidence first
+        # appears later. The embedded validated document still owns their facts.
+        items.setdefault(profile['local_id'], {
+            'character_id': profile['local_id'], 'identity_status': profile['identity_status'],
+            'source_facts': visual.source_facts(profile), 'added_details': {},
+        })
         if items[profile['local_id']]['source_facts'] != visual.source_facts(profile):
             raise ValueError('source_facts differs from validated physical traits; edit character_profiles and rerun the physical generator.')
     local_results, imported, assigned_profiles, assigned_registry = {}, {}, {}, {}
+    required_mappings = set()
     options = SimpleNamespace(**{**vars(args), 'force': False, 'correction_attempts': 2})
     for chapter in chapters:
         key = enrichment.source_key(chapter.get('source_file') or chapter.get('source', {}).get('file', ''))
@@ -58,8 +69,16 @@ def apply(designs, chapters, registry, output, client, model, args):
         chapter = {**chapter, 'source_file': sources[0]['source_file'], '_source_text': sources[0]['source_text']}
         if any(enrichment.source_span(chapter['_source_text'], s['source']) is None for s in chapter['sequences']):
             raise ValueError('Cinematic source must match a unique passage in character evidence.')
-        selected = [p for p in profiles if any(enrichment.source_key(r['observation']['provenance']['file']) == key
-                                               for r in p['supporting_evidence'])]
+        current_entities = [e for e in registry
+                            if e['entity_type'] == 'character' and chapter['chapter_id'] in e.get('chapters_seen', [])]
+        candidate_names = set().union(*(_names(e) for e in current_entities))
+        # Names only nominate candidates; the contextual, quoted identity check
+        # below remains mandatory, including for evidence from other chapters.
+        selected = [p for p in profiles if _names(p) & candidate_names or any(
+            enrichment.source_key(r['observation']['provenance']['file']) == key
+            for r in p['supporting_evidence'])]
+        required_mappings.update(e['global_id'] for e in current_entities
+                                 if any(_names(e) & _names(p) for p in selected))
         if not selected:
             continue
         cid = chapter['chapter_id']
@@ -130,6 +149,11 @@ def apply(designs, chapters, registry, output, client, model, args):
         enrichment.save(local, output / cid)
         local_results[cid] = {**local, 'registry_ids': mapped,
             'ignored_traits': {mapped[p['local_id']]: p['ignored_traits'] for p in selected if p['local_id'] in mapped}}
+    unresolved = required_mappings - imported.keys()
+    if unresolved:
+        raise ValueError('Character visual evidence has no unique validated registry mapping for '
+                         + ', '.join(sorted(unresolved))
+                         + '; review character_profiles identity links before generating designs.')
     return local_results, imported
 
 

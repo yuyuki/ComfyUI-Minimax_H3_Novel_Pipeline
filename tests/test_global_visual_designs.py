@@ -100,12 +100,36 @@ def test_no_arbitrary_identity_mapping(setup, monkeypatch, kind):
             if a[4] == integration.IDENTITY else original(*a))
     else:
         entities.append({**entity, 'global_id': 'CHAR_043'})
-    with pytest.warns(UserWarning, match='Unresolved'):
-        enrichment, imported = integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
-    assert imported == {}
+    with pytest.warns(UserWarning, match='Unresolved'), pytest.raises(ValueError, match='review character_profiles identity links'):
+        integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
     assert all('character_id' not in e for e in entities)
-    assert enrichment['chapter1']['registry_ids'] == {}
-    assert enrichment['chapter1']['validation']['confidence'] == 'low'
+
+
+def test_embedded_later_chapter_profile_is_used_without_exported_design(setup):
+    from minimax_h3_novel_pipeline.core import character_profiles as cp
+
+    root, data, result, chapter, entity, calls = setup
+    designs = result['visual_designs']
+    # The prologue mentions the person, but all physical evidence comes later.
+    document = designs['character_profiles']
+    first = document['source_document']['chapters'][0]
+    first['evidence'] = []
+    document['source_digest'] = cp._digest(document['source_document'])
+    profile = document['profiles'][0]
+    removed = profile['supporting_evidence'][0]['evidence_id']
+    profile['supporting_evidence'] = [r for r in profile['supporting_evidence'] if r['evidence_id'] != removed]
+    profile['temporary_states'] = []
+    profile['identity_support'] = [i for i in profile['identity_support'] if i != removed]
+    for key in profile['attributes']:
+        profile['attributes'][key] = [r for r in profile['attributes'][key] if r['evidence_id'] != removed]
+    designs['entities'] = []
+    _, imported = integration.apply(designs, [chapter], [entity], root / 'refs', None, 'mock', settings())
+    assert entity['stable_visual_description'] == 'green eyes'
+    assert imported['CHAR_042']['source_facts']['stable_visual_description'] == 'green eyes'
+    identity_calls = [payload for schema, payload in calls if schema == integration.IDENTITY]
+    assert identity_calls
+    assert all(r['observation']['provenance']['file'] != 'chapter1.txt'
+               for r in identity_calls[0]['profile']['supporting_evidence'])
 
 
 def test_manual_defaults_are_separate_and_ignored_fields_cannot_return(setup):
