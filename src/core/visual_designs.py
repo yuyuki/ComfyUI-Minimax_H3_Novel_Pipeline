@@ -25,9 +25,9 @@ def object_schema(properties):
 
 
 DESIGN_SCHEMA = {"name": "visual_design_additions", "strict": True, "schema": object_schema({
-    "added_details": {"type": "array", "items": object_schema({
+    "added_details": {"type": "array", "maxItems": 8, "items": object_schema({
         "trait": {"type": "string", "enum": sorted({trait for traits in DESIGN_TRAITS.values() for trait in traits})},
-        "description": {"type": "string"},
+        "description": {"type": "string", "minLength": 1, "maxLength": 180},
     })},
 })}
 CONFLICT_SCHEMA = {"name": "visual_design_conflicts", "strict": True, "schema": object_schema({
@@ -44,7 +44,8 @@ descriptions in the source_facts' source language. Do not translate into English
 Keep JSON keys and allowed trait names unchanged; image_style is not a language cue.
 Fill unspecified identity/design details needed for consistent images;
 never repeat, replace or contradict a source-supported trait. Make one definite choice,
-not alternatives. Keep each value under 180 characters and at most 8 traits.
+not alternatives. Use each trait key at most once; combine its details in one value.
+Keep each value at most 180 characters and at most 8 traits.
 Do not invent plot, relationships, dialogue or voice traits. A reusable default outfit
 may be added when unspecified; chapter-specific states take precedence over defaults.
 Designs must suit the source's setting, entity type and supplied image style.
@@ -204,18 +205,28 @@ def prepare_designs(chat, client, model, entities, args, path=""):
 
         def validate_new(result):
             details = result.get("added_details")
-            if not isinstance(details, list) or len(details) > 8:
+            if not isinstance(details, list):
                 raise ValueError("added_details must be a list with at most 8 traits")
             seen = set()
+            distinct = []
             for item in details:
                 if not isinstance(item, dict) or any(not isinstance(item.get(k), str) or not item[k].strip()
                                                     for k in ("trait", "description")):
                     raise ValueError("Every design trait needs a name and description")
-                if item["trait"].casefold() in seen or len(item["description"]) > 180:
-                    raise ValueError("Design traits must be unique, with descriptions under 180 characters")
+                if item["trait"].casefold() in seen:
+                    continue
+                if len(item["description"]) > 180:
+                    raise ValueError(
+                        f"Design trait {item['trait']!r} description has {len(item['description'])} characters; "
+                        "rewrite it in at most 180 characters while preserving its visual details"
+                    )
                 if item["trait"] not in context["allowed_traits"]:
                     raise ValueError("Use only these trait keys: " + ", ".join(context["allowed_traits"]))
                 seen.add(item["trait"].casefold())
+                distinct.append(item)
+            details = distinct
+            if len(details) > 8:
+                raise ValueError("added_details must be a list with at most 8 traits")
             verdicts = check_additions({item["trait"]: item["description"] for item in details})
             # A model may repeat facts despite being asked only for additions.
             # Keep those facts in the authoritative source description, not the design.
@@ -229,7 +240,7 @@ def prepare_designs(chat, client, model, entities, args, path=""):
                 raise ValueError(f"{exc}. Correct added_details in visual_designs.json and retry.") from exc
         else:
             response = validated_request(chat, client, model, DESIGN_SYSTEM + "\n" + temporal_context.RULES, context,
-                                         DESIGN_SCHEMA, args, validate_new)
+                                         DESIGN_SCHEMA, args, validate_new, include_previous=True)
             added = {item["trait"]: item["description"] for item in response["added_details"]}
 
         if gid in imported and imported[gid].get('character_id'):

@@ -712,6 +712,75 @@ def test_design_verdicts_distinguish_source_facts_from_additions(output_root):
     assert designs["entities"][0]["added_details"] == {"hair": "Copper hair."}
 
 
+@pytest.mark.parametrize("invalid_details, feedback", [
+    ([{"trait": "hair", "description": "é" * 181}], "'hair' description has 181 characters"),
+])
+def test_design_format_retry_receives_previous_details(output_root, monkeypatch, invalid_details, feedback):
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    requests = []
+    corrected = "Curly copper hair."
+
+    def chat(client, model, system, user, schema, *args):
+        if schema is visual_designs.DESIGN_SCHEMA:
+            requests.append(user)
+            description = schema["schema"]["properties"]["added_details"]["items"]["properties"]["description"]
+            assert description["maxLength"] == 180
+            assert schema["schema"]["properties"]["added_details"]["maxItems"] == 8
+            if len(requests) == 1:
+                return {"added_details": copy.deepcopy(invalid_details)}
+            assert feedback in user
+            assert json.dumps({"added_details": invalid_details}, ensure_ascii=False) in user
+            return {"added_details": [{"trait": "hair", "description": corrected}]}
+        return design_checks(user)
+
+    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+    assert len(requests) == 2
+    assert designs["entities"][0]["added_details"] == {"hair": corrected}
+
+
+@pytest.mark.parametrize("duplicate_description", ["Copper hair.", "Curly hair."])
+@pytest.mark.parametrize("count", [2, 9])
+def test_duplicate_design_traits_keep_first_without_retry(output_root, monkeypatch, duplicate_description, count):
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 0)
+    requests = []
+
+    def chat(client, model, system, user, schema, *args):
+        requests.append(schema["name"])
+        if schema is visual_designs.DESIGN_SCHEMA:
+            return {"added_details": [{"trait": "hair", "description": "Copper hair."}]
+                    + [{"trait": "hair", "description": duplicate_description} for _ in range(count - 1)]
+                    + [{"trait": "accessories", "description": "A brass ring."}]}
+        assert json.loads(user)["added_details"] == {"hair": "Copper hair.", "accessories": "A brass ring."}
+        return design_checks(user)
+
+    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+    assert designs["entities"][0]["added_details"] == {"hair": "Copper hair.", "accessories": "A brass ring."}
+    assert requests == ["visual_design_additions", "visual_design_conflicts"]
+
+
+@pytest.mark.parametrize("length", [180, 181])
+def test_design_description_length_schema_and_validator_agree(output_root, monkeypatch, length):
+    from jsonschema import Draft202012Validator
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 0)
+    response = {"added_details": [{"trait": "hair", "description": "é" * length}]}
+    validator = Draft202012Validator(visual_designs.DESIGN_SCHEMA["schema"])
+    assert validator.is_valid(response) == (length == 180)
+    requests = []
+
+    def chat(client, model, system, user, schema, *args):
+        requests.append(schema["name"])
+        return response if schema is visual_designs.DESIGN_SCHEMA else design_checks(user)
+
+    if length == 180:
+        designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+        assert designs["entities"][0]["added_details"]["hair"] == "é" * length
+    else:
+        with pytest.raises(reference_requests.InvalidResponse, match="hair.*181 characters"):
+            visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+        assert requests == ["visual_design_additions"]
+
+
 def test_new_design_conflict_regenerates_within_retry_budget(output_root, monkeypatch):
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     generations = []
