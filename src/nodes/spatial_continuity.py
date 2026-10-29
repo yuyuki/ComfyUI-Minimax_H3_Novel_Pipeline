@@ -12,6 +12,7 @@ from typing import Any
 
 from ..core import progress, lmstudio_pipeline, util
 from ..core.narrative_choices import resolve_chapter
+from ..core.character_visual_integration import sequence_context
 from ..core.lmstudio_json import chat_json
 from ..core.run_output import stage_output
 from ..core.editable_schemas import SCHEMA_DIR, export_schema, validate_document
@@ -173,7 +174,9 @@ class SpatialContinuityNode:
                         "whole_chapter_timeline": ordered,
                         "entity_registry": consolidated_references.get("entities", []),
                         "chapter_references": timeline.get("references", {}),
-                        "visual_designs": consolidated_references.get("visual_designs", {}),
+                        "visual_designs": {k: v for k, v in consolidated_references.get("visual_designs", {}).items()
+                                           if k != 'character_profiles'},
+                        "character_enrichment": sequence_context(consolidated_references, chapter_id, seq_id),
                         "previous_final_state": planned[-1]["final_entities"] if planned else [],
                         "previous_camera": planned[-1]["camera"] if planned else {},
                     }

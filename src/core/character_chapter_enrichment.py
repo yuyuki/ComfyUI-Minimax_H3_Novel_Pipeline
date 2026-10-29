@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import PureWindowsPath
 
-from . import character_profiles as cp, cinematic_references, util
+from . import character_profiles as cp, util
 from .character_profile_batches import schema, TEXT, encoded
 from .editable_schemas import SCHEMA_DIR, export_schema, validate_document
 
@@ -99,23 +99,6 @@ def source_span(text, passage):
     if not needle or start < 0 or haystack.find(needle, start + 1) >= 0:
         return None
     return starts[start], ends[start + len(needle) - 1]
-
-
-def selected_chapter(data, chapters):
-    chapters = cinematic_references.parse_chapters(chapters)
-    if len(chapters) != 1:
-        raise ValueError('Select exactly one cinematic chapter for character enrichment.')
-    chapter = chapters[0]
-    matches = [c for c in data['source_document']['chapters']
-               if source_key(c['source_file']) == source_key(chapter.get('source_file', ''))]
-    if len(matches) != 1:
-        raise ValueError('Cinematic source_file must identify exactly one chapter in the global evidence.')
-    chapter['_source_text'] = matches[0]['source_text']
-    for seq in chapter['sequences']:
-        if source_span(chapter['_source_text'], seq['source']) is None:
-            raise ValueError('Every cinematic sequence source must identify a unique passage of the matched chapter '
-                             '(whitespace formatting may differ).')
-    return chapter
 
 
 def request(requests, system, contract, payload, check):

@@ -1,25 +1,14 @@
-"""Stable visual designs, evidence retention and shared structured transport."""
-from contextlib import nullcontext
+"""Deterministic projection and current node wiring."""
 from copy import deepcopy
+import inspect
 import json
-from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
-from minimax_h3_novel_pipeline import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
-from minimax_h3_novel_pipeline.core import character_profiles as cp, character_visual_profiles as vp
-from minimax_h3_novel_pipeline.nodes import character_visual_profile_generator as node
+from minimax_h3_novel_pipeline.core import character_profiles as cp, character_visual_profiles as vp, path_access
+from minimax_h3_novel_pipeline.nodes.character_visual_profile_generator import CharacterVisualProfileGeneratorNode as Generator
 from tests.test_character_evidence import observation
-from tests.test_character_profiles import document, plan, settings
-from minimax_h3_novel_pipeline.core import path_access
-from tests.test_structured_json import Stream, client_for
-
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path / kind)
-    return tmp_path / "output"
+from tests.test_character_profiles import document, plan
 
 
 def consolidated(*items):
@@ -42,189 +31,114 @@ def cinematic(data):
                             'adaptation': {p: source['source_text'] for p in ('initialState', 'event', 'endingState')}}]}]
 
 
-def design(data):
-    result = {field: [] for field in vp.FIELDS}
-    result["eyes"] = [{"description": "Green eyes.", "classification": "canonical",
-                       "evidence": [{"evidence_id": data["profiles"][0]["supporting_evidence"][0]["evidence_id"]}]}]
-    return result
 
-
-def chat_mock(monkeypatch, value):
-    chat = Mock(side_effect=lambda *a: {"issues": []} if a[4] == vp.REVIEW_SCHEMA else deepcopy(value))
-    monkeypatch.setattr(vp.lmstudio_json, "chat_json", chat)
-    return chat
-
-
-@pytest.mark.parametrize("mode", vp.MODES)
-def test_node_modes_english_exact_evidence_and_json(workspace, monkeypatch, mode):
+def test_node_uses_selection_without_model_or_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path / kind)
+    source = tmp_path / 'input' / 'chapter1.txt'
+    source.parent.mkdir()
+    source.write_text('Élise avait les yeux verts.', encoding='utf-8')
     data = consolidated()
-    original = deepcopy(data)
-    chat = chat_mock(monkeypatch, design(data))
-    monkeypatch.setattr(node.character_chapter_enrichment, 'enrich', lambda *a: {
-        '$schema': './character_chapter_enrichment.schema.json', 'format_version': 1,
-        'source_file': 'chapter1.txt', 'chapter_name': 'chapter1', 'chapter_digest': 'test',
-        'profiles_digest': 'test', 'sequences': [{'sequence': 1, 'characters': [{
-            'local_id': data['profiles'][0]['local_id'], 'presence': 'visible', 'source_quote': 'Élise', 'label': 'Élise'}],
-            'states': [], 'unresolved': []}]})
-    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen"))
-    monkeypatch.setattr(node, "stage_output", lambda *a: workspace)
-    result, saved = node.CharacterVisualProfileGeneratorNode().run(
-        data, {"api_url": "http://127.0.0.1:1234/v1"}, mode=mode, cinematic_chapters=cinematic(data))["result"]
-    assert data == original
-    assert result["source_document"] == original
-    assert result["mode"] == mode
-    p = result["profiles"][0]
-    assert p["local_id"] == data["profiles"][0]["local_id"]
-    assert p["supporting_evidence"] == data["profiles"][0]["supporting_evidence"]
-    assert p["eyes"][0]["description"] == "Green eyes."
-    assert p["hair"] == []
-    text = Path(saved).read_text(encoding="utf-8")
-    assert '\n  ' in text and "Élise avait les yeux verts." in text
-    assert json.loads(text) == result
-    global_designs = json.loads((Path(saved).parent / "visual_designs.json").read_text(encoding="utf-8"))
-    assert [e["global_id"] for e in global_designs["entities"]] == [p["local_id"]]
-    assert global_designs["entities"][0]["source_facts"]["stable_visual_description"] == "Green eyes."
-    assert chat.call_count == 2
-    assert json.loads(chat.call_args_list[0].args[3])["mode"] == mode
-    assert "English" in chat.call_args_list[0].args[2]
-    assert "English" in chat.call_args_list[1].args[2]
-    assert NODE_CLASS_MAPPINGS["CharacterVisualProfileGeneratorNode"] is node.CharacterVisualProfileGeneratorNode
-    assert NODE_DISPLAY_NAME_MAPPINGS["CharacterVisualProfileGeneratorNode"] == "Character Visual Profile Generator"
-
-
-@pytest.mark.parametrize("mode,kind,valid", [("strict_canon", "inferred", False),
-    ("strict_canon", "creative", False), ("balanced", "inferred", True),
-    ("balanced", "creative", False), ("cinematic", "creative", True)])
-def test_mode_classifications(mode, kind, valid):
-    data = consolidated()
-    response = design(data)
-    response["hair"] = [{"description": "Neatly cropped hair.", "classification": kind,
-                         "evidence": response["eyes"][0]["evidence"]}]
-    if valid:
-        vp.validate_design(response, vp.prepare_profiles(data)[0], mode)
-    else:
-        with pytest.raises(ValueError, match="generation mode"):
-            vp.validate_design(response, vp.prepare_profiles(data)[0], mode)
-
-
-@pytest.mark.parametrize('selected', [(True, False), (True, True), (False, False)])
-def test_edited_conflict_selections(workspace, monkeypatch, selected):
-    data = consolidated(observation(), observation("Élise avait les yeux bleus.", value="yeux bleus"))
-    profile = data['profiles'][0]
-    ids = [r['evidence_id'] for r in profile['supporting_evidence']]
-    profile['unresolved_conflicts'] = [{'conflict_id': 'eyes', 'trait': 'eye_color', 'scope': 'same period',
-        'evidence_ids': ids, 'choices': [{'id': str(i), 'value': str(i), 'evidence_ids': [key],
-                                        'selected': selected[i]} for i, key in enumerate(ids)]}]
-    projected = vp.prepare_profiles(data)[0]
-    expected = design(data) if any(selected) else {f: [] for f in vp.FIELDS}
-    chat_mock(monkeypatch, expected)
-    result, _ = vp.generate(data, [projected], workspace, None, 'qwen', settings(mode='cinematic'))
-    assert result['profiles'][0]['unresolved_conflicts'] == profile['unresolved_conflicts']
-    assert result['profiles'][0]['eyes'] == expected['eyes']
-    assert bool(projected['ignored_traits']) == (not any(selected))
-
-
-def test_canonical_coverage_refs_and_temporary_traits():
-    data = consolidated()
-    response = design(data)
-    response["eyes"] = []
-    with pytest.raises(ValueError, match="every unblocked"):
-        vp.validate_design(response, vp.prepare_profiles(data)[0], "strict_canon")
-    response = design(data)
-    response["eyes"][0]["evidence"][0]["evidence_id"] = "invented"
-    with pytest.raises(ValueError, match="unknown evidence"):
-        vp.validate_design(response, vp.prepare_profiles(data)[0], "strict_canon")
-    for attribute in ("clothing", "accessory"):
-        data = consolidated(observation(attribute=attribute, persistence="temporary"))
-        response = {f: [] for f in vp.FIELDS}
-        response["accessories"] = design(data)["eyes"]
-        with pytest.raises(ValueError, match="unknown evidence"):
-            vp.validate_design(response, vp.prepare_profiles(data)[0], "strict_canon")
-
-
-@pytest.mark.parametrize("issue,bad", [("Description is not English", "Les yeux verts."),
-                                      ("Canonical eye colour contradicts cited evidence", "Blue eyes.")])
-def test_semantic_review_retries_english_and_fidelity(workspace, monkeypatch, issue, bad):
-    data = consolidated()
-    wrong = design(data)
-    wrong["eyes"][0]["description"] = bad
-    chat = Mock(side_effect=[wrong, {"issues": [issue]}, design(data), {"issues": []}])
-    monkeypatch.setattr(vp.lmstudio_json, "chat_json", chat)
-    result, _ = vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", settings(mode="strict_canon"))
-    assert result["profiles"][0]["eyes"][0]["description"] == "Green eyes."
-    assert issue in chat.call_args_list[2].args[3]
-    for call in chat.call_args_list:
-        assert call.args[4]["strict"] is True
-        assert data["profiles"][0]["supporting_evidence"][0]["evidence_id"] in call.args[3]
-
-
-def test_cache_mode_invalidation_and_invalid_cache(workspace, monkeypatch):
-    data = consolidated()
-    chat = chat_mock(monkeypatch, design(data))
-    args = settings(mode="balanced")
-    for _ in range(2):
-        vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", args)
-    assert chat.call_count == 2
-    cache = next((workspace / ".cache").glob("*.json"))
-    cache.write_text('{}')
-    vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", args)
-    assert chat.call_count == 3  # The independently validated review remains cached.
-    args.mode = "cinematic"
-    vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", args)
-    assert chat.call_count == 5
-    args.force = True
-    vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", args)
-    assert chat.call_count == 7
-
-
-def test_invalid_input_before_client(monkeypatch):
-    client = Mock()
-    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", client)
-    data = consolidated()
-    data["profiles"][0]["supporting_evidence"][0]["observation"]["quotation"] = "changed"
-    with pytest.raises(ValueError, match="differs from its validated source"):
-        node.CharacterVisualProfileGeneratorNode().run(data, {"api_url": "http://127.0.0.1:1234/v1"})
-    client.assert_not_called()
-
-
-def test_real_transport_compact_retry_preserves_schema_and_all_evidence(workspace):
-    data = consolidated()
-    response = design(data)
-    client, create = client_for(Stream(['{"eyes":']), Stream([json.dumps(response)]), Stream(['{"issues": []}']))
-    vp.generate(data, vp.prepare_profiles(data), workspace, client, "qwen", settings(mode="strict_canon"))
-    requests = create.call_args_list
-    assert len(requests) == 3
-    for call in requests:
-        assert call.kwargs["response_format"]["type"] == "json_schema"
-    for call in requests[:2]:
-        schema = call.kwargs["response_format"]["json_schema"]
-        assert set(schema["schema"]["properties"]) == set(vp.FIELDS)
-        assert "maxItems" not in schema["schema"]["properties"]["eyes"]["items"]["properties"]["evidence"]
-        assert data["profiles"][0]["supporting_evidence"][0]["evidence_id"] in str(call.kwargs["messages"])
-
-
-def test_rejected_review_does_not_save_output(workspace, monkeypatch):
-    data = consolidated()
-    chat = Mock(side_effect=[design(data), {"issues": ["Unsupported canonical detail"]}])
-    monkeypatch.setattr(vp.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ValueError, match="no valid decision"):
-        vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen",
-                    settings(mode="strict_canon", correction_attempts=0))
-    assert not (workspace / "character_visual_profiles.json").exists()
-    assert not list((workspace / ".cache").glob("*character_visual_profile*"))
-
-
-def test_empty_input_and_precise_values(workspace, monkeypatch):
-    source = document()
+    chapter = data['source_document']['chapters'][0]
+    chapter['source_file'] = str(source)
+    chapter['evidence'][0]['provenance']['file'] = str(source)
+    records = cp.prepare_evidence(data['source_document'])
     from minimax_h3_novel_pipeline.core.character_profile_document import make_document
-    data = make_document(source, {}, [])
-    chat = Mock()
-    monkeypatch.setattr(vp.lmstudio_json, "chat_json", chat)
-    result, saved = vp.generate(data, vp.prepare_profiles(data), workspace, None, "qwen", settings(mode="balanced"))
-    assert result["profiles"] == [] and Path(saved).is_file()
-    chat.assert_not_called()
-    data = consolidated()
-    value = design(data)
-    value["eyes"][0]["description"] = "Green or blue eyes."
-    with pytest.raises(ValueError, match="alternatives"):
-        vp.validate_design(value, vp.prepare_profiles(data)[0], "balanced")
+    p = cp.build_profiles(plan(records), records)
+    p[0]['global_traits'] = [{'trait': 'eye_color', 'value': 'yeux verts', 'evidence_ids': list(records)}]
+    data = make_document(data['source_document'], records, p)
+    original = deepcopy(data)
+    result, saved = Generator().run(data, {'chapter_paths': [str(source)]},
+        {'run_folder': '20261028120000'})['result']
+    assert data == original
+    assert result['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'yeux verts'
+    assert json.loads(open(saved, encoding='utf-8').read()) == result
+    assert not list((tmp_path / 'output').rglob('.cache'))
+    assert 'cinematic_chapters' not in inspect.signature(Generator.run).parameters
+    assert set(Generator.INPUT_TYPES()['required']) == {'character_profiles', 'chapter_selection', 'lmstudio_config', 'out_dir'}
+
+
+def test_cross_chapter_traits_and_temporary_exclusion(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    data = consolidated(observation('She enters.', persistence='temporary', attribute='clothing'),
+                        observation('Her eyes are green.'))
+    result, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'design')
+    assert result['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'yeux verts'
+    assert len(result['profiles'][0]['supporting_evidence']) == 2
+    assert 'chapter_enrichment' not in result
+
+
+@pytest.mark.parametrize('choice', [None, 0, 1])
+def test_manual_choice_and_ignored_traits(tmp_path, monkeypatch, choice):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    data = consolidated(observation(), observation('Blue eyes.', value='blue'))
+    p = data['profiles'][0]
+    ids = [r['evidence_id'] for r in p['supporting_evidence']]
+    p['unresolved_conflicts'] = [{'conflict_id': 'eye', 'trait': 'eye_color', 'scope': 'same period',
+        'evidence_ids': ids, 'choices': [{'id': str(i), 'value': v, 'selected': choice == i, 'evidence_ids': [ids[i]]}
+                                      for i, v in enumerate(['edited green', 'edited blue'])]}]
+    result, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'design')
+    fact = result['visual_designs']['entities'][0]['source_facts']['stable_visual_description']
+    assert fact == ('' if choice is None else ['edited green', 'edited blue'][choice])
+
+
+def test_homonymous_source_paths_do_not_select_by_name():
+    data = consolidated(observation(), observation('Other chapter.'))
+    # Change source identities before building the validated profile document.
+    evidence = data['source_document']
+    for c, folder in zip(evidence['chapters'], ['one', 'two']):
+        c['source_file'] = folder + '/same.txt'
+        c['chapter_name'] = 'same'
+        c['evidence'][0]['provenance'].update(file=c['source_file'], chapter_name='same')
+    records = cp.prepare_evidence(evidence)
+    from minimax_h3_novel_pipeline.core.character_profile_document import make_document
+    groups = {'profiles': [{'canonical_name': 'Élise', 'identity_status': 'confirmed',
+        'identity_support': [], 'evidence': [{'evidence_id': k}]} for k in records]}
+    data = make_document(evidence, records, cp.build_profiles(groups, records))
+    first = vp.select_profiles(data, ['one/same.txt'])
+    second = vp.select_profiles(data, ['two/same.txt'])
+    assert len(first) == len(second) == 1
+    assert first[0]['local_id'] != second[0]['local_id']
+    with pytest.raises(ValueError, match='exactly one evidence chapter'):
+        vp.select_profiles(data, ['same.txt'])
+
+
+def test_chronology_cannot_return_through_edited_defaults(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    data = consolidated(observation('Her hair is black.', value='black hair'),
+                        observation('Years later her hair is white.', value='white hair'))
+    profile = data['profiles'][0]
+    for row in profile['global_traits']:
+        row['trait'] = 'hair_color'
+    previous, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'first')
+    previous['visual_designs']['entities'][0]['added_details'] = {
+        'hair': 'white hair', 'facial_features': 'A narrow nose'}
+    before, after = [r['evidence_id'] for r in profile['supporting_evidence']]
+    profile['chronological_changes'] = [{'trait': 'hair_color', 'before_id': before,
+        'after_id': after, 'support_id': after, 'temporal_quote': 'Years later'}]
+    result, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'next', previous['visual_designs'])
+    item = result['visual_designs']['entities'][0]
+    assert item['source_facts']['stable_visual_description'] == ''
+    assert item['added_details'] == {'facial_features': 'A narrow nose'}
+    # The evolution remains available to scene-local decisions.
+    assert 'hair_color' not in result['profiles'][0]['ignored_traits']
+    assert result['profiles'][0]['chronological_changes'] == profile['chronological_changes']
+
+
+def test_ignored_facial_traits_block_defaults_in_the_correct_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    data = consolidated(observation('Her nose is narrow.', value='narrow nose'),
+                        observation('Her nose is broad.', value='broad nose'))
+    profile = data['profiles'][0]
+    for row in profile['global_traits']:
+        row['trait'] = 'nose_shape'
+    previous, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'first')
+    previous['visual_designs']['entities'][0]['added_details'] = {
+        'facial_features': 'A narrow nose', 'build': 'slender'}
+    ids = [r['evidence_id'] for r in profile['supporting_evidence']]
+    profile['unresolved_conflicts'] = [{'conflict_id': 'nose', 'trait': 'nose_shape', 'scope': 'same period',
+        'evidence_ids': ids, 'choices': [{'id': str(i), 'value': value, 'selected': False, 'evidence_ids': [key]}
+                                      for i, (key, value) in enumerate(zip(ids, ['narrow nose', 'broad nose']))]}]
+    result, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'next', previous['visual_designs'])
+    item = result['visual_designs']['entities'][0]
+    assert item['source_facts']['stable_visual_description'] == ''
+    assert item['added_details'] == {'build': 'slender'}

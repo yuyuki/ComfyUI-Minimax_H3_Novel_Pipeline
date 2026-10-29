@@ -368,54 +368,53 @@ execution and are never replaced by an old model response. Correct invalid
 source evidence through **Load Character Evidence** and reconsolidate instead.
 
 Connect **Load Character Profiles** (or the consolidator directly) to
-**Character Visual Profile Generator**, together with the Qwen configuration and
-`cinematic_chapters` from the adapter or cinematic loader. Select exactly one
-chapter; its source file must match a chapter in the global evidence. Other chapters
-need no cinematic adaptation. `context_tokens` bounds generation and review requests;
-large profiles are split without dropping observations.
+**Character Visual Profile Generator**, together with **Select Chapters** and
+**LM Studio Configuration** for the output run folder. See
+[CharacterPhysicalProfiles.json](CharacterPhysicalProfiles.json) for this wiring.
+The generator accepts `chapter_selection`, independently of cinematic adaptation.
+Source file paths distinguish chapters with identical names. Only identities with
+validated evidence in the selected chapters are exported; selection does not imply
+that a character appears on screen.
 
-The generator applies the first selected conflict choice. If no choice is selected,
-it ignores that precise trait, including in invented additions. Direct identity links
-combine sources under the principal identity. Conflicting newly linked traits remain
-unresolved and are omitted from the reusable design. Contextual aliases and pronouns
-are resolved per sequence; ambiguous identities remain visible for review without
-arbitrary merging. Presence distinguishes visible, offscreen, mentioned and uncertain.
-
-Choose `balanced`, `strict_canon` (no invented completions), or `cinematic`.
-Stable traits revealed elsewhere in the book can enrich this chapter. Temporary
-clothing, wounds and equipment are attached only to attested sequences; documented
-changes require story-time evidence, including for flashbacks. Local temporary
-observations absent from the global base may be extracted from the current sequence,
-with exact source quotations and a separate semantic review. Wounds do not imply scars.
+The generator projects validated permanent physical traits from the entire profile
+document, including other chapters. It makes no model calls, invents no missing
+features and creates no cache. The first selected conflict choice applies; an
+unselected conflict is ignored. Explicit identity links combine evidence, while
+incompatible linked traits remain unresolved. Chronological variants, temporary
+clothing, accessories, injuries, expressions, poses and actions are excluded.
 
 The output folder contains:
 
-- `character_visual_profiles.json`: designs, original profiles and chapter enrichment;
-  the existing `saved_file` output points here.
-- `visual_designs.json` and its schema: reusable `source_facts` and editable
-  `added_details`. Canon is kept separate from additions.
-- `character_chapter_enrichment.json` and its schema: identities, presence, local states,
-  quotations and evidence references for each sequence.
+- `character_visual_profiles.json`: selected profiles, the original document and
+  embedded visual designs; `saved_file` points here.
+- `visual_designs.json` and schemas: stable `source_facts`, separate editable physical
+  `added_details`, and validated `character_profiles` with identity and provenance.
 
-Connect `character_visual_profiles` to the optional input with the same name on
-**Consolidate References**, alongside catalogs for the same cinematic chapter revision.
-This carries global facts and approved defaults into reference assets, and local states
-into H3 sequence planning and prompt generation. Mentioned and offscreen characters
-must not automatically become visible. Uncertain registry identity mappings emit a
-warning and are left unassigned. `visual_designs_path` alone imports defaults; use
-the socket to transmit chapter enrichment too.
+Connect `character_visual_profiles` to **Consolidate References**, or set its
+`visual_designs_path` to the exported file. Both paths carry the same permanent facts
+and identity evidence. Profile IDs and registry IDs are independent: consolidation
+checks contextual identity evidence and leaves ambiguous mappings unassigned with a
+warning. Matching names alone never establish a profile-backed identity.
 
-For the next chapter, pass the previous or edited `visual_designs.json` through the
-visual generator's `visual_designs_path`. Existing defaults and characters absent from
-this chapter are preserved, and additions are checked against current source facts
-and temporal context. Files stay inside `output/minimax_h3_novel`.
+Consolidation computes presence and local appearance from the current chapter's
+cinematic sequences. Clothes, accessories, temporary injuries and chronological
+changes stay at their attested narrative moment. Mentions and offscreen characters
+never imply visibility. H3 planning and prompts receive these local states along with
+the stable physical facts. Local enrichment files are saved beneath
+`references/<chapter_id>/`; their cache is `references/.cache/<chapter_id>/`.
 
-**Load Character Visual Profiles** reopens `character_visual_profiles.json` (including
-renamed copies) without LM Studio or writes and exposes the same outputs as the generator.
-Its embedded `visual_designs` and `chapter_enrichment` are the downstream data; edit those
-sections when reviewing this combined file. To change identity links or conflict choices,
-edit the source `character_profiles.json`, reload it and rerun the visual generator.
-Changing cinematic sequences requires regenerating their enrichment.
+For another chapter, pass edited `visual_designs.json` to the generator's optional
+input to reuse compatible physical defaults. Only selected identities are exported.
+Defaults in ignored, chronologically changing or source-established physical fields are omitted; clothing and
+accessory defaults are excluded from this physical projection. To correct facts,
+identity links or conflict choices, edit the embedded `character_profiles` document
+(or the upstream profile file), reload it and rerun the generator. `source_facts`
+is a deterministic projection of these decisions. Files remain inside
+`output/minimax_h3_novel`.
+
+**Load Character Visual Profiles** reloads saved current generator output without
+model calls or writes. Consolidation recomputes local states when cinematic sequences
+change; the physical generator does not depend on their revision.
 
 
 All node caches live directly under their configured output directory:

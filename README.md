@@ -26,10 +26,10 @@ Turn novel chapters into organized character, location and object references, th
 1. In LM Studio, load a supported Qwen or Mistral model and start its local API server.
 2. In **ComfyUI Settings → MiniMax H3 Novel → LM Studio**, set the API key. If authentication is off in LM Studio, use `lm-studio`.
 3. Add **LM Studio Configuration** to your workflow. The default server address is `http://127.0.0.1:1234/v1`. For another address, set the same value as **Trusted API URL** in ComfyUI settings.
-4. Add **Select Chapters**, **Extract Chapter References**, **Consolidate References**, and **Generate H3 Prompts**. Connect the configuration node to each processing node and connect the chapter selection and pipeline outputs in order.
+4. Connect **Select Chapters** → **Cinematic Chapter Adapter** → **Extract Chapter References** → **Consolidate References** → **Generate H3 Prompts**. Share the configuration with each processing node and connect the chapter selection to Generate as well.
 5. Choose your chapter files, then queue the workflow. The plugin saves results under `ComfyUI/output/minimax_h3_novel/`.
 
-The chapter picker supports TXT, Markdown and searchable PDF files. You can also use the **Cinematic Chapter Adapter** before extraction when you want to review chapter scenes first. See [examples](examples/README.md) for workflow details and saved-file loading.
+The chapter picker supports TXT, Markdown and searchable PDF files. Review the adapter's chapter scenes before extraction, or reload edited scenes with **Load Cinematic Chapters**. See [examples](examples/README.md) for workflow details and saved-file loading.
 
 ## Nodes
 
@@ -50,13 +50,16 @@ The chapter picker supports TXT, Markdown and searchable PDF files. You can also
 | **Load Character Evidence** | Loads saved or manually edited character evidence. |
 | **Consolidate Character Profiles** | Groups evidence into source-linked character profiles. |
 | **Load Character Profiles** | Loads and validates saved character profiles. |
-| **Character Visual Profile Generator** | Enriches one cinematic chapter from global profiles and creates reusable character designs. |
-| **Load Character Visual Profiles** | Loads saved character designs and chapter enrichment for Consolidate References. |
+| **Character Visual Profile Generator** | Extracts validated permanent physical traits for selected chapters without model calls. |
+| **Load Character Visual Profiles** | Loads saved physical character profiles for Consolidate References. |
 
 For consistent characters across chapters, connect edited **Load Character Profiles**
-and one chapter from **Cinematic Chapter Adapter** to **Character Visual Profile Generator**.
+and **Select Chapters** to **Character Visual Profile Generator**; share the configuration
+for its output folder.
 Connect its `character_visual_profiles` output to **Consolidate References** alongside
-the catalogs for the same chapter. Reuse an earlier `visual_designs.json` through the
+the catalogs for the same source chapters. Consolidation computes scene-local details.
+Alternatively, import the generator’s `visual_designs.json` through consolidation’s
+`visual_designs_path`. Reuse an earlier `visual_designs.json` through the
 generator's `visual_designs_path` to keep your edited defaults between chapters.
 
 ## Major changes by release

@@ -488,6 +488,23 @@ def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> li
     return result
 
 
+def constrain_character_presence(refs: dict[str, Any], chapter_id: str, scene: Scene) -> None:
+    """Keep mapped mentions and offscreen voices out of visual reference bindings."""
+    context = sequence_context(refs, chapter_id, scene.sequence)
+    if context is None or context['sequence'] is None:
+        return
+    mapping = context['registry_ids']
+    presence = dict.fromkeys(mapping.values(), 'absent')
+    presence.update({mapping[row['local_id']]: row['presence']
+                     for row in context['sequence']['characters']})
+    scene.visible_entity_ids = [gid for gid in scene.visible_entity_ids
+                                if gid not in presence or presence[gid] == 'visible']
+    scene.speaking_entity_ids = [gid for gid in scene.speaking_entity_ids
+                                 if gid not in presence or presence[gid] in ('visible', 'offscreen')]
+    scene.reference_view_requests = [request for request in scene.reference_view_requests
+                                    if request.global_id not in presence or presence[request.global_id] == 'visible']
+
+
 PLAN_SYSTEM = """
 Select short, visually coherent scenes from ONE cinematic sequence.
 Spatial staging must not select, add or advance story beats.
@@ -1459,12 +1476,16 @@ def process_chapter(
             print(f"  planning chunk {i}/{len(chunks)}: cached")
         scenes.extend(chunk_scenes)
 
+    # Apply current consolidation decisions even when planning reused a cache entry.
+    for scene in scenes:
+        constrain_character_presence(refs, chapter_id, scene)
+
     if args.max_scenes > 0:
         scenes = scenes[:args.max_scenes]
     print(f"  selected {len(scenes)} scene(s)")
 
     anchors = getattr(args, "spatial_anchors", None)
-    visual_designs = refs.get("visual_designs", {})
+    visual_designs = {k: v for k, v in refs.get("visual_designs", {}).items() if k != "character_profiles"}
     continuity_states: list[dict[str, Any]] = []
     if sequence_plans:
         for scene in scenes:

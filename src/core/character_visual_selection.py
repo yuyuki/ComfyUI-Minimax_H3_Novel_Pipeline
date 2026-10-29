@@ -11,6 +11,8 @@ def field_for(trait):
         return 'hair'
     if trait.startswith('skin_'):
         return 'skin'
+    if trait in ('nose_shape', 'cheekbones', 'lips', 'chin', 'face_shape', 'teeth'):
+        return 'facial_features'
     return {'age': 'age_appearance', 'clothing': 'default_outfit',
             'accessory': 'accessories'}.get(trait, 'build')
 
@@ -55,7 +57,7 @@ def project(data):
                     for k in r['evidence_ids']):
                 p['effective_traits'].append(deepcopy(r))
         # Newly linked profiles can carry incompatible decisions that were never compared.
-        # Keep them out of reusable canon until the bounded comparison has resolved them.
+        # The physical projection blocks these values until the operator resolves them.
         p['linked_trait_conflicts'] = []
         if len(p['linked_local_ids']) > 1:
             by_trait = {}

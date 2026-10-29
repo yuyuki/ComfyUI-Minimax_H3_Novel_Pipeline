@@ -10,6 +10,13 @@
 - Do not retain or introduce legacy code, obsolete formats, migration shims or
   compatibility paths for removed features. Remove their unused tests and docs;
   support only the current pipeline contracts.
+- Before researching or changing indexed code, use CodeGraph to locate the
+  relevant symbols and retrieve their dependencies and affected callers. Prefer
+  `codegraph_explore` for the initial question or target; then use `deps` /
+  `rdeps`, `refs`, or `calls` as needed to trace dependencies and impact. Read
+  the returned source and check freshness or coverage limitations before
+  relying on the results. Use plain text search for exact strings, logs,
+  configuration keys, and prose; skip CodeGraph when `.codegraph/` is absent.
 - Follow [.github/README.md](.github/README.md) when writing or updating the
   root user-facing README.
 

@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 from ..core import character_evidence, character_profiles, character_visual_profiles, progress, util
-from ..core.editable_schemas import DESIGN_SCHEMA, SCHEMA_DIR, validate_document
+from ..core.editable_schemas import DESIGN_SCHEMA, validate_document
+from ..core.character_profile_document import validate_document as validate_profiles
 
 
 def _profile_path(value: str) -> Path:
@@ -36,17 +37,10 @@ def _validate_profiles(data, location, visual=False):
         raise ValueError(f"{location}: unsupported format_version {data['format_version']}; expected {version}. "
                          "Select output from the current Character Visual Profile Generator.")
     if visual:
-        _fields(data, {"mode": str}, location)
-        if data["mode"] not in character_visual_profiles.MODES:
-            raise ValueError(f"{location}.mode must be one of {character_visual_profiles.MODES}.")
         _validate_profiles(data["source_document"], f"{location}.source_document")
         _fields(data, {"visual_designs": dict}, location)
         validate_document(data['visual_designs'], DESIGN_SCHEMA, 'visual_designs.json')
-        if 'chapter_enrichment' not in data:
-            raise ValueError(f'{location}: missing required field chapter_enrichment.')
-        if data['chapter_enrichment'] is not None:
-            schema = json.loads((SCHEMA_DIR / 'character_chapter_enrichment.schema.json').read_text(encoding='utf-8'))
-            validate_document(data['chapter_enrichment'], schema, 'character_chapter_enrichment.json')
+        validate_profiles(data['visual_designs']['character_profiles'])
     else:
         character_evidence.validate_document(data["source_document"])
     for index, profile in enumerate(data["profiles"]):
@@ -57,22 +51,6 @@ def _validate_profiles(data, location, visual=False):
                           "chronological_changes": list}, where)
         for evidence_index, item in enumerate(profile["supporting_evidence"]):
             _fields(item, {"evidence_id": str, "observation": dict}, f"{where}.supporting_evidence[{evidence_index}]")
-        if not visual:
-            continue
-        _fields(profile, {"blocked_fields": list, **dict.fromkeys(character_visual_profiles.FIELDS, list)}, where)
-        for field in character_visual_profiles.FIELDS:
-            for trait_index, trait in enumerate(profile[field]):
-                trait_where = f"{where}.{field}[{trait_index}]"
-                _fields(trait, {"description": str, "classification": str, "evidence": list}, trait_where)
-                for ref_index, ref in enumerate(trait["evidence"]):
-                    _fields(ref, {"evidence_id": str}, f"{trait_where}.evidence[{ref_index}]")
-                # Reuse the existing trait contract, allowing additional editor metadata.
-                shape = {key: trait[key] for key in ("description", "classification")}
-                shape["evidence"] = [{"evidence_id": ref["evidence_id"]} for ref in trait["evidence"]]
-                try:
-                    character_profiles._validate_shape(shape, character_visual_profiles.SCHEMA["schema"]["properties"][field]["items"])
-                except ValueError as exc:
-                    raise ValueError(f"{trait_where}: {exc} Check description, classification and evidence IDs.") from exc
 
 
 class LoadCharacterVisualProfilesNode:

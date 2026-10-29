@@ -11,22 +11,16 @@ from minimax_h3_novel_pipeline import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAP
 from minimax_h3_novel_pipeline.core import character_visual_profiles as vp, path_access, util
 from minimax_h3_novel_pipeline.nodes import CharacterVisualProfileGeneratorNode as Generator
 from minimax_h3_novel_pipeline.nodes import LoadCharacterVisualProfilesNode as Loader
-from tests.test_character_profiles import settings
-from tests.test_character_visual_profiles import chat_mock, consolidated, design
+from tests.test_character_visual_profiles import consolidated
 
 
 @pytest.fixture
 def saved(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path / kind)
     data = consolidated()
-    chat_mock(monkeypatch, design(data))
-    result, filename = vp.generate(data, vp.prepare_profiles(data), tmp_path / "output", None, "qwen",
-                                   settings(mode="balanced"))
-    # Loading must never regenerate, semantically review, rebuild IDs/digests, or save.
-    for module, name in ((vp, "generate"), (vp, "prepare_profiles"), (vp, "validate_design"),
-                         (vp.source, "build_profiles"), (vp.source, "_digest"),
-                         (vp.lmstudio_pipeline, "make_client_and_model"),
-                         (vp.lmstudio_json, "chat_json"), (util, "save_json")):
+    result, filename = vp.generate(data, ['chapter1.txt'], tmp_path / "output")
+    for module, name in ((vp, "generate"), (vp, "prepare_profiles"),
+                         (vp.source, "build_profiles"), (util, "save_json")):
         monkeypatch.setattr(module, name, Mock(side_effect=AssertionError("Unexpected generation or write")))
     return Path(filename), result
 
@@ -58,12 +52,7 @@ def test_preserves_all_manual_edits_and_metadata(saved):
     data.update(review={"author": "éditeur", "notes": ["retain everything"]}, source_digest="manual-digest")
     profile = data["profiles"][0]
     profile.update(local_id="my-character", canonical_name="Élise, reviewed", review={"approved": True})
-    trait = profile["eyes"][0]
-    trait.update(description="Blue or green eyes / yeux verts.  ", review={"notes": "manual override"})
-    trait["evidence"][0].update(evidence_id="manual-evidence", notes="keep reference metadata")
-    profile["supporting_evidence"][0]["observation"].update(quotation="Original edited quotation", notes="manual")
-    data["source_document"]["review_note"] = "Manual consolidation note"
-    data["source_document"]["source_document"]["chapters"][0]["source_text"] += "  \n"
+    data["visual_designs"]["entities"][0]["added_details"]["hair"] = "Manual hair."
     path = path.with_name("reviewed_copy.json")
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8-sig")
     before = path.read_bytes()
@@ -99,19 +88,13 @@ def test_invalid_json(saved, contents, message):
 
 
 @pytest.mark.parametrize("change, message", [
-    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 3"),
+    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 4"),
     (lambda d: d.update(format_version=True), "format_version must be int"),
-    (lambda d: d.update(mode="unknown"), "mode must be one of"),
     (lambda d: d.update(profiles={}), "profiles must be list"),
     (lambda d: d.update(source_document={}), "missing required field 'format_version'"),
     (lambda d: d["profiles"].append(None), "must be an object"),
     (lambda d: d["profiles"][0].pop("local_id"), "missing required field 'local_id'"),
-    (lambda d: d["profiles"][0].pop("hair"), "missing required field 'hair'"),
     (lambda d: d["profiles"][0].update(supporting_evidence=[{}]), "missing required field 'evidence_id'"),
-    (lambda d: d["profiles"][0].update(eyes={}), "eyes must be list"),
-    (lambda d: d["profiles"][0]["eyes"][0].update(description=3), "description must be str"),
-    (lambda d: d["profiles"][0]["eyes"][0].update(classification="unknown"), "Check description, classification"),
-    (lambda d: d["profiles"][0]["eyes"][0].update(evidence=[{}]), "missing required field 'evidence_id'"),
 ])
 def test_incompatible_structure(saved, change, message):
     path, data = saved
@@ -136,7 +119,7 @@ def test_same_size_and_timestamp_edits_are_detected_and_reloaded(saved):
     before = Loader.IS_CHANGED(str(path))
     assert Loader.IS_CHANGED(str(path)) == before
     stat = path.stat()
-    path.write_bytes(path.read_bytes().replace(b"Green eyes.", b"Brown eyes."))
+    path.write_bytes(path.read_bytes().replace(b"cinematic photographic", b"realistic photographic"))
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     assert path.stat().st_size == stat.st_size
     assert Loader.IS_CHANGED(str(path)) != before

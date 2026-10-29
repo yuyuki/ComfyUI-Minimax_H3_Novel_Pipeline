@@ -78,8 +78,11 @@ class ConsolidateReferencesNode:
         validate_catalogs(chapters)
         chapters = parse_chapters(chapters)
         character_visual_profiles = params.get("character_visual_profiles")
-        character_visual_integration.validate_input(character_visual_profiles, chapters)
+        character_visual_integration.validate_input(character_visual_profiles)
         designs_path = resolve_designs_path(params.get("visual_designs_path", ""))
+        path_designs = util.load_json(designs_path) if designs_path else None
+        if character_visual_profiles is not None and path_designs and 'character_profiles' in path_designs:
+            raise ValueError('Choose either character_visual_profiles or a character visual_designs_path.')
         output = stage_output(lmstudio_config, out_dir.strip())
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
@@ -117,15 +120,15 @@ class ConsolidateReferencesNode:
                 c["chapter_id"]: {"default_temporal_context": c.get("default_temporal_context", ""),
                                   "sequences": c["sequences"]} for c in chapters
             }
-            character_enrichment = character_visual_integration.apply(character_visual_profiles, chapters, registry)
-            args.character_designs = {}
-            if character_visual_profiles is not None:
-                global_designs = {d['global_id']: d for d in character_visual_profiles['visual_designs']['entities']}
-                args.character_designs = {e['global_id']: global_designs[e['character_id']]
-                                          for e in registry if e.get('character_id') in global_designs}
+            imported_designs = character_visual_profiles['visual_designs'] if character_visual_profiles is not None else path_designs
+            character_enrichment, args.character_designs = character_visual_integration.apply(
+                imported_designs, chapters, registry, output, client, resolved_model, args)
+            generic_designs_path = None if path_designs and 'character_profiles' in path_designs else designs_path
             with progress.scope(0.4, 0.55):
                 designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
-                                          designs_path)
+                                          generic_designs_path)
+            if imported_designs and 'character_profiles' in imported_designs:
+                designs['character_profiles'] = imported_designs['character_profiles']
             util.save_json(output / "visual_designs.json", designs)
             args.visual_designs = {item["global_id"]: item for item in designs["entities"]}
             lmstudio_pipeline.comfy_interrupt_check()
