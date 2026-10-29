@@ -38,7 +38,9 @@ full name containing the short name. Co-occurrence, dialogue, teacher/student or
 observer/observed relationships do not establish identity. Context can establish a name or
 pronoun that is absent from the short physical quotation. Classify identities,
 not individual body features. Select zero-based observation positions separately in
-left_support and right_support, each nonempty, from the job's left/right arrays.
+left_support and right_support, each nonempty, using the explicit position field
+in that job's left/right references. Positions restart at zero on EACH side of
+EACH job; never use indices from the shared observations table or group numbers.
 The caller attaches the corresponding evidence IDs. For uncertain/different, cite
 the inputs you compared without implying identity confirmation. Never invent IDs
 or use a position from the opposite side. Return exactly one decision per job_id.
@@ -321,6 +323,11 @@ def decision_payload(jobs):
             return [reference(v) for v in value]
         return value
     rows = reference(jobs)
+    for job in rows:
+        for side in ("left", "right"):
+            if isinstance(job.get(side), list):
+                for position, ref in enumerate(job[side]):
+                    ref["position"] = position
     return {"jobs": rows, "observations": list(observations.values())}
 
 
@@ -380,6 +387,19 @@ def identity_text(item):
 
 
 def reconcile_identities(groups, records, requests):
+    # A validated merge can supply the alias/continuity evidence missing from
+    # earlier pairwise comparisons. Revisit whole dossiers until no merge occurs.
+    # Preserve explicit negative decisions across passes, including transitively.
+    blocked, compared = set(), set()
+    while True:
+        merged = _reconcile_identity_pass(groups, records, requests, blocked, compared)
+        profiles = cp.build_profiles({"profiles": merged}, records)
+        if len(merged) == len(groups):
+            return profiles
+        groups = merged
+
+
+def _reconcile_identity_pass(groups, records, requests, blocked, compared):
     parent = list(range(len(groups)))
     def root(i):
         while parent[i] != i:
@@ -395,7 +415,17 @@ def reconcile_identities(groups, records, requests):
         signatures.append([compact_record(key, records[key]) for key in ids if key in selected])
     candidates = {}
     jobs = []
+    forbidden = set()
     for left, right in combinations(range(len(groups)), 2):
+        if any(frozenset((a["evidence_id"], b["evidence_id"])) in blocked
+               for a in groups[left]["evidence"] for b in groups[right]["evidence"]):
+            forbidden.add((left, right))
+            continue
+        dossier_pair = frozenset(frozenset(r["evidence_id"] for r in groups[i]["evidence"])
+                                 for i in (left, right))
+        if dossier_pair in compared:
+            continue
+        compared.add(dossier_pair)
         # Do not discard alias candidates: a connecting quotation can contain a
         # label absent from a group's canonical name. Names only select comparisons.
         labels = [{records[r["evidence_id"]]["character"] for r in groups[i]["evidence"]}
@@ -433,7 +463,10 @@ def reconcile_identities(groups, records, requests):
     for index, (decision, job) in enumerate(requests.decisions(jobs, IDENTITY_SYSTEM, IDENTITY_PAIR, check), 1):
         candidates[(job["left_group"], job["right_group"])].append(decision)
         progress.report(index / len(jobs))
-    forbidden = {pair for pair, ds in candidates.items() if any(d["relation"] == "different" for d in ds)}
+    forbidden.update(pair for pair, ds in candidates.items() if any(d["relation"] == "different" for d in ds))
+    for left, right in forbidden:
+        blocked.update(frozenset((a["evidence_id"], b["evidence_id"]))
+                       for a in groups[left]["evidence"] for b in groups[right]["evidence"])
     supports = []
     for (left, right), decisions in candidates.items():
         positive = [d for d in decisions if d["relation"] == "same"]
@@ -448,7 +481,7 @@ def reconcile_identities(groups, records, requests):
     for i, group in enumerate(groups):
         clusters[root(i)].append(group)
     merged = [merge_groups(cluster, records, supports) for cluster in clusters.values()]
-    return cp.build_profiles({"profiles": merged}, records)
+    return merged
 
 
 def merge_groups(groups, records, extra_support=()):

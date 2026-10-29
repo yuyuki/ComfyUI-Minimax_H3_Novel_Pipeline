@@ -50,8 +50,10 @@ The chapter picker supports TXT, Markdown and searchable PDF files. Review the a
 | **Load Character Evidence** | Loads saved or manually edited character evidence. |
 | **Consolidate Character Profiles** | Groups evidence into source-linked character profiles. |
 | **Load Character Profiles** | Loads and validates saved character profiles. |
-| **Character Visual Profile Generator** | Extracts validated permanent physical traits for selected chapters without model calls. |
+| **Character Visual Profile Generator** | Creates permanent physical designs, then uses LM Studio to review possible duplicate identities and update the same files. |
 | **Load Character Visual Profiles** | Loads saved physical character profiles for Consolidate References. |
+
+The visual generator first writes `visual_designs.json`, then checks possible duplicate identities against source evidence. Confirmed links update that file, `character_visual_profiles.json`, and the node output together. The upstream character profiles remain unchanged. Uncertain cases and conflicting edited defaults are listed in `character_visual_identity_review.json`; existing manual identity links are preserved. Review requests use the generator's `.cache/` folder and its optional token, context and retry controls.
 
 
 ## Major changes by release

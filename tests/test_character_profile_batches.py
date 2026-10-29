@@ -28,7 +28,7 @@ def request_payload(prompt):
     table = {row["evidence_id"]: row for row in payload.get("observations", [])}
     def hydrate(value):
         if isinstance(value, dict):
-            if set(value) == {"evidence_id"} and value["evidence_id"] in table:
+            if "evidence_id" in value and set(value) <= {"evidence_id", "position"} and value["evidence_id"] in table:
                 return table[value["evidence_id"]]
             return {k: hydrate(v) for k, v in value.items()}
         if isinstance(value, list):

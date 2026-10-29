@@ -308,6 +308,60 @@ def test_doriane_name_expansion_can_merge_across_chapters(tmp_path, monkeypatch)
     assert result[0]["aliases"] == ["Doriane"]
 
 
+@pytest.mark.parametrize("separate", [False, True])
+def test_reconciliation_revisits_merged_dossiers_without_overriding_homonyms(tmp_path, monkeypatch, separate):
+    data = document(
+        observation("Doriane était jeune.", character="Doriane", value="jeune"),
+        observation("Doriane Belecamus avait les cheveux noirs.", character="Doriane Belecamus", value="cheveux noirs"),
+        observation("Doriane revint de Delphes, les yeux sombres.", character="Doriane", value="yeux sombres"))
+    records = cp.prepare_evidence(data)
+    ids = list(records)
+    groups = [group([k], canonical_name=v["character"]) for k, v in records.items()]
+    seen = []
+
+    def model(*args):
+        assert args[4] == batches.IDENTITY_PAIR
+        payload = request_payload(args[3])
+        answers = []
+        for job in payload["jobs"]:
+            left = {r["evidence_id"] for r in job["left"]}
+            right = {r["evidence_id"] for r in job["right"]}
+            seen.append((left, right))
+            relation = "uncertain"
+            if left | right == set(ids[:2]) or len(left) > 1 or len(right) > 1:
+                relation = "same"
+            if separate and left | right == {ids[0], ids[2]}:
+                relation = "different"
+            answers.append({"job_id": job["job_id"], "relation": relation,
+                            "left_support": list(range(len(job["left"]))),
+                            "right_support": list(range(len(job["right"])))})
+        return {"decisions": answers}
+
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", model)
+    requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
+    result = batches.reconcile_identities(groups, records, requests)
+    assert len(result) == (2 if separate else 1)
+    assert sorted(r["evidence_id"] for p in result for r in p["supporting_evidence"]) == sorted(ids)
+    assert len({frozenset((frozenset(a), frozenset(b))) for a, b in seen}) == len(seen)
+    assert any(len(a) > 1 or len(b) > 1 for a, b in seen) is not separate
+    if not separate:
+        assert result[0]["canonical_name"] == "Doriane Belecamus"
+        assert set(result[0]["identity_support"]) == set(ids)
+
+
+def test_identity_payload_explicit_positions_are_local_to_each_job_side():
+    rows = [{"evidence_id": str(i), "observation": {"quotation": str(i)}} for i in range(3)]
+    jobs = [{"job_id": "0", "left": rows[:2], "right": rows[2:]},
+            {"job_id": "1", "left": rows[2:], "right": list(reversed(rows[:2]))}]
+    payload = batches.decision_payload(jobs)
+    assert len(payload["observations"]) == 3
+    for original, packed in zip(jobs, payload["jobs"]):
+        for side in ("left", "right"):
+            assert packed[side] == [{"evidence_id": r["evidence_id"], "position": i}
+                                    for i, r in enumerate(original[side])]
+    assert all("position" not in row for row in rows)
+
+
 def test_partial_traits_complete_only_missing_shannon_feet_once(tmp_path, monkeypatch):
     data = document(observation("Shannon avait les cheveux roux.", character="Shannon", value="cheveux roux"),
         observation("Shannon avait des pieds démesurés.", character="Shannon", value="pieds démesurés"))
