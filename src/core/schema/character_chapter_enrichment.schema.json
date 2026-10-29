@@ -167,16 +167,23 @@
               ],
               "additionalProperties": false
             }
+          },
+          "validation": {
+            "$ref": "#/$defs/validation"
           }
         },
         "required": [
           "sequence",
           "characters",
           "unresolved",
-          "states"
+          "states",
+          "validation"
         ],
         "additionalProperties": false
       }
+    },
+    "validation": {
+      "$ref": "#/$defs/validation"
     }
   },
   "required": [
@@ -186,8 +193,52 @@
     "chapter_name",
     "chapter_digest",
     "profiles_digest",
-    "sequences"
+    "sequences",
+    "validation"
   ],
   "additionalProperties": false,
-  "$schema": "https://json-schema.org/draft/2020-12/schema"
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "validation": {
+      "type": "object",
+      "properties": {
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "high",
+            "low"
+          ],
+          "description": "Validation status, not a calibrated probability. Low means unresolved identity or exhausted model validation."
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "local_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "reason",
+              "local_id"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "confidence",
+        "issues"
+      ],
+      "additionalProperties": false
+    }
+  }
 }

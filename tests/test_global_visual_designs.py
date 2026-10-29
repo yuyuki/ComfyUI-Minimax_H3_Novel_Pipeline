@@ -86,17 +86,17 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
     assert integration.sequence_context(payload, 'chapter1', 2)['sequence'] is None
 
 
-@pytest.mark.parametrize('kind', ['ambiguous', 'homonym', 'two_registry_entities'])
+@pytest.mark.parametrize('kind', ['ambiguous', 'homonym', 'two_registry_entities', 'exhausted'])
 def test_no_arbitrary_identity_mapping(setup, monkeypatch, kind):
     root, data, result, chapter, entity, calls = setup
     designs = result['visual_designs']
     entities = [entity]
     if kind == 'ambiguous':
         designs['character_profiles']['profiles'][0]['identity_status'] = 'ambiguous'
-    elif kind == 'homonym':
+    elif kind in ('homonym', 'exhausted'):
         original = lmstudio_json.chat_json
         monkeypatch.setattr(lmstudio_json, 'chat_json', lambda *a: {
-            'same': False, 'source_quote': '', 'reason': 'Name alone is insufficient.'}
+            'same': kind == 'exhausted', 'source_quote': '', 'reason': 'Name alone is insufficient.'}
             if a[4] == integration.IDENTITY else original(*a))
     else:
         entities.append({**entity, 'global_id': 'CHAR_043'})
@@ -105,6 +105,7 @@ def test_no_arbitrary_identity_mapping(setup, monkeypatch, kind):
     assert imported == {}
     assert all('character_id' not in e for e in entities)
     assert enrichment['chapter1']['registry_ids'] == {}
+    assert enrichment['chapter1']['validation']['confidence'] == 'low'
 
 
 def test_manual_defaults_are_separate_and_ignored_fields_cannot_return(setup):
@@ -132,6 +133,57 @@ def test_identity_retry_uses_shared_schema_and_keeps_all_observations(tmp_path, 
     for call in create.call_args_list:
         assert call.kwargs['response_format'] == {'type': 'json_schema', 'json_schema': integration.IDENTITY}
         assert all(row['evidence_id'] in str(call.kwargs['messages']) for row in evidence)
+
+
+def test_identity_budget_deduplicates_timeline_without_losing_evidence(setup, monkeypatch):
+    from minimax_h3_novel_pipeline.core.character_profile_batches import Requests, encoded
+
+    root, data, result, chapter, entity, calls = setup
+    # Real catalogs repeat their sequence states in each reconciled registry entity.
+    states = {'1': {'event': [{'chapter_appearance': 'Detailed observation. ' * 1400,
+                              'evidence': ['Independent catalog observation.']}]}}
+    chapter['characters'][0]['state_by_sequence'] = states
+    entity['timeline'] = {'chapter1': deepcopy(states)}
+    other = deepcopy(chapter['characters'][0])
+    other.update(local_id='OTHER', canonical_name='Another person', state_by_sequence={})
+    chapter['characters'].append(other)
+    original_entity = deepcopy(entity)
+    original_chapter = deepcopy(chapter)
+    options = settings(max_tokens=8500)
+    requests = Requests(root / 'probe', None, 'mock', options)
+    capacity = requests.capacity(integration.IDENTITY_SYSTEM, integration.IDENTITY)
+    identity_calls = []
+    original_chat = lmstudio_json.chat_json
+
+    def chat(client, model, system, prompt, schema, *args):
+        if schema == integration.IDENTITY:
+            payload = json.JSONDecoder().raw_decode(prompt)[0]
+            identity_calls.append(payload)
+            assert len(prompt.encode()) <= requests.context - options.max_tokens
+            if len(identity_calls) == 1:
+                return {'same': True, 'source_quote': 'Not in the source.', 'reason': 'Invalid quotation.'}
+        return original_chat(client, model, system, prompt, schema, *args)
+
+    monkeypatch.setattr(lmstudio_json, 'chat_json', chat)
+    enriched, imported = integration.apply(result['visual_designs'], [chapter], [entity],
+                                          root / 'refs', None, 'mock', options)
+    assert len(identity_calls) == 2  # The correction retains the complete payload.
+    assert identity_calls[0] == identity_calls[1]
+    payload = identity_calls[0]
+    assert len(encoded(payload).encode()) <= capacity
+    assert len(encoded({**payload, 'registry_character': original_entity}).encode()) > capacity
+    assert 'timeline' not in payload['registry_character']
+    assert payload['registry_character'] == {k: v for k, v in original_entity.items() if k != 'timeline'}
+    assert payload['chapter_id'] == 'chapter1'
+    assert payload['catalog_characters'] == original_chapter['characters']
+    assert payload['chapter_sources'] == [s['source'] for s in original_chapter['sequences']]
+    profile = vp.prepare_profiles(data)[0]
+    assert payload['profile']['supporting_evidence'] == profile['supporting_evidence']
+    assert payload['profile']['identity_support'] == profile['identity_support']
+    assert chapter == original_chapter
+    assert entity['timeline'] == original_entity['timeline']
+    assert enriched['chapter1']['registry_ids'][profile['local_id']] == entity['global_id']
+    assert entity['global_id'] in imported
 
 
 def test_wrong_source_identity_fails_instead_of_ignoring_facts(setup):

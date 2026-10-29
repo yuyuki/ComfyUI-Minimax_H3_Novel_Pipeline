@@ -403,6 +403,14 @@ never imply visibility. H3 planning and prompts receive these local states along
 the stable physical facts. Local enrichment files are saved beneath
 `references/<chapter_id>/`; their cache is `references/.cache/<chapter_id>/`.
 
+Each chapter enrichment and sequence includes `validation.confidence` (`high` or `low`)
+and `validation.issues`. These describe validation status, not a numerical probability.
+Consolidation continues when identity, presence or local-state checks exhaust their retries.
+Unverified mappings and details are left unapplied, and the rejected responses and source
+context remain in `references/character_profiles_requests.json`. Review low-confidence
+results before generating final prompts. Invalid input files and connection failures still
+report errors.
+
 For another chapter, pass edited `visual_designs.json` to the generator's optional
 input to reuse compatible physical defaults. Only selected identities are exported.
 Defaults in ignored, chronologically changing or source-established physical fields are omitted; clothing and

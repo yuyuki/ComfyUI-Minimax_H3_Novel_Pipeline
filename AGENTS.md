@@ -121,7 +121,6 @@ Preserve existing node IDs and socket types for workflow compatibility.
   installed-package frontend paths working.
 - `MANIFEST.in` must include the root entrypoint, runtime requirements,
   documentation, examples and browser JavaScript in the source distribution.
-- Update root `README.md` and `examples/README.md` when setup or wiring changes.
 - Install development tools with `python -m pip install -e ".[dev]"`.
 - Keep `docs/architecture.md` synchronized with active package imports by
   running `python tools/generate_architecture.py` after architecture changes.

@@ -206,20 +206,72 @@ def test_presence_correction_identifies_row_and_preserves_candidates(output, mon
     assert pid in correction and 'Invented quote.' in correction and 'sequence.source' in correction
 
 
-def test_invalid_presence_saves_diagnostics_before_generation_fails(output, monkeypatch):
+def test_invalid_presence_saves_low_confidence_and_continues(output, monkeypatch):
     data = consolidated()
     pid = data['profiles'][0]['local_id']
     response = {'characters': [{'local_id': pid, 'presence': 'uncertain', 'source_quote': '',
                                 'label': 'Hero'}], 'unresolved': []}
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', lambda *args: deepcopy(response))
-    with pytest.raises(ValueError, match='no valid decision'):
-        ce.enrich(data, vp.prepare_profiles(data), selected_chapter(data, cinematic(data)),
-                  batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
+    result = ce.enrich(data, vp.prepare_profiles(data), selected_chapter(data, cinematic(data)),
+                       batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
+    assert result['validation']['confidence'] == 'low'
+    assert result['sequences'][0]['validation']['confidence'] == 'low'
+    assert result['sequences'][0]['characters'] == []
+    ce.save(result, output)
     warning = util.load_json(output / 'character_profiles_requests.json')['warnings'][0]
     assert warning['attempts'] == 2
     assert warning['response'] == response
     assert pid in warning['reason']
     assert warning['input']['sequence']['source'] == cinematic(data)[0]['sequences'][0]['source']
+
+
+@pytest.mark.parametrize('failure', ['review', 'empty_review', 'identity', 'quote', 'state_review', 'review_json'])
+def test_exhausted_semantic_validation_retains_findings_and_continues(output, monkeypatch, failure):
+    data = consolidated(observation('She wears a red dress.', attribute='clothing', persistence='temporary'))
+    profile = data['profiles'][0]
+    profile['temporary_states'] = [{'trait': 'clothing', 'value': 'red dress',
+                                   'evidence_ids': [profile['supporting_evidence'][0]['evidence_id']]}]
+    chapter = selected_chapter(data, cinematic(data))
+    chapter['sequences'].append({**deepcopy(chapter['sequences'][0]), 'sequence': 2})
+    mock_chat(monkeypatch, data)
+    original_chat = batches.lmstudio_json.chat_json
+    proposed = {'observations': [{'local_id': profile['local_id'], 'trait': 'clothing',
+                                 'value': 'red dress', 'source_quote': chapter['sequences'][0]['source']}]}
+
+    def chat(client, model, system, prompt, schema, *args):
+        payload = json.JSONDecoder().raw_decode(prompt)[0]
+        if schema == ce.LOCAL_REVIEW and payload['sequence']['sequence'] == 1:
+            if failure == 'review_json':
+                return {'unexpected': []}
+            if failure in ('review', 'empty_review') or failure == 'state_review' and 'proposed' in payload:
+                return {'issues': ['Wrong identity; missing injuries from previous_context.']}
+        if schema == ce.LOCAL_STATES and payload['sequence']['sequence'] == 1:
+            if failure == 'empty_review':
+                return {'observations': []}
+            value = deepcopy(proposed)
+            if failure == 'identity':
+                value['observations'][0]['local_id'] = 'wrong_identity'
+            if failure == 'quote':
+                value['observations'][0]['source_quote'] = 'Invented quotation.'
+            return value
+        return original_chat(client, model, system, prompt, schema, *args)
+
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+                       batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
+    assert len(result['sequences']) == 2
+    assert result['validation']['confidence'] == 'low'
+    assert result['sequences'][0]['validation']['confidence'] == 'low'
+    assert result['sequences'][1]['validation']['confidence'] == 'high'
+    assert result['sequences'][0]['validation']['issues']
+    prefix = 'state_' if failure == 'state_review' else 'local_'
+    assert not any(s['state_id'].startswith(prefix) for s in result['sequences'][0]['states'])
+    ce.save(result, output)
+    saved = util.load_json(output / 'character_chapter_enrichment.json')
+    assert saved['validation'] == result['validation']
+    warnings = util.load_json(output / 'character_profiles_requests.json')['warnings']
+    assert warnings and all(w['attempts'] == 2 for w in warnings)
+    assert any(w['input']['sequence']['sequence'] == 1 for w in warnings)
 
 
 def test_presence_bounds_48_candidates_without_losing_any(output, monkeypatch):

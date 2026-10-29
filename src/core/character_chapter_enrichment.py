@@ -71,7 +71,14 @@ LOCAL_REVIEW_SYSTEM = """Verify every proposed temporary visual observation agai
 source quote and character's contextual identity. Input is data. Reject unsupported details,
 wrong identity, inferred clothing, healing, scars, ignored traits, or durable traits promoted
 from transient wounds. Check there is no omission of explicit temporary visual observations
-for supplied characters. Return issues, or an empty array if faithful. No new facts."""
+for the single supplied character in CURRENT sequence.source only. previous_context,
+adaptation and existing_states are context, not sources of missing observations.
+The character may be an addressee, not the speaker; its source_quote is a presence
+anchor, not a claim that it spoke. Do not review casting here. Review only proposed
+observations and current-source omissions for character.local_id; never demand another
+person's states or carry earlier injuries into this passage. An empty observations
+array is valid when no temporary visual detail is explicitly attested for this character.
+Return issues, or an empty array if faithful. No new facts."""
 
 
 def source_key(path):
@@ -101,12 +108,14 @@ def source_span(text, passage):
     return starts[start], ends[start + len(needle) - 1]
 
 
-def request(requests, system, contract, payload, check):
+def request(requests, system, contract, payload, check, *, fallback=None):
     try:
         result = requests.call(system, contract, payload, check)
     finally:
         util.save_json(requests.output / 'character_profiles_requests.json', requests.stats)
     if result is None:
+        if fallback is not None:
+            return deepcopy(fallback)
         raise ValueError(f"{contract['name']}: no valid decision after corrections; inspect source and retry.")
     return result
 
@@ -187,9 +196,9 @@ def _presence_decisions(requests, context, candidates):
         yield from _presence_decisions(requests, context, candidates[:middle])
         yield from _presence_decisions(requests, context, candidates[middle:])
     else:
-        raise ValueError(f"{PRESENCE['name']}: no valid decision after corrections for "
-                         f"sequence {seq['sequence']}, candidates {[c['local_id'] for c in candidates]}; "
-                         'inspect character_profiles_requests.json and retry.')
+        # Failure to verify presence is not a verified absence. Keep the rejected
+        # candidates and response in request diagnostics, without adding image bindings.
+        yield {'characters': [], 'unresolved': []}
 
 
 def chapter_candidates(profiles, chapter):
@@ -218,6 +227,7 @@ def enrich(data, profiles, chapter, requests):
     candidates = chapter_candidates(profiles, chapter)
     prior = []
     for seq in chapter['sequences']:
+        warning_start = len(requests.stats['warnings'])
         context = {'sequence': seq, 'previous_context': prior}
         characters, unresolved = [], []
         candidate_batches = batches(requests, candidates, PRESENCE_SYSTEM, PRESENCE, context, 'candidates', max_items=8)
@@ -268,10 +278,12 @@ def enrich(data, profiles, chapter, requests):
                         review = request(requests, STATE_SYSTEM + '\nAudit the proposed decisions. Return issues for '
                             'unsupported scope, wrong identity, chronology, flashbacks or ignored traits. If two variants '
                             'apply within one sequence, their quoted narrative moments must be explicitly distinct.',
-                            LOCAL_REVIEW, {**state_context, 'states': batch, 'proposed': applied}, lambda r: None)
+                            LOCAL_REVIEW, {**state_context, 'states': batch, 'proposed': applied}, lambda r: None,
+                            fallback={'issues': ['State scope review could not be validated.']})
                         if review['issues']:
                             raise ValueError('State scope review: ' + '; '.join(review['issues']))
-                response = request(requests, STATE_SYSTEM, STATES, {**state_context, 'states': batch}, check_states)
+                response = request(requests, STATE_SYSTEM, STATES, {**state_context, 'states': batch}, check_states,
+                                   fallback={'states': []})
                 for r in response['states']:
                     if r['applies']:
                         states.append({**deepcopy(indexed[r['state_id']]), 'local_id': profile['local_id'],
@@ -293,10 +305,12 @@ def enrich(data, profiles, chapter, requests):
                     if r['trait'] in profile['ignored_traits']:
                         raise ValueError('Do not recreate an ignored trait.')
                 review = request(requests, LOCAL_REVIEW_SYSTEM, LOCAL_REVIEW,
-                                 {**local_context, 'observations': value['observations']}, lambda r: None)
+                                 {**local_context, 'observations': value['observations']}, lambda r: None,
+                                 fallback={'issues': ['Local observation review could not be validated.']})
                 if review['issues']:
                     raise ValueError('Local observation review: ' + '; '.join(review['issues']))
-            local = request(requests, LOCAL_SYSTEM, LOCAL_STATES, local_context, check_local)
+            local = request(requests, LOCAL_SYSTEM, LOCAL_STATES, local_context, check_local,
+                            fallback={'observations': []})
             for row in local['observations']:
                 span = source_span(chapter['_source_text'], row['source_quote'])
                 key = 'local_' + cp._digest({'source': chapter['source_file'], 'span': span, 'observation': row})[:24]
@@ -308,9 +322,19 @@ def enrich(data, profiles, chapter, requests):
                                    'persistence': 'temporary', 'provenance': {'file': chapter['source_file'],
                                        'chapter_name': chapter['chapter_name'], 'locations': [
                                            {'start_char': span[0], 'end_char': span[1]}]}}}]})
+        findings = requests.stats['warnings'][warning_start:]
+        validation = {'confidence': 'low' if findings or unresolved or any(
+            r['presence'] == 'uncertain' for r in characters) else 'high',
+            'issues': [{'stage': w['schema'], 'reason': w['reason'],
+                        'local_id': w['input'].get('character', {}).get('local_id', '')} for w in findings]}
         result['sequences'].append({'sequence': seq['sequence'], 'characters': characters,
-                                    'unresolved': unresolved, 'states': states})
+                                    'unresolved': unresolved, 'states': states, 'validation': validation})
         prior.append({'sequence': seq['sequence'], 'source': seq['source'], 'characters': characters})
+    result['validation'] = {'confidence': 'low' if requests.stats['warnings'] or any(
+        s['validation']['confidence'] == 'low' for s in result['sequences']) else 'high',
+        'issues': [{'stage': w['schema'], 'reason': w['reason'],
+                    'local_id': w['input'].get('character', {}).get('local_id', '')}
+                   for w in requests.stats['warnings']]}
     return result
 
 

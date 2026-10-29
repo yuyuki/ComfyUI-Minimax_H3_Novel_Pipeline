@@ -53,14 +53,6 @@ The chapter picker supports TXT, Markdown and searchable PDF files. Review the a
 | **Character Visual Profile Generator** | Extracts validated permanent physical traits for selected chapters without model calls. |
 | **Load Character Visual Profiles** | Loads saved physical character profiles for Consolidate References. |
 
-For consistent characters across chapters, connect edited **Load Character Profiles**
-and **Select Chapters** to **Character Visual Profile Generator**; share the configuration
-for its output folder.
-Connect its `character_visual_profiles` output to **Consolidate References** alongside
-the catalogs for the same source chapters. Consolidation computes scene-local details.
-Alternatively, import the generator’s `visual_designs.json` through consolidation’s
-`visual_designs_path`. Reuse an earlier `visual_designs.json` through the
-generator's `visual_designs_path` to keep your edited defaults between chapters.
 
 ## Major changes by release
 
