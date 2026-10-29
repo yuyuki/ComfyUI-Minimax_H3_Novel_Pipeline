@@ -44,6 +44,7 @@ class ConsolidateReferencesNode:
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "audit_similarity": ("FLOAT", {"default": 0.68, "min": 0.0, "max": 1.0, "step": 0.01}),
             "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
+            "max_attempts": ("INT", {"default": 3, "min": 1, "max": 20, "tooltip": "Maximum validation attempts per consolidation decision, including the first response. 1 disables correction attempts. JSON transport retries use the LM Studio configuration."}),
         }, "optional": {
             "character_visual_profiles": ("MINIMAX_CHARACTER_VISUAL_PROFILES",),
             "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
@@ -91,6 +92,9 @@ class ConsolidateReferencesNode:
         with client:
             keys = ("candidate_count", "include_all_below", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_audit", "audit_max_entities", "temperature", "max_tokens")
             args = argparse.Namespace(**{key: params[key] for key in keys}, audit_similarity=float(params["audit_similarity"]), audit_cluster_size=max(2, int(params["audit_cluster_size"])))
+            args.max_attempts = int(params.get("max_attempts", 3))
+            if not 1 <= args.max_attempts <= 20:
+                raise ValueError("max_attempts must be between 1 and 20.")
             args.image_style = params.get("image_style", "cinematic photographic")
             if args.image_style not in IMAGE_STYLES:
                 raise ValueError("Unknown image style.")

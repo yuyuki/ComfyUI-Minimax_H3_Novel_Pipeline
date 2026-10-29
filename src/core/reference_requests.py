@@ -13,7 +13,10 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
     original = user if isinstance(user, str) else json.dumps(user, ensure_ascii=False)
     correction = ""
     profile, settings = lmstudio_json.model_settings(client, model)
-    retries = profile.retries(model, settings) if getattr(client, "__dict__", {}).get("_minimax_h3_profile") else lmstudio_json.QWEN35_LENGTH_RETRIES
+    if hasattr(args, "max_attempts"):
+        retries = args.max_attempts - 1
+    else:
+        retries = profile.retries(model, settings) if getattr(client, "__dict__", {}).get("_minimax_h3_profile") else lmstudio_json.QWEN35_LENGTH_RETRIES
     for attempt in range(retries + 1):
         comfy_interrupt_check()
         result = chat(client, model, system, original + correction, schema, args.temperature, args.max_tokens)

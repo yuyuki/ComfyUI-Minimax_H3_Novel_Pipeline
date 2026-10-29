@@ -71,6 +71,7 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
     monkeypatch.setattr(node, 'parse_chapters', lambda chapters: chapters)
     options = {k: v[1]['default'] for k, v in node.ConsolidateReferencesNode.INPUT_TYPES()['required'].items()
                if len(v) > 1 and 'default' in v[1]}
+    options['max_attempts'] = 2
     extra = {'visual_designs_path': str(root / 'visual/visual_designs.json')} if disk else {'character_visual_profiles': result}
     payload, _ = node.ConsolidateReferencesNode().run([chapter], {'api_url': 'http://127.0.0.1:1234/v1', 'run_folder': '20261028120000'}, **options, **extra)['result']
     assert payload['entities'][0]['stable_visual_description'] == 'green eyes'
@@ -83,7 +84,50 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
     assert (root / 'references/.cache/chapter1').is_dir()
     assert not (root / 'visual/.cache').exists()
     assert util.load_json(root / 'references/visual_designs.json') == payload['visual_designs']
+    assert util.load_json(root / 'references/consolidate_configuration.json')['node_settings']['max_attempts'] == 2
     assert integration.sequence_context(payload, 'chapter1', 2)['sequence'] is None
+
+
+@pytest.mark.parametrize('max_attempts', [1, 2, 4])
+def test_character_identity_respects_attempt_limit(setup, monkeypatch, max_attempts):
+    root, data, result, chapter, entity, calls = setup
+    original = lmstudio_json.chat_json
+    attempts = []
+
+    def chat(*args):
+        if args[4] == integration.IDENTITY:
+            attempts.append(args)
+            return {'same': True, 'source_quote': 'Not in the source.', 'reason': 'Rejected quote.'}
+        return original(*args)
+
+    monkeypatch.setattr(lmstudio_json, 'chat_json', chat)
+    with pytest.warns(UserWarning, match='Unresolved'), pytest.raises(ValueError, match='review character_profiles'):
+        integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None,
+                          'mock', settings(max_attempts=max_attempts))
+    assert len(attempts) == max_attempts
+    assert all(call[4] == integration.IDENTITY for call in attempts)
+    evidence = vp.prepare_profiles(data)[0]['supporting_evidence']
+    assert all(row['evidence_id'] in call[3] for call in attempts for row in evidence)
+
+
+@pytest.mark.parametrize('max_attempts', [1, 2, 4])
+def test_reference_validation_respects_attempt_limit(max_attempts):
+    from minimax_h3_novel_pipeline.core.reference_requests import InvalidResponse, validated_request
+
+    attempts = []
+
+    def chat(*args):
+        attempts.append(args)
+        return {}
+
+    def reject(result):
+        raise ValueError('Missing requested entities.')
+
+    with pytest.raises(InvalidResponse, match='Missing requested entities'):
+        validated_request(chat, None, 'mock', 'system', {'entities': ['A', 'B']}, integration.IDENTITY,
+                          settings(max_attempts=max_attempts), reject)
+    assert len(attempts) == max_attempts
+    assert all(call[4] == integration.IDENTITY and '"A", "B"' in call[3] for call in attempts)
 
 
 @pytest.mark.parametrize('kind', ['ambiguous', 'homonym', 'two_registry_entities', 'exhausted'])

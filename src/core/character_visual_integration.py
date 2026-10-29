@@ -60,7 +60,8 @@ def apply(designs, chapters, registry, output, client, model, args):
             raise ValueError('source_facts differs from validated physical traits; edit character_profiles and rerun the physical generator.')
     local_results, imported, assigned_profiles, assigned_registry = {}, {}, {}, {}
     required_mappings = set()
-    options = SimpleNamespace(**{**vars(args), 'force': False, 'correction_attempts': 2})
+    options = SimpleNamespace(**{**vars(args), 'force': False,
+                                 'correction_attempts': getattr(args, 'max_attempts', 3) - 1})
     for chapter in chapters:
         key = enrichment.source_key(chapter.get('source_file') or chapter.get('source', {}).get('file', ''))
         sources = [c for c in document['source_document']['chapters'] if enrichment.source_key(c['source_file']) == key]
