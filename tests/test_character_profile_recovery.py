@@ -220,12 +220,101 @@ def test_properties_of_same_body_part_remain_distinct(value, quote, good, bad):
         batches.validate_trait_subject(item, {"trait": bad, "kind": "global"})
 
 
+@pytest.mark.parametrize('value,good', [
+    ('visage semblait sculpté dans le marbre', 'face_shape'),
+    ('panse', 'build'), ('bajoues', 'face_shape'), ('double menton tremblotant', 'chin'),
+    ('sculpted face', 'face_shape'), ('paunch', 'build'), ('jowls', 'face_shape'),
+    ('double chin', 'chin'),
+])
+def test_facial_anatomy_is_not_facial_hair(value, good):
+    item = observation('Son visage barbu, sa panse et ses bajoues.', value=value)
+    batches.validate_trait_subject(item, {'trait': good, 'kind': 'global'})
+    with pytest.raises(ValueError):
+        batches.validate_trait_subject(item, {'trait': 'facial_hair', 'kind': 'global'})
+
+
+@pytest.mark.parametrize('value', ['barbe sur le menton', 'visage barbu', 'facial hair',
+                                  'bearded face', 'clean-shaven face', 'visage glabre'])
+def test_real_facial_hair_still_supported(value):
+    batches.validate_trait_subject(observation(value, value=value), {'trait': 'facial_hair', 'kind': 'global'})
+
+
+def test_anatomy_classification_retry_preserves_all_observations(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline.core import path_access
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    values = {'visage sculpté dans le marbre': 'face_shape', 'panse': 'build',
+              'bajoues': 'face_shape', 'double menton': 'chin', 'moustache': 'facial_hair'}
+    records = cp.prepare_evidence(document(*(observation(value, value=value) for value in values)))
+    calls = []
+    def model(*args):
+        calls.append(args)
+        assert args[4] == batches.TRAITS
+        payload = request_payload(args[3])
+        assert {r['evidence_id'] for r in payload['observations']} == set(records)
+        return {'observations': [{'evidence_id': row['evidence_id'], 'traits': [
+            {'trait': 'facial_hair' if len(calls) == 1 else values[row['observation']['value']],
+             'kind': 'global'}]} for row in payload['observations']]}
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', model)
+    requests = batches.Requests(tmp_path, None, 'qwen', settings(correction_attempts=1))
+    assigned = batches.classify_traits(records, requests)
+    assert len(calls) == 2
+    assert {key: rows[0]['trait'] for key, rows in assigned.items()} == {
+        key: values[item['value']] for key, item in records.items()}
+    assert batches.classify_traits(records, requests) == assigned
+    assert len(calls) == 2  # Only the validated correction is reused from cache.
+
+
 def test_mixed_tan_and_clothing_state_cannot_be_global():
     item = observation("ses jambes brunies, dévoilées presque jusqu’aux genoux",
                        value="jambes brunies, dévoilées presque jusqu’aux genoux")
     with pytest.raises(ValueError):
         batches.validate_trait_subject(item, {"trait": "skin_color", "kind": "global"})
     batches.validate_trait_subject(item, {"trait": "skin_color", "kind": "temporary"})
+
+
+@pytest.mark.parametrize('value,quote,good,bad', [
+    ("d'une trentaine d'années", 'Un homme d’une trentaine d’années avec une moustache.', 'age', 'facial_hair'),
+    ('smaller build', 'L’autre était plus petit et il avait une grande barbe.', 'build', 'facial_hair'),
+    ('jeune femme', 'La jeune femme détourna les yeux.', 'age', 'eye_color'),
+    ('jeune femme', 'La jeune femme apprécia la situation du regard.', 'gender', 'eye_appearance'),
+    ('jeune', 'Le jeune Grec bondit sur ses pieds.', 'age', 'foot_size'),
+    ('vieux', 'Un vieux Grec donna une claque sur l’épaule.', 'age', 'shoulder_width'),
+    ('pommettes hautes', 'pommettes hautes', 'cheekbones', 'face_shape'),
+    ('tall and thin build', 'Un grand maigre aux cheveux roux avec une petite barbiche.', 'height', 'hair_color'),
+    ('tall and thin build', 'Un grand maigre aux cheveux roux avec une petite barbiche.', 'build', 'facial_hair'),
+    ('tout en bras, en jambes', 'tout en bras, en jambes et en cheveux roux hirsutes', 'build', 'hair_style'),
+    ('jeune', 'Le jeune Grec bondit sur ses pieds.', 'age', 'gender'),
+])
+def test_self_contained_values_do_not_borrow_neighboring_features(value, quote, good, bad):
+    item = observation(quote, value=value)
+    batches.validate_trait_subject(item, {'trait': good, 'kind': 'global'})
+    with pytest.raises(ValueError, match='Use only supported traits'):
+        batches.validate_trait_subject(item, {'trait': bad, 'kind': 'global'})
+
+
+def test_age_and_cheekbones_retry_has_actionable_feedback_and_full_coverage(tmp_path, monkeypatch):
+    from minimax_h3_novel_pipeline.core import path_access
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    records = cp.prepare_evidence(document(
+        observation('Un homme d’une trentaine d’années avec une moustache.', value="d'une trentaine d'années"),
+        observation('pommettes hautes', value='pommettes hautes')))
+    calls = []
+    def model(*args):
+        calls.append(args)
+        assert args[4] == batches.TRAITS
+        payload = request_payload(args[3])
+        assert {r['evidence_id'] for r in payload['observations']} == set(records)
+        traits = ['facial_hair', 'face_shape'] if len(calls) == 1 else ['age', 'cheekbones']
+        if len(calls) > 1:
+            assert 'Use only supported traits from: age' in args[3]
+        return {'observations': [{'evidence_id': key, 'traits': [{'trait': trait, 'kind': 'global'}]}
+                                 for key, trait in zip(records, traits)]}
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', model)
+    requests = batches.Requests(tmp_path, None, 'qwen', settings(correction_attempts=1))
+    assigned = batches.classify_traits(records, requests)
+    assert len(calls) == 2
+    assert [row[0]['trait'] for row in assigned.values()] == ['age', 'cheekbones']
+    assert not requests.stats.get('unclassified_evidence_ids')
 
 
 @pytest.mark.parametrize("positions", [[], [1], [0, 0], [-1], [True]])

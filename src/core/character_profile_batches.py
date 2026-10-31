@@ -72,6 +72,13 @@ Never infer a scar or healing date from a wound. Stable anatomy described in a l
 chapter applies across chapters unless explicit chronology establishes a change.
 Absence of earlier description is not a change and never licenses a conflicting build.
 Classify the value itself; its quotation only disambiguates short values.
+An explicit age (jeune, vieux, d'une trentaine d'années) stays age even if
+the quotation mentions eyes, feet or a moustache. Gender requires an explicit
+person label, not age alone. A smaller build is build, not a nearby beard.
+High cheekbones/pommettes hautes is cheekbones, not the generic face_shape.
+Tall and thin build can supply height and build. Do not borrow hair from its quote.
+If a value gives only an intimidating impression without concrete anatomy,
+use context/context rather than inventing a face shape.
 No surrounding narrative is supplied in this stage. Never assign features from
 another observation or from neighboring words describing a different body part.
 Prefer one trait per observation; use several only for independent details actually
@@ -81,6 +88,10 @@ hair or cheekbones. "épaisse" with a hair quotation is hair_thickness,
 not hair_color; "aile-de-corbeau" is hair_color, not hair_thickness.
 A lanky body is build, not skin. An Adam's apple is adams_apple, not chin.
 A short man is height, never clothing. Beard/stubble is facial_hair, not hair_style.
+facial_hair means actual beard, moustache or facial stubble, never facial anatomy.
+A sculpted face (visage sculpté dans le marbre) and jowls/bajoues describe face_shape;
+a double chin/double menton is chin; a belly/paunch/panse describes build.
+Keep metaphors as quoted descriptions, never infer literal marble skin or facial hair.
 Hair colour (roux/red) is not hairstyle (unruly/bun). Wavy hair is hair_texture.
 Hairy legs are body_hair, not leg_shape. Tanned legs describe skin_color, not shape.
 Tall/grand is height, slender/élancé is build; these are not equivalent properties.
@@ -510,8 +521,12 @@ _BODY_CUES = {
     "arms": r"\b(?:bras|arms?)\b",
     "feet": r"\b(?:pieds?|feet|foot)\b",
     "shoulders": r"\b(?:epaules?|shoulders?)\b",
-    "build": r"\b(?:elance\w*|slender|slim|degingande\w*|lanky|corpulent\w*|musculeu\w*|muscular|charpente\w*|silhouette)\b",
-    "facial_hair": r"\b(?:barbe|moustache|mustache|beard|stubble)\b",
+    "build": r"\b(?:build|physique|elance\w*|slender|slim|degingande\w*|lanky|corpulent\w*|musculeu\w*|muscular|charpente\w*|silhouette)\b",
+    "facial_hair": r"\b(?:barbe|barbu\w*|moustache|mustache|beard\w*|stubble|facial hair|clean.shaven|glabre|rase)\b",
+    "face": r"\b(?:visage|face|facial)\b",
+    "jowls": r"\b(?:bajoues?|jowls?)\b",
+    "chin": r"\b(?:mentons?|chins?)\b",
+    "belly": r"\b(?:panse|ventre|bedaine|belly|paunch|abdomen)\b",
 }
 _BODY_TRAITS = {
     "hair": {"hair_color", "hair_length", "hair_texture", "hair_thickness", "hair_style"},
@@ -520,6 +535,9 @@ _BODY_TRAITS = {
     "neck": {"neck", "adams_apple"}, "legs": {"leg_shape", "body_hair", "skin_color", "injury"},
     "arms": {"arm_build", "body_hair", "skin_color", "injury"}, "feet": {"foot_size"},
     "shoulders": {"shoulder_width", "build"}, "build": {"build"}, "facial_hair": {"facial_hair"},
+    "face": {"face_shape", "skin_color", "skin_texture", "cheekbones", "lips", "chin", "nose_shape",
+             "eye_color", "eye_size", "eye_shape", "eye_appearance", "teeth", "distinguishing_mark", "injury"},
+    "jowls": {"face_shape"}, "chin": {"chin"}, "belly": {"build"},
 }
 _COLOR = r"\b(?:noir\w*|blanc\w*|brun\w*|roux|rousse|blond\w*|bleu\w*|vert\w*|gris\w*|noisette|sombre\w*|black|white|brown|red|auburn|blond\w*|blue|green|grey|gray|hazel|dark|raven|corbeau)\b"
 
@@ -536,12 +554,29 @@ def validate_trait_subject(item, assignment):
     if trait == "context" and kind == "context":
         return
     bodies = {body for body, pattern in _BODY_CUES.items() if re.search(pattern, value)}
-    # A short adjective can borrow its referent from an unambiguous own quotation.
-    if not bodies:
+    # Only elliptical property adjectives may borrow an anatomical referent.
+    # A self-contained age/build must never inherit a neighboring beard or eye.
+    elliptical = re.fullmatch(_COLOR, value) or re.fullmatch(
+        r"(?:epais\w*|thick\w*|thin|fin[es]*|plein\w*|full|long\w*|court\w*|short|"
+        r"boucle\w*|ondule\w*|curly|wavy|raide\w*|straight|aile-de-corbeau)", value)
+    if not bodies and elliptical:
         quoted = {body for body, pattern in _BODY_CUES.items() if re.search(pattern, quote)}
         if len(quoted) == 1:
             bodies = quoted
     allowed = set().union(*(_BODY_TRAITS[body] for body in bodies)) if bodies else None
+    age = re.fullmatch(
+        r"(?:(?:(?:le|la|un|une|the|a) )?(?:jeune|vieux|vieille|young|old|elderly)"
+        r"(?: (?:homme|femme|garcon|fille|man|woman|boy|girl))?|"
+        r"(?:d['’]une |une )?(?:vingtaine|trentaine|quarantaine|cinquantaine|soixantaine) d['’]annees|"
+        r"(?:aged? )?\d+ (?:ans|years old))", value)
+    if age:
+        allowed = {'age'}
+        if re.search(r"\b(?:homme|femme|garcon|fille|man|woman|boy|girl)\b", value):
+            allowed.add('gender')
+    if 'build' in bodies and re.search(r'\b(?:tall|short|grand|petit)\b', value):
+        allowed.add('height')
+    if re.fullmatch(r'tout en bras,? (?:en )?jambes', value):
+        allowed.add('build')
     if re.search(r"\b(?:cicatrice\w*|scar\w*)\b", value):
         allowed = {"distinguishing_mark"}
     elif re.search(r"\b(?:blessure\w*|wound\w*|injur\w*|brulure\w*|burns?)\b", value):
@@ -549,7 +584,9 @@ def validate_trait_subject(item, assignment):
     elif re.fullmatch(r"(?:(?:un |a )?(?:petit|grand|short|small|tall)(?: homme| man)?|plus grand|plus petit|taller than his companion)", value):
         allowed = {"height"}
     if allowed is not None and trait not in allowed:
-        raise ValueError(f"Trait {trait} does not describe the observation's body feature.")
+        raise ValueError(f"Trait {trait} does not describe value {item['value']!r}. "
+                         f"Use only supported traits from: {', '.join(sorted(allowed))}; "
+                         "do not borrow neighboring features from the quotation.")
     if bodies == {"hair"}:
         properties = {
             "hair_color": _COLOR,
