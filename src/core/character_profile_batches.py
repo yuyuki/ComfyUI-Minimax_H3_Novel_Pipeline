@@ -77,6 +77,8 @@ the quotation mentions eyes, feet or a moustache. Gender requires an explicit
 person label, not age alone. A smaller build is build, not a nearby beard.
 High cheekbones/pommettes hautes is cheekbones, not the generic face_shape.
 Tall and thin build can supply height and build. Do not borrow hair from its quote.
+Arm-specific strength or musculature (bras vigoureux, strong/powerful arms) is
+arm_build, not whole-body build, body_hair, skin_color or injury.
 If a value gives only an intimidating impression without concrete anatomy,
 use context/context rather than inventing a face shape.
 No surrounding narrative is supplied in this stage. Never assign features from
@@ -577,6 +579,8 @@ def validate_trait_subject(item, assignment):
         allowed.add('height')
     if re.fullmatch(r'tout en bras,? (?:en )?jambes', value):
         allowed.add('build')
+    if re.fullmatch(r'(?:bras vigoureux|(?:strong|powerful|vigorous) arms?)', value):
+        allowed = {'arm_build'}
     if re.search(r"\b(?:cicatrice\w*|scar\w*)\b", value):
         allowed = {"distinguishing_mark"}
     elif re.search(r"\b(?:blessure\w*|wound\w*|injur\w*|brulure\w*|burns?)\b", value):

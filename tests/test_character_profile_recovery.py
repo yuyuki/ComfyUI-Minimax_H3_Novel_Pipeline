@@ -317,6 +317,28 @@ def test_age_and_cheekbones_retry_has_actionable_feedback_and_full_coverage(tmp_
     assert not requests.stats.get('unclassified_evidence_ids')
 
 
+@pytest.mark.parametrize('value', ['bras vigoureux', 'strong arms', 'powerful arms', 'vigorous arms'])
+def test_arm_strength_retry_names_only_the_specific_trait(tmp_path, monkeypatch, value):
+    from minimax_h3_novel_pipeline.core import path_access
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    records = cp.prepare_evidence(document(observation(value, value=value)))
+    key, = records
+    calls = []
+    def model(*args):
+        calls.append(args)
+        assert args[4] == batches.TRAITS
+        assert [r['evidence_id'] for r in request_payload(args[3])['observations']] == [key]
+        if len(calls) == 2:
+            assert 'Use only supported traits from: arm_build;' in args[3]
+        return {'observations': [{'evidence_id': key, 'traits': [
+            {'trait': 'build' if len(calls) == 1 else 'arm_build', 'kind': 'global'}]}]}
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', model)
+    requests = batches.Requests(tmp_path, None, 'qwen', settings(correction_attempts=1))
+    assert batches.classify_traits(records, requests) == {key: [{'trait': 'arm_build', 'kind': 'global'}]}
+    assert len(calls) == 2
+    assert not requests.stats.get('unclassified_evidence_ids')
+
+
 @pytest.mark.parametrize("positions", [[], [1], [0, 0], [-1], [True]])
 def test_identity_side_support_rejects_missing_foreign_duplicate_positions(tmp_path, monkeypatch, positions):
     records = cp.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.")))
