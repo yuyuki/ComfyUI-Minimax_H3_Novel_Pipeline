@@ -16,6 +16,17 @@ ignore les deux caches. Laisser `resume_run` vide désactive la reprise.
 au cache dans `cache_hits`, dont ceux du run précédent dans `resume_cache_hits`.
 `requests_by_schema` et `cache_hits_by_schema` distinguent les étapes.
 
+Lorsqu'une comparaison d'identités par lot contient des décisions valides et
+d'autres invalides ou absentes, les décisions validées sont conservées dès la
+première réponse partielle. Seules les comparaisons restantes sont redemandées,
+avec leurs preuves complètes. Cette récupération anticipée utilise le budget de
+correction existant et ne s'applique pas si `correction_attempts = 0`.
+Les compteurs `early_identity_recoveries` et `identity_jobs_preserved`, présents
+lorsqu'elle intervient, indiquent les lots récupérés et les décisions conservées.
+Une réponse partielle n'est jamais enregistrée comme résultat complet dans le cache.
+Un lot sans décision valide conserve ses tentatives habituelles ; une comparaison
+qui ne peut pas être validée reste incertaine.
+
 `character_profiles_configuration.json` enregistre la configuration effective :
 `node_settings` contient tous les réglages du nœud (dont `thinking`,
 `correction_attempts`, `persistence_filter`, `resume_run` et `out_dir`),

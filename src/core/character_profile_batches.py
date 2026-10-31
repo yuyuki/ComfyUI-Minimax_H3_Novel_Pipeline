@@ -163,7 +163,7 @@ class Requests:
         if batch:
             yield batch
 
-    def call(self, system, contract, payload, check, salvage=None):
+    def call(self, system, contract, payload, check, salvage=None, *, recover_partial=False):
         prompt = encoded(payload)
         if len(prompt.encode()) > self.capacity(system, contract):
             raise ValueError("Character profile request exceeds configured context budget; no evidence truncated.")
@@ -218,6 +218,23 @@ class Requests:
                     raise
                 if isinstance(exc, RuntimeError) and not str(exc).startswith("Invalid structured JSON after "):
                     raise
+                if recover_partial and attempt < self.args.correction_attempts and salvage is not None and result is not None:
+                    partial = salvage(result)
+                    if partial:
+                        # Independent decisions have passed the same semantic checks.
+                        # Let decisions() retry only missing jobs, never cache this partial batch.
+                        self.stats['partial_responses_salvaged'] = self.stats.get('partial_responses_salvaged', 0) + 1
+                        self.stats['early_identity_recoveries'] = self.stats.get('early_identity_recoveries', 0) + 1
+                        self.stats.setdefault('identity_jobs_preserved', 0)
+                        self.stats['identity_jobs_preserved'] += len(partial['decisions'])
+                        self.stats['warnings'].append({
+                            'schema': contract['name'], 'attempts': attempt + 1,
+                            'reason': str(exc)[:1200], 'input': payload, 'response': deepcopy(result),
+                            'recovery': 'retry_missing_identity_jobs',
+                        })
+                        logger.info('Character profiles: preserving %s validated identity decisions; retrying missing jobs only.',
+                                    len(partial['decisions']))
+                        return partial
                 if attempt == self.args.correction_attempts:
                     warning = {"schema": contract["name"], "attempts": attempt + 1,
                                "reason": str(exc)[:1200], "input": payload, "response": deepcopy(result)}
@@ -284,7 +301,8 @@ class Requests:
             def salvage(result):
                 rows = valid_rows(result, "decisions", "job_id", indexed, contract, validate_one)
                 return {"decisions": rows} if rows else None
-            result = self.call(system, contract, decision_payload(batch), check, salvage)
+            result = self.call(system, contract, decision_payload(batch), check, salvage,
+                               recover_partial=contract == IDENTITY_PAIR and recover and self.args.correction_attempts > 0)
             accepted = result["decisions"] if result is not None else []
             missing = [job for job in batch if job["job_id"] not in {d["job_id"] for d in accepted}]
             if missing and accepted and recover:
