@@ -55,11 +55,17 @@ def setup(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('disk', [False, True])
-def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, disk):
+@pytest.mark.parametrize('mapped', [False, True])
+def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, disk, mapped):
     root, data, result, chapter, entity, calls = setup
+    if not mapped:
+        original = lmstudio_json.chat_json
+        monkeypatch.setattr(lmstudio_json, 'chat_json', lambda *a: {
+            'same': False, 'source_quote': '', 'reason': 'Identity uncertain.'}
+            if a[4] == integration.IDENTITY else original(*a))
     pipeline = SimpleNamespace(reconcile_chapter=lambda *a: [deepcopy(entity)],
         audit_registry=lambda c, m, r, a: r, natural_key=lambda value: value,
-        chat_json=lambda *a: pytest.fail('No new design needed for imported character'),
+        chat_json=lambda *a: pytest.fail('No new design needed for imported character') if mapped else {'added_details': []},
         build_picture_specs=lambda *a: [], generate_picture_assets=lambda *a: [],
         build_audio_specs=lambda *a: [], generate_audio_assets=lambda *a: [],
         build_chapter_map=lambda *a: {}, build_entity_asset_index=lambda *a: {},
@@ -73,7 +79,15 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
                if len(v) > 1 and 'default' in v[1]}
     options['max_attempts'] = 2
     extra = {'visual_designs_path': str(root / 'visual/visual_designs.json')} if disk else {'character_visual_profiles': result}
-    payload, _ = node.ConsolidateReferencesNode().run([chapter], {'api_url': 'http://127.0.0.1:1234/v1', 'run_folder': '20261028120000'}, **options, **extra)['result']
+    with nullcontext() if mapped else pytest.warns(UserWarning):
+        payload, _ = node.ConsolidateReferencesNode().run([chapter], {'api_url': 'http://127.0.0.1:1234/v1', 'run_folder': '20261028120000'}, **options, **extra)['result']
+    if not mapped:
+        assert payload['entities'][0]['stable_visual_description'] == 'Wrong eyes'
+        assert 'character_id' not in payload['entities'][0]
+        assert payload['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'Wrong eyes'
+        assert integration.sequence_context(payload, 'chapter1', 1)['registry_ids'] == {}
+        assert util.load_json(root / 'references/visual_designs.json') == payload['visual_designs']
+        return
     assert payload['entities'][0]['stable_visual_description'] == 'green eyes'
     assert payload['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'green eyes'
     assert payload['entities'][0]['global_id'] == 'CHAR_042'
@@ -101,9 +115,13 @@ def test_character_identity_respects_attempt_limit(setup, monkeypatch, max_attem
         return original(*args)
 
     monkeypatch.setattr(lmstudio_json, 'chat_json', chat)
-    with pytest.warns(UserWarning, match='Unresolved'), pytest.raises(ValueError, match='review character_profiles'):
-        integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None,
-                          'mock', settings(max_attempts=max_attempts))
+    with pytest.warns(UserWarning) as caught:
+        enriched, imported = integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None,
+                                                'mock', settings(max_attempts=max_attempts))
+    assert imported == {}
+    assert any('no unique validated registry mapping' in str(w.message) for w in caught)
+    assert enriched['chapter1']['registry_ids'] == {}
+    assert entity['stable_visual_description'] == 'Wrong eyes'
     assert len(attempts) == max_attempts
     assert all(call[4] == integration.IDENTITY for call in attempts)
     evidence = vp.prepare_profiles(data)[0]['supporting_evidence']
@@ -144,8 +162,11 @@ def test_no_arbitrary_identity_mapping(setup, monkeypatch, kind):
             if a[4] == integration.IDENTITY else original(*a))
     else:
         entities.append({**entity, 'global_id': 'CHAR_043'})
-    with pytest.warns(UserWarning, match='Unresolved'), pytest.raises(ValueError, match='review character_profiles identity links'):
-        integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
+    with pytest.warns(UserWarning):
+        enriched, imported = integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
+    assert imported == {}
+    assert enriched['chapter1']['registry_ids'] == {}
+    assert enriched['chapter1']['validation']['confidence'] == 'low'
     assert all('character_id' not in e for e in entities)
 
 

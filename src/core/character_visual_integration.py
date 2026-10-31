@@ -152,9 +152,10 @@ def apply(designs, chapters, registry, output, client, model, args):
             'ignored_traits': {mapped[p['local_id']]: p['ignored_traits'] for p in selected if p['local_id'] in mapped}}
     unresolved = required_mappings - imported.keys()
     if unresolved:
-        raise ValueError('Character visual evidence has no unique validated registry mapping for '
-                         + ', '.join(sorted(unresolved))
-                         + '; review character_profiles identity links before generating designs.')
+        warnings.warn('Character visual evidence has no unique validated registry mapping for '
+                      + ', '.join(sorted(unresolved))
+                      + '; unmatched profile facts ignored. Continuing with catalog information; '
+                      + 'review character_profiles identity links.', UserWarning, stacklevel=2)
     return local_results, imported
 
 
