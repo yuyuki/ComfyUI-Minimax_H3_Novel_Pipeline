@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import PureWindowsPath
 
-from . import character_profiles as cp, util
+from . import character_profiles as cp, util, progress
 from .character_profile_batches import schema, TEXT, encoded
 from .editable_schemas import SCHEMA_DIR, export_schema, validate_document
 
@@ -109,6 +109,7 @@ def source_span(text, passage):
 
 
 def request(requests, system, contract, payload, check, *, fallback=None):
+    print(f"[minimax_h3_novel] Character enrichment: {contract['name']} starting", flush=True)
     try:
         result = requests.call(system, contract, payload, check)
     finally:
@@ -226,7 +227,7 @@ def enrich(data, profiles, chapter, requests):
               'profiles_digest': cp._digest(data), 'sequences': []}
     candidates = chapter_candidates(profiles, chapter)
     prior = []
-    for seq in chapter['sequences']:
+    for seq in progress.steps(chapter['sequences'], label="Character enrichment sequences"):
         warning_start = len(requests.stats['warnings'])
         context = {'sequence': seq, 'previous_context': prior}
         characters, unresolved = [], []

@@ -713,7 +713,11 @@ def prepare_picture_appearances(client, model, specs, args):
     """Normalize once per entity/state and reuse the exact prose across its views."""
     appearances = {}
     # Base appearances must be available before their variants, even for reordered specs.
-    for spec in sorted(specs, key=lambda item: item["variant"] != "base"):
+    unique = {}
+    for spec in specs:
+        unique.setdefault((spec["linked_global_id"], spec["variant"]), spec)
+    ordered = sorted(unique.values(), key=lambda item: item["variant"] != "base")
+    for spec in progress.steps(ordered, label="Reference appearances"):
         key = (spec["linked_global_id"], spec["variant"])
         if key in appearances:
             continue
@@ -814,6 +818,10 @@ def picture_view_appearances(client, model, specs, args, appearances):
     """Select visible facts for crops and rear views from a shared canonical identity."""
     projected = {}
     result = {}
+    jobs = {(s["linked_global_id"], s["variant"],
+             "facial" if s["entity_type"] == "character" and s["view_type"] in FACIAL_VIEWS else s["view_type"])
+            for s in specs if (s["entity_type"] == "character" and s["view_type"] in FACIAL_VIEWS)
+            or s["view_type"] in VIEW_APPEARANCE_RULES}
     for spec in sorted(specs, key=lambda item: item["variant"] != "base"):
         key = (spec["linked_global_id"], spec["variant"])
         appearance = appearances[key]
@@ -823,6 +831,8 @@ def picture_view_appearances(client, model, specs, args, appearances):
             group = "facial" if is_facial else view
             projection_key = (*key, group)
             if projection_key not in projected:
+                print(f"[minimax_h3_novel] View appearances: {len(projected) + 1}/{len(jobs)} starting "
+                      f"({key[0]}, {key[1]}, {group})", flush=True)
                 facts = {"appearance": appearance, "variant": spec["variant"],
                          "chapter_visual_state": spec.get("chapter_visual_state", "")}
                 if not is_facial:
@@ -842,6 +852,8 @@ def picture_view_appearances(client, model, specs, args, appearances):
                 response = validated_request(chat_json, client, model, system,
                                              facts, APPEARANCE_SCHEMA, args, validate)
                 projected[projection_key] = response["appearance"].strip()
+                progress.report(len(projected) / len(jobs))
+                print(f"[minimax_h3_novel] View appearances: {len(projected)}/{len(jobs)} complete", flush=True)
             appearance = projected[projection_key]
         result[spec["asset_id"]] = appearance
     return result
@@ -955,8 +967,20 @@ def generate_picture_assets(
     specs: list[dict[str, Any]],
     args: argparse.Namespace,
 ) -> list[dict[str, Any]]:
-    appearances = prepare_picture_appearances(client, model, specs, args)
-    view_appearances = picture_view_appearances(client, model, specs, args, appearances)
+    # Weight each substage by its planned requests, including appearance work.
+    appearance_count = len({(s["linked_global_id"], s["variant"]) for s in specs})
+    view_count = len({(s["linked_global_id"], s["variant"],
+                      "facial" if s["entity_type"] == "character" and s["view_type"] in FACIAL_VIEWS else s["view_type"])
+                     for s in specs if (s["entity_type"] == "character" and s["view_type"] in FACIAL_VIEWS)
+                     or s["view_type"] in VIEW_APPEARANCE_RULES})
+    batch_count = len(list(batched(specs, args.asset_batch_size)))
+    total = max(1, appearance_count + view_count + batch_count)
+    appearance_end = appearance_count / total
+    view_end = (appearance_count + view_count) / total
+    with progress.scope(0, appearance_end):
+        appearances = prepare_picture_appearances(client, model, specs, args)
+    with progress.scope(appearance_end, view_end):
+        view_appearances = picture_view_appearances(client, model, specs, args, appearances)
     briefs: dict[str, dict[str, str]] = {}
     # Do not expose noisy source prose again during composition generation.
     composition_specs = [{**{key: spec[key] for key in (
@@ -964,7 +988,7 @@ def generate_picture_assets(
     ) if key in spec}, "appearance": view_appearances[spec["asset_id"]]}
         for spec in specs]
     batches = list(batched(composition_specs, args.asset_batch_size))
-    for i, batch in enumerate(progress.steps(batches), start=1):
+    for i, batch in enumerate(progress.steps(batches, view_end, 1, label="Picture briefs"), start=1):
         print(f"  picture brief batch {i}/{len(batches)} ({len(batch)} assets)")
         def validate_picture_batch(data):
             validate_assets(data, batch)
@@ -1008,7 +1032,7 @@ def generate_audio_assets(
         return []
     briefs: dict[str, dict[str, str]] = {}
     batches = list(batched(specs, args.asset_batch_size))
-    for i, batch in enumerate(progress.steps(batches), start=1):
+    for i, batch in enumerate(progress.steps(batches, label="Audio briefs"), start=1):
         print(f"  audio brief batch {i}/{len(batches)} ({len(batch)} assets)")
         result = validated_request(chat_json, client, model, AUDIO_BRIEF_SYSTEM, batch,
                                    AUDIO_BRIEF_SCHEMA, args, lambda data: validate_assets(data, batch))

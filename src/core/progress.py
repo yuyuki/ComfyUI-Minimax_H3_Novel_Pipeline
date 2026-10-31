@@ -38,13 +38,17 @@ def scope(start, end):
         _active.reset(token)
 
 
-def steps(items, start=0, end=1):
+def steps(items, start=0, end=1, *, label=None):
     """Advance after each finished item, including cached or skipped items."""
     total = len(items)
     report(start)
     for index, item in enumerate(items):
+        if label:
+            print(f"[minimax_h3_novel] {label}: {index + 1}/{total} starting", flush=True)
         yield item
         report(start + (end - start) * (index + 1) / total)
+        if label:
+            print(f"[minimax_h3_novel] {label}: {index + 1}/{total} complete", flush=True)
     report(end)
 
 

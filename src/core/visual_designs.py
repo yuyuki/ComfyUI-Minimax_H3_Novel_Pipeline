@@ -164,7 +164,7 @@ def prepare_designs(chat, client, model, entities, args, path=""):
     imported = load_designs(path, entities)
     imported.update(getattr(args, "character_designs", {}))
     designs = []
-    for entity in progress.steps(entities):
+    for entity in progress.steps(entities, label="Visual designs"):
         comfy_interrupt_check()
         gid = entity["global_id"]
         base = {key: entity[key] for key in ("global_id", "entity_type", "canonical_name")}

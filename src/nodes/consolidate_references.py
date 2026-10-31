@@ -111,11 +111,12 @@ class ConsolidateReferencesNode:
             )
             export_schemas(output)
             registry: list[dict[str, Any]] = []
-            for chapter in progress.steps(chapters, 0, 0.3):
+            for chapter in progress.steps(chapters, 0, 0.1, label="Chapter reconciliation"):
                 lmstudio_pipeline.comfy_interrupt_check()
                 registry = pipeline.reconcile_chapter(client, resolved_model, chapter, registry, args)
             lmstudio_pipeline.comfy_interrupt_check()
-            with progress.scope(0.3, 0.4):
+            _log("Auditing reference identities")
+            with progress.scope(0.1, 0.15):
                 registry = pipeline.audit_registry(client, resolved_model, registry, args)
             for entity in registry:
                 refresh_first_occurrence(entity, [c["chapter_id"] for c in chapters])
@@ -125,10 +126,15 @@ class ConsolidateReferencesNode:
                                   "sequences": c["sequences"]} for c in chapters
             }
             imported_designs = character_visual_profiles['visual_designs'] if character_visual_profiles is not None else path_designs
-            character_enrichment, args.character_designs = character_visual_integration.apply(
-                imported_designs, chapters, registry, output, client, resolved_model, args)
+            has_profiles = bool(imported_designs and 'character_profiles' in imported_designs)
+            design_start = 0.3 if has_profiles else 0.15
+            _log("Checking character evidence" if has_profiles else "No character evidence enrichment required")
+            with progress.scope(0.15, design_start):
+                character_enrichment, args.character_designs = character_visual_integration.apply(
+                    imported_designs, chapters, registry, output, client, resolved_model, args)
             generic_designs_path = None if path_designs and 'character_profiles' in path_designs else designs_path
-            with progress.scope(0.4, 0.55):
+            _log(f"Preparing visual designs for {len(registry)} entities")
+            with progress.scope(design_start, 0.5):
                 designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
                                           generic_designs_path)
             if imported_designs and 'character_profiles' in imported_designs:
@@ -136,11 +142,14 @@ class ConsolidateReferencesNode:
             util.save_json(output / "visual_designs.json", designs)
             args.visual_designs = {item["global_id"]: item for item in designs["entities"]}
             lmstudio_pipeline.comfy_interrupt_check()
-            with progress.scope(0.55, 0.85):
+            _log("Preparing picture appearances, views and composition briefs")
+            with progress.scope(0.5, 0.95):
                 pictures = pipeline.generate_picture_assets(client, resolved_model, pipeline.build_picture_specs(registry, args), args)
             lmstudio_pipeline.comfy_interrupt_check()
-            with progress.scope(0.85, 0.98):
+            _log("Preparing audio briefs")
+            with progress.scope(0.95, 0.99):
                 audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
+            _log("Saving consolidated references and prompt files")
             digest = configuration_snapshot.content_digest(chapters)
             payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
             payload["chapter_timelines"] = {c["chapter_id"]: {

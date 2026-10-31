@@ -19,6 +19,7 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
         retries = profile.retries(model, settings) if getattr(client, "__dict__", {}).get("_minimax_h3_profile") else lmstudio_json.QWEN35_LENGTH_RETRIES
     for attempt in range(retries + 1):
         comfy_interrupt_check()
+        print(f"[minimax_h3_novel] {schema['name']}: request attempt {attempt + 1}/{retries + 1}", flush=True)
         result = chat(client, model, system, original + correction, schema, args.temperature, args.max_tokens)
         try:
             validate(result)

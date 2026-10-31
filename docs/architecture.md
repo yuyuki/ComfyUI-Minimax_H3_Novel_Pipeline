@@ -125,6 +125,7 @@ flowchart TD
     m_core_character_chapter_enrichment --> m_core_character_profile_batches
     m_core_character_chapter_enrichment --> m_core_character_profiles
     m_core_character_chapter_enrichment --> m_core_editable_schemas
+    m_core_character_chapter_enrichment --> m_core_progress
     m_core_character_chapter_enrichment --> m_core_util
     m_core_character_evidence --> m_core_lmstudio_json
     m_core_character_evidence --> m_core_lmstudio_pipeline
@@ -152,6 +153,7 @@ flowchart TD
     m_core_character_visual_integration --> m_core_character_visual_profiles
     m_core_character_visual_integration --> m_core_character_visual_selection
     m_core_character_visual_integration --> m_core_editable_schemas
+    m_core_character_visual_integration --> m_core_progress
     m_core_character_visual_profiles --> m_core_character_chapter_enrichment
     m_core_character_visual_profiles --> m_core_character_profiles
     m_core_character_visual_profiles --> m_core_character_visual_selection
@@ -350,12 +352,12 @@ flowchart TD
 |---|---|---|
 | `src/__init__.py` | `core.lmstudio_settings`, `core.path_access`, `core.route_access`, `nodes` | — |
 | `src/core/__init__.py` | — | — |
-| `src/core/character_chapter_enrichment.py` | `core.character_profile_batches`, `core.character_profiles`, `core.editable_schemas`, `core.util` | `batches`, `chapter_candidates`, `enrich`, `normalized`, `presence_quote`, `request`, `save`, `source_key`, `source_span`, `state_candidates`, `timeline_digest` |
+| `src/core/character_chapter_enrichment.py` | `core.character_profile_batches`, `core.character_profiles`, `core.editable_schemas`, `core.progress`, `core.util` | `batches`, `chapter_candidates`, `enrich`, `normalized`, `presence_quote`, `request`, `save`, `source_key`, `source_span`, `state_candidates`, `timeline_digest` |
 | `src/core/character_evidence.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.util` | `audit_observations`, `batch_passages`, `extract_chapter`, `index_names`, `passages`, `read_source`, `repair_observations`, `review_report`, `selected_passages`, `validate_document`, `validate_result` |
 | `src/core/character_profile_batches.py` | `core.character_profiles`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.prompt_cache`, `core.util` | `Requests`, `analyse_traits`, `classify_traits`, `compact_record`, `compare_values`, `conflict_choices`, `decision_payload`, `encoded`, `identity_text`, `merge_groups`, `partition_identities`, `reconcile`, `reconcile_identities`, `schema`, `valid_rows`, `validate_trait_subject` |
 | `src/core/character_profile_document.py` | `core.character_profiles`, `core.editable_schemas` | `make_document`, `validate_change`, `validate_document` |
 | `src/core/character_profiles.py` | `core.character_evidence`, `core.character_profile_batches`, `core.character_profile_document`, `core.editable_schemas`, `core.util` | `build_profiles`, `consolidate`, `prepare_evidence`, `validation_report` |
-| `src/core/character_visual_integration.py` | `core.character_chapter_enrichment`, `core.character_profile_batches`, `core.character_profile_document`, `core.character_visual_profiles`, `core.character_visual_selection`, `core.editable_schemas` | `apply`, `sequence_context`, `validate_input` |
+| `src/core/character_visual_integration.py` | `core.character_chapter_enrichment`, `core.character_profile_batches`, `core.character_profile_document`, `core.character_visual_profiles`, `core.character_visual_selection`, `core.editable_schemas`, `core.progress` | `apply`, `sequence_context`, `validate_input` |
 | `src/core/character_visual_profiles.py` | `core.character_chapter_enrichment`, `core.character_profiles`, `core.character_visual_selection`, `core.editable_schemas`, `core.lmstudio_pipeline`, `core.util`, `core.visual_designs` | `generate`, `prepare_profiles`, `select_profiles`, `source_facts` |
 | `src/core/character_visual_review.py` | `core.character_profile_batches`, `core.character_profile_document`, `core.character_profiles`, `core.util` | `candidates`, `repair` |
 | `src/core/character_visual_selection.py` | `core.character_profile_document` | `field_for`, `project` |
@@ -404,4 +406,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.character_visual_integration`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **55**. Internal dependency edges: **224**.
+Modules: **55**. Internal dependency edges: **226**.

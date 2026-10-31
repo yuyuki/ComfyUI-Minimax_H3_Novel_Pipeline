@@ -256,3 +256,58 @@ def test_graph_failure_never_returns_completion_metadata(bars, execution_context
         run()
     assert bars[0].values == [0, 55]
     assert progress._active.get() is None
+
+
+@pytest.mark.parametrize("fail_view", [False, True])
+def test_picture_progress_counts_appearances_views_and_batches(bars, monkeypatch, capsys, fail_view):
+    step = lmstudio_pipeline.load("consolidate")
+    args = SimpleNamespace(asset_batch_size=4, temperature=0.1, max_tokens=3000, max_attempts=1)
+    template = {"linked_global_id": "CHAR_001", "variant": "base", "entity_type": "character",
+                "canonical_name": "Alice", "image_style": "cinematic photographic"}
+    specs = [{**template, "asset_id": "front", "view_type": "face_front"},
+             {**template, "asset_id": "profile", "view_type": "profile"}]
+    observed = []
+
+    def request(chat, client, model, system, user, schema, args, validate):
+        observed.append(bars[0].current)
+        if schema["name"] == "reference_appearance":
+            if fail_view and len(observed) == 2:
+                raise RuntimeError("view failed")
+            return {"appearance": "A person with brown eyes."}
+        return {"assets": [{"asset_id": s["asset_id"], "description": "Portrait",
+                            "generation_prompt": "Neutral pose."} for s in user]}
+
+    monkeypatch.setattr(step, "validated_request", request)
+    monkeypatch.setattr(step, "complete_image_prompt", lambda *args: "Portrait")
+
+    @progress.node_progress
+    def run():
+        return step.generate_picture_assets(None, "mock", specs, args)
+
+    if fail_view:
+        with pytest.raises(RuntimeError, match="view failed"):
+            run()
+        assert observed == [0, 33]
+        assert bars[0].current == 33
+    else:
+        assert len(run()) == 2
+        # Both facial views share one request; the batch is the third work unit.
+        assert observed == [0, 33, 66]
+        assert bars[0].values == [0, 33, 66, 99, 100]
+    output = capsys.readouterr().out
+    assert "Reference appearances: 1/1 starting" in output
+    assert "View appearances: 1/1 starting" in output
+
+
+def test_labeled_steps_report_start_and_completion(bars, capsys):
+    @progress.node_progress
+    def run():
+        for item in progress.steps([1, 2], label="Visual designs"):
+            output = capsys.readouterr().out
+            assert f"Visual designs: {item}/2 starting" in output
+            if item == 2:
+                assert "Visual designs: 1/2 complete" in output
+
+    run()
+    assert "Visual designs: 2/2 complete" in capsys.readouterr().out
+    assert bars[0].values == [0, 50, 99, 100]

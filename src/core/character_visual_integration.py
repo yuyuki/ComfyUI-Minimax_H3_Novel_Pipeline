@@ -2,6 +2,7 @@
 from copy import deepcopy
 from types import SimpleNamespace
 import warnings
+from . import progress
 
 from . import character_chapter_enrichment as enrichment, character_visual_profiles as visual
 from .character_profile_batches import Requests, schema, TEXT
@@ -62,7 +63,9 @@ def apply(designs, chapters, registry, output, client, model, args):
     required_mappings = set()
     options = SimpleNamespace(**{**vars(args), 'force': False,
                                  'correction_attempts': getattr(args, 'max_attempts', 3) - 1})
-    for chapter in chapters:
+    for chapter_index, chapter in enumerate(chapters):
+        progress.report(chapter_index / len(chapters))
+        print(f"[minimax_h3_novel] Character enrichment: chapter {chapter_index + 1}/{len(chapters)} starting", flush=True)
         key = enrichment.source_key(chapter.get('source_file') or chapter.get('source', {}).get('file', ''))
         sources = [c for c in document['source_document']['chapters'] if enrichment.source_key(c['source_file']) == key]
         if len(sources) != 1:
@@ -141,7 +144,8 @@ def apply(designs, chapters, registry, output, client, model, args):
                         if k in visual.PHYSICAL and k not in set(profile['blocked_fields']) | occupied}
             imported[gid] = {**deepcopy(item), 'source_facts': facts, 'added_details': approved}
         # Current cinematic data determines presence and local states at consolidation time.
-        local = enrichment.enrich(document, selected, chapter, requests)
+        with progress.scope(chapter_index / len(chapters), (chapter_index + 1) / len(chapters)):
+            local = enrichment.enrich(document, selected, chapter, requests)
         for profile in selected:
             if profile['local_id'] not in mapped:
                 local['validation']['confidence'] = 'low'
