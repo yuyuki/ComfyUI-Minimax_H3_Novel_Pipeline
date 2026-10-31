@@ -27,6 +27,10 @@ class ConsolidateCharacterProfilesNode:
             "force": ("BOOLEAN", {"default": False}),
             "persistence_filter": (["persistent", "everything"], {"default": "persistent",
                 "tooltip": "Consolidate only persistent observations, or include temporary and unknown observations too."}),
+        }, "optional": {
+            "resume_run": ("STRING", {"default": "", "tooltip":
+                "Reuse validated decisions from a previous timestamped run with the same out_dir. "
+                "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHARACTER_PROFILES", "STRING")
@@ -42,7 +46,7 @@ class ConsolidateCharacterProfilesNode:
     @progress.node_progress
     def run(self, character_evidence, lmstudio_config, out_dir="character_profiles",
             thinking=False, temperature=0.12, max_tokens=16384, correction_attempts=0, force=False, context_tokens=65536,
-            persistence_filter="persistent"):
+            persistence_filter="persistent", resume_run=""):
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         if lmstudio_config.get("model_family", "Qwen") != "Qwen":
@@ -64,9 +68,21 @@ class ConsolidateCharacterProfilesNode:
             records = {key: item for key, item in records.items() if item.get("persistence") == "persistent"}
         config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(config, out_dir.strip())
+        if not isinstance(resume_run, str):
+            raise ValueError("resume_run must be a previous timestamped run folder name.")
+        resume_cache_dir = None
+        if resume_run.strip():
+            resume_cache_dir = stage_output({'run_folder': resume_run.strip()}, out_dir.strip()) / '.cache'
+            if resume_cache_dir == output / '.cache':
+                raise ValueError("resume_run must refer to a previous run, not the current run.")
+            if not resume_cache_dir.is_dir():
+                raise ValueError("Previous run cache does not exist; use the same out_dir as that run.")
         args = argparse.Namespace(max_tokens=int(max_tokens), temperature=float(temperature),
                                   correction_attempts=int(correction_attempts), thinking=bool(thinking),
                                   force=bool(force), context_tokens=int(context_tokens), base_url=config["api_url"])
+        # Path is operational state, excluded from the scalar request fingerprint.
+        if resume_cache_dir is not None:
+            args.resume_cache_dir = resume_cache_dir
         client, model = lmstudio_pipeline.make_client_and_model(lmstudio_pipeline.load("consolidate"),
                                                                config["api_url"], config)
         with client:

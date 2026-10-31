@@ -129,8 +129,10 @@ class Requests:
     def __init__(self, output, client, model, args):
         self.output, self.client, self.model, self.args = output, client, model, args
         self.cache_dir = output / ".cache"
+        self.resume_cache_dir = getattr(args, 'resume_cache_dir', None)
         self.context = getattr(args, "context_tokens", 65536)
-        self.stats = {"requests": 0, "cache_hits": 0, "max_input_bytes": 0,
+        self.stats = {"requests": 0, "cache_hits": 0, "resume_cache_hits": 0, "max_input_bytes": 0,
+                      "requests_by_schema": {}, "cache_hits_by_schema": {},
                       "context_tokens": self.context, "response_tokens": args.max_tokens,
                       "warnings": []}
 
@@ -168,21 +170,33 @@ class Requests:
         key = prompt_cache.fingerprint(self.model, self.args, cp.VERSION, DECISION_VERSION, system, contract, payload, client=self.client)
         cache = self.cache_dir / f"{key}.json"
         lmstudio_pipeline.comfy_interrupt_check()
-        if cache.exists() and not self.args.force:
-            try:
-                result = util.load_json(cache)
-                validate_document(result, contract["schema"], contract["name"])
-                check(result)
+        if not self.args.force:
+            candidates = [cache]
+            if self.resume_cache_dir is not None:
+                candidates.append(self.resume_cache_dir / cache.name)
+            for candidate in candidates:
+                try:
+                    result = util.load_json(candidate)
+                    validate_document(result, contract["schema"], contract["name"])
+                    check(result)
+                except (ValueError, TypeError, KeyError, OSError):
+                    continue
+                if candidate != cache:
+                    # Promote only revalidated hits; never modify the previous run.
+                    util.save_json(cache, result)
+                    self.stats['resume_cache_hits'] += 1
                 self.stats["cache_hits"] += 1
+                hits = self.stats['cache_hits_by_schema']
+                hits[contract['name']] = hits.get(contract['name'], 0) + 1
                 return result
-            except (ValueError, TypeError, KeyError, OSError):
-                pass
         correction = ""
         for attempt in range(self.args.correction_attempts + 1):
             lmstudio_pipeline.comfy_interrupt_check()
             result = None
             try:
                 self.stats["requests"] += 1
+                counts = self.stats['requests_by_schema']
+                counts[contract['name']] = counts.get(contract['name'], 0) + 1
                 logger.info("Character profiles: request %s, %s, %s input bytes",
                             self.stats["requests"], contract["name"], len(prompt.encode()))
                 self.stats["max_input_bytes"] = max(self.stats["max_input_bytes"], len((prompt + correction).encode()))

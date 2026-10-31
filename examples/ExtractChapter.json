@@ -1,8 +1,8 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 197,
-  "last_link_id": 271,
+  "last_node_id": 199,
+  "last_link_id": 275,
   "nodes": [
     {
       "id": 67,
@@ -15,7 +15,9 @@
         225,
         86
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 0,
       "mode": 0,
       "inputs": [],
@@ -24,7 +26,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            271
+            273
           ]
         }
       ],
@@ -44,14 +46,16 @@
       "id": 68,
       "type": "GetNode",
       "pos": [
-        1045.0583853324888,
-        2031.1618936089806
+        1020.6862968528953,
+        2030.2245166050939
       ],
       "size": [
         225,
-        86
+        86.93737895015195
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 1,
       "mode": 0,
       "inputs": [],
@@ -87,7 +91,9 @@
         225,
         86
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 2,
       "mode": 0,
       "inputs": [],
@@ -212,7 +218,7 @@
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
           "links": [
-            270
+            272
           ]
         },
         {
@@ -273,14 +279,16 @@
       "id": 119,
       "type": "GetNode",
       "pos": [
-        -2263.027040166144,
-        2020.65224523001
+        -2340.83051183329,
+        2015.0279116894094
       ],
       "size": [
         225,
-        86
+        86.00000194626531
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 6,
       "mode": 0,
       "inputs": [],
@@ -402,14 +410,16 @@
       "id": 141,
       "type": "GetNode",
       "pos": [
-        174.95476927009332,
-        1754.354019346147
+        183.3912338223543,
+        1779.6635917961326
       ],
       "size": [
         213.2734375,
         58
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 8,
       "mode": 0,
       "inputs": [],
@@ -691,8 +701,8 @@
         2419.600959017447
       ],
       "size": [
-        299.919921875,
-        198
+        388.38344101812555,
+        253.98747087441768
       ],
       "flags": {},
       "order": 16,
@@ -1044,14 +1054,16 @@
       "id": 170,
       "type": "GetNode",
       "pos": [
-        -1387.5223850714376,
-        2908.4544882759733
+        -1379.0858490018957,
+        2938.4510172626733
       ],
       "size": [
         213.2734375,
         58
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 18,
       "mode": 0,
       "inputs": [],
@@ -1118,14 +1130,16 @@
       "id": 176,
       "type": "GetNode",
       "pos": [
-        -524.4174755781763,
-        3100.591157231536
+        -564.7253304008321,
+        3105.27811376825
       ],
       "size": [
         213.2734375,
         58
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 20,
       "mode": 0,
       "inputs": [],
@@ -1134,7 +1148,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            262
+            275
           ]
         }
       ],
@@ -1158,8 +1172,8 @@
         2920.7433929996514
       ],
       "size": [
-        270,
-        78
+        447.3519111331196,
+        113.98751395744591
       ],
       "flags": {},
       "order": 21,
@@ -1170,7 +1184,7 @@
           "name": "character_evidence",
           "type": "MINIMAX_CHARACTER_EVIDENCE",
           "links": [
-            261
+            274
           ]
         },
         {
@@ -1185,24 +1199,26 @@
         "Node name for S&R": "LoadCharacterEvidenceNode"
       },
       "widgets_values": [
-        "20261027090012\\character_evidence"
+        "character_evidence_bras_vigoureux_validation.json"
       ],
       "widgets_values_named": {
-        "evidence_path": "20261027090012\\character_evidence"
+        "evidence_path": "character_evidence_bras_vigoureux_validation.json"
       }
     },
     {
       "id": 179,
       "type": "GetNode",
       "pos": [
-        231.76712859174188,
-        3245.60129023958
+        648.3907088612802,
+        3216.651972068454
       ],
       "size": [
-        213.2734375,
-        58
+        294.01902797498457,
+        86.00019716130822
       ],
-      "flags": {},
+      "flags": {
+        "collapsed": true
+      },
       "order": 22,
       "mode": 0,
       "inputs": [],
@@ -1296,75 +1312,11 @@
       }
     },
     {
-      "id": 189,
-      "type": "ConsolidateCharacterProfilesNode",
-      "pos": [
-        -192.4757374738514,
-        2924.5869954680975
-      ],
-      "size": [
-        318.73828125,
-        246
-      ],
-      "flags": {},
-      "order": 33,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "character_evidence",
-          "type": "MINIMAX_CHARACTER_EVIDENCE",
-          "link": 261
-        },
-        {
-          "name": "lmstudio_config",
-          "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 262
-        }
-      ],
-      "outputs": [
-        {
-          "name": "character_profiles",
-          "type": "MINIMAX_CHARACTER_PROFILES",
-          "links": null
-        },
-        {
-          "name": "saved_file",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "7baa283a65c3c2e14d2b6c7dbfb82dd3c2a7ae90",
-        "Node name for S&R": "ConsolidateCharacterProfilesNode"
-      },
-      "widgets_values": [
-        "character_profiles",
-        true,
-        0.12,
-        16384,
-        65536,
-        0,
-        false,
-        "persistent"
-      ],
-      "widgets_values_named": {
-        "out_dir": "character_profiles",
-        "thinking": true,
-        "temperature": 0.12,
-        "max_tokens": 16384,
-        "context_tokens": 65536,
-        "correction_attempts": 0,
-        "force": false,
-        "persistence_filter": "persistent"
-      }
-    },
-    {
       "id": 190,
       "type": "LoadCharacterProfilesNode",
       "pos": [
-        188.91642083691326,
-        2924.8488791234536
+        643.5709138787817,
+        2913.506460038407
       ],
       "size": [
         270,
@@ -1404,12 +1356,12 @@
       "id": 193,
       "type": "CharacterVisualProfileGeneratorNode",
       "pos": [
-        663.5055882639066,
-        2945.4537837078733
+        1055.7612416911095,
+        2929.8504950439956
       ],
       "size": [
-        347.138671875,
-        122
+        417.867964379662,
+        345.6445516895577
       ],
       "flags": {},
       "order": 34,
@@ -1449,24 +1401,36 @@
         "Node name for S&R": "CharacterVisualProfileGeneratorNode"
       },
       "widgets_values": [
-        "character_visual_profiles",
-        ""
+        "character_visual_profiles_test_classifications",
+        "",
+        false,
+        0.12,
+        8192,
+        65536,
+        2,
+        false
       ],
       "widgets_values_named": {
-        "out_dir": "character_visual_profiles",
-        "visual_designs_path": ""
+        "out_dir": "character_visual_profiles_test_classifications",
+        "visual_designs_path": "",
+        "thinking": false,
+        "temperature": 0.12,
+        "max_tokens": 8192,
+        "context_tokens": 65536,
+        "correction_attempts": 2,
+        "force": false
       }
     },
     {
       "id": 195,
       "type": "GetNode",
       "pos": [
-        237.996570395743,
-        3091.401603791526
+        644.0559574816419,
+        3078.650627406394
       ],
       "size": [
-        227.271484375,
-        58
+        292.7601545711669,
+        86.00002253233474
       ],
       "flags": {},
       "order": 24,
@@ -1494,15 +1458,15 @@
       }
     },
     {
-      "id": 196,
+      "id": 198,
       "type": "ConsolidateReferencesNode",
       "pos": [
-        -281.9327278980868,
-        1762.6600121476154
+        -290.10132989442195,
+        1754.03741720294
       ],
       "size": [
         400,
-        536
+        560
       ],
       "flags": {},
       "order": 26,
@@ -1511,12 +1475,12 @@
         {
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
-          "link": 270
+          "link": 272
         },
         {
           "name": "lmstudio_config",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 271
+          "link": 273
         },
         {
           "name": "character_visual_profiles",
@@ -1539,7 +1503,7 @@
       ],
       "properties": {
         "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "b88fc7cac25eec406b479806a2d1d47a38829ca2",
+        "ver": "7b7c233a6ab2e845b92cfb3c789b2df3f45aabb0",
         "Node name for S&R": "ConsolidateReferencesNode"
       },
       "widgets_values": [
@@ -1549,7 +1513,7 @@
         4,
         3,
         2,
-        4,
+        1,
         false,
         120,
         true,
@@ -1558,6 +1522,7 @@
         "references",
         0.68,
         24,
+        1,
         "cinematic photographic",
         "character_visual_profiles\\visual_designs.json"
       ],
@@ -1568,7 +1533,7 @@
         "max_character_base_views": 4,
         "max_location_base_views": 3,
         "max_object_base_views": 2,
-        "asset_batch_size": 4,
+        "asset_batch_size": 1,
         "no_audit": false,
         "audit_max_entities": 120,
         "thinking": true,
@@ -1577,8 +1542,75 @@
         "out_dir": "references",
         "audit_similarity": 0.68,
         "audit_cluster_size": 24,
+        "max_attempts": 1,
         "image_style": "cinematic photographic",
         "visual_designs_path": "character_visual_profiles\\visual_designs.json"
+      }
+    },
+    {
+      "id": 199,
+      "type": "ConsolidateCharacterProfilesNode",
+      "pos": [
+        -54.37948589165279,
+        2920.4250480908504
+      ],
+      "size": [
+        419.7759059817477,
+        386.18073225889873
+      ],
+      "flags": {},
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "character_evidence",
+          "type": "MINIMAX_CHARACTER_EVIDENCE",
+          "link": 274
+        },
+        {
+          "name": "lmstudio_config",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "link": 275
+        }
+      ],
+      "outputs": [
+        {
+          "name": "character_profiles",
+          "type": "MINIMAX_CHARACTER_PROFILES",
+          "links": null
+        },
+        {
+          "name": "saved_file",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "e1817e5fdca9ef9fc841120d54430b9774c9f0ff",
+        "Node name for S&R": "ConsolidateCharacterProfilesNode"
+      },
+      "widgets_values": [
+        "character_profiles_test_bras",
+        false,
+        0.12,
+        16384,
+        65536,
+        0,
+        false,
+        "persistent",
+        "20261031202452"
+      ],
+      "widgets_values_named": {
+        "out_dir": "character_profiles_test_bras",
+        "thinking": false,
+        "temperature": 0.12,
+        "max_tokens": 16384,
+        "context_tokens": 65536,
+        "correction_attempts": 0,
+        "force": false,
+        "persistence_filter": "persistent",
+        "resume_run": "20261031202452"
       }
     }
   ],
@@ -1704,22 +1736,6 @@
       "MINIMAX_CHAPTER_SELECTION"
     ],
     [
-      261,
-      177,
-      0,
-      189,
-      0,
-      "MINIMAX_CHARACTER_EVIDENCE"
-    ],
-    [
-      262,
-      176,
-      0,
-      189,
-      1,
-      "MINIMAX_LMSTUDIO_CONFIG"
-    ],
-    [
       267,
       190,
       0,
@@ -1744,18 +1760,34 @@
       "MINIMAX_CHAPTER_SELECTION"
     ],
     [
-      270,
+      272,
       91,
       0,
-      196,
+      198,
       0,
       "MINIMAX_CHAPTERS"
     ],
     [
-      271,
+      273,
       67,
       0,
-      196,
+      198,
+      1,
+      "MINIMAX_LMSTUDIO_CONFIG"
+    ],
+    [
+      274,
+      177,
+      0,
+      199,
+      0,
+      "MINIMAX_CHARACTER_EVIDENCE"
+    ],
+    [
+      275,
+      176,
+      0,
+      199,
       1,
       "MINIMAX_LMSTUDIO_CONFIG"
     ]
@@ -1767,8 +1799,8 @@
       "bounding": [
         -660.7944537858515,
         1682.2762560902395,
-        785.253075046246,
-        720.5977986295354
+        798.6578022088528,
+        796.0577845671799
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1839,8 +1871,8 @@
       "bounding": [
         -1424.3953141759587,
         2798.4544882759733,
-        2475.9229755775423,
-        553.1468019636068
+        2940.962708747528,
+        550.0534578507813
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1863,8 +1895,8 @@
       "bounding": [
         -579.702584563964,
         2850.7433929996514,
-        715.9651283401126,
-        393.8279774684461
+        986.1212716487232,
+        481.4741433740137
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1873,8 +1905,8 @@
       "id": 10,
       "title": "Generator",
       "bounding": [
-        177.58010210993336,
-        2854.8488791234536,
+        620.9661904831092,
+        2843.506460038407,
         863.94755929165,
         486.7524111161265
       ],
@@ -1885,10 +1917,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.8534322792769239,
+      "scale": 0.7758475266153863,
       "offset": [
-        1325.0061550615376,
-        -1639.9870589689592
+        1477.7957250531038,
+        -2405.171094098541
       ]
     },
     "frontendVersion": "1.57.6"
