@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>MiniMax H3 Novel Pipeline</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">COMFYUI CUSTOM NODE</p>
+        <h1>MiniMax H3 Novel Pipeline</h1>
+        <p class="intro">Explore the registered nodes, follow the main chapter-to-prompt workflow, and find node IDs for your ComfyUI graph.</p>
+      </header>
+
+      <section class="workflow-panel" aria-labelledby="workflow-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">START HERE</p>
+            <h2 id="workflow-heading">Main workflow</h2>
+          </div>
+          <p class="muted">Connect LM Studio Configuration to each processing node.</p>
+        </div>
+        <ol id="workflow" class="workflow" aria-label="Primary workflow stages"></ol>
+      </section>
+
+      <section class="catalog-panel" aria-labelledby="catalog-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">NODE CATALOG</p>
+            <h2 id="catalog-heading">All registered nodes</h2>
+          </div>
+          <p id="node-count" class="count"></p>
+        </div>
+
+        <label class="search-label" for="node-search">Search by node name, purpose, category, or ID</label>
+        <input id="node-search" type="search" autocomplete="off" placeholder="e.g. character profiles">
+        <nav id="categories" class="categories" aria-label="Filter nodes by category"></nav>
+        <p id="status" class="status" role="status" aria-live="polite">Loading node catalog…</p>
+        <ul id="nodes" class="nodes" aria-label="Registered nodes"></ul>
+      </section>
+      <footer>Node names and IDs reflect the current MiniMax H3 Novel Pipeline registration.</footer>
+    </main>
+  </body>
+</html>
