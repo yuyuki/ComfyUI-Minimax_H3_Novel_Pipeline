@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 
-from ..core import character_profiles, lmstudio_pipeline, progress
+from ..core import character_profiles, configuration_snapshot, lmstudio_pipeline, progress
 from ..core.run_output import stage_output
 
 
@@ -86,5 +86,16 @@ class ConsolidateCharacterProfilesNode:
         client, model = lmstudio_pipeline.make_client_and_model(lmstudio_pipeline.load("consolidate"),
                                                                config["api_url"], config)
         with client:
+            # Record UI controls, not operational Path objects used by cache lookup.
+            snapshot_args = argparse.Namespace(**{k: v for k, v in vars(args).items() if k != 'resume_cache_dir'})
+            snapshot = configuration_snapshot.start(
+                output, 'character_profiles', config, model, snapshot_args, out_dir=out_dir.strip(),
+                inputs={'character_evidence_sha256': configuration_snapshot.content_digest(character_evidence)},
+                extra={'persistence_filter': persistence_filter, 'resume_run': resume_run.strip()},
+            )
             data, saved = character_profiles.consolidate(character_evidence, records, output, client, model, args)
+            configuration_snapshot.complete(snapshot, [output / name for name in (
+                'character_profiles.json', 'character_profiles.schema.json',
+                'character_profiles_validation.json', 'character_profiles_requests.json',
+            )])
         return {"ui": {"text": [saved]}, "result": (data, saved)}

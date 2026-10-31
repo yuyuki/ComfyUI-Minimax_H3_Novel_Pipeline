@@ -78,3 +78,46 @@ def test_invalid_resume_fails_before_model_access(setup, resume):
         run('20261031000002', resume_run=resume)
     factory.assert_not_called()
     chat.assert_not_called()
+
+
+def test_configuration_records_effective_controls_and_resume_without_changing_cache(setup):
+    from minimax_h3_novel_pipeline.core import configuration_snapshot as snapshots
+    run, chat, _, root = setup
+    first = run('20261031000001', thinking=True, correction_attempts=2, persistence_filter='everything')
+    chat.reset_mock()
+    assert run('20261031000002', thinking=True, correction_attempts=2, persistence_filter='everything',
+               resume_run='20261031000001') == first
+    chat.assert_not_called()
+    folder = root / '20261031000002/profiles'
+    record = json.loads((folder / 'character_profiles_configuration.json').read_text())
+    assert record['node_settings'] == {
+        'out_dir': 'profiles', 'thinking': True, 'temperature': 0.12, 'max_tokens': 16384,
+        'context_tokens': 65536, 'correction_attempts': 2, 'force': False,
+        'persistence_filter': 'everything', 'resume_run': '20261031000001',
+    }
+    assert record['run_folder'] == '20261031000002'
+    assert record['resolved_model'] == 'qwen'
+    assert record['model_controls']['settings']['thinking'] is True
+    assert record['status'] == 'completed'
+    assert record['inputs']['character_evidence_sha256'] == snapshots.content_digest(first['source_document'])
+    assert len(record['outputs']) == 4
+    for artifact in record['outputs']:
+        assert '.cache' not in artifact['file']
+        assert snapshots.file_digest(folder / artifact['file']) == artifact['sha256']
+
+
+def test_configuration_survives_failure_without_recording_secrets(setup, monkeypatch):
+    _, _, _, root = setup
+    def fail(*args):
+        raise RuntimeError('secret-must-not-be-saved')
+    monkeypatch.setattr(node.character_profiles, 'consolidate', fail)
+    with pytest.raises(RuntimeError):
+        node.ConsolidateCharacterProfilesNode().run(document(observation()), {
+            'api_url': 'http://127.0.0.1:1234/v1', 'run_folder': '20261031000001',
+            'api_key': 'secret-must-not-be-saved', 'unexpected': 'secret-must-not-be-saved',
+        })
+    text = (root / '20261031000001/character_profiles/character_profiles_configuration.json').read_text()
+    assert 'secret-must-not-be-saved' not in text
+    record = json.loads(text)
+    assert record['status'] == 'started'
+    assert record['outputs'] == []
