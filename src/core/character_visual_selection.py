@@ -17,6 +17,21 @@ def field_for(trait):
             'accessory': 'accessories'}.get(trait, 'build')
 
 
+def _equivalent_values(rows, relations):
+    """Connect formulations only through identical values or attested equivalence."""
+    groups = [{('value', row['value'].casefold()),
+               *(('evidence', key) for key in row['evidence_ids'])} for row in rows]
+    groups.extend({('evidence', ref['evidence_id']) for ref in relation['evidence']}
+                  for relation in relations
+                  if relation['trait'] == rows[0]['trait'] and relation['relation'] == 'equivalent')
+    reached = {('value', rows[0]['value'].casefold())}
+    while True:
+        expanded = reached.union(*(group for group in groups if group & reached))
+        if expanded == reached:
+            return all(('value', row['value'].casefold()) in reached for row in rows)
+        reached = expanded
+
+
 def project(data):
     validate_document(data)
     principals = {p['local_id']: deepcopy(p) for p in data['profiles'] if p['link_to_local_id'] is None}
@@ -57,13 +72,13 @@ def project(data):
                     for k in r['evidence_ids']):
                 p['effective_traits'].append(deepcopy(r))
         # Newly linked profiles can carry incompatible decisions that were never compared.
-        # The physical projection blocks these values until the operator resolves them.
+        # Preserve established equivalences; never infer synonyms from wording alone.
         p['linked_trait_conflicts'] = []
         if len(p['linked_local_ids']) > 1:
             by_trait = {}
             for row in p['effective_traits']:
                 by_trait.setdefault(row['trait'], []).append(row)
             p['linked_trait_conflicts'] = [rows for rows in by_trait.values()
-                                           if len({r['value'].casefold() for r in rows}) > 1]
+                                           if not _equivalent_values(rows, p['trait_relations'])]
         p['blocked_fields'] = sorted({field_for(t) for t in ignored})
     return list(principals.values())
