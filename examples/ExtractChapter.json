@@ -1,7 +1,7 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 199,
+  "last_node_id": 201,
   "last_link_id": 275,
   "nodes": [
     {
@@ -1199,10 +1199,10 @@
         "Node name for S&R": "LoadCharacterEvidenceNode"
       },
       "widgets_values": [
-        "character_evidence_bras_vigoureux_validation.json"
+        "character_evidence_identity_optimization.json"
       ],
       "widgets_values_named": {
-        "evidence_path": "character_evidence_bras_vigoureux_validation.json"
+        "evidence_path": "character_evidence_identity_optimization.json"
       }
     },
     {
@@ -1591,26 +1591,26 @@
         "Node name for S&R": "ConsolidateCharacterProfilesNode"
       },
       "widgets_values": [
-        "character_profiles_test_bras",
-        false,
+        "character_profiles_test_identity_calls",
+        true,
         0.12,
         16384,
         65536,
-        0,
+        2,
         false,
         "persistent",
-        "20261031202452"
+        ""
       ],
       "widgets_values_named": {
-        "out_dir": "character_profiles_test_bras",
-        "thinking": false,
+        "out_dir": "character_profiles_test_identity_calls",
+        "thinking": true,
         "temperature": 0.12,
         "max_tokens": 16384,
         "context_tokens": 65536,
-        "correction_attempts": 0,
+        "correction_attempts": 2,
         "force": false,
         "persistence_filter": "persistent",
-        "resume_run": "20261031202452"
+        "resume_run": ""
       }
     }
   ],
@@ -1917,10 +1917,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.7758475266153863,
+      "scale": 0.9387755072046176,
       "offset": [
-        1477.7957250531038,
-        -2405.171094098541
+        1262.3768113213443,
+        -2510.7554422619787
       ]
     },
     "frontendVersion": "1.57.6"
