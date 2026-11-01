@@ -26,6 +26,9 @@ context; keep uncertain identities separate with identity_status ambiguous.
 canonical_name must be a supplied character label.
 identity_support contains explicit physical observations with identifying quotation context. Different
 labels need explicit alias wording or a full name containing the short name.
+A verbatim full name may connect separate given-name and surname labels, even
+when that full name is not itself a supplied label. Cite that source evidence;
+keep canonical_name among the supplied labels. Do not infer a link from proximity.
 Co-occurrence is NOT an alias: a teacher and student, speakers in a conversation,
 or a person observing another person must remain separate. Never merge them merely
 because both names occur in source_context. Keep unsupported aliases separate.
@@ -207,6 +210,14 @@ def _alias_link(left, right, contexts):
     Unknown narrative links remain separate for model/user review.
     """
     left, right = _normalized(left), _normalized(right)
+    # Two single proper-name labels may be the given name and surname of one
+    # verbatim full name. This only permits a model-proposed, cited merge.
+    # Do not bridge lists, sentence/line boundaries, or generic descriptions.
+    if left != right and all(name.isalpha() and name.istitle() for name in (left, right)):
+        for first, second in ((left, right), (right, left)):
+            full_name = r"(?<![\w’'-])" + re.escape(first) + r"[ \t\u00a0]+" + re.escape(second) + r"(?![\w’'-])"
+            if any(re.search(full_name, unicodedata.normalize("NFC", text)) for text in contexts):
+                return True
     for first, second in ((left, right), (right, left)):
         name = r"(?<!\w)" + re.escape(first) + r"(?!\w)"
         # A supplied full name can anchor its first/surname abbreviation.
