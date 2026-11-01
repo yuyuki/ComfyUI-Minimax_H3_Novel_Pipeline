@@ -27,6 +27,13 @@ Une réponse partielle n'est jamais enregistrée comme résultat complet dans le
 Un lot sans décision valide conserve ses tentatives habituelles ; une comparaison
 qui ne peut pas être validée reste incertaine.
 
+`identity_attempt_diagnostics` décrit chaque tentative d'identité rejetée :
+numéro de requête, tentative, identifiants des comparaisons et des décisions
+acceptables, activation de la récupération anticipée, corrections restantes,
+présence d'une réponse et motif du rejet. Ce relevé permet notamment de distinguer
+une réponse sans décision valide d'une récupération possible seulement à la
+dernière tentative, sans dupliquer les sources ni les réponses complètes.
+
 `character_profiles_configuration.json` enregistre la configuration effective :
 `node_settings` contient tous les réglages du nœud (dont `thinking`,
 `correction_attempts`, `persistence_filter`, `resume_run` et `out_dir`),

@@ -218,8 +218,24 @@ class Requests:
                     raise
                 if isinstance(exc, RuntimeError) and not str(exc).startswith("Invalid structured JSON after "):
                     raise
-                if recover_partial and attempt < self.args.correction_attempts and salvage is not None and result is not None:
+                partial = None
+                inspect_identity = contract == IDENTITY_PAIR and salvage is not None
+                if inspect_identity and result is not None:
                     partial = salvage(result)
+                if inspect_identity:
+                    accepted_ids = [row['job_id'] for row in partial['decisions']] if partial else []
+                    self.stats.setdefault('identity_attempt_diagnostics', []).append({
+                        'request': self.stats['requests'], 'attempt': attempt + 1,
+                        'job_ids': [job['job_id'] for job in payload['jobs']],
+                        'accepted_job_ids': accepted_ids,
+                        'early_recovery_enabled': recover_partial,
+                        'corrections_remaining': self.args.correction_attempts - attempt,
+                        'response_received': result is not None,
+                        'reason': str(exc)[:1200],
+                    })
+                if recover_partial and attempt < self.args.correction_attempts and salvage is not None and result is not None:
+                    if not inspect_identity:
+                        partial = salvage(result)
                     if partial:
                         # Independent decisions have passed the same semantic checks.
                         # Let decisions() retry only missing jobs, never cache this partial batch.
@@ -242,7 +258,8 @@ class Requests:
                     logger.warning("Character profiles: ignoring invalid model decision (%s) after %s "
                                    "attempt(s): %s. Sources retained; see character_profiles_requests.json.",
                                    contract["name"], attempt + 1, str(exc)[:1200])
-                    partial = salvage(result) if salvage is not None and result is not None else None
+                    if not inspect_identity:
+                        partial = salvage(result) if salvage is not None and result is not None else None
                     if partial:
                         self.stats["partial_responses_salvaged"] = self.stats.get("partial_responses_salvaged", 0) + 1
                     return partial

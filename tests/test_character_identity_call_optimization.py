@@ -57,6 +57,10 @@ def test_partial_identity_recovery_reduces_calls_without_changing_decisions(tmp_
     assert new_calls[1]['jobs'][0] == new_calls[0]['jobs'][1]
     assert requests.stats['early_identity_recoveries'] == 1
     assert requests.stats['identity_jobs_preserved'] == 1
+    diagnostic = requests.stats['identity_attempt_diagnostics'][0]
+    assert diagnostic['accepted_job_ids'] == ['0']
+    assert diagnostic['early_recovery_enabled'] is True
+    assert diagnostic['corrections_remaining'] == 2
     # Only the fully validated single-job response is cached, never the partial lot.
     assert len(list(requests.cache_dir.glob('*.json'))) == 1
 
@@ -77,4 +81,9 @@ def test_no_valid_identity_decision_keeps_retry_budget_and_uncertainty(tmp_path,
     assert len(calls) == 3
     assert result[0][0]['relation'] == 'uncertain'
     assert not requests.stats.get('early_identity_recoveries')
+    diagnostics = requests.stats['identity_attempt_diagnostics']
+    assert [row['attempt'] for row in diagnostics] == [1, 2, 3]
+    assert [row['corrections_remaining'] for row in diagnostics] == [2, 1, 0]
+    assert all(row['accepted_job_ids'] == [] for row in diagnostics)
+    assert all(row['response_received'] for row in diagnostics)
     assert not list(requests.cache_dir.glob('*.json'))
