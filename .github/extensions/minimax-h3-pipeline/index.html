@@ -27,6 +27,27 @@
         <ol id="workflow" class="workflow" aria-label="Primary workflow stages"></ol>
       </section>
 
+      <section class="workflow-panel character-workflow-panel" aria-labelledby="character-workflow-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">OPTIONAL CHARACTER PROFILES</p>
+            <h2 id="character-workflow-heading">Character profiles workflow</h2>
+          </div>
+          <p class="muted">Add this branch to provide visual profiles to Consolidate References.</p>
+        </div>
+        <p class="workflow-note">
+          Connect chapter selection and LM Studio Configuration to Character Evidence Extractor.
+          Also connect both inputs to Character Visual Profile Generator, and LM Studio Configuration
+          to Consolidate Character Profiles.
+        </p>
+        <ol id="character-workflow" class="workflow character-workflow" aria-label="Character profiles branch and its target"></ol>
+        <p class="workflow-note target-note">
+          Connect the <code>character_visual_profiles</code> output to the optional
+          <code>character_visual_profiles</code> input on Consolidate References. Keep its required
+          chapter catalogs input connected as well.
+        </p>
+      </section>
+
       <section class="catalog-panel" aria-labelledby="catalog-heading">
         <div class="section-heading">
           <div>

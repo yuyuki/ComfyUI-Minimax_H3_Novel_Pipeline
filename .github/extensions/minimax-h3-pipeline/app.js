@@ -1,6 +1,7 @@
 const searchInput = document.querySelector("#node-search");
 const categoryNav = document.querySelector("#categories");
 const workflowList = document.querySelector("#workflow");
+const characterWorkflowList = document.querySelector("#character-workflow");
 const nodeList = document.querySelector("#nodes");
 const nodeCount = document.querySelector("#node-count");
 const status = document.querySelector("#status");
@@ -29,6 +30,34 @@ function renderWorkflow() {
       makeElement("span", "step-name", node.name),
     );
     workflowList.append(item);
+  }
+}
+
+function renderCharacterWorkflow() {
+  characterWorkflowList.replaceChildren();
+  const stages = [
+    ...catalog.characterProfilesWorkflow.map((nodeId, index) => ({
+      nodeId,
+      label: `STEP ${index + 1}`,
+      target: false,
+    })),
+    {
+      nodeId: catalog.characterProfilesTarget.id,
+      label: "OPTIONAL INPUT",
+      target: true,
+    },
+  ];
+
+  for (const stage of stages) {
+    const node = catalog.nodes.find((entry) => entry.id === stage.nodeId);
+    const item = makeElement("li", stage.target ? "workflow-target" : "");
+    item.append(
+      makeElement("span", "step-number", stage.label),
+      makeElement("span", "step-name", node.name),
+      makeElement("span", "workflow-purpose", node.purpose),
+      makeElement("code", "workflow-node-id", node.id),
+    );
+    characterWorkflowList.append(item);
   }
 }
 
@@ -109,10 +138,16 @@ async function loadCatalog() {
       !Array.isArray(result.nodes) ||
       !Array.isArray(result.categories) ||
       !Array.isArray(result.workflow) ||
+      !Array.isArray(result.characterProfilesWorkflow) ||
+      typeof result.characterProfilesTarget !== "string" ||
       result.categories.some((category) => typeof category !== "string") ||
       result.workflow.some(
         (nodeId) => typeof nodeId !== "string" || !result.nodes.some((node) => node?.id === nodeId),
       ) ||
+      result.characterProfilesWorkflow.some(
+        (nodeId) => typeof nodeId !== "string" || !result.nodes.some((node) => node?.id === nodeId),
+      ) ||
+      !result.nodes.some((node) => node?.id === result.characterProfilesTarget) ||
       result.nodes.some(
         (node) =>
           typeof node?.id !== "string" ||
@@ -126,6 +161,7 @@ async function loadCatalog() {
 
     catalog = result;
     renderWorkflow();
+    renderCharacterWorkflow();
     renderCategoryFilters();
     renderNodes();
   } catch (error) {

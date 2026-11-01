@@ -7,6 +7,12 @@ export const pipeline = {
     "ConsolidateReferencesNode",
     "GenerateH3PromptsNode",
   ],
+  characterProfilesWorkflow: [
+    "CharacterEvidenceExtractorNode",
+    "ConsolidateCharacterProfilesNode",
+    "CharacterVisualProfileGeneratorNode",
+  ],
+  characterProfilesTarget: "ConsolidateReferencesNode",
   nodes: [
     {
       id: "LMStudioConfigurationNode",
@@ -125,6 +131,10 @@ export function getPipelineOverview() {
       count: pipeline.nodes.filter((node) => node.category === name).length,
     })),
     workflow: pipeline.workflow.map((id) => pipeline.nodes.find((node) => node.id === id)),
+    characterProfilesWorkflow: pipeline.characterProfilesWorkflow.map((id) =>
+      pipeline.nodes.find((node) => node.id === id),
+    ),
+    characterProfilesTarget: findNode(pipeline.characterProfilesTarget),
   };
 }
 
