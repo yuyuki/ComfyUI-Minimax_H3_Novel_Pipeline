@@ -22,7 +22,7 @@ class CharacterEvidenceExtractorNode:
             "out_dir": ("STRING", {"default": "character_evidence"}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 30000}),
             "thinking": ("BOOLEAN", {"default": True}),
-            "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 2.0}),
+            "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 2.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
             "force": ("BOOLEAN", {"default": False}),

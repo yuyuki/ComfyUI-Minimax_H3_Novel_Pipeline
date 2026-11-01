@@ -122,7 +122,7 @@ class SpatialContinuityNode:
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
             "consolidated_references": ("MINIMAX_REGISTRY",),
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "temperature": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.05}),
+            "temperature": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 5000, "min": 1024, "max": 100000}),
             "out_dir": ("STRING", {"default": "spatial_continuity",
                                    "tooltip": "Relative folder inside the current timestamped run."}),
