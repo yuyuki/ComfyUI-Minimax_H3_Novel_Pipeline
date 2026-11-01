@@ -9,7 +9,7 @@ from ..core.run_output import stage_output
 
 
 class ConsolidateCharacterProfilesNode:
-    DESCRIPTION = "Reconcile selected character evidence with Qwen, retaining exact sources and conflicting observations."
+    DESCRIPTION = "Reconcile selected character evidence with Qwen or GPT-OSS, retaining exact sources and conflicting observations."
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -49,8 +49,8 @@ class ConsolidateCharacterProfilesNode:
             persistence_filter="persistent", resume_run=""):
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
-        if lmstudio_config.get("model_family", "Qwen") != "Qwen":
-            raise ValueError("Consolidate Character Profiles requires Qwen in LM Studio Configuration.")
+        if lmstudio_config.get("model_family", "Qwen") not in {"Qwen", "GPT-OSS"}:
+            raise ValueError("Consolidate Character Profiles requires Qwen or GPT-OSS in LM Studio Configuration.")
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty relative subfolder.")
         if max_tokens < 1 or correction_attempts < 0 or not 0 <= temperature <= 2:

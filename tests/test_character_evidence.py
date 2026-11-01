@@ -102,17 +102,20 @@ def test_overflow_splits_disjoint_parts_without_joining_them(monkeypatch):
         ["first", "second"], ["first"], ["second"]]
 
 
-def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch):
+@pytest.mark.parametrize('family,model', [('Qwen', 'qwen3.5'), ('GPT-OSS', 'gpt-oss-20b')])
+def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch, family, model):
     source, output = workspace
     text = "\ufeffÉlise avait les yeux verts.  \r\n\r\nÉlise avait les yeux verts."
     for name in ("chapter10.txt", "chapter2.txt"):
         (source / name).write_bytes(text.encode("utf-8"))
     chat = Mock(return_value={"evidence": [observation()]})
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
-    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model",
-                        lambda *args: (nullcontext(), "qwen3.5"))
+    def make_client(*args):
+        assert args[2]['model_family'] == family
+        return nullcontext(), model
+    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", make_client)
     result = node.CharacterEvidenceExtractorNode().run(
-        {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261024120000"},
+        {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261024120000", 'model_family': family},
         {"chapter_paths": [str(source)]})["result"]
     data, filename = result
     assert filename == str(output / "20261024120000/character_evidence/character_evidence.json")

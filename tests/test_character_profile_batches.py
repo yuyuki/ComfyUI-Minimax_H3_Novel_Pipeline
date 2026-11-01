@@ -465,10 +465,14 @@ def test_manual_link_and_path_errors(workspace):
         LoadCharacterProfilesNode().run(str(path))
 
 
-def test_node_budget_settings_and_configuration(workspace, monkeypatch):
+@pytest.mark.parametrize('family,model', [('Qwen', 'qwen'), ('GPT-OSS', 'gpt-oss-20b')])
+def test_node_budget_settings_and_configuration(workspace, monkeypatch, family, model):
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", fake_model)
-    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen"))
-    config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261025120000"}
+    def make_client(*args):
+        assert args[2]['model_family'] == family
+        return nullcontext(), model
+    monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", make_client)
+    config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261025120000", 'model_family': family}
     result, saved = node.ConsolidateCharacterProfilesNode().run(document(observation()), config,
                     context_tokens=24000, max_tokens=1024)["result"]
     assert result["profiles"]
