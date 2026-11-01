@@ -18,7 +18,7 @@ class ConsolidateCharacterProfilesNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "out_dir": ("STRING", {"default": "character_profiles"}),
             "thinking": ("BOOLEAN", {"default": False}),
-            "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 2.0, "step": 0.01, "round": 0.01}),
+            "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000}),
             "context_tokens": ("INT", {"default": 65536, "min": 8192, "max": 2000000,
                 "tooltip": "Must not exceed the loaded LM Studio context. Includes output and retry reserves."}),

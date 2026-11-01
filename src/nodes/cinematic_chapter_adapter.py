@@ -21,7 +21,7 @@ class CinematicChapterAdapterNode:
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "out_dir": ("STRING", {"default": "cinematic_chapters"}),
             "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000}),
-            "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 2.0, "step": 0.01, "round": 0.01}),
+            "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
                                           "tooltip": "Retries for invalid fields, source coverage or semantic defects. "
