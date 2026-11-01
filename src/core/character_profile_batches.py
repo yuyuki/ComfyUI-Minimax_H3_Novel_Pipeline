@@ -295,7 +295,12 @@ class Requests:
                         positions = decision[side + "_support"]
                         if (not positions or any(type(i) is not int or not 0 <= i < len(job[side]) for i in positions)
                                 or len(set(positions)) != len(positions)):
-                            raise ValueError("Identity support must select unique valid positions on each side.")
+                            raise ValueError(
+                                "Identity support must select unique valid positions on each side. "
+                                f"job_id={decision['job_id']}: {side}_support must contain unique integers "
+                                f"from 0 to {len(job[side]) - 1}; received {positions!r}. "
+                                "Use this job's side-local position fields, not shared observation indices "
+                                "or group numbers. A side with one observation requires [0].")
                         ids.extend(job[side][i]["evidence_id"] for i in positions)
                     return {"job_id": decision["job_id"], "relation": decision["relation"],
                             "evidence": [{"evidence_id": key} for key in dict.fromkeys(ids)]}
@@ -520,8 +525,17 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
             if not all(set(ids) & {r["evidence_id"] for r in job[side]} for side in ("left", "right")):
                 raise ValueError("Identity confirmation must cite both sides.")
             merged = merge_groups([groups[job["left_group"]], groups[job["right_group"]]], records, ids)
-            cp.build_profiles({"profiles": [merged]}, {r["evidence_id"]: records[r["evidence_id"]]
-                                                       for r in merged["evidence"]})
+            try:
+                cp.build_profiles({"profiles": [merged]}, {r["evidence_id"]: records[r["evidence_id"]]
+                                                           for r in merged["evidence"]})
+            except ValueError as exc:
+                raise ValueError(
+                    f"job_id={job['job_id']}: {exc} "
+                    "Return same only if the selected support meets this identity validation. "
+                    "If no supplied support establishes an accepted identity link, return uncertain "
+                    "with valid support positions on both sides. Missing identity proof does not "
+                    "justify different; use different only with evidence of distinct people."
+                ) from exc
     for index, (decision, job) in enumerate(requests.decisions(jobs, IDENTITY_SYSTEM, IDENTITY_PAIR, check), 1):
         candidates[(job["left_group"], job["right_group"])].append(decision)
         progress.report(index / len(jobs))

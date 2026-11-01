@@ -5,7 +5,7 @@ import pytest
 
 from minimax_h3_novel_pipeline.core import character_profile_batches as batches, character_profiles as cp, path_access
 from tests.test_character_evidence import observation
-from tests.test_character_profiles import document, settings
+from tests.test_character_profiles import document, group, settings
 from tests.test_character_profile_batches import request_payload
 
 
@@ -87,3 +87,51 @@ def test_no_valid_identity_decision_keeps_retry_budget_and_uncertainty(tmp_path,
     assert all(row['accepted_job_ids'] == [] for row in diagnostics)
     assert all(row['response_received'] for row in diagnostics)
     assert not list(requests.cache_dir.glob('*.json'))
+
+
+def test_unsupported_alias_retry_explains_uncertainty_without_losing_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    records = cp.prepare_evidence(document(
+        observation('Élise regardait Lise.'),
+        observation('Lise regardait Élise.', character='Lise')))
+    groups = [group([key], canonical_name=item['character']) for key, item in records.items()]
+    prompts = []
+
+    def model(*args):
+        assert args[4] == batches.IDENTITY_PAIR
+        prompts.append(args[3])
+        return {'decisions': [{'job_id': '0', 'relation': 'same' if len(prompts) == 1 else 'uncertain',
+                              'left_support': [0], 'right_support': [0]}]}
+
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', model)
+    requests = batches.Requests(tmp_path, None, 'qwen', settings(correction_attempts=2))
+    profiles = batches.reconcile_identities(groups, records, requests)
+    assert len(prompts) == 2
+    assert 'job_id=0' in prompts[1]
+    assert 'return uncertain' in prompts[1]
+    assert 'Missing identity proof does not justify different' in prompts[1]
+    assert request_payload(prompts[0]) == request_payload(prompts[1])
+    assert len(profiles) == 2
+    assert {row['evidence_id'] for p in profiles for row in p['supporting_evidence']} == set(records)
+
+
+def test_invalid_positions_retry_names_job_side_and_bounds(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    records = cp.prepare_evidence(document(observation(), observation('Other eyes.')))
+    rows = [batches.compact_record(k, v) for k, v in records.items()]
+    jobs = [{'job_id': '7', 'left': rows[:1], 'right': rows[1:]}]
+    prompts = []
+
+    def model(*args):
+        prompts.append(args[3])
+        return {'decisions': [{'job_id': '7', 'relation': 'uncertain', 'left_support': [0],
+                              'right_support': [4] if len(prompts) == 1 else [0]}]}
+
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', model)
+    requests = batches.Requests(tmp_path, None, 'qwen', settings(correction_attempts=2))
+    decisions = list(requests.decisions(jobs, batches.IDENTITY_SYSTEM, batches.IDENTITY_PAIR))
+    assert len(prompts) == 2
+    assert 'job_id=7: right_support must contain unique integers from 0 to 0' in prompts[1]
+    assert 'A side with one observation requires [0]' in prompts[1]
+    assert request_payload(prompts[0]) == request_payload(prompts[1])
+    assert decisions[0][0]['relation'] == 'uncertain'
