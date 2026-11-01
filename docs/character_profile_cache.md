@@ -27,6 +27,17 @@ Une réponse partielle n'est jamais enregistrée comme résultat complet dans le
 Un lot sans décision valide conserve ses tentatives habituelles ; une comparaison
 qui ne peut pas être validée reste incertaine.
 
+Chaque comparaison d'identités partage un budget de `1 + correction_attempts`
+tentatives de décision entre le lot initial et ses sous-lots de récupération.
+Réduire un lot ne réinitialise pas ce budget. À épuisement, les décisions encore
+invalides ou absentes deviennent `uncertain`, sans perdre leurs observations ;
+`identity_jobs_budget_exhausted` les compte. Avec zéro correction, une réponse
+partielle conserve ses décisions valides mais ne déclenche aucun appel supplémentaire.
+Les lectures de cache ne consomment pas ce budget. Ce plafond concerne les
+comparaisons d'un même dossier : une nouvelle comparaison après enrichissement
+du dossier par fusion reste distincte. Il ne plafonne ni le regroupement initial,
+ni les reprises de transport JSON internes à un appel de décision.
+
 `identity_attempt_diagnostics` décrit chaque tentative d'identité rejetée :
 numéro de requête, tentative, identifiants des comparaisons et des décisions
 acceptables, activation de la récupération anticipée, corrections restantes,

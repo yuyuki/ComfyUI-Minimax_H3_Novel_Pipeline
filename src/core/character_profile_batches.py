@@ -163,7 +163,7 @@ class Requests:
         if batch:
             yield batch
 
-    def call(self, system, contract, payload, check, salvage=None, *, recover_partial=False):
+    def call(self, system, contract, payload, check, salvage=None, *, recover_partial=False, max_attempts=None):
         prompt = encoded(payload)
         if len(prompt.encode()) > self.capacity(system, contract):
             raise ValueError("Character profile request exceeds configured context budget; no evidence truncated.")
@@ -190,7 +190,8 @@ class Requests:
                 hits[contract['name']] = hits.get(contract['name'], 0) + 1
                 return result
         correction = ""
-        for attempt in range(self.args.correction_attempts + 1):
+        attempts = self.args.correction_attempts + 1 if max_attempts is None else max_attempts
+        for attempt in range(attempts):
             lmstudio_pipeline.comfy_interrupt_check()
             result = None
             try:
@@ -229,11 +230,11 @@ class Requests:
                         'job_ids': [job['job_id'] for job in payload['jobs']],
                         'accepted_job_ids': accepted_ids,
                         'early_recovery_enabled': recover_partial,
-                        'corrections_remaining': self.args.correction_attempts - attempt,
+                        'corrections_remaining': attempts - attempt - 1,
                         'response_received': result is not None,
                         'reason': str(exc)[:1200],
                     })
-                if recover_partial and attempt < self.args.correction_attempts and salvage is not None and result is not None:
+                if recover_partial and attempt < attempts - 1 and salvage is not None and result is not None:
                     if not inspect_identity:
                         partial = salvage(result)
                     if partial:
@@ -251,7 +252,7 @@ class Requests:
                         logger.info('Character profiles: preserving %s validated identity decisions; retrying missing jobs only.',
                                     len(partial['decisions']))
                         return partial
-                if attempt == self.args.correction_attempts:
+                if attempt == attempts - 1:
                     warning = {"schema": contract["name"], "attempts": attempt + 1,
                                "reason": str(exc)[:1200], "input": payload, "response": deepcopy(result)}
                     self.stats["warnings"].append(warning)
@@ -264,7 +265,7 @@ class Requests:
                         self.stats["partial_responses_salvaged"] = self.stats.get("partial_responses_salvaged", 0) + 1
                     return partial
                 logger.warning("Character profiles: %s response rejected on attempt %s/%s: %s",
-                               contract["name"], attempt + 1, self.args.correction_attempts + 1, str(exc)[:1200])
+                               contract["name"], attempt + 1, attempts, str(exc)[:1200])
                 # Only the error prose is bounded; the original independent observations are untouched.
                 correction = "\nRejected: " + str(exc)[:1200] + "\nReturn every input ID in the corrected response."
 
@@ -285,7 +286,9 @@ class Requests:
                 batch.append(job)
             if batch:
                 yield batch
-        def resolve(batch, recover=True):
+        def resolve(batch, recover=True, remaining=None):
+            if contract == IDENTITY_PAIR and remaining is None:
+                remaining = self.args.correction_attempts + 1
             indexed = {job["job_id"]: job for job in batch}
             def complete(decision):
                 job = indexed[decision["job_id"]]
@@ -323,20 +326,26 @@ class Requests:
             def salvage(result):
                 rows = valid_rows(result, "decisions", "job_id", indexed, contract, validate_one)
                 return {"decisions": rows} if rows else None
+            before = self.stats['requests']
             result = self.call(system, contract, decision_payload(batch), check, salvage,
-                               recover_partial=contract == IDENTITY_PAIR and recover and self.args.correction_attempts > 0)
+                               recover_partial=contract == IDENTITY_PAIR and recover and self.args.correction_attempts > 0,
+                               max_attempts=remaining)
+            if remaining is not None:
+                remaining -= self.stats['requests'] - before
             accepted = result["decisions"] if result is not None else []
             missing = [job for job in batch if job["job_id"] not in {d["job_id"] for d in accepted}]
-            if missing and accepted and recover:
-                yield from resolve(missing, recover=False)
-            elif missing and len(missing) > 1 and self.args.correction_attempts > 0:
+            can_retry = remaining is None or remaining > 0
+            if missing and accepted and recover and can_retry:
+                yield from resolve(missing, recover=False, remaining=remaining)
+            elif missing and len(missing) > 1 and self.args.correction_attempts > 0 and can_retry:
                 middle = len(missing) // 2
-                yield from resolve(missing[:middle], recover=False)
-                yield from resolve(missing[middle:], recover=False)
+                yield from resolve(missing[:middle], recover=False, remaining=remaining)
+                yield from resolve(missing[middle:], recover=False, remaining=remaining)
             else:
                 for job in missing:
                     decision = {"job_id": job["job_id"]}
                     if contract == IDENTITY_PAIR:
+                        self.stats['identity_jobs_budget_exhausted'] = self.stats.get('identity_jobs_budget_exhausted', 0) + 1
                         decision.update(relation="uncertain", left_support=[0], right_support=[0])
                     else:
                         decision.update(relation="uncertain", scope="unverified_model_response",

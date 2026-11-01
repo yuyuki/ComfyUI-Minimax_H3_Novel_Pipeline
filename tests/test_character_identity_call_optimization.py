@@ -1,5 +1,6 @@
 """A failed identity job must not repeatedly regenerate validated neighbors."""
 from copy import deepcopy
+from collections import Counter
 
 import pytest
 
@@ -10,7 +11,7 @@ from tests.test_character_profile_batches import request_payload
 
 
 @pytest.mark.parametrize('failure', ['missing', 'invalid_support', 'semantic', 'duplicate'])
-def test_partial_identity_recovery_reduces_calls_without_changing_decisions(tmp_path, monkeypatch, failure):
+def test_partial_identity_recovery_completes_missing_job_within_shared_budget(tmp_path, monkeypatch, failure):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
     records = cp.prepare_evidence(document(observation(), observation('Other eyes.'), observation('Third eyes.')))
     rows = [batches.compact_record(k, v) for k, v in records.items()]
@@ -49,9 +50,10 @@ def test_partial_identity_recovery_reduces_calls_without_changing_decisions(tmp_
         return sorted(result, key=lambda pair: pair[0]['job_id']), calls, requests
     before, old_calls, _ = exercise(False)
     after, new_calls, requests = exercise(True)
-    assert before == after
+    assert [decision['relation'] for decision, _ in before] == ['different', 'uncertain']
+    assert [decision['relation'] for decision, _ in after] == ['different', 'different']
     assert jobs == original
-    assert len(old_calls) == 4
+    assert len(old_calls) == 3
     assert len(new_calls) == 2
     assert [j['job_id'] for j in new_calls[1]['jobs']] == ['1']
     assert new_calls[1]['jobs'][0] == new_calls[0]['jobs'][1]
@@ -135,3 +137,35 @@ def test_invalid_positions_retry_names_job_side_and_bounds(tmp_path, monkeypatch
     assert 'A side with one observation requires [0]' in prompts[1]
     assert request_payload(prompts[0]) == request_payload(prompts[1])
     assert decisions[0][0]['relation'] == 'uncertain'
+
+
+@pytest.mark.parametrize('corrections', [0, 1, 2])
+@pytest.mark.parametrize('partial', [False, True])
+def test_identity_budget_does_not_restart_for_reduced_batches(tmp_path, monkeypatch, corrections, partial):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    records = cp.prepare_evidence(document(observation(), observation('Other eyes.')))
+    rows = [batches.compact_record(k, v) for k, v in records.items()]
+    jobs = [{'job_id': str(i), 'left': rows[:1], 'right': rows[1:]} for i in range(3)]
+    seen = Counter()
+    payloads = []
+
+    def model(*args):
+        payload = request_payload(args[3])
+        payloads.append(payload)
+        seen.update(job['job_id'] for job in payload['jobs'])
+        return {'decisions': [{'job_id': job['job_id'], 'relation': 'different',
+                              'left_support': [0] if partial and job['job_id'] == '0' else [999],
+                              'right_support': [0]} for job in payload['jobs']]}
+
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', model)
+    requests = batches.Requests(tmp_path, None, 'qwen', settings(correction_attempts=corrections))
+    result = dict((decision['job_id'], decision['relation']) for decision, _ in
+                  requests.decisions(jobs, batches.IDENTITY_SYSTEM, batches.IDENTITY_PAIR))
+    assert seen['1'] == seen['2'] == corrections + 1
+    assert max(seen.values()) <= corrections + 1
+    assert seen['0'] == (1 if partial else corrections + 1)
+    assert result == {'0': 'different' if partial else 'uncertain', '1': 'uncertain', '2': 'uncertain'}
+    assert requests.stats['identity_jobs_budget_exhausted'] == (2 if partial else 3)
+    for payload in payloads:
+        assert payload['observations'] == payloads[0]['observations']
+    assert not list(requests.cache_dir.glob('*.json'))

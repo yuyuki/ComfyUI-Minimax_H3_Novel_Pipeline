@@ -493,7 +493,7 @@ def test_partial_traits_complete_only_missing_shannon_feet_once(tmp_path, monkey
     assert set(result) == set(ids)
 
 
-def test_partial_identity_completion_only_resends_missing_job(tmp_path, monkeypatch):
+def test_partial_identity_without_corrections_keeps_missing_job_uncertain(tmp_path, monkeypatch):
     records = cp.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.")))
     rows = [batches.compact_record(k, v) for k, v in records.items()]
     jobs = [{"job_id": str(i), "left": rows[:1], "right": rows[1:]} for i in range(2)]
@@ -506,5 +506,6 @@ def test_partial_identity_completion_only_resends_missing_job(tmp_path, monkeypa
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", model)
     requests = batches.Requests(tmp_path, None, "qwen", settings(correction_attempts=0))
     result = list(requests.decisions(jobs, batches.IDENTITY_SYSTEM, batches.IDENTITY_PAIR))
-    assert calls == [["0", "1"], ["1"]]
-    assert len(result) == 2 and all(d["relation"] == "same" for d, _ in result)
+    assert calls == [["0", "1"]]
+    assert {d['job_id']: d['relation'] for d, _ in result} == {'0': 'same', '1': 'uncertain'}
+    assert requests.stats['identity_jobs_budget_exhausted'] == 1
