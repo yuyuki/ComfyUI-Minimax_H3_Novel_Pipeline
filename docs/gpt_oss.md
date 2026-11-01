@@ -4,8 +4,10 @@ Après redémarrage de ComfyUI, choisir `GPT-OSS` dans `model_family` du node
 **LM Studio Configuration**. Charger auparavant le modèle dans LM Studio ;
 son identifiant doit contenir `gpt-oss` (ou `gpt_oss`).
 
-**Character Evidence Extractor** et **Consolidate Character Profiles** acceptent
-explicitement `Qwen` et `GPT-OSS`. Redémarrer le processus ComfyUI après la mise
+**Character Evidence Extractor** et **Consolidate Character Profiles** utilisent
+la famille configurée dans **LM Studio Configuration**. Le profil Gemma sélectionne
+un modèle dont l'identifiant LM Studio contient `gemma` et utilise des messages chat standards.
+Redémarrer le processus ComfyUI après la mise
 à jour : recharger seulement le workflow ne recharge pas les contrôles Python.
 
 Le profil transmet des messages chat standards et conserve le contrat

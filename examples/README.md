@@ -116,9 +116,10 @@ counts, `finish_reason` and `local_stop`. These diagnostics omit generated text.
 
 Set `thinking` on each LM Studio processing node: it defaults to `true` for
 Cinematic Chapter Adapter, Extract Chapter References, Consolidate References
-and Spatial Continuity, and `false` for Generate H3 Prompts. Mistral ignores
-this Qwen control. LM Studio Configuration shares connection and sampling
-settings only. Recreate existing nodes to refresh their widget layouts.
+and Spatial Continuity, and `false` for Generate H3 Prompts. Mistral and Gemma
+ignore this Qwen control; configure GPT-OSS reasoning in LM Studio.
+LM Studio Configuration shares connection and sampling settings only.
+Recreate existing nodes to refresh their widget layouts.
 
 Chapter paths are relative to ComfyUI's input directory, for example
 `minimax_h3_novel/chapter_01.txt`. Upload or copy external chapters there.

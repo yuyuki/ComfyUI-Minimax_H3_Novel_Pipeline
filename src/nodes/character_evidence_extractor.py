@@ -55,8 +55,6 @@ class CharacterEvidenceExtractorNode:
             raise ValueError("Invalid character_scope.")
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
-        if lmstudio_config.get("model_family", "Qwen") not in {"Qwen", "GPT-OSS"}:
-            raise ValueError("Character Evidence Extractor requires Qwen or GPT-OSS in LM Studio Configuration.")
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty relative subfolder.")
         if chunk_chars < 1 or max_tokens < 1 or correction_attempts < 0 or not 0 <= temperature <= 2:

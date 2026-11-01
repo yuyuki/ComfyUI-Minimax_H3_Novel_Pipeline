@@ -465,7 +465,8 @@ def test_manual_link_and_path_errors(workspace):
         LoadCharacterProfilesNode().run(str(path))
 
 
-@pytest.mark.parametrize('family,model', [('Qwen', 'qwen'), ('GPT-OSS', 'gpt-oss-20b')])
+@pytest.mark.parametrize('family,model', [('Qwen', 'qwen'), ('GPT-OSS', 'gpt-oss-20b'),
+                                          ('Gemma', 'gemma-3-12b-it'), ('Mistral', 'mistral-small-3.2')])
 def test_node_budget_settings_and_configuration(workspace, monkeypatch, family, model):
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", fake_model)
     def make_client(*args):
@@ -479,8 +480,6 @@ def test_node_budget_settings_and_configuration(workspace, monkeypatch, family, 
     assert Path(saved).is_relative_to(workspace / config["run_folder"])
     report = json.loads(Path(saved).with_name("character_profiles_requests.json").read_text())
     assert report["context_tokens"] == 24000
-    with pytest.raises(ValueError, match="requires Qwen"):
-        node.ConsolidateCharacterProfilesNode().run(document(), {"model_family": "Mistral"})
 
 
 def test_cache_invalidation_for_changed_evidence_and_force(workspace, monkeypatch):

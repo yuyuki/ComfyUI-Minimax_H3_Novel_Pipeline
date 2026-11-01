@@ -471,7 +471,7 @@ def test_mistral_does_not_use_qwen_grammar_fallback():
 
 @pytest.mark.parametrize("stage", ["extract", "consolidate", "generate"])
 @pytest.mark.parametrize("family,expected", [("Mistral", "mistral-small-3.2"), ("Qwen", "qwen3.5-9b"),
-                                            ("GPT-OSS", "openai/gpt-oss-20b")])
+                                            ("GPT-OSS", "openai/gpt-oss-20b"), ("Gemma", "google/gemma-3-12b-it")])
 def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, family, expected):
     from minimax_h3_novel_pipeline.core import lmstudio_settings
 
@@ -482,6 +482,7 @@ def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, famil
             {"id": "qwen3.5-9b", "object": "model"},
             {"id": "mistral-small-3.2", "object": "model"},
             {"id": "openai/gpt-oss-20b", "object": "model"},
+            {"id": "google/gemma-3-12b-it", "object": "model"},
         ]})
 
     real_client = httpx.Client
@@ -507,13 +508,14 @@ def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, famil
         monkeypatch.setattr(client.chat.completions, "create", create)
         lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.15, 8192)
         extra = create.call_args.kwargs["extra_body"]
+        assert create.call_args.kwargs["response_format"] == {"type": "json_schema", "json_schema": SCHEMA}
         if family != "Qwen":
             assert extra == {}
         else:
             assert extra["top_k"] == 37
 
 
-@pytest.mark.parametrize("family", ["Mistral", "Qwen", "GPT-OSS"])
+@pytest.mark.parametrize("family", ["Mistral", "Qwen", "GPT-OSS", "Gemma"])
 def test_family_selection_requires_matching_model(family):
     from minimax_h3_novel_pipeline.core import lmstudio_models
     client = SimpleNamespace(models=SimpleNamespace(list=lambda: SimpleNamespace(data=[SimpleNamespace(id="other")])))
@@ -531,7 +533,7 @@ def test_unknown_family_rejected_before_credentials(monkeypatch):
     key.assert_not_called()
 
 
-@pytest.mark.parametrize("family,attempts", [("Mistral", 2), ("Qwen", 4)])
+@pytest.mark.parametrize("family,attempts", [("Mistral", 2), ("Qwen", 4), ("Gemma", 2)])
 def test_semantic_retries_follow_client_profile(family, attempts):
     from minimax_h3_novel_pipeline.core import lmstudio_models, reference_requests
     profile = lmstudio_models.get_profile(family)

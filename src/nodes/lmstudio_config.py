@@ -17,7 +17,7 @@ Share LM Studio settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
 Set the trusted API URL and API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio`.
-The key is not saved in the workflow. Choose Qwen, Mistral or GPT-OSS and configure the URL here. The qwen35 controls apply only to Qwen. GPT-OSS uses LM Studio's native Harmony template and reasoning settings; node thinking switches do not disable its reasoning. Set max_tokens on each processing node.
+The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and configure the URL here. The qwen35 controls apply only to Qwen. Mistral and Gemma use standard chat messages; GPT-OSS uses LM Studio's native Harmony template and reasoning settings, which node thinking switches do not disable. Set max_tokens on each processing node.
 """
 
     @classmethod
@@ -48,7 +48,7 @@ The key is not saved in the workflow. Choose Qwen, Mistral or GPT-OSS and config
             "optional": {
                 "model_family": (list(lmstudio_models.PROFILES), {
                     "default": "Qwen",
-                    "tooltip": "Select a matching model exposed by LM Studio. Load the model there first. Mistral and GPT-OSS ignore Qwen controls. GPT-OSS reasoning is configured in LM Studio, not by the node thinking switch.",
+                    "tooltip": "Select a matching model exposed by LM Studio. Load the model there first. Mistral, GPT-OSS and Gemma ignore Qwen controls. GPT-OSS reasoning is configured in LM Studio, not by the node thinking switch.",
                 }),
             },
         }

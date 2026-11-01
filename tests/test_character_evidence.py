@@ -102,7 +102,8 @@ def test_overflow_splits_disjoint_parts_without_joining_them(monkeypatch):
         ["first", "second"], ["first"], ["second"]]
 
 
-@pytest.mark.parametrize('family,model', [('Qwen', 'qwen3.5'), ('GPT-OSS', 'gpt-oss-20b')])
+@pytest.mark.parametrize('family,model', [('Qwen', 'qwen3.5'), ('GPT-OSS', 'gpt-oss-20b'),
+                                          ('Gemma', 'gemma-3-12b-it'), ('Mistral', 'mistral-small-3.2')])
 def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch, family, model):
     source, output = workspace
     text = "\ufeffÉlise avait les yeux verts.  \r\n\r\nÉlise avait les yeux verts."
@@ -351,8 +352,6 @@ def test_registration_and_inputs():
     assert cls.RETURN_TYPES == ("MINIMAX_CHARACTER_EVIDENCE", "STRING")
     assert "api_key" not in cls.INPUT_TYPES()["required"]
     assert cls.IS_CHANGED() != cls.IS_CHANGED()
-    with pytest.raises(ValueError, match="requires Qwen"):
-        cls().run({"model_family": "Mistral"}, {})
 
 
 def test_interrupt_is_not_retried(workspace, monkeypatch):

@@ -14,6 +14,7 @@ def test_gpt_oss_detection_and_dropdown(model):
     profile = lmstudio_models.profile_for_model(model)
     assert profile.NAME == 'GPT-OSS'
     assert 'GPT-OSS' in LMStudioConfigurationNode.INPUT_TYPES()['optional']['model_family'][0]
+    assert 'Gemma' in LMStudioConfigurationNode.INPUT_TYPES()['optional']['model_family'][0]
     assert not profile.allows_chatml(model, {})
 
 
