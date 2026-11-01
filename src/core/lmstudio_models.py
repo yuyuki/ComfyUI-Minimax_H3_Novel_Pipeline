@@ -1,7 +1,7 @@
 """Model profile registry. Register new family modules here to extend the dropdown."""
-from . import lmstudio_model_mistral, lmstudio_model_qwen
+from . import lmstudio_model_gpt_oss, lmstudio_model_mistral, lmstudio_model_qwen
 
-PROFILES = {profile.NAME: profile for profile in (lmstudio_model_qwen, lmstudio_model_mistral)}
+PROFILES = {profile.NAME: profile for profile in (lmstudio_model_qwen, lmstudio_model_mistral, lmstudio_model_gpt_oss)}
 
 
 def get_profile(family):

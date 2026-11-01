@@ -80,6 +80,7 @@ flowchart TD
     m_core_editable_schemas["core.editable_schemas"]
     m_core_image_prompt_export["core.image_prompt_export"]
     m_core_lmstudio_json["core.lmstudio_json"]
+    m_core_lmstudio_model_gpt_oss["core.lmstudio_model_gpt_oss"]
     m_core_lmstudio_model_mistral["core.lmstudio_model_mistral"]
     m_core_lmstudio_model_qwen["core.lmstudio_model_qwen"]
     m_core_lmstudio_models["core.lmstudio_models"]
@@ -190,6 +191,7 @@ flowchart TD
     m_core_lmstudio_json --> m_core_lmstudio_model_qwen
     m_core_lmstudio_json --> m_core_lmstudio_models
     m_core_lmstudio_json --> m_core_lmstudio_pipeline
+    m_core_lmstudio_models --> m_core_lmstudio_model_gpt_oss
     m_core_lmstudio_models --> m_core_lmstudio_model_mistral
     m_core_lmstudio_models --> m_core_lmstudio_model_qwen
     m_core_lmstudio_pipeline --> m_core_lmstudio_json
@@ -368,9 +370,10 @@ flowchart TD
 | `src/core/editable_schemas.py` | `core.path_access` | `export_schema`, `export_schemas`, `obj`, `validate_document` |
 | `src/core/image_prompt_export.py` | `core.path_access`, `core.util` | `export_image_prompts` |
 | `src/core/lmstudio_json.py` | `core.lmstudio_model_qwen`, `core.lmstudio_models`, `core.lmstudio_pipeline` | `StructuredOutputLengthError`, `chat_json`, `model_settings`, `parse_json`, `select_model` |
+| `src/core/lmstudio_model_gpt_oss.py` | — | `allows_chatml`, `matches`, `request_settings`, `retries`, `settings_from_config` |
 | `src/core/lmstudio_model_mistral.py` | — | `allows_chatml`, `matches`, `request_settings`, `retries`, `settings_from_config` |
 | `src/core/lmstudio_model_qwen.py` | — | `allows_chatml`, `completion_options`, `is_qwen35`, `is_thinking_grammar_error`, `matches`, `request_settings`, `retries`, `settings_from_config`, `supports_thinking_prefill` |
-| `src/core/lmstudio_models.py` | `core.lmstudio_model_mistral`, `core.lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
+| `src/core/lmstudio_models.py` | `core.lmstudio_model_gpt_oss`, `core.lmstudio_model_mistral`, `core.lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
 | `src/core/lmstudio_pipeline.py` | `core.lmstudio_json`, `core.lmstudio_models`, `core.lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
 | `src/core/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `set_connection_settings`, `validate_api_url` |
 | `src/core/narrative_choices.py` | — | `propose`, `resolve_chapter` |
@@ -407,4 +410,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.character_visual_integration`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **55**. Internal dependency edges: **227**.
+Modules: **56**. Internal dependency edges: **228**.

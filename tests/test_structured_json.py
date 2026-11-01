@@ -470,7 +470,8 @@ def test_mistral_does_not_use_qwen_grammar_fallback():
 
 
 @pytest.mark.parametrize("stage", ["extract", "consolidate", "generate"])
-@pytest.mark.parametrize("family,expected", [("Mistral", "mistral-small-3.2"), ("Qwen", "qwen3.5-9b")])
+@pytest.mark.parametrize("family,expected", [("Mistral", "mistral-small-3.2"), ("Qwen", "qwen3.5-9b"),
+                                            ("GPT-OSS", "openai/gpt-oss-20b")])
 def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, family, expected):
     from minimax_h3_novel_pipeline.core import lmstudio_settings
 
@@ -480,6 +481,7 @@ def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, famil
             {"id": "unrelated", "object": "model"},
             {"id": "qwen3.5-9b", "object": "model"},
             {"id": "mistral-small-3.2", "object": "model"},
+            {"id": "openai/gpt-oss-20b", "object": "model"},
         ]})
 
     real_client = httpx.Client
@@ -498,20 +500,20 @@ def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, famil
         if family == "Qwen":
             assert client._minimax_h3_settings["top_k"] == 37
         else:
-            assert client._minimax_h3_settings == {"thinking": False}
+            assert client._minimax_h3_settings == {"thinking": family == "GPT-OSS"}
         config["qwen35_top_k"] = 1
         monkeypatch.setattr(lmstudio_json, "QWEN35_TOP_K", 2)
         create = Mock(return_value=Stream(['{"value":"ok"}']))
         monkeypatch.setattr(client.chat.completions, "create", create)
         lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.15, 8192)
         extra = create.call_args.kwargs["extra_body"]
-        if family == "Mistral":
+        if family != "Qwen":
             assert extra == {}
         else:
             assert extra["top_k"] == 37
 
 
-@pytest.mark.parametrize("family", ["Mistral", "Qwen"])
+@pytest.mark.parametrize("family", ["Mistral", "Qwen", "GPT-OSS"])
 def test_family_selection_requires_matching_model(family):
     from minimax_h3_novel_pipeline.core import lmstudio_models
     client = SimpleNamespace(models=SimpleNamespace(list=lambda: SimpleNamespace(data=[SimpleNamespace(id="other")])))
