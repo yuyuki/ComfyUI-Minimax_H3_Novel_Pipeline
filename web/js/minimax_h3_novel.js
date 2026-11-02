@@ -325,10 +325,52 @@ function installSavedChapterPicker(node) {
     refreshSavedChapters(node);
 }
 
+function installModelOptions(node) {
+    if (node.comfyClass !== "LMStudioConfigurationNode") return;
+    const model = widget(node, "model_family");
+    const url = widget(node, "api_url");
+    if (!model || !url) return;
+    const originalOrder = [...node.widgets];
+    const qwenWidgets = originalOrder.filter((item) => item.name.startsWith("qwen35_"));
+    const originalSizes = new Map(qwenWidgets.map((item) => [item, { type: item.type, computeSize: item.computeSize }]));
+    function arrange() {
+        const widgets = node.widgets;
+        widgets.splice(widgets.indexOf(model), 1);
+        widgets.splice(widgets.indexOf(url) + 1, 0, model);
+        for (const item of qwenWidgets) {
+            const original = originalSizes.get(item);
+            item.type = model.value === "Qwen" ? original.type : "hidden";
+            item.computeSize = model.value === "Qwen" ? original.computeSize : () => [0, -4];
+        }
+        node.setSize?.(node.computeSize());
+        app.graph?.setDirtyCanvas(true, true);
+    }
+    // LiteGraph persists widget values by position. Keep the original order at
+    // the serialization boundary so existing and newly saved workflows agree.
+    for (const method of ["configure", "serialize"]) {
+        const original = node[method];
+        if (!original) continue;
+        node[method] = function (...args) {
+            const extras = this.widgets.filter((item) => !originalOrder.includes(item));
+            this.widgets.splice(0, this.widgets.length, ...originalOrder, ...extras);
+            try { return original.apply(this, args); }
+            finally { arrange(); }
+        };
+    }
+    const callback = model.callback;
+    model.callback = function (...args) {
+        const result = callback?.apply(this, args);
+        arrange();
+        return result;
+    };
+    arrange();
+}
+
 app.registerExtension({
     name: EXTENSION_NAME,
     async nodeCreated(node) {
         installSavedChapterPicker(node);
+        installModelOptions(node);
     },
 });
 

@@ -13,6 +13,29 @@ test("frontend registers current features without configuration migration", () =
     ]);
 });
 
+test("model options follow the selected family and preserve workflow order", async () => {
+    const extension = extensions.find((item) => item.name === "minimax_h3_novel.chapter_picker");
+    const widgets = ["api_url", "qwen35_top_k", "qwen35_min_p", "model_family"]
+        .map((name) => ({ name, type: "number", value: name === "model_family" ? "Qwen" : name }));
+    const node = {
+        comfyClass: "LMStudioConfigurationNode", widgets,
+        computeSize: () => [300, 100], setSize() {},
+        serialize() { return this.widgets.map((item) => item.value); },
+        configure(values) { this.widgets.forEach((item, index) => { item.value = values[index]; }); },
+    };
+    await extension.nodeCreated(node);
+    assert.deepEqual(node.widgets.map((item) => item.name), ["api_url", "model_family", "qwen35_top_k", "qwen35_min_p"]);
+    const model = node.widgets[1];
+    model.value = "Gemma";
+    model.callback(model.value);
+    assert.equal(node.widgets[2].type, "hidden");
+    assert.deepEqual(node.serialize(), ["api_url", "qwen35_top_k", "qwen35_min_p", "Gemma"]);
+    node.configure(["url", 42, 0.2, "Qwen"]);
+    assert.equal(node.widgets[1].value, "Qwen");
+    assert.equal(node.widgets[2].value, 42);
+    assert.equal(node.widgets[2].type, "number");
+});
+
 test("LM Studio settings send the authorized endpoint and key together before queuing", async () => {
     const settingsExtension = extensions.find((item) => item.name === "minimax_h3_novel.lmstudio_settings");
     const urlSetting = settingsExtension.settings.find((item) => item.id.endsWith(".ApiUrl"));
