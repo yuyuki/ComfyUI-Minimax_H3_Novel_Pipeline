@@ -24,7 +24,8 @@ def defaults(cls):
 def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(run_output, "storage_root", lambda kind: tmp_path)
-    config = {**defaults(LMStudioConfigurationNode), "run_folder": "20260916120000",
+    config = {**defaults(LMStudioConfigurationNode), "api_url": "http://127.0.0.1:1234/v1", "model_family": "Qwen",
+              "run_folder": "20260916120000",
               "api_key": "secret-must-not-be-saved", "unexpected": "secret-must-not-be-saved"}
     chapter = tmp_path / "chapter.txt"
     chapter.write_text("A chapter with a character and a location.\n" * 10, encoding="utf-8")
@@ -77,7 +78,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     text = path.read_text(encoding="utf-8")
     record = json.loads(text)
     assert "secret-must-not-be-saved" not in text
-    assert record["lmstudio_config"] == {**defaults(LMStudioConfigurationNode), "backend": "LM Studio"}
+    assert record["lmstudio_config"] == {**defaults(LMStudioConfigurationNode), "api_url": config["api_url"], "model_family": "Qwen"}
     expected_settings = defaults(cls)
     assert record["node_settings"] == expected_settings
     assert record["resolved_model"] == "qwen3.5-test"

@@ -523,13 +523,13 @@ def test_family_selection_requires_matching_model(family):
         lmstudio_models.select_family_model(client, family)
 
 
-def test_unknown_family_rejected_before_credentials(monkeypatch):
+def test_unknown_provider_rejected_before_credentials(monkeypatch):
     from minimax_h3_novel_pipeline.nodes import lmstudio_config
     from minimax_h3_novel_pipeline.core import lmstudio_settings
     key = Mock(side_effect=AssertionError("credentials accessed"))
     monkeypatch.setattr(lmstudio_settings, "get_api_key", key)
-    with pytest.raises(ValueError, match="Unsupported model family"):
-        lmstudio_config.LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1", model_family="unknown")
+    with pytest.raises(ValueError, match="disabled"):
+        lmstudio_config.LMStudioConfigurationNode().run(backend="unknown")
     key.assert_not_called()
 
 

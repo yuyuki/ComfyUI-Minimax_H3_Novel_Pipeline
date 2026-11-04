@@ -1,32 +1,34 @@
-"""Secure LM Studio configuration node for the MiniMax H3 workflow."""
+"""Secure provider configuration node for the MiniMax H3 workflow."""
 from __future__ import annotations
 
 from ..core import progress
 
 from typing import Any
 
-from ..core import lmstudio_settings, lmstudio_models
+from ..core import lmstudio_settings
 from ..core.run_output import reserve_run
 
 
 class LMStudioConfigurationNode:
-    """Share non-secret LM Studio settings and validate the operator's endpoint."""
+    """Share the selected provider's saved, non-secret settings."""
 
     DESCRIPTION = """\
 Share LM Studio or OpenAI settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
-Select the backend and set its API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio`.
-The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and configure the URL here. The qwen35 controls apply only to Qwen. Mistral and Gemma use standard chat messages; GPT-OSS uses LM Studio's native Harmony template and reasoning settings, which node thinking switches do not disable. Set max_tokens on each processing node.
+Enable and save a provider, API key and model in ComfyUI Settings: `MiniMax H3 Novel → Providers`.
+Choose an available provider here. Its saved model is displayed automatically; the URL and key
+come from settings. The key is not saved in the workflow. Qwen controls appear only for Qwen
+models in LM Studio. GPT-OSS reasoning is configured in LM Studio. Set max_tokens on each processing node.
 """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "api_url": ("STRING", {
-                    "default": "http://127.0.0.1:1234/v1",
-                    "tooltip": "Must match Trusted API URL in ComfyUI Settings → MiniMax H3 Novel → LM Studio.",
+                "backend": (["LM Studio", "OpenAI"], {
+                    "default": "LM Studio",
+                    "tooltip": "Enabled providers with a saved API key and model. Configure them in Settings → MiniMax H3 Novel → Providers.",
                 }),
                 "qwen35_length_retries": ("INT", {
                     "default": 2, "min": 0, "max": 10,
@@ -45,12 +47,6 @@ The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and
                     "tooltip": "Penalizes Qwen3.5 repetition; 1.05 reduces loops while preserving JSON list detail.",
                 }),
             },
-            "optional": {
-                "model_family": (list(lmstudio_models.PROFILES), {
-                    "default": "Qwen",
-                    "tooltip": "Select a matching model exposed by LM Studio. Load the model there first. Mistral, GPT-OSS and Gemma ignore Qwen controls. GPT-OSS reasoning is configured in LM Studio, not by the node thinking switch.",
-                }),
-            },
         }
 
     RETURN_TYPES = ("MINIMAX_LMSTUDIO_CONFIG", "STRING")
@@ -64,32 +60,13 @@ The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and
         return float("nan")
 
     @progress.node_progress
-    def run(self, api_url: str,
+    def run(self, backend: str = "LM Studio",
             qwen35_length_retries: int = 2,
             qwen35_top_k: int = 20,
-            qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05,
-            model_family: str = "Qwen", backend: str = "LM Studio") -> tuple[dict[str, Any], str]:
-        lmstudio_settings.require_enabled(backend)
-        openai_model = lmstudio_settings.get_openai_model()
-        if backend == "OpenAI":
-            api_url = lmstudio_settings.OPENAI_API_URL
-            api_key = lmstudio_settings.get_openai_api_key(api_url)
-        else:
-            api_url = lmstudio_settings.validate_api_url(api_url)
-            lmstudio_models.get_profile(model_family)
-            api_key = lmstudio_settings.get_api_key(api_url)
-        if not api_key:
-            raise RuntimeError(
-                "No API key in ComfyUI settings. Open Settings → "
-                f"MiniMax H3 Novel → Providers → {backend}, save the key, then retry."
-            )
-
+            qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05) -> tuple[dict[str, Any], str]:
+        connection = lmstudio_settings.get_provider_configuration(backend)
         config = {
-            "api_url": api_url.strip(),
-            "backend": backend,
-            "openai_model": openai_model,
-            "lmstudio_model": lmstudio_settings.get_lmstudio_model(),
-            "model_family": model_family,
+            **connection,
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
             "qwen35_top_k": max(1, int(qwen35_top_k)),
             "qwen35_min_p": min(1.0, max(0.0, float(qwen35_min_p))),
@@ -98,7 +75,7 @@ The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and
             "run_folder": reserve_run(),
         }
         status = (
-            f"{backend}: {config['api_url']} | model: {openai_model if backend == 'OpenAI' else config['lmstudio_model'] or model_family} | "
+            f"{backend}: {config['api_url']} | model: {config['openai_model'] if backend == 'OpenAI' else config['lmstudio_model']} | "
             f"API key: ComfyUI Settings (hidden) | run: {config['run_folder']}"
         )
         return config, status

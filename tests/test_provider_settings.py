@@ -28,6 +28,64 @@ def test_disabled_providers_cannot_supply_credentials():
         settings.get_openai_api_key(settings.OPENAI_API_URL)
 
 
+def test_node_inputs_only_expose_provider_and_qwen_controls():
+    from minimax_h3_novel_pipeline.nodes.lmstudio_config import LMStudioConfigurationNode
+
+    inputs = LMStudioConfigurationNode.INPUT_TYPES()["required"]
+    assert inputs["backend"][0] == ["LM Studio", "OpenAI"]
+    assert "api_url" not in inputs and "model_family" not in inputs
+
+
+def test_options_only_include_enabled_complete_saved_providers():
+    data = provider_settings()
+    data["lmstudio"]["model"] = "qwen3.5-test"
+    settings.set_provider_settings(data)
+    assert settings.get_provider_options() == [
+        {"backend": "LM Studio", "model": "qwen3.5-test", "model_family": "Qwen"},
+        {"backend": "OpenAI", "model": "gpt-4.1", "model_family": "Mistral"},
+    ]
+    data["lmstudio"]["enabled"] = False
+    settings.set_provider_settings(data)
+    assert [p["backend"] for p in settings.get_provider_options()] == ["OpenAI"]
+    data["openai"]["model"] = ""
+    settings.set_provider_settings(data)
+    assert settings.get_provider_options() == []
+    data["openai"].update(model="gpt-4.1", api_key="")
+    settings.set_provider_settings(data)
+    assert settings.get_provider_options() == []
+
+
+@pytest.mark.parametrize("model,family", [
+    ("qwen3.5-test", "Qwen"), ("mistral-small", "Mistral"),
+    ("google/gemma-3", "Gemma"), ("gpt-oss-20b", "GPT-OSS"), ("custom-chat", "Mistral"),
+])
+def test_node_resolves_saved_endpoint_model_and_profile(monkeypatch, model, family):
+    from minimax_h3_novel_pipeline.nodes import lmstudio_config
+
+    data = provider_settings()
+    data["lmstudio"].update(api_url="https://trusted.example/v1", model=model)
+    settings.set_provider_settings(data)
+    monkeypatch.setattr(lmstudio_config, "reserve_run", lambda: "test-run")
+    config, status = lmstudio_config.LMStudioConfigurationNode().run()
+    assert config["api_url"] == "https://trusted.example/v1"
+    assert config["lmstudio_model"] == model
+    assert config["model_family"] == family
+    assert "local-key" not in str(config) + status
+    assert "openai-key" not in str(settings.get_provider_options())
+
+
+@pytest.mark.parametrize("field,value", [("enabled", False), ("api_key", ""), ("model", "")])
+def test_node_rejects_unavailable_provider_before_reserving_run(monkeypatch, field, value):
+    from minimax_h3_novel_pipeline.nodes import lmstudio_config
+
+    data = provider_settings()
+    data["openai"][field] = value
+    settings.set_provider_settings(data)
+    monkeypatch.setattr(lmstudio_config, "reserve_run", lambda: pytest.fail("Run reserved for unavailable provider"))
+    with pytest.raises(ValueError, match="disabled|saved API key and model"):
+        lmstudio_config.LMStudioConfigurationNode().run(backend="OpenAI")
+
+
 def test_invalid_snapshot_preserves_both_connections():
     data = provider_settings()
     data["lmstudio"]["api_url"] = "https://new.example/v1"

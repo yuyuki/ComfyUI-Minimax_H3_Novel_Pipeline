@@ -176,7 +176,7 @@ def _register_upload_route() -> None:
 
                 data = await request.json()
                 lmstudio_settings.set_provider_settings(data)
-                return web.json_response({"saved": True})
+                return web.json_response({"saved": True, "providers": lmstudio_settings.get_provider_options()})
             except (ValueError, json.JSONDecodeError) as exc:
                 return web.json_response({"error": str(exc)}, status=400)
 

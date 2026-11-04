@@ -28,6 +28,10 @@ class CredentialTests(unittest.TestCase):
         reserve_run.start()
         self.addCleanup(reserve_run.stop)
         self.settings.set_connection_settings(DEFAULT_URL, "operator-secret")
+        self.settings.set_provider_settings({
+            "lmstudio": {"enabled": True, "api_url": DEFAULT_URL, "api_key": "operator-secret", "model": "qwen3.5-test"},
+            "openai": {"enabled": False, "api_url": self.settings.OPENAI_API_URL},
+        })
 
     def test_untrusted_urls_rejected_before_secret_lookup_or_client_creation(self):
         urls = ["https://attacker.example/v1", "http://127.0.0.1:4321/v1",
@@ -43,14 +47,12 @@ class CredentialTests(unittest.TestCase):
             for url in urls:
                 with self.subTest(url=url):
                     with self.assertRaises(ValueError):
-                        self.config.LMStudioConfigurationNode().run(url)
-                    with self.assertRaises(ValueError):
                         self.pipeline.make_client_and_model(module, url)
             get_key.assert_not_called()
             module.make_client.assert_not_called()
 
     def test_configuration_does_not_expose_secret(self):
-        config, status = self.config.LMStudioConfigurationNode().run(DEFAULT_URL + "/")
+        config, status = self.config.LMStudioConfigurationNode().run()
         self.assertEqual(config["api_url"], DEFAULT_URL)
         self.assertNotIn("thinking", config)
         self.assertNotIn("thinking", status)
@@ -75,7 +77,7 @@ class CredentialTests(unittest.TestCase):
             self.settings.validate_api_url("http://trusted.example/lm/v1")
 
     def test_cached_configuration_is_revalidated(self):
-        config, _ = self.config.LMStudioConfigurationNode().run(DEFAULT_URL)
+        config, _ = self.config.LMStudioConfigurationNode().run()
         self.settings.set_connection_settings("https://new.example/v1", "new-secret")
         module = SimpleNamespace(make_client=Mock())
         with self.assertRaises(ValueError):

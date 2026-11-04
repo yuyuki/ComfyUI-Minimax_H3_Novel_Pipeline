@@ -13,27 +13,64 @@ test("frontend registers current features without configuration migration", () =
     ]);
 });
 
-test("model options follow the selected family and preserve workflow order", async () => {
+test("provider models follow saved availability, preserve workflow values and manual resizing", async () => {
     const extension = extensions.find((item) => item.name === "minimax_h3_novel.chapter_picker");
-    const widgets = ["api_url", "qwen35_top_k", "qwen35_min_p", "model_family"]
-        .map((name) => ({ name, type: "number", value: name === "model_family" ? "Qwen" : name }));
+    const settings = extensions.find((item) => item.name.endsWith(".provider_settings"));
+    const widgets = ["backend", "qwen35_top_k", "qwen35_min_p"]
+        .map((name) => ({ name, type: "number", options: {}, value: name === "backend" ? "LM Studio" : name }));
     const node = {
-        comfyClass: "LMStudioConfigurationNode", widgets,
-        computeSize: () => [300, 100], setSize() {},
-        serialize() { return this.widgets.map((item) => item.value); },
+        comfyClass: "LMStudioConfigurationNode", widgets, size: [620, 420],
+        computeSize: () => [300, 100], setSize(size) { this.size = size; },
+        addWidget(type, name, value, callback, options) {
+            const item = { type, name, value, callback, options };
+            this.widgets.push(item);
+            return item;
+        },
+        serialize() { return this.widgets.filter((item) => item.serialize !== false).map((item) => item.value); },
         configure(values) { this.widgets.forEach((item, index) => { item.value = values[index]; }); },
     };
-    await extension.nodeCreated(node);
-    assert.deepEqual(node.widgets.map((item) => item.name), ["api_url", "model_family", "qwen35_top_k", "qwen35_min_p"]);
-    const model = node.widgets[1];
-    model.value = "Gemma";
-    model.callback(model.value);
-    assert.equal(node.widgets[2].type, "hidden");
-    assert.deepEqual(node.serialize(), ["api_url", "qwen35_top_k", "qwen35_min_p", "Gemma"]);
-    node.configure(["url", 42, 0.2, "Qwen"]);
-    assert.equal(node.widgets[1].value, "Qwen");
-    assert.equal(node.widgets[2].value, 42);
-    assert.equal(node.widgets[2].type, "number");
+    const originalFetch = globalThis.fetch;
+    const providers = [
+        { backend: "LM Studio", model: "qwen3.5-9b", model_family: "Qwen" },
+        { backend: "OpenAI", model: "gpt-test", model_family: "Mistral" },
+    ];
+    globalThis.frontendTestApp.ui = { settings: { getSettingValue: () => ({}) } };
+    globalThis.frontendTestApp.graph = { _nodes: [node], setDirtyCanvas() {} };
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ providers }) });
+    try {
+        await settings.beforeQueuing();
+        await extension.nodeCreated(node);
+        assert.deepEqual(node.widgets.map((item) => item.name), ["backend", "model", "qwen35_top_k", "qwen35_min_p"]);
+        const [backend, model] = node.widgets;
+        assert.deepEqual(backend.options.values, ["LM Studio", "OpenAI"]);
+        assert.equal(model.value, "qwen3.5-9b");
+        assert.equal(model.disabled, true);
+        backend.value = "OpenAI";
+        backend.callback(backend.value);
+        assert.equal(model.value, "gpt-test");
+        assert.equal(node.widgets[2].type, "hidden");
+        assert.deepEqual(node.serialize(), ["OpenAI", "qwen35_top_k", "qwen35_min_p"]);
+        node.configure(["LM Studio", 42, 0.2]);
+        assert.equal(model.value, "qwen3.5-9b");
+        assert.equal(node.widgets[2].value, 42);
+        assert.equal(node.widgets[2].type, "number");
+        node.size = [840, 600];
+        for (let i = 0; i < 5; i++) node.serialize();
+        assert.deepEqual(node.size, [840, 600]);
+        providers[0] = { backend: "LM Studio", model: "gemma-3", model_family: "Gemma" };
+        await settings.beforeQueuing();
+        assert.equal(model.value, "gemma-3");
+        assert.equal(node.widgets[2].type, "hidden");
+        providers.shift();
+        await settings.beforeQueuing();
+        assert.equal(backend.value, "OpenAI");
+        providers.pop();
+        await settings.beforeQueuing();
+        assert.deepEqual(backend.options.values, []);
+        assert.equal(backend.value, "");
+        assert.match(model.value, /Configure and save/);
+        assert.deepEqual(node.size, [840, 600]);
+    } finally { globalThis.fetch = originalFetch; delete globalThis.frontendTestApp.graph; }
 });
 
 test("provider cards sync a complete snapshot before queueing and propagate failures", async () => {
@@ -49,7 +86,7 @@ test("provider cards sync a complete snapshot before queueing and propagate fail
         assert.equal(url, "/minimax_h3_novel/provider-settings");
         assert.equal(options.headers.get("X-MiniMax-H3-Request"), "1");
         sent.push(JSON.parse(options.body));
-        return { ok: true };
+        return { ok: true, json: async () => ({ providers: [] }) };
     };
     try {
         await extension.beforeQueuing();

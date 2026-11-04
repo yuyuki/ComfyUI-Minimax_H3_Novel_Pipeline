@@ -131,11 +131,12 @@ def test_configuration_nodes_share_run_and_repeat_queues(output_root, monkeypatc
     from minimax_h3_novel_pipeline.core import lmstudio_settings
     monkeypatch.setattr(lmstudio_settings, "get_api_key", lambda api_url=None: "test-secret")
     monkeypatch.setattr(lmstudio_settings, "validate_api_url", lambda url: url)
-    first, _ = LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1")
-    other, _ = LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1")
+    monkeypatch.setattr(lmstudio_settings, "_lmstudio_model", "qwen3.5-test")
+    first, _ = LMStudioConfigurationNode().run()
+    other, _ = LMStudioConfigurationNode().run()
     assert first["run_folder"] == other["run_folder"]
     monkeypatch.setattr(run_output, "execution_id", lambda: "next-queue")
-    second, _ = LMStudioConfigurationNode().run("http://127.0.0.1:1234/v1")
+    second, _ = LMStudioConfigurationNode().run()
     assert first["run_folder"] != second["run_folder"]
     assert "test-secret" not in json.dumps(first)
 

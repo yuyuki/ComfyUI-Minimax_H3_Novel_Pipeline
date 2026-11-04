@@ -29,6 +29,8 @@ def start(output, stage, config, model, args, *, out_dir, inputs, extra=None):
             public[key] = config.get(key, spec[1]["default"])
     is_openai = config.get("backend") == "OpenAI"
     public["backend"] = "OpenAI" if is_openai else "LM Studio"
+    public["api_url"] = config["api_url"]
+    public["model_family"] = config.get("model_family", lmstudio_models.profile_for_model(model).NAME)
     if is_openai:
         public["openai_model"] = config["openai_model"]
     profile = lmstudio_model_mistral if is_openai else lmstudio_models.get_profile(public["model_family"])

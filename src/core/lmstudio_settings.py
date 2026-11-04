@@ -60,6 +60,49 @@ def require_enabled(backend: str) -> None:
             raise ValueError(f"{backend} is disabled. Enable it in ComfyUI Settings → MiniMax H3 Novel → Providers.")
 
 
+def get_provider_configuration(backend: str) -> dict:
+    """Resolve one saved connection atomically, validating before credential lookup."""
+    from . import lmstudio_models
+
+    with _lock:
+        require_enabled(backend)
+        if backend == "OpenAI":
+            url = OPENAI_API_URL
+            key = get_openai_api_key(url)
+            model = _openai_model
+            family = "Mistral"  # Standard structured chat transport for OpenAI.
+        else:
+            url = validate_api_url(_trusted_api_url)
+            key = get_api_key(url)
+            model = _lmstudio_model
+            family = next((p.NAME for p in lmstudio_models.PROFILES.values() if p.matches(model)), "Mistral")
+        if not key or not model:
+            raise ValueError(
+                f"{backend} needs a saved API key and model. Open Settings → MiniMax H3 Novel → Providers."
+            )
+        return {
+            "backend": backend, "api_url": url, "model_family": family,
+            "lmstudio_model": model if backend == "LM Studio" else "",
+            "openai_model": model if backend == "OpenAI" else "",
+        }
+
+
+def get_provider_options() -> list[dict]:
+    """Expose available saved providers and models without credentials or URLs."""
+    options = []
+    with _lock:
+        for backend in ("LM Studio", "OpenAI"):
+            try:
+                config = get_provider_configuration(backend)
+            except ValueError:
+                continue
+            options.append({
+                "backend": backend, "model": config["openai_model"] or config["lmstudio_model"],
+                "model_family": config["model_family"],
+            })
+    return options
+
+
 async def fetch_models(provider: str, data: dict) -> list[str]:
     """List model IDs without past shutdown dates using draft credentials."""
     import httpx

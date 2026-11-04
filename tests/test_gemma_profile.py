@@ -1,7 +1,6 @@
 import json
 
 from minimax_h3_novel_pipeline.core import lmstudio_json, lmstudio_models
-from minimax_h3_novel_pipeline.nodes.lmstudio_config import LMStudioConfigurationNode
 from tests.test_structured_json import SCHEMA, Stream, client_for
 
 
@@ -14,7 +13,6 @@ def test_gemma_profile_matches_loaded_models_and_configuration():
     assert profile.settings_from_config({"qwen35_top_k": 42}) == {"thinking": False}
     assert profile.retries("gemma-3-12b-it", {}) == 1
     assert not profile.allows_chatml("gemma-3-12b-it", {})
-    assert "Gemma" in LMStudioConfigurationNode.INPUT_TYPES()["optional"]["model_family"][0]
 
 
 def test_gemma_uses_json_schema_on_initial_and_compact_retry():

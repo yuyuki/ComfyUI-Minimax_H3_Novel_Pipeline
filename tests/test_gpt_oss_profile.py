@@ -5,16 +5,13 @@ from unittest.mock import Mock
 import pytest
 
 from minimax_h3_novel_pipeline.core import lmstudio_json, lmstudio_models
-from minimax_h3_novel_pipeline.nodes.lmstudio_config import LMStudioConfigurationNode
 from tests.test_structured_json import Stream, client_for
 
 
 @pytest.mark.parametrize('model', ['openai/gpt-oss-20b', 'gpt-oss-20b-MXFP4.gguf', 'GPT_OSS_120B'])
-def test_gpt_oss_detection_and_dropdown(model):
+def test_gpt_oss_detection(model):
     profile = lmstudio_models.profile_for_model(model)
     assert profile.NAME == 'GPT-OSS'
-    assert 'GPT-OSS' in LMStudioConfigurationNode.INPUT_TYPES()['optional']['model_family'][0]
-    assert 'Gemma' in LMStudioConfigurationNode.INPUT_TYPES()['optional']['model_family'][0]
     assert not profile.allows_chatml(model, {})
 
 

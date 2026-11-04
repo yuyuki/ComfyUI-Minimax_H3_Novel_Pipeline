@@ -325,28 +325,55 @@ function installSavedChapterPicker(node) {
     refreshSavedChapters(node);
 }
 
+let availableProviders = [];
+
+function updateProviderNodes(providers) {
+    availableProviders = providers;
+    for (const node of app.graph?._nodes || []) node._minimaxH3UpdateProvider?.();
+}
+
 function installModelOptions(node) {
     if (node.comfyClass !== "LMStudioConfigurationNode") return;
-    const model = widget(node, "model_family");
-    const url = widget(node, "api_url");
-    if (!model || !url) return;
+    const backend = widget(node, "backend");
+    if (!backend || node._minimaxH3UpdateProvider) return;
     const originalOrder = [...node.widgets];
+    const model = node.addWidget("text", "model", "", () => {
+        model.value = selectedProvider()?.model || "Configure and save a provider in Settings";
+    }, { serialize: false, read_only: true });
+    model.serialize = false;
+    model.disabled = true;
+    const selectedProvider = () => availableProviders.find((item) => item.backend === backend.value);
     const qwenWidgets = originalOrder.filter((item) => item.name.startsWith("qwen35_"));
     const originalSizes = new Map(qwenWidgets.map((item) => [item, { type: item.type, computeSize: item.computeSize }]));
-    function arrange() {
+    function arrange(grow = true) {
+        const values = availableProviders.map((item) => item.backend);
+        backend.options.values = values;
+        if (!values.includes(backend.value)) backend.value = values[0] || "";
+        const selected = selectedProvider();
+        model.value = selected?.model || "Configure and save a provider in Settings";
         const widgets = node.widgets;
         widgets.splice(widgets.indexOf(model), 1);
-        widgets.splice(widgets.indexOf(url) + 1, 0, model);
+        widgets.splice(widgets.indexOf(backend) + 1, 0, model);
+        const isQwen = selected?.backend === "LM Studio" && selected.model_family === "Qwen";
         for (const item of qwenWidgets) {
             const original = originalSizes.get(item);
-            item.type = model.value === "Qwen" ? original.type : "hidden";
-            item.computeSize = model.value === "Qwen" ? original.computeSize : () => [0, -4];
+            item.type = isQwen ? original.type : "hidden";
+            item.computeSize = isQwen ? original.computeSize : () => [0, -4];
         }
-        node.setSize?.(node.computeSize());
+        // Only grow to fit new controls. Serialization and settings refreshes must
+        // never undo a user's resize or restore the node's minimum dimensions.
+        if (grow) {
+            const minimum = node.computeSize();
+            const current = node.size || minimum;
+            if (current[0] < minimum[0] || current[1] < minimum[1]) {
+                node.setSize?.([Math.max(current[0], minimum[0]), Math.max(current[1], minimum[1])]);
+            }
+        }
         app.graph?.setDirtyCanvas(true, true);
     }
-    // LiteGraph persists widget values by position. Keep the original order at
-    // the serialization boundary so existing and newly saved workflows agree.
+    node._minimaxH3UpdateProvider = arrange;
+    // LiteGraph persists widget values by position; the display-only model must
+    // not shift the backend or Qwen values when saving and loading a workflow.
     for (const method of ["configure", "serialize"]) {
         const original = node[method];
         if (!original) continue;
@@ -354,11 +381,11 @@ function installModelOptions(node) {
             const extras = this.widgets.filter((item) => !originalOrder.includes(item));
             this.widgets.splice(0, this.widgets.length, ...originalOrder, ...extras);
             try { return original.apply(this, args); }
-            finally { arrange(); }
+            finally { arrange(method !== "serialize"); }
         };
     }
-    const callback = model.callback;
-    model.callback = function (...args) {
+    const callback = backend.callback;
+    backend.callback = function (...args) {
         const result = callback?.apply(this, args);
         arrange();
         return result;
@@ -394,6 +421,8 @@ async function sendProviderSettings() {
             ...Object.fromEntries(PROVIDERS.map((provider) => [provider.key, providerValue(provider)])) }),
     });
     if (!response.ok) throw new Error("Could not save provider settings.");
+    const result = await response.json();
+    updateProviderNodes(result.providers || []);
 }
 
 function installProviderPanelStyles() {
@@ -591,8 +620,10 @@ function providerCard(provider, setter, value) {
                         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
                     });
                     if (!response.ok) throw new Error("Could not save. Check the URL, key and model.");
+                    const result = await response.json();
                     await setter(connection);
                     Object.assign(saved, connection);
+                    updateProviderNodes(result.providers || []);
                     status.textContent = "Saved.";
                 }
             } catch (error) {

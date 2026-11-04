@@ -22,7 +22,7 @@ def test_openai_configuration_keeps_key_separate_and_uses_fixed_endpoint(monkeyp
     lmstudio_settings.set_connection_settings(lmstudio_settings.DEFAULT_API_URL, "local-key")
     lmstudio_settings.set_provider_settings(provider_settings())
     monkeypatch.setattr(lmstudio_config, "reserve_run", lambda: "run")
-    config, status = lmstudio_config.LMStudioConfigurationNode().run("http://untrusted.example/v1", backend="OpenAI")
+    config, status = lmstudio_config.LMStudioConfigurationNode().run(backend="OpenAI")
     assert config["api_url"] == lmstudio_settings.OPENAI_API_URL
     assert config["backend"] == "OpenAI"
     assert "openai-key" not in str(config) + status
@@ -66,7 +66,7 @@ def test_lmstudio_saved_selection_reaches_client_without_family_auto_selection(m
     data["lmstudio"]["model"] = "operator-selected-model"
     lmstudio_settings.set_provider_settings(data)
     monkeypatch.setattr(lmstudio_config, "reserve_run", lambda: "run")
-    config, status = lmstudio_config.LMStudioConfigurationNode().run(lmstudio_settings.DEFAULT_API_URL)
+    config, status = lmstudio_config.LMStudioConfigurationNode().run()
     assert config["lmstudio_model"] == "operator-selected-model"
     assert "operator-selected-model" in status
     client = SimpleNamespace()
