@@ -11,6 +11,7 @@
 - Keep responses concise. Do not provide summaries unless requested.
 - Before researching or changing code in a repository with .codegraph/, use CodeGraph to locate relevant symbols and trace dependencies and callers. Check its source, freshness, and coverage before relying on it. Use text search for exact strings, logs, configuration keys, and prose. Skip CodeGraph if .codegraph/ is absent.
 - Follow [README.md](.github/README.md) when updating the root README.
+- Prefer running Python tests and validation commands outside the sandbox to avoid sandbox-related execution failures. Use the tool's `sandbox_permissions="require_escalated"` approval flow when required; never bypass approval. If a sandboxed Python command fails because of sandbox restrictions (including "command failed; retry without sandbox?"), retry it outside the sandbox through that flow rather than repeating the same sandboxed command.
 
 ## Changelog maintenance
 

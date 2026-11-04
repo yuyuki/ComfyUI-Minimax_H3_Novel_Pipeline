@@ -54,7 +54,7 @@ test("provider cards sync a complete snapshot before queueing and propagate fail
     try {
         await extension.beforeQueuing();
         assert.deepEqual(sent[0], {
-            lmstudio: { enabled: true, api_url: "https://trusted.example/v1", api_key: "test-only" },
+            lmstudio: { enabled: true, api_url: "https://trusted.example/v1", api_key: "test-only", model: "" },
             openai: { enabled: false, api_url: "https://api.openai.com/v1", api_key: "", model: "" },
         });
         globalThis.fetch = async () => ({ ok: false });
@@ -71,7 +71,8 @@ class Element {
     addEventListener(name, callback) { this.events[name] = callback; }
 }
 
-test("provider cards collapse, mask keys, test drafts without saving, and save explicitly", async () => {
+for (const [providerIndex, providerKey] of [[0, "lmstudio"], [1, "openai"]]) {
+test(`${providerKey} cards fetch models, test drafts without saving, and save explicitly`, async () => {
     const extension = extensions.find((item) => item.name.endsWith(".provider_settings"));
     const values = new Map();
     globalThis.frontendTestApp.ui = { settings: { getSettingValue: (id) => values.get(id) } };
@@ -86,9 +87,10 @@ test("provider cards collapse, mask keys, test drafts without saving, and save e
     try {
         const setting = extension.settings[0];
         const saves = [];
-        const panel = setting.type(setting.name, async (value) => { saves.push(value); values.set(setting.id, value); }, setting.default);
+        const panel = setting.type(setting.name, async (value) => { saves.push(value); values.set(setting.id, value); },
+            { ...setting.default, lmstudio: { enabled: false } });
         assert.equal(panel.children.length, 2);
-        const card = panel.children[1];
+        const card = panel.children[providerIndex];
         const toggle = card.children[0].children[0];
         const body = card.children[1];
         assert.equal(body.hidden, true);
@@ -98,7 +100,7 @@ test("provider cards collapse, mask keys, test drafts without saving, and save e
         assert.equal(body.hidden, false);
         assert.equal(saves.length, 1);
         const [url, key, model, status, actions] = body.children;
-        assert.equal(url.children[0].readOnly, true);
+        assert.equal(Boolean(url.children[0].readOnly), providerKey === "openai");
         assert.equal(key.children[0].type, "password");
         key.children[0].value = "draft-key";
         assert.equal(model.children[0].tag, "select");
@@ -114,6 +116,7 @@ test("provider cards collapse, mask keys, test drafts without saving, and save e
         await actions.children[0].events.click();
         assert.equal(saves.length, 1);
         assert.equal(requests.at(-1).url, "/minimax_h3_novel/provider-models");
+        assert.equal(requests.at(-1).body.provider, providerKey);
         assert.equal(requests.at(-1).body.api_key, "draft-key");
         assert.deepEqual(model.children[0].children.map((option) => option.value), [
             "audio-model", "embedding-model", "gpt-6.1-sol",
@@ -142,14 +145,17 @@ test("provider cards collapse, mask keys, test drafts without saving, and save e
         globalThis.fetch = successfulFetch;
         await actions.children[2].events.click();
         assert.equal(saves.length, 2);
-        assert.deepEqual(saves[1].openai.available_models, ["audio-model", "embedding-model", "gpt-6.1-sol"]);
+        assert.deepEqual(saves[1][providerKey].available_models, ["audio-model", "embedding-model", "gpt-6.1-sol"]);
         const reopened = setting.type(setting.name, async () => {}, saves[1]);
-        assert.deepEqual(reopened.children[1].children[1].children[2].children[0].children.map((option) => option.value),
+        assert.deepEqual(reopened.children[providerIndex].children[1].children[2].children[0].children.map((option) => option.value),
             ["audio-model", "embedding-model", "gpt-6.1-sol"]);
-        assert.equal(saves[1].openai.model, "gpt-6.1-sol");
+        assert.equal(saves[1][providerKey].model, "gpt-6.1-sol");
+        assert.equal(requests.at(-1).body[providerKey].model, "gpt-6.1-sol");
+        assert.equal(reopened.children[providerIndex].children[1].children[2].children[0].value, "gpt-6.1-sol");
         toggle.checked = false;
         await toggle.events.change();
         assert.equal(body.hidden, true);
-        assert.equal(values.get(setting.id).openai.api_key, "draft-key");
+        assert.equal(values.get(setting.id)[providerKey].api_key, "draft-key");
     } finally { globalThis.fetch = originalFetch; delete globalThis.document; }
 });
+}

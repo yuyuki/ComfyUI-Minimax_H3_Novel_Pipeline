@@ -161,6 +161,17 @@ class RouteAccessTests(unittest.TestCase):
             result = asyncio.run(handler(request))
             self.assertIn("error", result)
             self.assertNotIn("secret-response", str(result))
+
+    def test_lmstudio_model_list_route_uses_local_provider(self):
+        settings = importlib.import_module("access_test_plugin.core.lmstudio_settings")
+        request = self.request(Origin="http://localhost:8188")
+        data = {"provider": "lmstudio", **self.provider_settings()["lmstudio"]}
+        request.json = AsyncMock(return_value=data)
+        handler = self.routes["post", "/minimax_h3_novel/provider-models"]
+        with patch.object(settings, "fetch_models", new=AsyncMock(return_value=["local-model"])) as fetch:
+            self.assertEqual(asyncio.run(handler(request)), {"models": ["local-model"]})
+            fetch.assert_awaited_once_with("lmstudio", data)
+
     def test_upload_collision_preserves_existing_file(self):
         chapter = Path(self.temp.name) / "minimax_h3_novel" / "chapter.txt"
         chapter.write_bytes(b"original")

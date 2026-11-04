@@ -68,6 +68,11 @@ def make_client_and_model(module: ModuleType, api_url: str, config: dict | None 
         if profile is not None:
             client._minimax_h3_profile = profile
             client._minimax_h3_settings = profile.settings_from_config(config)
+            model = config.get("lmstudio_model", "")
+            if not isinstance(model, str):
+                raise ValueError("LM Studio model must be a string.")
+            if model.strip():
+                return client, model.strip()
             return client, lmstudio_models.select_family_model(client, profile.NAME)
         return client, module.select_model(client, None)
     except BaseException:

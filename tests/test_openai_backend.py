@@ -59,3 +59,25 @@ def provider_settings(openai_enabled=True):
         "openai": {"enabled": openai_enabled, "api_url": lmstudio_settings.OPENAI_API_URL,
                    "api_key": "openai-key", "model": "gpt-4.1"},
     }
+
+
+def test_lmstudio_saved_selection_reaches_client_without_family_auto_selection(monkeypatch):
+    data = provider_settings()
+    data["lmstudio"]["model"] = "operator-selected-model"
+    lmstudio_settings.set_provider_settings(data)
+    monkeypatch.setattr(lmstudio_config, "reserve_run", lambda: "run")
+    config, status = lmstudio_config.LMStudioConfigurationNode().run(lmstudio_settings.DEFAULT_API_URL)
+    assert config["lmstudio_model"] == "operator-selected-model"
+    assert "operator-selected-model" in status
+    client = SimpleNamespace()
+    module = SimpleNamespace(make_client=Mock(return_value=client))
+    result, model = lmstudio_pipeline.make_client_and_model(module, config["api_url"], config)
+    try:
+        assert result is client
+        assert model == "operator-selected-model"
+        # A saved run keeps its model even if settings change before execution.
+        data["lmstudio"]["model"] = "new-selection"
+        lmstudio_settings.set_provider_settings(data)
+        assert config["lmstudio_model"] == "operator-selected-model"
+    finally:
+        module.make_client.call_args.kwargs["http_client"].close()

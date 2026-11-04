@@ -91,7 +91,8 @@ def test_untrusted_openai_test_never_creates_client(monkeypatch):
     ({"data": [{"id": "z-model"}, {"id": "audio-model"}, {"id": "z-model"}]}, ["audio-model", "z-model"]),
     ({"data": []}, []),
 ])
-def test_fetch_models_accepts_no_selection_and_does_not_save(monkeypatch, payload, expected):
+@pytest.mark.parametrize("provider", ["lmstudio", "openai"])
+def test_fetch_models_accepts_no_selection_and_does_not_save(monkeypatch, payload, expected, provider):
     original = httpx.AsyncClient
     requests = []
 
@@ -105,14 +106,35 @@ def test_fetch_models_accepts_no_selection_and_does_not_save(monkeypatch, payloa
         return original(transport=httpx.MockTransport(respond), **kwargs)
 
     monkeypatch.setattr(httpx, "AsyncClient", client)
-    draft = provider_settings()["openai"]
+    draft = provider_settings()[provider]
     draft.update(api_key="draft-key", model="")
-    assert asyncio.run(settings.fetch_models("openai", draft)) == expected
+    assert asyncio.run(settings.fetch_models(provider, draft)) == expected
     assert len(requests) == 1
-    assert str(requests[0].url) == settings.OPENAI_API_URL + "/models"
+    assert str(requests[0].url) == draft["api_url"] + "/models"
     assert requests[0].headers["Authorization"] == "Bearer draft-key"
     assert settings.get_openai_api_key(settings.OPENAI_API_URL) == "openai-key"
     assert settings.get_openai_model() == "gpt-4.1"
+    assert settings.get_lmstudio_model() == ""
+
+
+def test_lmstudio_selection_is_saved_atomically_and_tested(monkeypatch):
+    data = provider_settings()
+    data["lmstudio"]["model"] = " local-model "
+    settings.set_provider_settings(data)
+    assert settings.get_lmstudio_model() == "local-model"
+    data["lmstudio"]["model"] = ["invalid"]
+    with pytest.raises(ValueError, match="Model must be a string"):
+        settings.set_provider_settings(data)
+    assert settings.get_lmstudio_model() == "local-model"
+    original = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: original(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"data": [{"id": "local-model"}]})),
+        **kwargs))
+    data["lmstudio"]["model"] = "local-model"
+    assert asyncio.run(settings.test_connection("lmstudio", data["lmstudio"])) == "Connected. Model available."
+    data["lmstudio"]["model"] = "missing-model"
+    with pytest.raises(ValueError, match="not available"):
+        asyncio.run(settings.test_connection("lmstudio", data["lmstudio"]))
 
 
 @pytest.mark.parametrize("entry", [{}, {"id": None}, {"id": 12}, {"id": ""}])

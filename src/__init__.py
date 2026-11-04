@@ -60,7 +60,7 @@ def _build_mappings() -> None:
                 "CinematicChapterAdapterNode": "Cinematic Chapter Adapter",
                 "ExtractChapterReferencesNode": "Extract Chapter References",
                 "SelectChaptersNode": "Select Chapters",
-                "LMStudioConfigurationNode": "LM Studio Configuration",
+                "LMStudioConfigurationNode": "Provider Configuration",
                 "LoadChapterCatalogsNode": "Load Chapter Catalogs",
                 "LoadCinematicChaptersNode": "Load Cinematic Chapters",
                 "LoadConsolidatedReferencesNode": "Load Consolidated References",
@@ -202,12 +202,12 @@ def _register_upload_route() -> None:
                 from .core import lmstudio_settings
 
                 data = await request.json()
-                if not isinstance(data, dict) or data.get("provider") != "openai":
+                if not isinstance(data, dict) or data.get("provider") not in {"lmstudio", "openai"}:
                     raise ValueError("Invalid provider settings")
-                models = await lmstudio_settings.fetch_models("openai", data)
+                models = await lmstudio_settings.fetch_models(data["provider"], data)
                 return web.json_response({"models": models})
             except (ValueError, json.JSONDecodeError):
-                return web.json_response({"error": "Could not retrieve models. Check the OpenAI API key and connection."}, status=400)
+                return web.json_response({"error": "Could not retrieve models. Check the provider URL, API key and connection."}, status=400)
         print("[minimax_h3_novel] chapter upload route registered")
     except Exception as exc:
         # Importing the package outside ComfyUI (for tests/tools) should still

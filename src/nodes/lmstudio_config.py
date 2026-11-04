@@ -88,6 +88,7 @@ The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and
             "api_url": api_url.strip(),
             "backend": backend,
             "openai_model": openai_model,
+            "lmstudio_model": lmstudio_settings.get_lmstudio_model(),
             "model_family": model_family,
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
             "qwen35_top_k": max(1, int(qwen35_top_k)),
@@ -97,7 +98,7 @@ The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and
             "run_folder": reserve_run(),
         }
         status = (
-            f"{backend}: {config['api_url']} | model: {openai_model if backend == 'OpenAI' else model_family} | "
+            f"{backend}: {config['api_url']} | model: {openai_model if backend == 'OpenAI' else config['lmstudio_model'] or model_family} | "
             f"API key: ComfyUI Settings (hidden) | run: {config['run_folder']}"
         )
         return config, status

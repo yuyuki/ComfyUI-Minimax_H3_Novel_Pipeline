@@ -378,7 +378,7 @@ app.registerExtension({
 const CONNECTIONS_SETTING = "MiniMaxH3Novel.Connections";
 const PROVIDERS = [
     { name: "LM Studio", key: "lmstudio",
-        defaults: { enabled: true, api_url: "http://127.0.0.1:1234/v1", api_key: "" } },
+        defaults: { enabled: true, api_url: "http://127.0.0.1:1234/v1", api_key: "", model: "" } },
     { name: "OpenAI", key: "openai",
         defaults: { enabled: false, api_url: "https://api.openai.com/v1", api_key: "", model: "" } },
 ];
@@ -504,7 +504,7 @@ function providerCard(provider, setter, value) {
     let modelIds = Array.isArray(saved.available_models) && saved.available_models.length
         ? [...saved.available_models] : [];
     for (const [key, title, type] of [["api_url", "API base URL", "url"], ["api_key", "API key", "password"],
-        ...(provider.key === "openai" ? [["model", "Model", "select"]] : [])]) {
+        ["model", "Model", "select"]]) {
         const label = document.createElement("label");
         label.className = "minimax-h3-provider-field";
         label.textContent = title;
@@ -540,10 +540,10 @@ function providerCard(provider, setter, value) {
     actions.className = "minimax-h3-provider-actions";
     body.appendChild(actions);
     const draft = () => ({ enabled: toggle.checked,
-        ...(provider.key === "openai" ? { available_models: [...modelIds] } : {}),
+        available_models: [...modelIds],
         ...Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value.trim()])) });
     const buttons = [];
-    for (const title of [...(provider.key === "openai" ? ["Fetch models"] : []), "Test", "Save"]) {
+    for (const title of ["Fetch models", "Test", "Save"]) {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = title;
@@ -556,7 +556,7 @@ function providerCard(provider, setter, value) {
                 if (title === "Fetch models") {
                     const response = await localFetch("/minimax_h3_novel/provider-models", {
                         method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ provider: "openai", ...connection }),
+                        body: JSON.stringify({ provider: provider.key, ...connection }),
                     });
                     const result = await providerResponse(response);
                     if (!Array.isArray(result.models) || !result.models.length

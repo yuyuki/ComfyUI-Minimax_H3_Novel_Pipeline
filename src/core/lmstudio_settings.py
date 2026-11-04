@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 _lock = RLock()
 _api_key = ""
+_lmstudio_model = ""
 DEFAULT_API_URL = "http://127.0.0.1:1234/v1"
 _trusted_api_url = DEFAULT_API_URL
 OPENAI_API_URL = "https://api.openai.com/v1"
@@ -26,11 +27,14 @@ def validate_connection(provider: str, data: dict, *, require_model: bool = True
     if not isinstance(key, str) or not isinstance(enabled, bool):
         raise ValueError("Invalid API key or enabled flag")
     result = {"api_url": url, "api_key": key.strip(), "enabled": enabled}
+    model = data.get("model", "")
+    if not isinstance(model, str):
+        raise ValueError("Model must be a string")
+    result["model"] = model.strip()
     if provider == "openai":
         if url != OPENAI_API_URL:
             raise ValueError("OpenAI credentials are restricted to the public OpenAI API URL")
-        model = data.get("model", "")
-        if not isinstance(model, str) or (require_model and not model.strip()):
+        if require_model and not model.strip():
             raise ValueError("OpenAI model must not be empty")
         result["model"] = model.strip()
     return result
@@ -38,12 +42,14 @@ def validate_connection(provider: str, data: dict, *, require_model: bool = True
 
 def set_provider_settings(data: dict) -> None:
     """Install a complete, validated snapshot atomically."""
+    global _lmstudio_model
     if not isinstance(data, dict):
         raise ValueError("Invalid provider settings")
     local = validate_connection("lmstudio", data.get("lmstudio"))
     cloud = validate_connection("openai", data.get("openai"), require_model=False)
     with _lock:
         set_connection_settings(local["api_url"], local["api_key"])
+        _lmstudio_model = local["model"]
         set_openai_settings(cloud["api_key"], cloud["model"])
         _enabled.update({"LM Studio": local["enabled"], "OpenAI": cloud["enabled"]})
 
@@ -101,9 +107,14 @@ async def test_connection(provider: str, data: dict) -> str:
     """Test a draft without changing saved settings or issuing generation calls."""
     connection = validate_connection(provider, data, require_model=False)
     models = await fetch_models(provider, data)
-    if provider == "openai" and connection["model"] and connection["model"] not in models:
+    if connection["model"] and connection["model"] not in models:
         raise ValueError("Connected, but the configured model is not available to this API key.")
-    return "Connected. Model available." if provider == "openai" and connection["model"] else f"Connected. {len(models)} model(s) available."
+    return "Connected. Model available." if connection["model"] else f"Connected. {len(models)} model(s) available."
+
+
+def get_lmstudio_model() -> str:
+    with _lock:
+        return _lmstudio_model
 
 def set_openai_settings(api_key: str, model: str) -> None:
     global _openai_api_key, _openai_model
