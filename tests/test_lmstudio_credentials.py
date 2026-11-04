@@ -24,6 +24,9 @@ class CredentialTests(unittest.TestCase):
         self.settings = importlib.import_module("credential_test_plugin.core.lmstudio_settings")
         self.pipeline = importlib.import_module("credential_test_plugin.core.lmstudio_pipeline")
         self.config = importlib.import_module("credential_test_plugin.nodes.lmstudio_config")
+        reserve_run = patch.object(self.config, "reserve_run", return_value="test-run")
+        reserve_run.start()
+        self.addCleanup(reserve_run.stop)
         self.settings.set_connection_settings(DEFAULT_URL, "operator-secret")
 
     def test_untrusted_urls_rejected_before_secret_lookup_or_client_creation(self):

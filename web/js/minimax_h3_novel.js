@@ -374,78 +374,242 @@ app.registerExtension({
     },
 });
 
-const LMSTUDIO_API_URL_SETTING = "MiniMaxH3Novel.LMStudio.ApiUrl";
-const DEFAULT_LMSTUDIO_API_URL = "http://127.0.0.1:1234/v1";
-const LMSTUDIO_API_KEY_SETTING = "MiniMaxH3Novel.LMStudio.ApiKey";
 
-function ensureLmStudioApiKeyFieldWidth() {
-    const styleId = "minimax_h3_novel_lmstudio_api_key_field_width";
-    if (document.getElementById(styleId)) return;
+const CONNECTIONS_SETTING = "MiniMaxH3Novel.Connections";
+const OPENAI_MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra"];
+const PROVIDERS = [
+    { name: "LM Studio", key: "lmstudio",
+        defaults: { enabled: true, api_url: "http://127.0.0.1:1234/v1", api_key: "" } },
+    { name: "OpenAI", key: "openai",
+        defaults: { enabled: false, api_url: "https://api.openai.com/v1", api_key: "", model: OPENAI_MODELS[0] } },
+];
+
+function providerValue(provider) {
+    return { ...provider.defaults, ...app.ui.settings.getSettingValue(CONNECTIONS_SETTING)?.[provider.key] };
+}
+
+async function sendProviderSettings() {
+    const response = await localFetch("/minimax_h3_novel/provider-settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            ...Object.fromEntries(PROVIDERS.map((provider) => [provider.key, providerValue(provider)])) }),
+    });
+    if (!response.ok) throw new Error("Could not save provider settings.");
+}
+
+function installProviderPanelStyles() {
+    if (document.getElementById("minimax-h3-provider-styles")) return;
     const style = document.createElement("style");
-    style.id = styleId;
+    style.id = "minimax-h3-provider-styles";
     style.textContent = `
-        #MiniMaxH3Novel\\.LMStudio\\.ApiKey,
-        [id="MiniMaxH3Novel.LMStudio.ApiKey"] {
-            width: 500px !important;
-            max-width: 100% !important;
-            min-width: 300px;
+        /* Give the custom panel the entire native settings row. */
+        tr:has(.minimax-h3-provider-panel) { display:block !important; width:100%; }
+        tr:has(.minimax-h3-provider-panel) > td:first-child { display:none !important; }
+        tr:has(.minimax-h3-provider-panel) > td:last-child { display:block !important; width:100% !important; }
+        .setting-item:has(.minimax-h3-provider-panel) > div { display:block !important; width:100%; }
+        .setting-item:has(.minimax-h3-provider-panel) > div > div:first-child { display:none !important; }
+        .setting-item:has(.minimax-h3-provider-panel) > div > div:last-child { display:block !important; width:100%; }
+        .minimax-h3-provider-panel {
+            display:flex; flex-direction:column; gap:16px; width:100%; min-width:0;
+            flex:1 1 100%; text-align:left; font:inherit; color:var(--input-text);
+        }
+        .minimax-h3-provider-card {
+            padding:20px; width:100%; box-sizing:border-box;
+            border:1px solid var(--border-color); border-radius:var(--p-border-radius-lg, 8px);
+            background:var(--comfy-menu-bg); color:var(--input-text);
+        }
+        .minimax-h3-provider-header {
+            display:flex; align-items:center; gap:12px; font-weight:600; cursor:pointer;
+        }
+        .minimax-h3-provider-body { margin-top:20px; }
+        .minimax-h3-provider-field {
+            display:block; margin:16px 0; color:var(--input-text); font-size:inherit;
+        }
+        .minimax-h3-provider-control {
+            display:block; width:100%; box-sizing:border-box; margin-top:8px; padding:10px 12px;
+            min-height:40px; font:inherit; border:1px solid var(--border-color);
+            border-radius:var(--p-form-field-border-radius, 6px);
+            background:var(--comfy-input-bg); color:var(--input-text);
+        }
+        .minimax-h3-provider-control:hover { border-color:var(--input-text); }
+        .minimax-h3-provider-control[readonly] { color:var(--descrip-text, var(--input-text)); }
+        .minimax-h3-provider-control option { background:var(--comfy-input-bg); color:var(--input-text); }
+        .minimax-h3-provider-status {
+            min-height:1.5em; margin:12px 0; overflow-wrap:anywhere; color:var(--input-text);
+        }
+        .minimax-h3-provider-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:12px; }
+        .minimax-h3-provider-button {
+            padding:10px 24px; min-height:40px; font:inherit; cursor:pointer;
+            border:1px solid var(--border-color); border-radius:var(--p-form-field-border-radius, 6px);
+            background:var(--comfy-input-bg); color:var(--input-text);
+        }
+        .minimax-h3-provider-button:hover:not(:disabled) {
+            background:var(--comfy-menu-secondary-bg, var(--comfy-menu-bg)); border-color:var(--input-text);
+        }
+        .minimax-h3-provider-button-save { font-weight:600; }
+        .minimax-h3-provider-panel :is(button, input):disabled { opacity:.5; cursor:wait; }
+        .minimax-h3-provider-toggle {
+            appearance:none; width:36px; height:20px; border-radius:20px;
+            position:relative; background:var(--comfy-input-bg); cursor:pointer;
+            flex-shrink:0; margin:0; border:1px solid var(--border-color);
+        }
+        .minimax-h3-provider-toggle:checked { background:var(--input-text); border-color:var(--input-text); }
+        .minimax-h3-provider-toggle::before {
+            content:""; position:absolute; width:14px; height:14px; border-radius:50%;
+            background:var(--input-text); top:2px; left:2px; transition:transform .15s;
+        }
+        .minimax-h3-provider-toggle:checked::before {
+            transform:translateX(16px); background:var(--comfy-input-bg);
+        }
+        .minimax-h3-provider-panel :is(input, select, button):focus-visible {
+            outline:2px solid var(--input-text); outline-offset:3px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .minimax-h3-provider-toggle::before { transition:none; }
         }
     `;
     document.head.appendChild(style);
 }
-
-async function sendLMStudioSettings() {
-    try {
-        const apiUrl = app.ui.settings.getSettingValue(LMSTUDIO_API_URL_SETTING) ?? DEFAULT_LMSTUDIO_API_URL;
-        const apiKey = app.ui.settings.getSettingValue(LMSTUDIO_API_KEY_SETTING) || "";
-        const response = await localFetch("/minimax_h3_novel/lmstudio-settings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ api_url: apiUrl, api_key: apiKey }),
-        });
-        if (!response.ok) {
-            console.error("MiniMax H3 Novel: could not save the LM Studio connection settings.");
+function providerCard(provider, setter, value) {
+    const saved = { ...provider.defaults, ...value };
+    const card = document.createElement("section");
+    card.className = "minimax-h3-provider-card";
+    const header = document.createElement("label");
+    header.className = "minimax-h3-provider-header";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-label", `Enable ${provider.name}`);
+    toggle.checked = saved.enabled;
+    toggle.className = "minimax-h3-provider-toggle";
+    header.append(toggle, document.createTextNode(provider.name));
+    card.appendChild(header);
+    const body = document.createElement("div");
+    body.hidden = !toggle.checked;
+    body.className = "minimax-h3-provider-body";
+    card.appendChild(body);
+    const fields = {};
+    for (const [key, title, type] of [["api_url", "API base URL", "url"], ["api_key", "API key", "password"],
+        ...(provider.key === "openai" ? [["model", "Model", "select"]] : [])]) {
+        const label = document.createElement("label");
+        label.className = "minimax-h3-provider-field";
+        label.textContent = title;
+        const input = document.createElement(type === "select" ? "select" : "input");
+        if (type === "select") {
+            for (const model of OPENAI_MODELS) {
+                const option = document.createElement("option");
+                option.value = model;
+                option.textContent = model;
+                input.appendChild(option);
+            }
+            input.value = OPENAI_MODELS.includes(saved[key]) ? saved[key] : OPENAI_MODELS[0];
+        } else {
+            input.type = type;
+            input.value = saved[key];
         }
-    } catch (error) {
-        console.error("MiniMax H3 Novel: failed to send the LM Studio connection settings.", error);
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.className = "minimax-h3-provider-control";
+        if (provider.key === "openai" && key === "api_url") {
+            input.readOnly = true;
+            input.title = "OpenAI credentials are restricted to the official OpenAI endpoint.";
+        }
+        fields[key] = input;
+        label.appendChild(input);
+        body.appendChild(label);
     }
+    const status = document.createElement("div");
+    status.setAttribute("role", "status");
+    status.className = "minimax-h3-provider-status";
+    body.appendChild(status);
+    const actions = document.createElement("div");
+    actions.className = "minimax-h3-provider-actions";
+    body.appendChild(actions);
+    const draft = () => ({ enabled: toggle.checked,
+        ...Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value.trim()])) });
+    const buttons = [];
+    for (const title of ["Test", "Save"]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = title;
+        button.className = `minimax-h3-provider-button${title === "Save" ? " minimax-h3-provider-button-save" : ""}`;
+        button.addEventListener("click", async () => {
+            buttons.forEach((item) => { item.disabled = true; });
+            status.textContent = title === "Test" ? "Testing…" : "Saving…";
+            try {
+                const connection = draft();
+                if (title === "Test") {
+                    const response = await localFetch("/minimax_h3_novel/provider-test", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ provider: provider.key, ...connection }),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || "Connection test failed.");
+                    status.textContent = result.message;
+                } else {
+                    // Validate and install on the server before persisting the card.
+                    const payload = {
+                        ...Object.fromEntries(PROVIDERS.map((item) => [item.key,
+                            item.key === provider.key ? connection : providerValue(item)])) };
+                    const response = await localFetch("/minimax_h3_novel/provider-settings", {
+                        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+                    });
+                    if (!response.ok) throw new Error("Could not save. Check the URL, key and model.");
+                    await setter(connection);
+                    Object.assign(saved, connection);
+                    status.textContent = "Saved.";
+                }
+            } catch (error) {
+                status.textContent = error.message;
+            } finally {
+                buttons.forEach((item) => { item.disabled = false; });
+            }
+        });
+        buttons.push(button);
+        actions.appendChild(button);
+    }
+    toggle.addEventListener("change", async () => {
+        body.hidden = !toggle.checked;
+        toggle.disabled = true;
+        try {
+            await setter({ ...saved, enabled: toggle.checked });
+            await sendProviderSettings();
+            saved.enabled = toggle.checked;
+        } catch {
+            toggle.checked = saved.enabled;
+            body.hidden = !toggle.checked;
+            status.textContent = "Could not change provider availability. Retry.";
+        } finally { toggle.disabled = false; }
+    });
+    return card;
 }
 
-// This follows ComfyUI's normal global Settings integration. The key is saved
-// by ComfyUI in the local browser profile, never embedded in a workflow, and
-// is sent with the trusted URL on setup, settings changes, and before queuing.
 app.registerExtension({
-    name: "minimax_h3_novel.lmstudio_settings",
-    settings: [
-        {
-            id: LMSTUDIO_API_URL_SETTING,
-            name: "Trusted API URL",
-            type: "text",
-            default: DEFAULT_LMSTUDIO_API_URL,
-            category: ["MiniMax H3 Novel", "LM Studio"],
-            tooltip: "Authorize the LM Studio endpoint that may receive your API key. Use the same URL in LM Studio Configuration.",
+    name: "minimax_h3_novel.provider_settings",
+    settings: [{
+        id: CONNECTIONS_SETTING, name: " ",
+        category: ["MiniMax H3 Novel", "Providers", "Connections"],
+        default: Object.fromEntries(PROVIDERS.map((provider) => [provider.key, provider.defaults])),
+        type: (_name, setter, value) => {
+            const panel = document.createElement("div");
+            panel.className = "minimax-h3-provider-panel";
+            let connections = { ...value };
+            for (const provider of PROVIDERS) {
+                panel.appendChild(providerCard(provider, async (connection) => {
+                    const next = { ...connections, [provider.key]: connection };
+                    await setter(next);
+                    connections = next;
+                }, connections[provider.key]));
+            }
+            return panel;
         },
-        {
-            id: LMSTUDIO_API_KEY_SETTING,
-            name: "LM Studio API Key",
-            type: "text",
-            default: "",
-            category: ["MiniMax H3 Novel", "LM Studio"],
-            tooltip: "Stored locally in ComfyUI settings, not in workflow JSON. Use lm-studio if authentication is disabled.",
-        },
-    ],
+    }],
     async setup() {
-        ensureLmStudioApiKeyFieldWidth();
-        // Settings are loaded after extensions; sync once they are available.
-        setTimeout(() => { sendLMStudioSettings(); }, 500);
-        const originalSetSettingValue = app.ui.settings.setSettingValue;
-        app.ui.settings.setSettingValue = function(id, value) {
-            originalSetSettingValue.call(this, id, value);
-            if (id === LMSTUDIO_API_KEY_SETTING || id === LMSTUDIO_API_URL_SETTING) sendLMStudioSettings();
-        };
+        installProviderPanelStyles();
+        await sendProviderSettings();
     },
     async beforeQueuing() {
-        await sendLMStudioSettings();
+        await sendProviderSettings();
         return null;
     },
 });

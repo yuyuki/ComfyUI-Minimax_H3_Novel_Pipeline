@@ -77,7 +77,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     text = path.read_text(encoding="utf-8")
     record = json.loads(text)
     assert "secret-must-not-be-saved" not in text
-    assert record["lmstudio_config"] == defaults(LMStudioConfigurationNode)
+    assert record["lmstudio_config"] == {**defaults(LMStudioConfigurationNode), "backend": "LM Studio"}
     expected_settings = defaults(cls)
     assert record["node_settings"] == expected_settings
     assert record["resolved_model"] == "qwen3.5-test"

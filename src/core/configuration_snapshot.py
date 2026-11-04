@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from . import lmstudio_json, lmstudio_models, util
+from . import lmstudio_json, lmstudio_model_mistral, lmstudio_models, util
 
 
 def content_digest(value):
@@ -27,7 +27,11 @@ def start(output, stage, config, model, args, *, out_dir, inputs, extra=None):
     for fields in LMStudioConfigurationNode.INPUT_TYPES().values():
         for key, spec in fields.items():
             public[key] = config.get(key, spec[1]["default"])
-    profile = lmstudio_models.get_profile(public["model_family"])
+    is_openai = config.get("backend") == "OpenAI"
+    public["backend"] = "OpenAI" if is_openai else "LM Studio"
+    if is_openai:
+        public["openai_model"] = config["openai_model"]
+    profile = lmstudio_model_mistral if is_openai else lmstudio_models.get_profile(public["model_family"])
     settings = profile.settings_from_config({**public, "thinking": bool(args.thinking)})
     _, request_extra, top_p = profile.request_settings(model, "", "", settings)
     node_settings = {key: value for key, value in vars(args).items() if key not in {"base_url", "out_dir"}}
@@ -43,7 +47,7 @@ def start(output, stage, config, model, args, *, out_dir, inputs, extra=None):
         "lmstudio_config": public,
         "resolved_model": model,
         "model_controls": {
-            "profile": profile.NAME, "settings": settings,
+            "profile": "OpenAI" if is_openai else profile.NAME, "settings": settings,
             "request_extra_body": request_extra, "top_p": top_p,
             "length_retries": profile.retries(model, settings),
             "chat_backend": lmstudio_json.CHAT_BACKEND,

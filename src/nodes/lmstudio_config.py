@@ -13,10 +13,10 @@ class LMStudioConfigurationNode:
     """Share non-secret LM Studio settings and validate the operator's endpoint."""
 
     DESCRIPTION = """\
-Share LM Studio settings across the workflow. Connect `lmstudio_config`
+Share LM Studio or OpenAI settings across the workflow. Connect `lmstudio_config`
 to Extract, Consolidate and Generate H3 Prompts.
 
-Set the trusted API URL and API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio`.
+Select the backend and set its API key in ComfyUI Settings: `MiniMax H3 Novel → LM Studio`.
 The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and configure the URL here. The qwen35 controls apply only to Qwen. Mistral and Gemma use standard chat messages; GPT-OSS uses LM Studio's native Harmony template and reasoning settings, which node thinking switches do not disable. Set max_tokens on each processing node.
 """
 
@@ -68,20 +68,26 @@ The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and
             qwen35_length_retries: int = 2,
             qwen35_top_k: int = 20,
             qwen35_min_p: float = 0.0, qwen35_repeat_penalty: float = 1.05,
-            model_family: str = "Qwen") -> tuple[dict[str, Any], str]:
-        api_url = lmstudio_settings.validate_api_url(api_url)
-
-        lmstudio_models.get_profile(model_family)
-
-        api_key = lmstudio_settings.get_api_key(api_url)
+            model_family: str = "Qwen", backend: str = "LM Studio") -> tuple[dict[str, Any], str]:
+        lmstudio_settings.require_enabled(backend)
+        openai_model = lmstudio_settings.get_openai_model()
+        if backend == "OpenAI":
+            api_url = lmstudio_settings.OPENAI_API_URL
+            api_key = lmstudio_settings.get_openai_api_key(api_url)
+        else:
+            api_url = lmstudio_settings.validate_api_url(api_url)
+            lmstudio_models.get_profile(model_family)
+            api_key = lmstudio_settings.get_api_key(api_url)
         if not api_key:
             raise RuntimeError(
                 "No API key in ComfyUI settings. Open Settings → "
-                "MiniMax H3 Novel → LM Studio → API Key, save the key, then retry."
+                f"MiniMax H3 Novel → Providers → {backend}, save the key, then retry."
             )
 
         config = {
             "api_url": api_url.strip(),
+            "backend": backend,
+            "openai_model": openai_model,
             "model_family": model_family,
             "qwen35_length_retries": max(0, int(qwen35_length_retries)),
             "qwen35_top_k": max(1, int(qwen35_top_k)),
@@ -91,7 +97,7 @@ The key is not saved in the workflow. Choose Qwen, Mistral, GPT-OSS or Gemma and
             "run_folder": reserve_run(),
         }
         status = (
-            f"LM Studio: {config['api_url']} | model family: {model_family} (select matching model) | "
+            f"{backend}: {config['api_url']} | model: {openai_model if backend == 'OpenAI' else model_family} | "
             f"API key: ComfyUI Settings (hidden) | run: {config['run_folder']}"
         )
         return config, status

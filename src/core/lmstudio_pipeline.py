@@ -37,6 +37,23 @@ def configure_qwen(*, thinking: bool,
 
 def make_client_and_model(module: ModuleType, api_url: str, config: dict | None = None) -> tuple[object, str]:
     # Recheck here: downstream nodes can receive forged or cached configuration.
+    if config is not None and config.get("backend") == "OpenAI":
+        api_key = lmstudio_settings.get_openai_api_key(api_url)
+        model = config.get("openai_model")
+        if not api_key or not isinstance(model, str) or not model.strip():
+            raise ValueError("OpenAI API key and model must not be empty.")
+        import httpx
+        from . import lmstudio_model_mistral
+
+        transport = httpx.Client(follow_redirects=False, trust_env=False, timeout=300.0)
+        try:
+            client = module.make_client(api_url, api_key, http_client=transport)
+            client._minimax_h3_profile = lmstudio_model_mistral
+            client._minimax_h3_settings = {"thinking": False}
+            return client, model.strip()
+        except BaseException:
+            transport.close()
+            raise
     api_url = lmstudio_settings.validate_api_url(api_url)
     profile = lmstudio_models.get_profile(config.get("model_family", "Qwen")) if config is not None else None
     api_key = lmstudio_settings.get_api_key(api_url)

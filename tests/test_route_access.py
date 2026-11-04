@@ -55,6 +55,11 @@ class RouteAccessTests(unittest.TestCase):
             spec.loader.exec_module(package)
         self.guard = package.require_local_request
 
+    def provider_settings(self, url="http://127.0.0.1:1234/v1"):
+        return {
+            "lmstudio": {"enabled": True, "api_url": url, "api_key": "test-only"},
+            "openai": {"enabled": False, "api_url": "https://api.openai.com/v1", "api_key": "", "model": "gpt-4.1"},
+        }
     def request(self, peer="127.0.0.1", host="localhost:8188", **headers):
         return SimpleNamespace(
             transport=SimpleNamespace(get_extra_info=lambda name: (peer, 12345)),
@@ -90,7 +95,7 @@ class RouteAccessTests(unittest.TestCase):
         requests.append(missing_transport)
         chapter = Path(self.temp.name) / "minimax_h3_novel" / "chapter.txt"
         chapter.write_text("keep me", encoding="utf-8")
-        self.assertEqual(len(self.routes), 4)
+        self.assertEqual(len(self.routes), 5)
         for route, handler in self.routes.items():
             for request in requests:
                 with self.subTest(route=route, headers=request.headers, host=request.host):
@@ -119,23 +124,23 @@ class RouteAccessTests(unittest.TestCase):
         asyncio.run(self.routes["delete", "/minimax_h3_novel/chapters"](request))
         self.assertFalse(chapter.exists())
 
-        request.json = AsyncMock(return_value={"api_key": "test-only"})
-        result = asyncio.run(self.routes["post", "/minimax_h3_novel/lmstudio-settings"](request))
-        self.assertEqual(result, {"configured": True})
+        request.json = AsyncMock(return_value=self.provider_settings())
+        result = asyncio.run(self.routes["post", "/minimax_h3_novel/provider-settings"](request))
+        self.assertEqual(result, {"saved": True})
         settings = sys.modules["access_test_plugin.core.lmstudio_settings"]
         self.assertEqual(settings.get_api_key(), "test-only")
         settings.set_api_key("")
 
     def test_connection_settings_update_together_and_reject_invalid_url(self):
         request = self.request(Origin="http://localhost:8188")
-        handler = self.routes["post", "/minimax_h3_novel/lmstudio-settings"]
+        handler = self.routes["post", "/minimax_h3_novel/provider-settings"]
         url = "https://trusted.example/v1"
-        request.json = AsyncMock(return_value={"api_url": url + "/", "api_key": "test-only"})
-        self.assertEqual(asyncio.run(handler(request)), {"configured": True})
+        request.json = AsyncMock(return_value=self.provider_settings(url + "/"))
+        self.assertEqual(asyncio.run(handler(request)), {"saved": True})
         settings = sys.modules["access_test_plugin.core.lmstudio_settings"]
         self.addCleanup(settings.set_connection_settings, settings.DEFAULT_API_URL, "")
         self.assertEqual(settings.get_api_key(url), "test-only")
-        request.json = AsyncMock(return_value={"api_url": "file:///tmp/invalid", "api_key": "replacement"})
+        request.json = AsyncMock(return_value=self.provider_settings("file:///tmp/invalid"))
         result = asyncio.run(handler(request))
         self.assertIn("error", result)
         self.assertNotIn("replacement", str(result))

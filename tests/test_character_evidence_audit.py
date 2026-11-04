@@ -56,6 +56,27 @@ def test_failed_audit_retains_every_observation_for_review(monkeypatch):
     assert result[0]["semantic_review"]["issues"] == ["Semantic audit unavailable or invalid."]
 
 
+def test_gemma_audit_constrains_coverage_and_corrects_invalid_verdicts():
+    invalid = {"verdicts": [{"observation_index": 0, "verdict": "valid", "issue": "unsupported"}]}
+    client, create = client_for(Stream([json.dumps(invalid)]), Stream([json.dumps(verdicts([]))]))
+    items = evidence.audit_observations([observation()], ["source"], client, "google/gemma-3-12b-it",
+                                        settings(), {"llm_calls": 0})
+    assert items[0]["semantic_review"]["verdict"] == "valid"
+    assert not items[0].get("warnings")
+    assert create.call_count == 2
+    for call in create.call_args_list:
+        response = call.kwargs["response_format"]
+        assert response["type"] == "json_schema"
+        rows = response["json_schema"]["schema"]["properties"]["verdicts"]
+        assert rows["minItems"] == rows["maxItems"] == 1
+        assert rows["items"]["properties"]["observation_index"]["maximum"] == 0
+        assert '"observation_index": 0' in call.kwargs["messages"][-1]["content"]
+    assert create.call_args_list[0].kwargs["max_tokens"] == 1024
+    assert create.call_args_list[1].kwargs["max_tokens"] == settings().max_tokens
+    assert "Validation error:" in create.call_args_list[1].kwargs["messages"][-1]["content"]
+    assert "maxItems" not in evidence.AUDIT_SCHEMA["schema"]["properties"]["verdicts"]
+
+
 def test_repair_audit_and_cache_integration(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     quote = "Élise portait une chemise blanche."

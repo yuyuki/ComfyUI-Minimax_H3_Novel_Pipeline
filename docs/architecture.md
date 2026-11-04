@@ -183,6 +183,7 @@ flowchart TD
     m_core_cinematic_references --> m_core_temporal_context
     m_core_cinematic_references --> m_core_util
     m_core_configuration_snapshot --> m_core_lmstudio_json
+    m_core_configuration_snapshot --> m_core_lmstudio_model_mistral
     m_core_configuration_snapshot --> m_core_lmstudio_models
     m_core_configuration_snapshot --> m_core_util
     m_core_configuration_snapshot --> m_nodes_lmstudio_config
@@ -197,6 +198,7 @@ flowchart TD
     m_core_lmstudio_models --> m_core_lmstudio_model_mistral
     m_core_lmstudio_models --> m_core_lmstudio_model_qwen
     m_core_lmstudio_pipeline --> m_core_lmstudio_json
+    m_core_lmstudio_pipeline --> m_core_lmstudio_model_mistral
     m_core_lmstudio_pipeline --> m_core_lmstudio_models
     m_core_lmstudio_pipeline --> m_core_lmstudio_settings
     m_core_narrative_validation --> m_core_lmstudio_pipeline
@@ -368,7 +370,7 @@ flowchart TD
 | `src/core/character_visual_selection.py` | `core.character_profile_document` | `field_for`, `project` |
 | `src/core/cinematic_adaptation.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.progress` | `adapt_chapter`, `source_chunks` |
 | `src/core/cinematic_references.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.temporal_context`, `core.util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
-| `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
+| `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_model_mistral`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/core/editable_schemas.py` | `core.path_access` | `export_schema`, `export_schemas`, `obj`, `validate_document` |
 | `src/core/image_prompt_export.py` | `core.path_access`, `core.util` | `export_image_prompts` |
 | `src/core/lmstudio_json.py` | `core.lmstudio_model_qwen`, `core.lmstudio_models`, `core.lmstudio_pipeline` | `StructuredOutputLengthError`, `chat_json`, `model_settings`, `parse_json`, `select_model` |
@@ -377,8 +379,8 @@ flowchart TD
 | `src/core/lmstudio_model_mistral.py` | — | `allows_chatml`, `matches`, `request_settings`, `retries`, `settings_from_config` |
 | `src/core/lmstudio_model_qwen.py` | — | `allows_chatml`, `completion_options`, `is_qwen35`, `is_thinking_grammar_error`, `matches`, `request_settings`, `retries`, `settings_from_config`, `supports_thinking_prefill` |
 | `src/core/lmstudio_models.py` | `core.lmstudio_model_gemma`, `core.lmstudio_model_gpt_oss`, `core.lmstudio_model_mistral`, `core.lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
-| `src/core/lmstudio_pipeline.py` | `core.lmstudio_json`, `core.lmstudio_models`, `core.lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
-| `src/core/lmstudio_settings.py` | — | `get_api_key`, `set_api_key`, `set_connection_settings`, `validate_api_url` |
+| `src/core/lmstudio_pipeline.py` | `core.lmstudio_json`, `core.lmstudio_model_mistral`, `core.lmstudio_models`, `core.lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
+| `src/core/lmstudio_settings.py` | — | `get_api_key`, `get_openai_api_key`, `get_openai_model`, `require_enabled`, `set_api_key`, `set_connection_settings`, `set_openai_settings`, `set_provider_settings`, `test_connection`, `validate_api_url`, `validate_connection` |
 | `src/core/narrative_choices.py` | — | `propose`, `resolve_chapter` |
 | `src/core/narrative_validation.py` | `core.lmstudio_pipeline` | `review` |
 | `src/core/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
@@ -413,4 +415,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.character_visual_integration`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **57**. Internal dependency edges: **229**.
+Modules: **57**. Internal dependency edges: **231**.

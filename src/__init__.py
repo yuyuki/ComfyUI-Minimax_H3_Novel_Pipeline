@@ -167,23 +167,33 @@ def _register_upload_route() -> None:
             except (ValueError, json.JSONDecodeError) as exc:
                 return web.json_response({"error": str(exc)}, status=400)
 
-        @PromptServer.instance.routes.post("/minimax_h3_novel/lmstudio-settings")
-        async def save_lmstudio_settings(request):
-            """Receive the local ComfyUI setting without ever returning/logging it."""
+        @PromptServer.instance.routes.post("/minimax_h3_novel/provider-settings")
+        async def save_provider_settings(request):
+            """Receive the local settings without ever returning/logging secrets."""
             require_local_request(request)
             try:
                 from .core import lmstudio_settings
 
                 data = await request.json()
-                api_key = data.get("api_key", "")
-                if not isinstance(api_key, str):
-                    raise ValueError("api_key must be a string")
-                lmstudio_settings.set_connection_settings(
-                    data.get("api_url", lmstudio_settings.DEFAULT_API_URL), api_key
-                )
-                return web.json_response({"configured": bool(api_key.strip())})
+                lmstudio_settings.set_provider_settings(data)
+                return web.json_response({"saved": True})
             except (ValueError, json.JSONDecodeError) as exc:
                 return web.json_response({"error": str(exc)}, status=400)
+
+        @PromptServer.instance.routes.post("/minimax_h3_novel/provider-test")
+        async def test_provider_connection(request):
+            require_local_request(request)
+            try:
+                from .core import lmstudio_settings
+
+                data = await request.json()
+                if not isinstance(data, dict):
+                    raise ValueError("Invalid provider settings")
+                message = await lmstudio_settings.test_connection(data.get("provider"), data)
+                return web.json_response({"message": message})
+            except (ValueError, json.JSONDecodeError):
+                # Never return provider response bodies or credential-bearing errors.
+                return web.json_response({"error": "Connection test failed. Check the URL, API key, model and server availability."}, status=400)
 
         print("[minimax_h3_novel] chapter upload route registered")
     except Exception as exc:

@@ -6,7 +6,7 @@ Turn novel chapters into organized character, location and object references, th
 
 ## Install
 
-1. Install [ComfyUI](https://github.com/comfyanonymous/ComfyUI) and [LM Studio](https://lmstudio.ai/).
+1. Install [ComfyUI](https://github.com/comfyanonymous/ComfyUI). Install [LM Studio](https://lmstudio.ai/) if using a local model.
 2. Clone this repository into `ComfyUI/custom_nodes/`:
 
    ```sh
@@ -23,11 +23,10 @@ Turn novel chapters into organized character, location and object references, th
 
 ## First run
 
-1. In LM Studio, load a supported Qwen or Mistral model and start its local API server.
-2. In **ComfyUI Settings → MiniMax H3 Novel → LM Studio**, set the API key. If authentication is off in LM Studio, use `lm-studio`.
-3. Add **LM Studio Configuration** to your workflow. The default server address is `http://127.0.0.1:1234/v1`. For another address, set the same value as **Trusted API URL** in ComfyUI settings.
-4. Connect **Select Chapters** → **Cinematic Chapter Adapter** → **Extract Chapter References** → **Consolidate References** → **Generate H3 Prompts**. Share the configuration with each processing node and connect the chapter selection to Generate as well.
-5. Choose your chapter files, then queue the workflow. The plugin saves results under `ComfyUI/output/minimax_h3_novel/`.
+1. In **ComfyUI Settings → MiniMax H3 Novel → Providers**, enable LM Studio and/or OpenAI. Each card has its own **Test** and **Save** buttons; disabled cards collapse to their title and toggle. For LM Studio, load a supported model, start its API server and enter its URL and API key (use `lm-studio` if authentication is off). For OpenAI, enter your API key and model; the URL is fixed to `https://api.openai.com/v1`. OpenAI processing incurs API charges. Keys are masked, stored in ComfyUI settings, and excluded from workflows and outputs.
+2. Add **LM Studio Configuration** to your workflow. Both provider connections can be configured in settings. Provider selection and a provider-neutral node name are planned for the separate configuration-node rework. For LM Studio, set the node address to the same **API base URL** saved in settings (default `http://127.0.0.1:1234/v1`). Local model controls are ignored for OpenAI. **Test** checks connectivity and model availability without generating text or saving drafts; **Save** applies the card. Restart ComfyUI and refresh the browser after updating this plugin. The previous flat connection settings are replaced; enter your connection details in the new cards.
+3. Connect **Select Chapters** → **Cinematic Chapter Adapter** → **Extract Chapter References** → **Consolidate References** → **Generate H3 Prompts**. Share the configuration with each processing node and connect the chapter selection to Generate as well.
+4. Choose your chapter files, then queue the workflow. The plugin saves results under `ComfyUI/output/minimax_h3_novel/`.
 
 The chapter picker supports TXT, Markdown and searchable PDF files. Review the adapter's chapter scenes before extraction, or reload edited scenes with **Load Cinematic Chapters**. See [examples](examples/README.md) for workflow details and saved-file loading.
 

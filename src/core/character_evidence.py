@@ -8,6 +8,7 @@ import math
 import re
 import time
 from bisect import bisect_left
+from copy import deepcopy
 from pathlib import Path
 
 from openai import APIError
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 VERSION = 1
 SELECTION_VERSION = 2
-REPAIR_VERSION = 3
+REPAIR_VERSION = 4
 SCOPES = ("proper_names", "all_characters")
 # Candidate detection is deliberately permissive: entity type and identity are
 # interpreted during evidence extraction/consolidation, never guessed from case.
@@ -205,6 +206,13 @@ def audit_observations(observations, parts, client, model, args, stats):
         {"observation_index": i, "observation": {k: item[k] for k in FIELDS if k in item}}
         for i, item in enumerate(observations)]}
     prompt = json.dumps(payload, ensure_ascii=False)
+    profile, _ = lmstudio_json.model_settings(client, model)
+    audit_schema = AUDIT_SCHEMA
+    if profile.NAME == "Gemma":
+        audit_schema = deepcopy(AUDIT_SCHEMA)
+        rows_schema = audit_schema["schema"]["properties"]["verdicts"]
+        rows_schema.update(minItems=len(observations), maxItems=len(observations))
+        rows_schema["items"]["properties"]["observation_index"]["maximum"] = len(observations) - 1
     verdicts = None
     correction = ""
     for attempt in range(args.correction_attempts + 1):
@@ -216,8 +224,10 @@ def audit_observations(observations, parts, client, model, args, stats):
             token = lmstudio_json.REQUEST_THINKING.set(audit_thinking)
             try:
                 budget = args.max_tokens if audit_thinking else min(args.max_tokens, max(512, len(observations) * 80))
+                if profile.NAME == "Gemma":
+                    budget = args.max_tokens if attempt else min(args.max_tokens, max(1024, len(observations) * 160))
                 result = lmstudio_json.chat_json(client, model, AUDIT_SYSTEM, prompt + correction,
-                                                AUDIT_SCHEMA, 0.0, budget)
+                                                audit_schema, 0.0, budget)
             finally:
                 lmstudio_json.REQUEST_THINKING.reset(token)
             if not isinstance(result, dict) or set(result) != {"verdicts"}:
@@ -242,6 +252,9 @@ def audit_observations(observations, parts, client, model, args, stats):
                 raise
             verdicts = None
             correction = "\nAudit rejected. Return every observation_index exactly once with verdict and issue."
+            if isinstance(exc, ValueError):
+                correction += (f" Validation error: {exc} Valid verdicts: valid, invalid, uncertain."
+                               " Use issue none only with valid; otherwise use a non-none issue from the schema.")
     if verdicts is None:
         stats["audit_failures"] = stats.get("audit_failures", 0) + 1
     for i, item in enumerate(observations):

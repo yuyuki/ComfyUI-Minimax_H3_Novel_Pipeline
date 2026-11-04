@@ -8,6 +8,14 @@ by later entries.
 
 ## Unreleased
 
+- Replace flat connection settings with collapsible LM Studio/OpenAI cards, masked keys,
+  explicit Test/Save actions, and independent enable switches. Render both cards in one full-width
+  ComfyUI settings panel; enforce disabled providers and validate settings atomically.
+  Remove the previous settings route and UI without migration paths.
+
+- Add an OpenAI backend with separate settings credentials, an editable model, and
+  structured-output requests through the shared pipeline.
+
 - Enrich one cinematic chapter from edited global character profiles: apply selections
   and identity links, preserve reusable designs, and export source-linked local states
   with a schema. Bound visual generation/review requests and pass character enrichment
