@@ -38,8 +38,9 @@ test("provider models follow saved availability, preserve workflow values and ma
     globalThis.frontendTestApp.graph = { _nodes: [node], setDirtyCanvas() {} };
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ providers }) });
     try {
-        await settings.beforeQueuing();
         await extension.nodeCreated(node);
+        assert.equal(node.widgets[0].value, "LM Studio");
+        await settings.beforeQueuing();
         assert.deepEqual(node.widgets.map((item) => item.name), ["backend", "model", "qwen35_top_k", "qwen35_min_p"]);
         const [backend, model] = node.widgets;
         assert.deepEqual(backend.options.values, ["LM Studio", "OpenAI"]);

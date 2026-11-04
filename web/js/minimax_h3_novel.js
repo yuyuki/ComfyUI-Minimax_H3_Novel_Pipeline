@@ -325,7 +325,7 @@ function installSavedChapterPicker(node) {
     refreshSavedChapters(node);
 }
 
-let availableProviders = [];
+let availableProviders = null;
 
 function updateProviderNodes(providers) {
     availableProviders = providers;
@@ -336,19 +336,23 @@ function installModelOptions(node) {
     if (node.comfyClass !== "LMStudioConfigurationNode") return;
     const backend = widget(node, "backend");
     if (!backend || node._minimaxH3UpdateProvider) return;
+    backend.label = "provider";
+    backend.label = "provider";
     const originalOrder = [...node.widgets];
     const model = node.addWidget("text", "model", "", () => {
         model.value = selectedProvider()?.model || "Configure and save a provider in Settings";
     }, { serialize: false, read_only: true });
     model.serialize = false;
     model.disabled = true;
-    const selectedProvider = () => availableProviders.find((item) => item.backend === backend.value);
+    const selectedProvider = () => availableProviders?.find((item) => item.backend === backend.value);
     const qwenWidgets = originalOrder.filter((item) => item.name.startsWith("qwen35_"));
     const originalSizes = new Map(qwenWidgets.map((item) => [item, { type: item.type, computeSize: item.computeSize }]));
     function arrange(grow = true) {
-        const values = availableProviders.map((item) => item.backend);
-        backend.options.values = values;
-        if (!values.includes(backend.value)) backend.value = values[0] || "";
+        const values = availableProviders?.map((item) => item.backend);
+        if (values) {
+            backend.options.values = values;
+            if (!values.includes(backend.value)) backend.value = values[0] || "";
+        }
         const selected = selectedProvider();
         model.value = selected?.model || "Configure and save a provider in Settings";
         const widgets = node.widgets;

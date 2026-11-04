@@ -126,7 +126,7 @@ class RouteAccessTests(unittest.TestCase):
 
         request.json = AsyncMock(return_value=self.provider_settings())
         result = asyncio.run(self.routes["post", "/minimax_h3_novel/provider-settings"](request))
-        self.assertEqual(result, {"saved": True})
+        self.assertEqual(result, {"saved": True, "providers": []})
         settings = sys.modules["access_test_plugin.core.lmstudio_settings"]
         self.assertEqual(settings.get_api_key(), "test-only")
         settings.set_api_key("")
@@ -136,7 +136,7 @@ class RouteAccessTests(unittest.TestCase):
         handler = self.routes["post", "/minimax_h3_novel/provider-settings"]
         url = "https://trusted.example/v1"
         request.json = AsyncMock(return_value=self.provider_settings(url + "/"))
-        self.assertEqual(asyncio.run(handler(request)), {"saved": True})
+        self.assertEqual(asyncio.run(handler(request)), {"saved": True, "providers": []})
         settings = sys.modules["access_test_plugin.core.lmstudio_settings"]
         self.addCleanup(settings.set_connection_settings, settings.DEFAULT_API_URL, "")
         self.assertEqual(settings.get_api_key(url), "test-only")

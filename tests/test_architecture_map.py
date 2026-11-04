@@ -64,7 +64,7 @@ def test_pipeline_labels_follow_comfyui_registration() -> None:
     modules = GENERATOR["scan_modules"]()
     rendered = GENERATOR["render_architecture"](modules)
     pipeline = rendered.split("## Pipeline flow", 1)[1].split("```mermaid", 1)[1].split("```", 1)[0]
-    assert 'config["LM Studio Configuration"]' in pipeline
+    assert 'config["Provider Configuration"]' in pipeline
     assert 'extract["Extract Chapter References"]' in pipeline
     assert 'consolidate["Consolidate References"]' in pipeline
     assert 'generate["Generate H3 Prompts"]' in pipeline

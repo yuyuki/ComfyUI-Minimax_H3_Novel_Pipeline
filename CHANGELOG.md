@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Rework Provider Configuration with an enabled, configured provider selector,
+  automatic saved-model display and Qwen-only controls. Read the URL from provider
+  settings and preserve manual node sizing across workflow saves and refreshes.
+
 - Filter models with past shutdown dates from fetched provider lists using the UTC
   date; retain today's, future, missing and invalid dates.
 

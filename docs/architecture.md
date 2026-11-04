@@ -35,7 +35,7 @@ flowchart TD
     adapted --> extract
     adapted --> loader["Load Cinematic Chapters"]
     loader --> extract
-    config["LM Studio Configuration"] --> extract["Extract Chapter References"]
+    config["Provider Configuration"] --> extract["Extract Chapter References"]
     extract --> consolidate["Consolidate References"]
     consolidate --> timeline["Canonical entity timelines: chapter / sequence / phase"]
     extract --> local["Editable local identity links in chapter catalogs"]
@@ -111,7 +111,7 @@ flowchart TD
     m_nodes_consolidate_references["nodes.consolidate_references<br/>Consolidate References"]
     m_nodes_extract_chapter_references["nodes.extract_chapter_references<br/>Extract Chapter References"]
     m_nodes_generate_h3_prompts["nodes.generate_h3_prompts<br/>Generate H3 Prompts"]
-    m_nodes_lmstudio_config["nodes.lmstudio_config<br/>LM Studio Configuration"]
+    m_nodes_lmstudio_config["nodes.lmstudio_config<br/>Provider Configuration"]
     m_nodes_load_chapter_catalogs["nodes.load_chapter_catalogs<br/>Load Chapter Catalogs"]
     m_nodes_load_character_evidence["nodes.load_character_evidence<br/>Load Character Evidence"]
     m_nodes_load_character_profiles["nodes.load_character_profiles<br/>Load Character Profiles"]
@@ -201,6 +201,7 @@ flowchart TD
     m_core_lmstudio_pipeline --> m_core_lmstudio_model_mistral
     m_core_lmstudio_pipeline --> m_core_lmstudio_models
     m_core_lmstudio_pipeline --> m_core_lmstudio_settings
+    m_core_lmstudio_settings --> m_core_lmstudio_models
     m_core_narrative_validation --> m_core_lmstudio_pipeline
     m_core_pipeline_step1_extract --> m_core_lmstudio_json
     m_core_pipeline_step1_extract --> m_core_lmstudio_pipeline
@@ -311,7 +312,6 @@ flowchart TD
     m_nodes_generate_h3_prompts --> m_core_util
     m_nodes_generate_h3_prompts --> m_nodes_chapter_selection
     m_nodes_generate_h3_prompts --> m_nodes_spatial_continuity
-    m_nodes_lmstudio_config --> m_core_lmstudio_models
     m_nodes_lmstudio_config --> m_core_lmstudio_settings
     m_nodes_lmstudio_config --> m_core_progress
     m_nodes_lmstudio_config --> m_core_run_output
@@ -380,7 +380,7 @@ flowchart TD
 | `src/core/lmstudio_model_qwen.py` | — | `allows_chatml`, `completion_options`, `is_qwen35`, `is_thinking_grammar_error`, `matches`, `request_settings`, `retries`, `settings_from_config`, `supports_thinking_prefill` |
 | `src/core/lmstudio_models.py` | `core.lmstudio_model_gemma`, `core.lmstudio_model_gpt_oss`, `core.lmstudio_model_mistral`, `core.lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
 | `src/core/lmstudio_pipeline.py` | `core.lmstudio_json`, `core.lmstudio_model_mistral`, `core.lmstudio_models`, `core.lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
-| `src/core/lmstudio_settings.py` | — | `fetch_models`, `get_api_key`, `get_openai_api_key`, `get_openai_model`, `require_enabled`, `set_api_key`, `set_connection_settings`, `set_openai_settings`, `set_provider_settings`, `test_connection`, `validate_api_url`, `validate_connection` |
+| `src/core/lmstudio_settings.py` | `core.lmstudio_models` | `fetch_models`, `get_api_key`, `get_lmstudio_model`, `get_openai_api_key`, `get_openai_model`, `get_provider_configuration`, `get_provider_options`, `require_enabled`, `set_api_key`, `set_connection_settings`, `set_openai_settings`, `set_provider_settings`, `test_connection`, `validate_api_url`, `validate_connection` |
 | `src/core/narrative_choices.py` | — | `propose`, `resolve_chapter` |
 | `src/core/narrative_validation.py` | `core.lmstudio_pipeline` | `review` |
 | `src/core/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
@@ -405,7 +405,7 @@ flowchart TD
 | `src/nodes/consolidate_references.py` | `core.character_visual_integration`, `core.cinematic_references`, `core.configuration_snapshot`, `core.editable_schemas`, `core.image_prompt_export`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_timeline`, `core.run_output`, `core.util`, `core.visual_designs` | `ConsolidateReferencesNode` |
 | `src/nodes/extract_chapter_references.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.lmstudio_pipeline`, `core.progress`, `core.run_output`, `core.temporal_context`, `core.util` | `ExtractChapterReferencesNode` |
 | `src/nodes/generate_h3_prompts.py` | `core.configuration_snapshot`, `core.image_prompt_export`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.run_output`, `core.util`, `nodes.chapter_selection`, `nodes.spatial_continuity` | `GenerateH3PromptsNode` |
-| `src/nodes/lmstudio_config.py` | `core.lmstudio_models`, `core.lmstudio_settings`, `core.progress`, `core.run_output` | `LMStudioConfigurationNode` |
+| `src/nodes/lmstudio_config.py` | `core.lmstudio_settings`, `core.progress`, `core.run_output` | `LMStudioConfigurationNode` |
 | `src/nodes/load_chapter_catalogs.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.progress`, `core.util` | `LoadChapterCatalogsNode` |
 | `src/nodes/load_character_evidence.py` | `core.character_evidence`, `core.progress`, `core.util` | `LoadCharacterEvidenceNode` |
 | `src/nodes/load_character_profiles.py` | `core.character_profile_document`, `core.progress`, `core.util` | `LoadCharacterProfilesNode` |

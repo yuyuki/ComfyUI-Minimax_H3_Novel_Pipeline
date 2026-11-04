@@ -5,7 +5,7 @@ in `src/core/`. This internal organization preserves node IDs and socket types,
 so the example workflow uses the same wiring.
 
 To try the standalone **Cinematic Chapter Adapter**, connect **Select Chapters**
-to its `chapter_selection` input and **LM Studio Configuration** to its
+to its `chapter_selection` input and **Provider Configuration** to its
 `lmstudio_config` input, then queue. The adapter is an output node, so it needs
 no downstream connection. It saves one `NNN_<chapter>.cinematic.json` object per
 chapter under the run's `cinematic_chapters/` directory, with top-level
@@ -22,13 +22,11 @@ To resume from those saved adaptations, replace the adapter with **Load Cinemati
 Chapters**. Set `cinematic_path=20260911153042/cinematic_chapters` (using your
 previous run's timestamp), or select a single `*.cinematic.json` file in that
 folder. Connect the loader's `cinematic_chapters` output to Extract's
-`cinematic_chapters` input and keep LM Studio Configuration connected to Extract.
+`cinematic_chapters` input and keep Provider Configuration connected to Extract.
 The loader validates saved chapters and loads folders in natural filename order.
 Its paths start at `output/minimax_h3_novel` and must stay within that root.
 
-1. Add **LM Studio Configuration**, enter the server URL, and set the
-   matching **Trusted API URL** and **API Key** in
-   ComfyUI Settings â†’ MiniMax H3 Novel â†’ LM Studio.
+1. In ComfyUI Settings → MiniMax H3 Novel → Providers, enable a provider, fetch and select a model, then save its URL, key and model. Add **Provider Configuration** and choose that provider. The saved model appears automatically; Qwen controls appear only for a Qwen model in LM Studio.
 2. Add **Select Chapters**, **Extract Chapter References**, **Consolidate
    References** and **Generate H3 Prompts**. Connect configuration to all three.
    Optionally turn on `enable_spatial_continuity` in **Generate H3 Prompts** to enable
@@ -42,7 +40,7 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    `manifest.json` for inferred staging and prompt checks; no extra JSON file
    is created by the toggle alone.
    For a reusable chapter-wide plan, connect **Consolidate References** and
-   **LM Studio Configuration** to **Spatial Continuity**, then its
+   **Provider Configuration** to **Spatial Continuity**, then its
    `spatial_continuity` output to **Generate H3 Prompts**. This exports
    `spatial_continuity.json` and provides a `spatial_json` text output.
    The node also copies `spatial_continuity.schema.json` beside it and adds a
@@ -118,7 +116,7 @@ Set `thinking` on each LM Studio processing node: it defaults to `true` for
 Cinematic Chapter Adapter, Extract Chapter References, Consolidate References
 and Spatial Continuity, and `false` for Generate H3 Prompts. Mistral and Gemma
 ignore this Qwen control; configure GPT-OSS reasoning in LM Studio.
-LM Studio Configuration shares connection and sampling settings only.
+Provider Configuration shares connection and sampling settings only.
 Recreate existing nodes to refresh their widget layouts.
 
 Chapter paths are relative to ComfyUI's input directory, for example
@@ -290,7 +288,7 @@ Limits: https://www.minimax.io/news/minimax-h3-open-source
 
 ### Extract original character evidence only
 
-Connect **Select Chapters** and **LM Studio Configuration** (Qwen) to
+Connect **Select Chapters** and **Provider Configuration** (Qwen) to
 **Character Evidence Extractor**. Select all novel chapter files (one chapter per
 file) or their containing folder. The node returns the complete evidence dictionary
 and the path to `character_evidence/character_evidence.json` in the current run.
@@ -370,7 +368,7 @@ source evidence through **Load Character Evidence** and reconsolidate instead.
 
 Connect **Load Character Profiles** (or the consolidator directly) to
 **Character Visual Profile Generator**, together with **Select Chapters** and
-**LM Studio Configuration** for the output run folder. See
+**Provider Configuration** for the output run folder. See
 [CharacterPhysicalProfiles.json](CharacterPhysicalProfiles.json) for this wiring.
 The generator accepts `chapter_selection`, independently of cinematic adaptation.
 Source file paths distinguish chapters with identical names. Only identities with
