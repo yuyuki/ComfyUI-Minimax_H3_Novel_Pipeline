@@ -195,6 +195,19 @@ def _register_upload_route() -> None:
                 # Never return provider response bodies or credential-bearing errors.
                 return web.json_response({"error": "Connection test failed. Check the URL, API key, model and server availability."}, status=400)
 
+        @PromptServer.instance.routes.post("/minimax_h3_novel/provider-models")
+        async def list_provider_models(request):
+            require_local_request(request)
+            try:
+                from .core import lmstudio_settings
+
+                data = await request.json()
+                if not isinstance(data, dict) or data.get("provider") != "openai":
+                    raise ValueError("Invalid provider settings")
+                models = await lmstudio_settings.fetch_models("openai", data)
+                return web.json_response({"models": models})
+            except (ValueError, json.JSONDecodeError):
+                return web.json_response({"error": "Could not retrieve models. Check the OpenAI API key and connection."}, status=400)
         print("[minimax_h3_novel] chapter upload route registered")
     except Exception as exc:
         # Importing the package outside ComfyUI (for tests/tools) should still

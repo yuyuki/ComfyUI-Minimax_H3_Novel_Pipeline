@@ -8,6 +8,16 @@ by later entries.
 
 ## Unreleased
 
+- Filter models with past shutdown dates from fetched provider lists using the UTC
+  date; retain today's, future, missing and invalid dates.
+
+- Start the OpenAI model dropdown empty, place Fetch models before Test, and show
+  actionable errors when an outdated server returns a missing endpoint or non-JSON response.
+
+- Add OpenAI model retrieval beside Test in ComfyUI settings. Populate the dropdown
+  with all available model IDs, preserve available selections, and retain the fetched
+  list on Save. Reuse protected local routes and credential destination checks.
+
 - Replace flat connection settings with collapsible LM Studio/OpenAI cards, masked keys,
   explicit Test/Save actions, and independent enable switches. Render both cards in one full-width
   ComfyUI settings panel; enforce disabled providers and validate settings atomically.

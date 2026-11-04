@@ -380,7 +380,7 @@ flowchart TD
 | `src/core/lmstudio_model_qwen.py` | — | `allows_chatml`, `completion_options`, `is_qwen35`, `is_thinking_grammar_error`, `matches`, `request_settings`, `retries`, `settings_from_config`, `supports_thinking_prefill` |
 | `src/core/lmstudio_models.py` | `core.lmstudio_model_gemma`, `core.lmstudio_model_gpt_oss`, `core.lmstudio_model_mistral`, `core.lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
 | `src/core/lmstudio_pipeline.py` | `core.lmstudio_json`, `core.lmstudio_model_mistral`, `core.lmstudio_models`, `core.lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
-| `src/core/lmstudio_settings.py` | — | `get_api_key`, `get_openai_api_key`, `get_openai_model`, `require_enabled`, `set_api_key`, `set_connection_settings`, `set_openai_settings`, `set_provider_settings`, `test_connection`, `validate_api_url`, `validate_connection` |
+| `src/core/lmstudio_settings.py` | — | `fetch_models`, `get_api_key`, `get_openai_api_key`, `get_openai_model`, `require_enabled`, `set_api_key`, `set_connection_settings`, `set_openai_settings`, `set_provider_settings`, `test_connection`, `validate_api_url`, `validate_connection` |
 | `src/core/narrative_choices.py` | — | `propose`, `resolve_chapter` |
 | `src/core/narrative_validation.py` | `core.lmstudio_pipeline` | `review` |
 | `src/core/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |

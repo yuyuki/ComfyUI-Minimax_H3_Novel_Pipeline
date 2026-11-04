@@ -376,12 +376,11 @@ app.registerExtension({
 
 
 const CONNECTIONS_SETTING = "MiniMaxH3Novel.Connections";
-const OPENAI_MODELS = ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra"];
 const PROVIDERS = [
     { name: "LM Studio", key: "lmstudio",
         defaults: { enabled: true, api_url: "http://127.0.0.1:1234/v1", api_key: "" } },
     { name: "OpenAI", key: "openai",
-        defaults: { enabled: false, api_url: "https://api.openai.com/v1", api_key: "", model: OPENAI_MODELS[0] } },
+        defaults: { enabled: false, api_url: "https://api.openai.com/v1", api_key: "", model: "" } },
 ];
 
 function providerValue(provider) {
@@ -470,6 +469,19 @@ function installProviderPanelStyles() {
     `;
     document.head.appendChild(style);
 }
+async function providerResponse(response) {
+    if (response.status === 404 || response.status === 405) {
+        throw new Error("ComfyUI has not loaded this endpoint. Restart ComfyUI, then refresh this page.");
+    }
+    let result;
+    try {
+        result = await response.json();
+    } catch {
+        throw new Error(`The server returned a non-JSON response (HTTP ${response.status}).`);
+    }
+    if (!response.ok) throw new Error(result.error || `Provider request failed (HTTP ${response.status}).`);
+    return result;
+}
 function providerCard(provider, setter, value) {
     const saved = { ...provider.defaults, ...value };
     const card = document.createElement("section");
@@ -489,6 +501,8 @@ function providerCard(provider, setter, value) {
     body.className = "minimax-h3-provider-body";
     card.appendChild(body);
     const fields = {};
+    let modelIds = Array.isArray(saved.available_models) && saved.available_models.length
+        ? [...saved.available_models] : [];
     for (const [key, title, type] of [["api_url", "API base URL", "url"], ["api_key", "API key", "password"],
         ...(provider.key === "openai" ? [["model", "Model", "select"]] : [])]) {
         const label = document.createElement("label");
@@ -496,13 +510,13 @@ function providerCard(provider, setter, value) {
         label.textContent = title;
         const input = document.createElement(type === "select" ? "select" : "input");
         if (type === "select") {
-            for (const model of OPENAI_MODELS) {
+            for (const model of modelIds) {
                 const option = document.createElement("option");
                 option.value = model;
                 option.textContent = model;
                 input.appendChild(option);
             }
-            input.value = OPENAI_MODELS.includes(saved[key]) ? saved[key] : OPENAI_MODELS[0];
+            input.value = modelIds.includes(saved[key]) ? saved[key] : "";
         } else {
             input.type = type;
             input.value = saved[key];
@@ -526,25 +540,47 @@ function providerCard(provider, setter, value) {
     actions.className = "minimax-h3-provider-actions";
     body.appendChild(actions);
     const draft = () => ({ enabled: toggle.checked,
+        ...(provider.key === "openai" ? { available_models: [...modelIds] } : {}),
         ...Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value.trim()])) });
     const buttons = [];
-    for (const title of ["Test", "Save"]) {
+    for (const title of [...(provider.key === "openai" ? ["Fetch models"] : []), "Test", "Save"]) {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = title;
         button.className = `minimax-h3-provider-button${title === "Save" ? " minimax-h3-provider-button-save" : ""}`;
         button.addEventListener("click", async () => {
             buttons.forEach((item) => { item.disabled = true; });
-            status.textContent = title === "Test" ? "Testing…" : "Saving…";
+            status.textContent = title === "Test" ? "Testing…" : title === "Fetch models" ? "Fetching models…" : "Saving…";
             try {
                 const connection = draft();
-                if (title === "Test") {
+                if (title === "Fetch models") {
+                    const response = await localFetch("/minimax_h3_novel/provider-models", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ provider: "openai", ...connection }),
+                    });
+                    const result = await providerResponse(response);
+                    if (!Array.isArray(result.models) || !result.models.length
+                        || result.models.some((id) => typeof id !== "string" || !id.trim())) {
+                        throw new Error("No available models returned. The current list is unchanged.");
+                    }
+                    const selected = fields.model.value;
+                    modelIds = [...new Set(result.models)].sort();
+                    const options = modelIds.map((id) => {
+                        const option = document.createElement("option");
+                        option.value = id;
+                        option.textContent = id;
+                        return option;
+                    });
+                    fields.model.replaceChildren(...options);
+                    fields.model.value = modelIds.includes(selected) ? selected : modelIds[0];
+                    status.textContent = `${modelIds.length} models retrieved. ${modelIds.includes(selected)
+                        ? "Selection preserved." : "Previous model unavailable; first model selected."} Click Save to apply.`;
+                } else if (title === "Test") {
                     const response = await localFetch("/minimax_h3_novel/provider-test", {
                         method: "POST", headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ provider: provider.key, ...connection }),
                     });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error || "Connection test failed.");
+                    const result = await providerResponse(response);
                     status.textContent = result.message;
                 } else {
                     // Validate and install on the server before persisting the card.

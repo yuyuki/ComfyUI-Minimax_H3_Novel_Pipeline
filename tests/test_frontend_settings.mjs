@@ -55,7 +55,7 @@ test("provider cards sync a complete snapshot before queueing and propagate fail
         await extension.beforeQueuing();
         assert.deepEqual(sent[0], {
             lmstudio: { enabled: true, api_url: "https://trusted.example/v1", api_key: "test-only" },
-            openai: { enabled: false, api_url: "https://api.openai.com/v1", api_key: "", model: "gpt-6-luna" },
+            openai: { enabled: false, api_url: "https://api.openai.com/v1", api_key: "", model: "" },
         });
         globalThis.fetch = async () => ({ ok: false });
         await assert.rejects(extension.beforeQueuing(), /Could not save/);
@@ -66,6 +66,7 @@ class Element {
     constructor(tag) { this.tag = tag; this.children = []; this.style = {}; this.events = {}; }
     appendChild(child) { this.children.push(child); return child; }
     append(...children) { children.forEach((child) => this.appendChild(child)); }
+    replaceChildren(...children) { this.children = [...children]; }
     setAttribute(name, value) { this[name] = value; }
     addEventListener(name, callback) { this.events[name] = callback; }
 }
@@ -79,7 +80,8 @@ test("provider cards collapse, mask keys, test drafts without saving, and save e
     const requests = [];
     globalThis.fetch = async (url, options) => {
         requests.push({ url, body: JSON.parse(options.body) });
-        return { ok: true, json: async () => ({ message: "Connected." }) };
+        return { ok: true, json: async () => url.endsWith("/provider-models")
+            ? { models: ["gpt-6.1-sol", "embedding-model", "audio-model", "gpt-6.1-sol"] } : { message: "Connected." } };
     };
     try {
         const setting = extension.settings[0];
@@ -100,18 +102,50 @@ test("provider cards collapse, mask keys, test drafts without saving, and save e
         assert.equal(key.children[0].type, "password");
         key.children[0].value = "draft-key";
         assert.equal(model.children[0].tag, "select");
-        assert.deepEqual(model.children[0].children.map((option) => option.value), [
-            "gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-astra",
-        ]);
-        assert.equal(model.children[0].value, "gpt-6-luna");
+        assert.equal(model.children[0].children.length, 0);
+        assert.equal(model.children[0].value, "");
         model.children[0].value = "gpt-6.1-sol";
-        await actions.children[0].events.click();
+        await actions.children[1].events.click();
         assert.equal(saves.length, 1);
         assert.equal(requests.at(-1).url, "/minimax_h3_novel/provider-test");
         assert.equal(requests.at(-1).body.api_key, "draft-key");
         assert.equal(status.textContent, "Connected.");
-        await actions.children[1].events.click();
+        assert.deepEqual(actions.children.map((button) => button.textContent), ["Fetch models", "Test", "Save"]);
+        await actions.children[0].events.click();
+        assert.equal(saves.length, 1);
+        assert.equal(requests.at(-1).url, "/minimax_h3_novel/provider-models");
+        assert.equal(requests.at(-1).body.api_key, "draft-key");
+        assert.deepEqual(model.children[0].children.map((option) => option.value), [
+            "audio-model", "embedding-model", "gpt-6.1-sol",
+        ]);
+        assert.equal(model.children[0].value, "gpt-6.1-sol");
+        const successfulFetch = globalThis.fetch;
+        globalThis.fetch = async () => ({ ok: false, json: async () => ({ error: "Authentication failed" }) });
+        await actions.children[0].events.click();
+        assert.equal(status.textContent, "Authentication failed");
+        assert.equal(model.children[0].children.length, 3);
+        assert.equal(saves.length, 1);
+        globalThis.fetch = async () => ({ ok: true, json: async () => ({ models: [] }) });
+        await actions.children[0].events.click();
+        assert.match(status.textContent, /current list is unchanged/);
+        assert.equal(model.children[0].children.length, 3);
+        globalThis.fetch = async () => ({ ok: false, status: 405,
+            json: async () => { throw new SyntaxError("Unexpected non-whitespace character after JSON"); } });
+        await actions.children[0].events.click();
+        assert.match(status.textContent, /Restart ComfyUI/);
+        assert.equal(model.children[0].children.length, 3);
+        globalThis.fetch = async () => ({ ok: true, status: 200,
+            json: async () => { throw new SyntaxError("Invalid JSON"); } });
+        await actions.children[0].events.click();
+        assert.match(status.textContent, /non-JSON response/);
+        assert.equal(model.children[0].children.length, 3);
+        globalThis.fetch = successfulFetch;
+        await actions.children[2].events.click();
         assert.equal(saves.length, 2);
+        assert.deepEqual(saves[1].openai.available_models, ["audio-model", "embedding-model", "gpt-6.1-sol"]);
+        const reopened = setting.type(setting.name, async () => {}, saves[1]);
+        assert.deepEqual(reopened.children[1].children[1].children[2].children[0].children.map((option) => option.value),
+            ["audio-model", "embedding-model", "gpt-6.1-sol"]);
         assert.equal(saves[1].openai.model, "gpt-6.1-sol");
         toggle.checked = false;
         await toggle.events.change();

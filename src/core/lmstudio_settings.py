@@ -1,6 +1,7 @@
 """In-memory bridge for the LM Studio key and trusted endpoint from settings."""
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
 from threading import RLock
 from urllib.parse import urlsplit
 
@@ -11,11 +12,11 @@ DEFAULT_API_URL = "http://127.0.0.1:1234/v1"
 _trusted_api_url = DEFAULT_API_URL
 OPENAI_API_URL = "https://api.openai.com/v1"
 _openai_api_key = ""
-_openai_model = "gpt-4.1"
+_openai_model = ""
 _enabled = {"LM Studio": True, "OpenAI": False}
 
 
-def validate_connection(provider: str, data: dict) -> dict:
+def validate_connection(provider: str, data: dict, *, require_model: bool = True) -> dict:
     """Validate a settings card before storing or testing its credentials."""
     if provider not in {"lmstudio", "openai"} or not isinstance(data, dict):
         raise ValueError("Invalid provider settings")
@@ -29,7 +30,7 @@ def validate_connection(provider: str, data: dict) -> dict:
         if url != OPENAI_API_URL:
             raise ValueError("OpenAI credentials are restricted to the public OpenAI API URL")
         model = data.get("model", "")
-        if not isinstance(model, str) or not model.strip():
+        if not isinstance(model, str) or (require_model and not model.strip()):
             raise ValueError("OpenAI model must not be empty")
         result["model"] = model.strip()
     return result
@@ -40,7 +41,7 @@ def set_provider_settings(data: dict) -> None:
     if not isinstance(data, dict):
         raise ValueError("Invalid provider settings")
     local = validate_connection("lmstudio", data.get("lmstudio"))
-    cloud = validate_connection("openai", data.get("openai"))
+    cloud = validate_connection("openai", data.get("openai"), require_model=False)
     with _lock:
         set_connection_settings(local["api_url"], local["api_key"])
         set_openai_settings(cloud["api_key"], cloud["model"])
@@ -53,11 +54,11 @@ def require_enabled(backend: str) -> None:
             raise ValueError(f"{backend} is disabled. Enable it in ComfyUI Settings → MiniMax H3 Novel → Providers.")
 
 
-async def test_connection(provider: str, data: dict) -> str:
-    """Test a draft without changing saved settings or issuing generation calls."""
+async def fetch_models(provider: str, data: dict) -> list[str]:
+    """List model IDs without past shutdown dates using draft credentials."""
     import httpx
 
-    connection = validate_connection(provider, data)
+    connection = validate_connection(provider, data, require_model=False)
     key = connection["api_key"]
     if provider == "openai" and not key:
         raise ValueError("Enter an OpenAI API key before testing")
@@ -75,19 +76,39 @@ async def test_connection(provider: str, data: dict) -> str:
         models = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(models, list):
             raise ValueError("The endpoint did not return a model list.")
-        if provider == "openai" and not any(isinstance(item, dict) and item.get("id") == connection["model"] for item in models):
-            raise ValueError("Connected, but the configured model is not available to this API key.")
-        return "Connected. Model available." if provider == "openai" else f"Connected. {len(models)} model(s) available."
+        if any(not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"].strip()
+               for item in models):
+            raise ValueError("The endpoint returned an invalid model list.")
+        today = datetime.now(timezone.utc).date()
+        available = set()
+        for item in models:
+            shutdown_date = item.get("shutdown_date")
+            if isinstance(shutdown_date, str):
+                try:
+                    if date.fromisoformat(shutdown_date) < today:
+                        continue
+                except ValueError:
+                    pass  # Unknown dates do not establish that a model has shut down.
+            available.add(item["id"])
+        return sorted(available)
     except httpx.TimeoutException:
         raise ValueError("Connection timed out after 15 seconds.") from None
     except httpx.HTTPError:
         raise ValueError("Could not reach the provider. Check the URL and server.") from None
 
 
+async def test_connection(provider: str, data: dict) -> str:
+    """Test a draft without changing saved settings or issuing generation calls."""
+    connection = validate_connection(provider, data, require_model=False)
+    models = await fetch_models(provider, data)
+    if provider == "openai" and connection["model"] and connection["model"] not in models:
+        raise ValueError("Connected, but the configured model is not available to this API key.")
+    return "Connected. Model available." if provider == "openai" and connection["model"] else f"Connected. {len(models)} model(s) available."
+
 def set_openai_settings(api_key: str, model: str) -> None:
     global _openai_api_key, _openai_model
-    if not isinstance(api_key, str) or not isinstance(model, str) or not model.strip():
-        raise ValueError("OpenAI API key and model must be strings, and model must not be empty")
+    if not isinstance(api_key, str) or not isinstance(model, str):
+        raise ValueError("OpenAI API key and model must be strings")
     with _lock:
         _openai_api_key, _openai_model = api_key.strip(), model.strip()
 

@@ -95,7 +95,7 @@ class RouteAccessTests(unittest.TestCase):
         requests.append(missing_transport)
         chapter = Path(self.temp.name) / "minimax_h3_novel" / "chapter.txt"
         chapter.write_text("keep me", encoding="utf-8")
-        self.assertEqual(len(self.routes), 5)
+        self.assertEqual(len(self.routes), 6)
         for route, handler in self.routes.items():
             for request in requests:
                 with self.subTest(route=route, headers=request.headers, host=request.host):
@@ -148,6 +148,19 @@ class RouteAccessTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             settings.validate_api_url(settings.DEFAULT_API_URL)
 
+    def test_model_list_route_returns_ids_without_credentials(self):
+        settings = importlib.import_module("access_test_plugin.core.lmstudio_settings")
+        request = self.request(Origin="http://localhost:8188")
+        data = {"provider": "openai", **self.provider_settings()["openai"]}
+        request.json = AsyncMock(return_value=data)
+        handler = self.routes["post", "/minimax_h3_novel/provider-models"]
+        with patch.object(settings, "fetch_models", new=AsyncMock(return_value=["first", "second"])) as fetch:
+            self.assertEqual(asyncio.run(handler(request)), {"models": ["first", "second"]})
+            fetch.assert_awaited_once_with("openai", data)
+        with patch.object(settings, "fetch_models", new=AsyncMock(side_effect=ValueError("secret-response"))):
+            result = asyncio.run(handler(request))
+            self.assertIn("error", result)
+            self.assertNotIn("secret-response", str(result))
     def test_upload_collision_preserves_existing_file(self):
         chapter = Path(self.temp.name) / "minimax_h3_novel" / "chapter.txt"
         chapter.write_bytes(b"original")
