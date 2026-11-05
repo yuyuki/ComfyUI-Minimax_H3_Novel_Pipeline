@@ -1,7 +1,7 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 201,
+  "last_node_id": 202,
   "last_link_id": 275,
   "nodes": [
     {
@@ -701,8 +701,8 @@
         2419.600959017447
       ],
       "size": [
-        388.38344101812555,
-        253.98747087441768
+        359.49966759358483,
+        251.15788617117698
       ],
       "flags": {},
       "order": 16,
@@ -1040,10 +1040,10 @@
       "title": "Note for LM Studio Config",
       "properties": {},
       "widgets_values": [
-        "### Shared provider configuration\n**Provider Configuration** shares the saved connection and model across the LLM stages. Enable LM Studio or OpenAI in ComfyUI Settings > MiniMax H3 Novel > Providers, fetch and select a model, and Save.\n\n- `backend` (`LM Studio`) = enabled provider with a saved API key and model. The node reads the URL from settings and displays the model automatically.\n- Qwen sampling controls appear only for a selected Qwen model in LM Studio. Mistral and Gemma ignore them; GPT-OSS reasoning is configured in LM Studio.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes)."
+        "### Shared LM Studio configuration\n**LM Studio Configuration** validates the API endpoint and prepares settings shared by the LLM stages. Start the LM Studio server and load a model from the selected family.\n\n- `api_url` = API address, here `http://127.0.0.1:1234/v1`; it must match \"Trusted API URL\" in ComfyUI Settings > MiniMax H3 Novel > LM Studio. Set the API key in those ComfyUI settings, not in this node.\n- `model_family` (`Qwen`) = family of the model available in LM Studio; Mistral ignores `thinking` and the `qwen35_*` settings.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes)."
       ],
       "widgets_values_named": {
-        "text": "### Shared provider configuration\n**Provider Configuration** shares the saved connection and model across the LLM stages. Enable LM Studio or OpenAI in ComfyUI Settings > MiniMax H3 Novel > Providers, fetch and select a model, and Save.\n\n- `backend` (`LM Studio`) = enabled provider with a saved API key and model. The node reads the URL from settings and displays the model automatically.\n- Qwen sampling controls appear only for a selected Qwen model in LM Studio. Mistral and Gemma ignore them; GPT-OSS reasoning is configured in LM Studio.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes)."
+        "text": "### Shared LM Studio configuration\n**LM Studio Configuration** validates the API endpoint and prepares settings shared by the LLM stages. Start the LM Studio server and load a model from the selected family.\n\n- `api_url` = API address, here `http://127.0.0.1:1234/v1`; it must match \"Trusted API URL\" in ComfyUI Settings > MiniMax H3 Novel > LM Studio. Set the API key in those ComfyUI settings, not in this node.\n- `model_family` (`Qwen`) = family of the model available in LM Studio; Mistral ignores `thinking` and the `qwen35_*` settings.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes)."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -1116,11 +1116,11 @@
         "Node name for S&R": "SelectChaptersNode"
       },
       "widgets_values": [
-        "minimax_h3_novel/00_PROLOGUE.md\nminimax_h3_novel/01_Chapter 01.md\nminimax_h3_novel/02_Chapter 02.md\nminimax_h3_novel/03_Chapter 03.md\nminimax_h3_novel/04_Chapter 04.md\nminimax_h3_novel/05_Chapter 05.md\nminimax_h3_novel/06_Chapter 06.md\nminimax_h3_novel/07_Chapter 07.md\nminimax_h3_novel/08_Chapter 08.md\nminimax_h3_novel/09_Chapter 09.md\nminimax_h3_novel/10_chapter 10.md\nminimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/12_chapter 12.md\nminimax_h3_novel/13_chapter 13.md\nminimax_h3_novel/14_chapter 14.md\nminimax_h3_novel/15_chapter 15.md\nminimax_h3_novel/16_chapter 16.md\nminimax_h3_novel/17_chapter 17.md\nminimax_h3_novel/18_chapter 18.md\nminimax_h3_novel/19_chapter 19.md\nminimax_h3_novel/20_chapter 20.md\nminimax_h3_novel/21_chapter 21.md\nminimax_h3_novel/22_chapter 22.md\nminimax_h3_novel/23_chapter 23.md\nminimax_h3_novel/24_chapter 24.md",
+        "minimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/13_chapter 13.md",
         ""
       ],
       "widgets_values_named": {
-        "chapter_paths": "minimax_h3_novel/00_PROLOGUE.md\nminimax_h3_novel/01_Chapter 01.md\nminimax_h3_novel/02_Chapter 02.md\nminimax_h3_novel/03_Chapter 03.md\nminimax_h3_novel/04_Chapter 04.md\nminimax_h3_novel/05_Chapter 05.md\nminimax_h3_novel/06_Chapter 06.md\nminimax_h3_novel/07_Chapter 07.md\nminimax_h3_novel/08_Chapter 08.md\nminimax_h3_novel/09_Chapter 09.md\nminimax_h3_novel/10_chapter 10.md\nminimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/12_chapter 12.md\nminimax_h3_novel/13_chapter 13.md\nminimax_h3_novel/14_chapter 14.md\nminimax_h3_novel/15_chapter 15.md\nminimax_h3_novel/16_chapter 16.md\nminimax_h3_novel/17_chapter 17.md\nminimax_h3_novel/18_chapter 18.md\nminimax_h3_novel/19_chapter 19.md\nminimax_h3_novel/20_chapter 20.md\nminimax_h3_novel/21_chapter 21.md\nminimax_h3_novel/22_chapter 22.md\nminimax_h3_novel/23_chapter 23.md\nminimax_h3_novel/24_chapter 24.md",
+        "chapter_paths": "minimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/13_chapter 13.md",
         "saved_chapter": ""
       }
     },
@@ -1128,8 +1128,8 @@
       "id": 176,
       "type": "GetNode",
       "pos": [
-        -564.7253304008321,
-        3105.27811376825
+        -504.29842909533136,
+        3097.531078170375
       ],
       "size": [
         213.2734375,
@@ -1166,8 +1166,8 @@
       "id": 177,
       "type": "LoadCharacterEvidenceNode",
       "pos": [
-        -569.702584563964,
-        2920.7433929996514
+        -509.27568325846323,
+        2912.9963574017765
       ],
       "size": [
         447.3519111331196,
@@ -1197,10 +1197,10 @@
         "Node name for S&R": "LoadCharacterEvidenceNode"
       },
       "widgets_values": [
-        "character_evidence_identity_optimization.json"
+        "character_evidence_11_13.json"
       ],
       "widgets_values_named": {
-        "evidence_path": "character_evidence_identity_optimization.json"
+        "evidence_path": "character_evidence_11_13.json"
       }
     },
     {
@@ -1249,8 +1249,8 @@
         2918.354134284681
       ],
       "size": [
-        316.330078125,
-        294
+        386.82287709187,
+        378.6229697757384
       ],
       "flags": {},
       "order": 32,
@@ -1285,11 +1285,11 @@
         "Node name for S&R": "CharacterEvidenceExtractorNode"
       },
       "widgets_values": [
-        "character_evidence",
+        "character_evidence_11_13_gemma",
         5500,
         true,
-        0.15,
-        8192,
+        0.3,
+        16384,
         2,
         false,
         "proper_names",
@@ -1297,11 +1297,11 @@
         ""
       ],
       "widgets_values_named": {
-        "out_dir": "character_evidence",
+        "out_dir": "character_evidence_11_13_gemma",
         "chunk_chars": 5500,
         "thinking": true,
-        "temperature": 0.15,
-        "max_tokens": 8192,
+        "temperature": 0.3,
+        "max_tokens": 16384,
         "correction_attempts": 2,
         "force": false,
         "character_scope": "proper_names",
@@ -1549,8 +1549,8 @@
       "id": 199,
       "type": "ConsolidateCharacterProfilesNode",
       "pos": [
-        -54.37948589165279,
-        2920.4250480908504
+        6.0474154138481016,
+        2912.6780124929755
       ],
       "size": [
         419.7759059817477,
@@ -1589,7 +1589,7 @@
         "Node name for S&R": "ConsolidateCharacterProfilesNode"
       },
       "widgets_values": [
-        "character_profiles_test_identity_calls",
+        "character_profiles_test_11_13_gemma",
         true,
         0.12,
         16384,
@@ -1600,7 +1600,7 @@
         ""
       ],
       "widgets_values_named": {
-        "out_dir": "character_profiles_test_identity_calls",
+        "out_dir": "character_profiles_test_11_13_gemma",
         "thinking": true,
         "temperature": 0.12,
         "max_tokens": 16384,
@@ -1881,8 +1881,8 @@
       "bounding": [
         -1414.3953141759587,
         2838.4544882759733,
-        802.9212351398382,
-        463.8683960087078
+        881.1663419625279,
+        484.78542758608455
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1891,8 +1891,8 @@
       "id": 9,
       "title": "Consolidation",
       "bounding": [
-        -579.702584563964,
-        2850.7433929996514,
+        -519.2756832584632,
+        2842.9963574017765,
         986.1212716487232,
         481.4741433740137
       ],
@@ -1915,10 +1915,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.9387755072046176,
+      "scale": 0.7053159332867156,
       "offset": [
-        1262.3768113213443,
-        -2510.7554422619787
+        2661.5413573018204,
+        -1549.6013700324145
       ]
     },
     "frontendVersion": "1.57.6"
