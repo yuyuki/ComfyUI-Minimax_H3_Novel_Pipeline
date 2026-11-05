@@ -19,8 +19,13 @@ metaphors and unfilmable abstractions. Express implied physical relationships as
 explicit positions and visible actions without inventing unsupported facts.
 Omit inner thoughts unless a source-supported visible action conveys them.
 Do not excessively condense, skip dialogue, or invent gestures to explain thoughts.
-Keep adaptation in the source language when you support it; only otherwise use
-English for descriptions. Never translate source excerpts or quoted dialogue.
+LANGUAGE REQUIREMENT: Write initial_state, every events item and final_state in
+the same language as the narration of current_passage. Never fall back to English
+or translate the adaptation into another language. French source requires French
+descriptions; apply the same rule to every source language. The English instructions,
+JSON keys, model name, reviews and previous generated states do not set the output
+language. Keep JSON keys unchanged. Preserve source excerpts and quoted dialogue
+verbatim, including dialogue in a different language from the narration.
 
 For EACH sequence return initial_state, events (an ordered list), and final_state.
 initial_state describes ONLY what is already true BEFORE the first event.

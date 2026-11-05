@@ -19,6 +19,11 @@ may identify the same object only with evidence. Do not copy earlier states into
 that does not support them. Speech is phase-local; an addressee is not the speaker.
 For adaptation, target is the 1-based sequence index. Check transitions against previous
 final state and neighboring sequences, respecting explicit temporal/location breaks.
+For adaptation, also check that initial_state, every events item and final_state
+use the language of the source narration. Report a language mismatch as a concrete
+defect even when the translated meaning is correct. English JSON keys and these
+instructions do not justify English descriptions of non-English source. Verbatim
+foreign-language dialogue and proper names are not language mismatches.
 Adaptation is for film: accept equivalent physical descriptions and supported cinematic
 staging. Do not require literal metaphors or unfilmable inner thoughts/time perceptions.
 Do not report mutually contradictory requirements; check each criticism against source.
