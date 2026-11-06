@@ -1,11 +1,10 @@
 """Load a manually corrected spatial plan without calling LM Studio."""
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
-from ..core import progress, util
+from ..core import configuration_snapshot, progress, util
 from .spatial_continuity import validate_plan
 
 
@@ -44,7 +43,8 @@ class LoadSpatialContinuityNode:
         # Hash content rather than timestamps: editors can preserve size and mtime.
         # Upstream socket changes are tracked separately by ComfyUI.
         try:
-            return hashlib.sha256(_plan_path(spatial_path).read_bytes()).hexdigest()
+            path = _plan_path(spatial_path)  # Confined to the plugin output root.
+            return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Force run() to report missing/invalid paths.
 

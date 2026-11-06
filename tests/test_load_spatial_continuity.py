@@ -8,6 +8,7 @@ import pytest
 from minimax_h3_novel_pipeline.core import path_access, util
 from minimax_h3_novel_pipeline.nodes.load_spatial_continuity import LoadSpatialContinuityNode as Loader
 from minimax_h3_novel_pipeline.nodes.spatial_continuity import _FIELDS
+from tests.test_path_access import link_to
 
 
 @pytest.fixture
@@ -68,16 +69,20 @@ def test_invalid_json_and_stale_plan_are_rejected(saved_plan):
         Loader().run(str(path), registry)
 
 
-def test_paths_are_confined(saved_plan):
+@pytest.mark.parametrize("kind", ["absolute", "traversal", "file_link"])
+def test_paths_are_confined(saved_plan, kind):
     path, _, registry = saved_plan
     outside = path.parent.parent / (path.parent.name + '-outside.json')
     outside.write_text(path.read_text())
-    link = path.parent / 'link.json'
-    link.symlink_to(outside)
-    for value in (str(outside), '../outside.json', str(link)):
-        with pytest.raises(ValueError):
-            Loader().run(value, registry)
-        assert math.isnan(Loader.IS_CHANGED(value, registry))
+    if kind == "file_link":
+        link = path.parent / 'link.json'
+        link_to(link, outside)
+        value = str(link)
+    else:
+        value = str(outside) if kind == "absolute" else '../outside.json'
+    with pytest.raises(ValueError):
+        Loader().run(value, registry)
+    assert math.isnan(Loader.IS_CHANGED(value, registry))
 
 
 @pytest.mark.parametrize("change", ["root_extra", "chapter_extra", "camera_missing", "sequence_type", "entity_enum"])

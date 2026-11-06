@@ -1,11 +1,10 @@
 """Load editable character evidence without extraction or model calls."""
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
-from ..core import progress, util
+from ..core import configuration_snapshot, progress, util
 from ..core.character_evidence import validate_document
 
 
@@ -48,7 +47,8 @@ class LoadCharacterEvidenceNode:
     @classmethod
     def IS_CHANGED(cls, evidence_path):
         try:
-            return hashlib.sha256(_evidence_path(evidence_path).read_bytes()).hexdigest()
+            path = _evidence_path(evidence_path)  # Confined to the plugin output root.
+            return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Let run() report actionable path errors.
 

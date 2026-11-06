@@ -1,11 +1,10 @@
 """Load editable character profiles without extraction or model calls."""
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
-from ..core import progress, util
+from ..core import configuration_snapshot, progress, util
 from ..core.character_profile_document import validate_document
 
 
@@ -41,7 +40,8 @@ class LoadCharacterProfilesNode:
     @classmethod
     def IS_CHANGED(cls, profiles_path):
         try:
-            return hashlib.sha256(_profiles_path(profiles_path).read_bytes()).hexdigest()
+            path = _profiles_path(profiles_path)  # Confined to the plugin output root.
+            return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Let run() report actionable path errors.
 

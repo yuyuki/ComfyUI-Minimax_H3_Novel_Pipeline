@@ -8,6 +8,11 @@ by later entries.
 
 ## Unreleased
 
+- Reuse shared streaming SHA-256 hashing in the four editable character/spatial
+  loaders after output-path validation, replacing the inline reads flagged by
+  the registry scanner. Preserve content-based edit detection and add confinement
+  regression coverage. Prepare version 2.5.1 for registry publication.
+
 - Rework Provider Configuration with an enabled, configured provider selector,
   automatic saved-model display and Qwen-only controls. Read the URL from provider
   settings and preserve manual node sizing across workflow saves and refreshes.

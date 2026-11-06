@@ -1,11 +1,10 @@
 """Load editable character visual profiles without generation or model calls."""
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
-from ..core import character_evidence, character_profiles, character_visual_profiles, progress, util
+from ..core import character_evidence, character_profiles, character_visual_profiles, configuration_snapshot, progress, util
 from ..core.editable_schemas import DESIGN_SCHEMA, validate_document
 from ..core.character_profile_document import validate_document as validate_profiles
 
@@ -71,7 +70,8 @@ class LoadCharacterVisualProfilesNode:
     @classmethod
     def IS_CHANGED(cls, profiles_path):
         try:
-            return hashlib.sha256(_profile_path(profiles_path).read_bytes()).hexdigest()
+            path = _profile_path(profiles_path)  # Confined to the plugin output root.
+            return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Let run() report actionable path errors.
 
