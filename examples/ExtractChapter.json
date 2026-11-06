@@ -1197,10 +1197,10 @@
         "Node name for S&R": "LoadCharacterEvidenceNode"
       },
       "widgets_values": [
-        "character_evidence.json"
+        "20261024163701/character_evidence"
       ],
       "widgets_values_named": {
-        "evidence_path": "character_evidence.json"
+        "evidence_path": "20261024163701/character_evidence"
       }
     },
     {

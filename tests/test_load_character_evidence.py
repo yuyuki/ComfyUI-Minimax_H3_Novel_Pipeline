@@ -80,8 +80,11 @@ def test_loads_run_directory_and_tracks_edits(saved):
     directory = path.parent / "20261024163701" / "character_evidence"
     directory.mkdir(parents=True)
     target = path.rename(directory / "character_evidence.json")
+    # Extraction also saves review/schema JSON files; load only the evidence document.
+    (directory / "character_evidence_review.json").write_text("{}", encoding="utf-8")
+    (directory / "character_evidence.schema.json").write_text("{}", encoding="utf-8")
     relative = directory.relative_to(path.parent)
-    for value in (str(directory), str(relative), relative.as_posix()):
+    for value in (str(directory), str(relative), relative.as_posix(), f" {relative.as_posix()}/ "):
         assert Loader().run(value) == (data, str(target))
         assert Loader.IS_CHANGED(value) == Loader.IS_CHANGED(str(target))
     before = Loader.IS_CHANGED(str(relative))

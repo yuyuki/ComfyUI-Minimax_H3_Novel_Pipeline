@@ -11,26 +11,33 @@ from ..core.character_evidence import validate_document
 
 def _evidence_path(value: str) -> Path:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("evidence_path must name a saved character evidence JSON file or its directory.")
+        raise ValueError("evidence_path must name a folder containing character_evidence.json or a saved JSON file.")
     path = util.output_path(value.strip())
     if path.is_dir():
         path = util.output_path(path / "character_evidence.json")
     if not path.is_file():
-        raise ValueError(f"Character evidence file does not exist: {path}. Select a saved JSON file or its directory.")
+        raise ValueError(
+            f"Character evidence file does not exist: {path}. "
+            "Select a folder containing character_evidence.json or a saved JSON file."
+        )
     return path
 
 
 
 
 class LoadCharacterEvidenceNode:
-    DESCRIPTION = "Load saved character evidence and manual edits directly from disk. No model calls."
+    DESCRIPTION = (
+        "Load character_evidence.json automatically from a saved character evidence folder. "
+        "Manual edits reload directly from disk. No model calls."
+    )
 
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"evidence_path": ("STRING", {"default": "", "tooltip": (
-            "Saved character evidence JSON file (including renamed copies), or a directory containing "
-            "character_evidence.json. Must be inside "
-            "output/minimax_h3_novel; relative paths start there. Edits reload on the next execution."
+            "Folder containing character_evidence.json, for example 20261024163701/character_evidence. "
+            "The JSON file is found automatically. Must be inside output/minimax_h3_novel; "
+            "relative paths start there. A saved JSON file (including renamed copies) is also accepted. "
+            "Edits reload on the next execution."
         )})}}
 
     RETURN_TYPES = ("MINIMAX_CHARACTER_EVIDENCE", "STRING")

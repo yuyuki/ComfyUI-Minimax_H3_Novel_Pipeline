@@ -328,9 +328,11 @@ details to `character_profiles_validation.json` even if its later LLM request fa
 The embedded original source text supports exact quotation checks; PDF locations
 refer to extracted text. Recurring characters retain evidence in every chapter.
 To resume after editing, use **Load Character Evidence** with `evidence_path` set
-to the saved JSON path (relative to `output/minimax_h3_novel`, or an absolute path
-inside it), or its containing directory, such as `20261024163701/character_evidence`.
-A directory loads `character_evidence.json`. Its `character_evidence` and `saved_file` outputs replace the extractor
+to the evidence output folder, such as `20261024163701/character_evidence`
+(relative to `output/minimax_h3_novel`, or an absolute path inside it).
+The node automatically finds `character_evidence.json` in that folder. A saved
+JSON file path is also accepted, including renamed edited copies.
+Its `character_evidence` and `saved_file` outputs replace the extractor
 outputs directly. No LM Studio configuration or source chapters are needed.
 Saved edits reload on the next workflow execution without rewriting the file.
 
