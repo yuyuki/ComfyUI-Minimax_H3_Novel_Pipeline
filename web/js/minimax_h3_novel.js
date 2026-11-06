@@ -108,28 +108,24 @@ async function deleteSavedChapter(node, file, onComplete = null) {
     }
 }
 
-function chooseFiles(node, directory, onComplete = null) {
+function chooseFiles(node, onComplete = null) {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
     input.accept = ACCEPTED;
-    if (directory) input.webkitdirectory = true;
     input.style.display = "none";
     document.body.appendChild(input);
     input.addEventListener("change", async () => {
         let uploadedFiles = [];
         try {
             if (!input.files?.length) return;
-            // Native directory pickers deliberately ignore ``accept``: they
-            // select a directory, then expose every file below it.  Filter the
-            // resulting FileList before upload so only supported chapters are
-            // ever sent to the server.
+            // Validate extensions because file dialogs can override accept.
             const chapterFiles = Array.from(input.files).filter((file) => {
                 const dot = file.name.lastIndexOf(".");
                 return dot >= 0 && CHAPTER_EXTENSIONS.has(file.name.slice(dot).toLowerCase());
             });
             if (!chapterFiles.length) {
-                alert("The selected folder contains no supported chapter files (.txt, .md, .markdown, or .pdf).");
+                alert("Select supported chapter files (.txt, .md, .markdown, or .pdf).");
                 return;
             }
             const form = new FormData();
@@ -146,8 +142,7 @@ function chooseFiles(node, directory, onComplete = null) {
         } catch (error) {
             alert(`MiniMax H3 chapter upload failed: ${error.message}`);
         } finally {
-            // The server may have accepted files before reporting an error (for
-            // example, when a later file in a selected folder is unsupported).
+            // The server may have accepted some files before reporting an error.
             const files = await refreshSavedChapters(node, uploadedFiles[0] || null);
             await onComplete?.(files);
             input.remove();
@@ -228,6 +223,7 @@ async function openSavedChapterDialog(node) {
             empty.textContent = "No saved chapters yet.";
             empty.style.cssText = "padding:18px 16px; color:#bbb;";
             list.appendChild(empty);
+            updateAddSelectionButton();
             return;
         }
         for (const file of files) {
@@ -273,12 +269,24 @@ async function openSavedChapterDialog(node) {
         }
         updateAddSelectionButton();
     };
-    const uploadAndRefresh = (directory) => chooseFiles(node, directory, (files) => {
+    const uploadAndRefresh = () => chooseFiles(node, (files) => {
         if (!closed) renderFiles(files);
     });
+    const selectionControls = document.createElement("div");
+    selectionControls.style.cssText = "display:flex; gap:8px; margin-right:auto;";
+    selectionControls.append(
+        dialogButton("Select all", () => {
+            for (const file of currentFiles) selectedFiles.add(file);
+            renderFiles(currentFiles);
+        }),
+        dialogButton("Select none", () => {
+            selectedFiles.clear();
+            renderFiles(currentFiles);
+        }),
+    );
     footer.append(
-        dialogButton("Select chapter files", () => uploadAndRefresh(false)),
-        dialogButton("Select chapter folder", () => uploadAndRefresh(true)),
+        selectionControls,
+        dialogButton("Select chapter files", uploadAndRefresh),
         addSelection = dialogButton("Add selection", () => {
             const selected = currentFiles.filter((file) => selectedFiles.has(file));
             if (!selected.length) return;
