@@ -46,8 +46,8 @@
       "id": 68,
       "type": "GetNode",
       "pos": [
-        1020.6862968528953,
-        2030.2245166050939
+        1162.5959437020017,
+        2031.7341716436233
       ],
       "size": [
         225,
@@ -233,18 +233,18 @@
         "Node name for S&R": "LoadChapterCatalogsNode"
       },
       "widgets_values": [
-        "chapter_catalogs"
+        "chapter_catalogs_gemma"
       ],
       "widgets_values_named": {
-        "catalog_path": "chapter_catalogs"
+        "catalog_path": "chapter_catalogs_gemma"
       }
     },
     {
       "id": 96,
       "type": "LoadConsolidatedReferencesNode",
       "pos": [
-        184.96107444654805,
-        1916.601994807793
+        326.87072129565445,
+        1918.1116498463225
       ],
       "size": [
         302.625,
@@ -348,18 +348,18 @@
         "Node name for S&R": "LoadCinematicChaptersNode"
       },
       "widgets_values": [
-        "cinematic_chapters"
+        "20261105173817\\cinematic_chapters"
       ],
       "widgets_values_named": {
-        "cinematic_path": "cinematic_chapters"
+        "cinematic_path": "20261105173817\\cinematic_chapters"
       }
     },
     {
       "id": 140,
       "type": "LoadSpatialContinuityNode",
       "pos": [
-        1438.924386890431,
-        2274.147676553865
+        1580.8340337395373,
+        2275.6573315923943
       ],
       "size": [
         343.04296875,
@@ -410,8 +410,8 @@
       "id": 141,
       "type": "GetNode",
       "pos": [
-        183.3912338223543,
-        1779.6635917961326
+        325.3008806714607,
+        1781.173246834662
       ],
       "size": [
         213.2734375,
@@ -489,8 +489,8 @@
       "id": 149,
       "type": "GetNode",
       "pos": [
-        1039.2461411189063,
-        2162.213058298229
+        1181.1557879680126,
+        2163.7227133367587
       ],
       "size": [
         227.271484375,
@@ -525,8 +525,8 @@
       "id": 154,
       "type": "LoadConsolidatedReferencesNode",
       "pos": [
-        1008.3372827684367,
-        1855.9372450672138
+        1150.246929617543,
+        1857.4469001057432
       ],
       "size": [
         302.625,
@@ -643,8 +643,8 @@
       "id": 159,
       "type": "MarkdownNote",
       "pos": [
-        153.71956264705295,
-        1356.8222587675932
+        295.6292094961593,
+        1358.3319138061227
       ],
       "size": [
         771.1889982411268,
@@ -670,8 +670,8 @@
       "id": 160,
       "type": "MarkdownNote",
       "pos": [
-        954.9767379509707,
-        1356.7824396837439
+        1096.8863848000772,
+        1358.2920947222733
       ],
       "size": [
         1468.4064105363937,
@@ -790,7 +790,7 @@
         "cinematic_chapters",
         4000,
         0.15,
-        8192,
+        16384,
         2
       ],
       "widgets_values_named": {
@@ -798,7 +798,7 @@
         "out_dir": "cinematic_chapters",
         "chunk_chars": 4000,
         "temperature": 0.15,
-        "max_tokens": 8192,
+        "max_tokens": 16384,
         "correction_attempts": 2
       }
     },
@@ -868,8 +868,8 @@
       "id": 165,
       "type": "SpatialContinuityNode",
       "pos": [
-        567.4489022725577,
-        1766.956969211563
+        709.358549121664,
+        1768.4666242500925
       ],
       "size": [
         343.04296875,
@@ -929,8 +929,8 @@
       "id": 166,
       "type": "GenerateH3PromptsNode",
       "pos": [
-        1989.3703652754284,
-        1777.4512320826625
+        2131.2800121245346,
+        1778.960887121192
       ],
       "size": [
         400,
@@ -1116,11 +1116,11 @@
         "Node name for S&R": "SelectChaptersNode"
       },
       "widgets_values": [
-        "minimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/13_chapter 13.md",
+        "minimax_h3_novel/00_PROLOGUE.md\nminimax_h3_novel/01_Chapter 01.md\nminimax_h3_novel/02_Chapter 02.md\nminimax_h3_novel/03_Chapter 03.md\nminimax_h3_novel/04_Chapter 04.md\nminimax_h3_novel/05_Chapter 05.md\nminimax_h3_novel/06_Chapter 06.md\nminimax_h3_novel/07_Chapter 07.md\nminimax_h3_novel/08_Chapter 08.md\nminimax_h3_novel/09_Chapter 09.md\nminimax_h3_novel/10_chapter 10.md\nminimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/12_chapter 12.md\nminimax_h3_novel/13_chapter 13.md\nminimax_h3_novel/14_chapter 14.md\nminimax_h3_novel/15_chapter 15.md\nminimax_h3_novel/16_chapter 16.md\nminimax_h3_novel/17_chapter 17.md\nminimax_h3_novel/18_chapter 18.md\nminimax_h3_novel/19_chapter 19.md\nminimax_h3_novel/20_chapter 20.md\nminimax_h3_novel/21_chapter 21.md\nminimax_h3_novel/22_chapter 22.md\nminimax_h3_novel/23_chapter 23.md\nminimax_h3_novel/24_chapter 24.md",
         ""
       ],
       "widgets_values_named": {
-        "chapter_paths": "minimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/13_chapter 13.md",
+        "chapter_paths": "minimax_h3_novel/00_PROLOGUE.md\nminimax_h3_novel/01_Chapter 01.md\nminimax_h3_novel/02_Chapter 02.md\nminimax_h3_novel/03_Chapter 03.md\nminimax_h3_novel/04_Chapter 04.md\nminimax_h3_novel/05_Chapter 05.md\nminimax_h3_novel/06_Chapter 06.md\nminimax_h3_novel/07_Chapter 07.md\nminimax_h3_novel/08_Chapter 08.md\nminimax_h3_novel/09_Chapter 09.md\nminimax_h3_novel/10_chapter 10.md\nminimax_h3_novel/11_chapter 11.md\nminimax_h3_novel/12_chapter 12.md\nminimax_h3_novel/13_chapter 13.md\nminimax_h3_novel/14_chapter 14.md\nminimax_h3_novel/15_chapter 15.md\nminimax_h3_novel/16_chapter 16.md\nminimax_h3_novel/17_chapter 17.md\nminimax_h3_novel/18_chapter 18.md\nminimax_h3_novel/19_chapter 19.md\nminimax_h3_novel/20_chapter 20.md\nminimax_h3_novel/21_chapter 21.md\nminimax_h3_novel/22_chapter 22.md\nminimax_h3_novel/23_chapter 23.md\nminimax_h3_novel/24_chapter 24.md",
         "saved_chapter": ""
       }
     },
@@ -1197,10 +1197,10 @@
         "Node name for S&R": "LoadCharacterEvidenceNode"
       },
       "widgets_values": [
-        "character_evidence_11_13.json"
+        "character_evidence.json"
       ],
       "widgets_values_named": {
-        "evidence_path": "character_evidence_11_13.json"
+        "evidence_path": "character_evidence.json"
       }
     },
     {
@@ -1285,7 +1285,7 @@
         "Node name for S&R": "CharacterEvidenceExtractorNode"
       },
       "widgets_values": [
-        "character_evidence_11_13_gemma",
+        "character_evidence",
         5500,
         true,
         0.3,
@@ -1297,7 +1297,7 @@
         ""
       ],
       "widgets_values_named": {
-        "out_dir": "character_evidence_11_13_gemma",
+        "out_dir": "character_evidence",
         "chunk_chars": 5500,
         "thinking": true,
         "temperature": 0.3,
@@ -1399,7 +1399,7 @@
         "Node name for S&R": "CharacterVisualProfileGeneratorNode"
       },
       "widgets_values": [
-        "character_visual_profiles_test_classifications",
+        "character_visual_profiles",
         "",
         false,
         0.12,
@@ -1409,7 +1409,7 @@
         false
       ],
       "widgets_values_named": {
-        "out_dir": "character_visual_profiles_test_classifications",
+        "out_dir": "character_visual_profiles",
         "visual_designs_path": "",
         "thinking": false,
         "temperature": 0.12,
@@ -1463,8 +1463,8 @@
         1754.03741720294
       ],
       "size": [
-        400,
-        560
+        513.2256705534547,
+        625.5232700678182
       ],
       "flags": {},
       "order": 26,
@@ -1516,13 +1516,14 @@
         120,
         true,
         0.12,
-        8500,
-        "references",
+        16384,
+        "references_gemma",
         0.68,
         24,
         1,
         "cinematic photographic",
-        "character_visual_profiles\\visual_designs.json"
+        "character_visual_profiles_gemma\\visual_designs.json",
+        65536
       ],
       "widgets_values_named": {
         "candidate_count": 12,
@@ -1536,13 +1537,14 @@
         "audit_max_entities": 120,
         "thinking": true,
         "temperature": 0.12,
-        "max_tokens": 8500,
-        "out_dir": "references",
+        "max_tokens": 16384,
+        "out_dir": "references_gemma",
         "audit_similarity": 0.68,
         "audit_cluster_size": 24,
         "max_attempts": 1,
         "image_style": "cinematic photographic",
-        "visual_designs_path": "character_visual_profiles\\visual_designs.json"
+        "visual_designs_path": "character_visual_profiles_gemma\\visual_designs.json",
+        "context_tokens": 65536
       }
     },
     {
@@ -1589,7 +1591,7 @@
         "Node name for S&R": "ConsolidateCharacterProfilesNode"
       },
       "widgets_values": [
-        "character_profiles_test_11_13_gemma",
+        "character_profiles",
         true,
         0.12,
         16384,
@@ -1600,7 +1602,7 @@
         ""
       ],
       "widgets_values_named": {
-        "out_dir": "character_profiles_test_11_13_gemma",
+        "out_dir": "character_profiles",
         "thinking": true,
         "temperature": 0.12,
         "max_tokens": 16384,
@@ -1797,8 +1799,8 @@
       "bounding": [
         -660.7944537858515,
         1682.2762560902395,
-        798.6578022088528,
-        796.0577845671799
+        907.354577493125,
+        797.5674396057095
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1807,8 +1809,8 @@
       "id": 2,
       "title": "5. Prompt Generation",
       "bounding": [
-        957.8773153361857,
-        1688.4792785589652,
+        1099.7869621852922,
+        1689.9889335974947,
         1469.918520584053,
         773.2331135984834
       ],
@@ -1855,8 +1857,8 @@
       "id": 6,
       "title": "4. Spatial Continuity",
       "bounding": [
-        164.95476927009332,
-        1684.354019346147,
+        306.8644161191997,
+        1685.8636743846764,
         755.5371017524647,
         336.2479754616461
       ],
@@ -1915,10 +1917,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.7053159332867156,
+      "scale": 0.8534322792769263,
       "offset": [
-        2661.5413573018204,
-        -1549.6013700324145
+        1497.8476014833684,
+        -1460.7802577106681
       ]
     },
     "frontendVersion": "1.57.6"

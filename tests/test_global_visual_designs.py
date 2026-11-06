@@ -78,6 +78,12 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
     options = {k: v[1]['default'] for k, v in node.ConsolidateReferencesNode.INPUT_TYPES()['required'].items()
                if len(v) > 1 and 'default' in v[1]}
     options['max_attempts'] = 2
+    options['context_tokens'] = 131072
+    original_requests = integration.Requests
+    def configured_requests(output, client, model, args):
+        assert args.context_tokens == 131072
+        return original_requests(output, client, model, args)
+    monkeypatch.setattr(integration, 'Requests', configured_requests)
     extra = {'visual_designs_path': str(root / 'visual/visual_designs.json')} if disk else {'character_visual_profiles': result}
     with nullcontext() if mapped else pytest.warns(UserWarning):
         payload, _ = node.ConsolidateReferencesNode().run([chapter], {'api_url': 'http://127.0.0.1:1234/v1', 'run_folder': '20261028120000'}, **options, **extra)['result']
@@ -99,6 +105,7 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
     assert not (root / 'visual/.cache').exists()
     assert util.load_json(root / 'references/visual_designs.json') == payload['visual_designs']
     assert util.load_json(root / 'references/consolidate_configuration.json')['node_settings']['max_attempts'] == 2
+    assert util.load_json(root / 'references/consolidate_configuration.json')['node_settings']['context_tokens'] == 131072
     assert integration.sequence_context(payload, 'chapter1', 2)['sequence'] is None
 
 

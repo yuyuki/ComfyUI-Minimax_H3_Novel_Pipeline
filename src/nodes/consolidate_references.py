@@ -49,6 +49,8 @@ class ConsolidateReferencesNode:
             "character_visual_profiles": ("MINIMAX_CHARACTER_VISUAL_PROFILES",),
             "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional chapter or global visual_designs.json inside output/minimax_h3_novel; only matching chapter entities are imported. Leave empty on the first run; consolidation saves this file automatically."}),
+            "context_tokens": ("INT", {"default": 65536, "min": 16384, "max": 1048576,
+                "tooltip": "Context budget for character evidence enrichment, including response tokens. Set no higher than the context loaded in LM Studio. Oversized identity evidence is batched without dropping observations."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_REGISTRY", "STRING")
@@ -93,6 +95,9 @@ class ConsolidateReferencesNode:
             keys = ("candidate_count", "include_all_below", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_audit", "audit_max_entities", "temperature", "max_tokens")
             args = argparse.Namespace(**{key: params[key] for key in keys}, audit_similarity=float(params["audit_similarity"]), audit_cluster_size=max(2, int(params["audit_cluster_size"])))
             args.max_attempts = int(params.get("max_attempts", 3))
+            args.context_tokens = int(params.get("context_tokens", 65536))
+            if not 16384 <= args.context_tokens <= 1048576:
+                raise ValueError("context_tokens must be between 16384 and 1048576.")
             if not 1 <= args.max_attempts <= 20:
                 raise ValueError("max_attempts must be between 1 and 20.")
             args.image_style = params.get("image_style", "cinematic photographic")

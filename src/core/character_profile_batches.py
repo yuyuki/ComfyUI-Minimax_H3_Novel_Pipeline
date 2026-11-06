@@ -169,8 +169,13 @@ class Requests:
 
     def call(self, system, contract, payload, check, salvage=None, *, recover_partial=False, max_attempts=None):
         prompt = encoded(payload)
-        if len(prompt.encode()) > self.capacity(system, contract):
-            raise ValueError("Character profile request exceeds configured context budget; no evidence truncated.")
+        capacity = self.capacity(system, contract)
+        if len(prompt.encode()) > capacity:
+            raise ValueError(f"{contract['name']}: character profile request requires {len(prompt.encode())} "
+                             f"UTF-8 input bytes but the budget is {capacity} "
+                             f"(context_tokens={self.context}, max_tokens={self.args.max_tokens}). "
+                             "Increase context_tokens only within the context loaded in LM Studio, "
+                             "or reduce max_tokens. No evidence truncated.")
         key = prompt_cache.fingerprint(self.model, self.args, cp.VERSION, DECISION_VERSION, system, contract, payload, client=self.client)
         cache = self.cache_dir / f"{key}.json"
         lmstudio_pipeline.comfy_interrupt_check()

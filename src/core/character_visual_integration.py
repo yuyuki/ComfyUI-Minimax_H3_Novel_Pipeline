@@ -5,7 +5,7 @@ import warnings
 from . import progress
 
 from . import character_chapter_enrichment as enrichment, character_visual_profiles as visual
-from .character_profile_batches import Requests, schema, TEXT
+from .character_profile_batches import Requests, schema, TEXT, encoded
 from .character_profile_document import validate_document as validate_profiles
 from .character_visual_selection import field_for
 from .editable_schemas import DESIGN_SCHEMA, validate_document
@@ -35,6 +35,52 @@ def validate_input(data):
 def _names(item):
     return {name.strip().casefold() for name in
             [item['canonical_name'], *item.get('aliases', [])] if name.strip()}
+
+
+def _identity_matches(requests, context, check):
+    """Preserve chapter disambiguation and require agreement across every evidence batch."""
+    fallback = {'same': False, 'source_quote': '', 'reason': 'Identity could not be validated.'}
+    if len(encoded(context).encode('utf-8')) <= requests.capacity(IDENTITY_SYSTEM, IDENTITY):
+        return enrichment.request(requests, IDENTITY_SYSTEM, IDENTITY, context, check,
+                                  fallback=fallback)['same']
+
+    system = IDENTITY_SYSTEM + """
+The profile supporting_evidence is one batch of a larger validated profile.
+identity_support lists IDs from the complete profile; only use observations supplied here.
+Evaluate this batch against the complete supplied chapter and catalog context.
+Return same=false if this batch cannot establish identity or contains conflicting identity
+evidence. Every batch must independently confirm the match before any facts are imported."""
+    base = {**context, 'profile': {**context['profile'], 'supporting_evidence': []}}
+    capacity = requests.capacity(system, IDENTITY)
+
+    def packet(rows):
+        return {**base, 'profile': {**base['profile'], 'supporting_evidence': rows}}
+
+    packets, batch = [], []
+    for row in context['profile']['supporting_evidence']:
+        minimum = len(encoded(packet([row])).encode('utf-8'))
+        if minimum > capacity:
+            raise ValueError(
+                f"character_registry_identity: complete chapter/catalog context plus one observation "
+                f"requires {minimum} UTF-8 input bytes; budget={capacity}, "
+                f"context_tokens={requests.context}, max_tokens={requests.args.max_tokens}. "
+                "Increase consolidation context_tokens only within the context loaded in LM Studio, "
+                "or reduce max_tokens. No evidence truncated.")
+        if batch and len(encoded(packet(batch + [row])).encode('utf-8')) > capacity:
+            packets.append(packet(batch))
+            batch = []
+        batch.append(row)
+    if batch:
+        packets.append(packet(batch))
+    if not packets:
+        # Preserve the normal budget diagnostic when the fixed context cannot fit.
+        return enrichment.request(requests, system, IDENTITY, base, check, fallback=fallback)['same']
+    matched = True
+    for payload in packets:
+        decision = enrichment.request(requests, system, IDENTITY, payload, check, fallback=fallback)
+        # Do not short-circuit: later evidence must still be reviewed and cached.
+        matched = decision['same'] and matched
+    return matched
 
 
 def apply(designs, chapters, registry, output, client, model, args):
@@ -111,9 +157,7 @@ def apply(designs, chapters, registry, output, client, model, args):
                         if not any(enrichment.source_span(s['source'], value['source_quote']) is not None
                                    for s in chapter['sequences']):
                             raise ValueError('Identity mapping requires an exact current source quote.')
-                decision = enrichment.request(requests, IDENTITY_SYSTEM, IDENTITY, context, check,
-                    fallback={'same': False, 'source_quote': '', 'reason': 'Identity could not be validated.'})
-                if decision['same']:
+                if _identity_matches(requests, context, check):
                     matches.append(profile)
             if len(matches) == 1:
                 proposed.setdefault(matches[0]['local_id'], []).append(entity)
