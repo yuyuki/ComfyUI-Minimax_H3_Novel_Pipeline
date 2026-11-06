@@ -452,7 +452,8 @@ def test_mistral_retries_without_qwen_options(monkeypatch, thinking):
     assert create.call_count == 2
     for call in create.call_args_list:
         request = call.kwargs
-        assert request["extra_body"] == {}
+        effort = "high" if thinking else "none"
+        assert request["extra_body"] == {"reasoning_effort": effort, "chat_template_kwargs": {"reasoning_effort": effort}}
         assert request["messages"][0] == {"role": "system", "content": "system"}
         assert len(request["messages"]) == 2
         assert request["top_p"] == 0.9
@@ -510,7 +511,12 @@ def test_stage_clients_select_family_and_keep_settings(monkeypatch, stage, famil
         extra = create.call_args.kwargs["extra_body"]
         assert create.call_args.kwargs["response_format"] == {"type": "json_schema", "json_schema": SCHEMA}
         if family != "Qwen":
-            assert extra == {}
+            expected_extra = {
+                "GPT-OSS": {},
+                "Gemma": {"chat_template_kwargs": {"enable_thinking": False}},
+                "Mistral": {"reasoning_effort": "none", "chat_template_kwargs": {"reasoning_effort": "none"}},
+            }
+            assert extra == expected_extra[family]
         else:
             assert extra["top_k"] == 37
 

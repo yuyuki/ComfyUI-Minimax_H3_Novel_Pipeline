@@ -1,7 +1,10 @@
 """Per-node reasoning controls reach the client without changing shared settings."""
 import pytest
 
-from minimax_h3_novel_pipeline.core import lmstudio_pipeline, path_access, run_output, util
+from minimax_h3_novel_pipeline.core import character_profiles, character_visual_profiles, character_visual_review, lmstudio_pipeline, path_access, run_output, util
+from minimax_h3_novel_pipeline.nodes.character_evidence_extractor import CharacterEvidenceExtractorNode
+from minimax_h3_novel_pipeline.nodes.character_visual_profile_generator import CharacterVisualProfileGeneratorNode
+from minimax_h3_novel_pipeline.nodes.consolidate_character_profiles import ConsolidateCharacterProfilesNode
 from minimax_h3_novel_pipeline.nodes.cinematic_chapter_adapter import CinematicChapterAdapterNode
 from minimax_h3_novel_pipeline.nodes.consolidate_references import ConsolidateReferencesNode
 from minimax_h3_novel_pipeline.nodes.extract_chapter_references import ExtractChapterReferencesNode
@@ -15,6 +18,9 @@ from minimax_h3_novel_pipeline.nodes.spatial_continuity import SpatialContinuity
     (ConsolidateReferencesNode, True),
     (SpatialContinuityNode, True),
     (GenerateH3PromptsNode, False),
+    (CharacterEvidenceExtractorNode, True),
+    (ConsolidateCharacterProfilesNode, False),
+    (CharacterVisualProfileGeneratorNode, False),
 ])
 @pytest.mark.parametrize("thinking", [None, True, False])
 def test_node_thinking_reaches_client(tmp_path, monkeypatch, cinematic_registry, cls, default, thinking):
@@ -25,6 +31,9 @@ def test_node_thinking_reaches_client(tmp_path, monkeypatch, cinematic_registry,
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261024120000"}
     registry = cinematic_registry(chapter, schema_version=util.REGISTRY_SCHEMA,
                                  entities=[], picture_assets=[], audio_assets=[])
+    monkeypatch.setattr(character_profiles, "prepare_evidence", lambda data: {})
+    monkeypatch.setattr(character_visual_profiles, "generate", lambda *a: ({"visual_designs": {}}, ""))
+    monkeypatch.setattr(character_visual_review, "candidates", lambda *a: ["candidate"])
     catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter",
                "chapter_name": "chapter", "source": {},
                "timeline_version": "cinematic-reference-timeline.v1",
@@ -36,6 +45,8 @@ def test_node_thinking_reaches_client(tmp_path, monkeypatch, cinematic_registry,
         "cinematic_chapters": [catalog],
         "chapter_catalogs": [catalog],
         "consolidated_references": registry,
+        "character_evidence": {"chapters": []},
+        "character_profiles": {},
     }
     params = {}
     for fields in cls.INPUT_TYPES().values():

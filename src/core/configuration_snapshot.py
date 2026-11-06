@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from . import lmstudio_json, lmstudio_model_mistral, lmstudio_models, util
+from . import lmstudio_json, lmstudio_model_openai, lmstudio_models, util
 
 
 def content_digest(value):
@@ -33,7 +33,7 @@ def start(output, stage, config, model, args, *, out_dir, inputs, extra=None):
     public["model_family"] = config.get("model_family", lmstudio_models.profile_for_model(model).NAME)
     if is_openai:
         public["openai_model"] = config["openai_model"]
-    profile = lmstudio_model_mistral if is_openai else lmstudio_models.get_profile(public["model_family"])
+    profile = lmstudio_model_openai if is_openai else lmstudio_models.get_profile(public["model_family"])
     settings = profile.settings_from_config({**public, "thinking": bool(args.thinking)})
     _, request_extra, top_p = profile.request_settings(model, "", "", settings)
     node_settings = {key: value for key, value in vars(args).items() if key not in {"base_url", "out_dir"}}

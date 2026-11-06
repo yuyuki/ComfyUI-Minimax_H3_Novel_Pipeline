@@ -29,4 +29,4 @@ def test_gemma_uses_json_schema_on_initial_and_compact_retry():
     assert first.closed and second.closed
     for call in create.call_args_list:
         assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": SCHEMA}
-        assert call.kwargs["extra_body"] == {}
+        assert call.kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}

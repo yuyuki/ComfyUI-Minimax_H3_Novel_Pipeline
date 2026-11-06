@@ -141,14 +141,20 @@ def test_audit_thinking_override_is_scoped_and_restored(monkeypatch):
 
 
 @pytest.mark.parametrize("audit_thinking", [False, True])
-def test_audit_transport_uses_separate_thinking_and_restores_client(audit_thinking):
-    from minimax_h3_novel_pipeline.core import lmstudio_model_qwen
+@pytest.mark.parametrize("family,model", [("Qwen", "qwen3.5"), ("Gemma", "gemma-4"), ("Mistral", "mistral-small-4")])
+def test_audit_transport_uses_separate_thinking_and_restores_client(audit_thinking, family, model):
+    from minimax_h3_novel_pipeline.core import lmstudio_models
     client, create = client_for(Stream([json.dumps(verdicts([]))]), Stream(['{"evidence": []}']))
-    client._minimax_h3_settings = {**lmstudio_model_qwen.DEFAULTS, "thinking": True}
+    client._minimax_h3_profile = lmstudio_models.get_profile(family)
+    client._minimax_h3_settings = client._minimax_h3_profile.settings_from_config({"thinking": True})
     args = settings(audit_thinking=audit_thinking)
-    evidence.audit_observations([observation()], [observation()["quotation"]], client, "qwen3.5", args,
+    evidence.audit_observations([observation()], [observation()["quotation"]], client, model, args,
                                 {"llm_calls": 0})
-    evidence.lmstudio_json.chat_json(client, "qwen3.5", evidence.SYSTEM, "source", evidence.SCHEMA, 0.15, 8192)
-    assert [call.kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"]
-            for call in create.call_args_list] == [audit_thinking, True]
+    evidence.lmstudio_json.chat_json(client, model, evidence.SYSTEM, "source", evidence.SCHEMA, 0.15, 8192)
+    if family == "Mistral":
+        assert [call.kwargs["extra_body"]["reasoning_effort"] for call in create.call_args_list] == [
+            "high" if audit_thinking else "none", "high"]
+    else:
+        assert [call.kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"]
+                for call in create.call_args_list] == [audit_thinking, True]
     assert client._minimax_h3_settings["thinking"] is True

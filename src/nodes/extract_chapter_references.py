@@ -26,7 +26,7 @@ class ExtractChapterReferencesNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "cinematic_chapters": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Ordered chapter timelines from Cinematic Chapter Adapter or Load Cinematic Chapters."}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
-            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768, "tooltip": "JSON output budget per sequence-phase extraction call. Dense catalogs may need more tokens."}),
             "force": ("BOOLEAN", {"default": False, "tooltip": "Ignore compatible cached chapter results."}),

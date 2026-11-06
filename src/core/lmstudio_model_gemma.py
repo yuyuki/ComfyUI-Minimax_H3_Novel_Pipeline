@@ -4,7 +4,7 @@ NAME = "Gemma"
 
 
 def settings_from_config(config):
-    return {"thinking": False}
+    return {"thinking": bool(config.get("thinking", False))}
 
 
 def matches(model):
@@ -15,7 +15,7 @@ def request_settings(model, system, user, settings):
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
-    ], {}, 1.0
+    ], {"chat_template_kwargs": {"enable_thinking": settings["thinking"]}}, 1.0
 
 
 def retries(model, settings):

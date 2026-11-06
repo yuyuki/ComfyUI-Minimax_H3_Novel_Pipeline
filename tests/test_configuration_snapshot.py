@@ -146,7 +146,7 @@ def test_failed_execution_does_not_claim_completed_results(setup, monkeypatch):
     assert json.loads(text)["outputs"] == []
 
 
-def test_mistral_records_ignored_qwen_controls_and_normalized_node_settings(setup, monkeypatch):
+def test_mistral_records_node_thinking_and_ignores_qwen_sampling(setup, monkeypatch):
     root, config, _ = setup
     config.update(model_family="Mistral", qwen35_top_k=90)
     def process(path, output, *args):
@@ -160,8 +160,9 @@ def test_mistral_records_ignored_qwen_controls_and_normalized_node_settings(setu
     record = util.load_json(root / config["run_folder"] / "chapter_catalogs/extract_configuration.json")
     assert "thinking" not in record["lmstudio_config"]
     assert record["node_settings"]["thinking"] is True
-    assert record["model_controls"]["settings"] == {"thinking": False}
-    assert record["model_controls"]["request_extra_body"] == {}
+    assert record["model_controls"]["settings"] == {"thinking": True}
+    assert record["model_controls"]["request_extra_body"] == {
+        "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "high"}}
     assert record["model_controls"]["chatml_fallback_allowed"] is False
     assert "merge_batch_size" not in record["node_settings"]
 

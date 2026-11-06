@@ -23,7 +23,7 @@ class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Enable Qwen reasoning for this node. Ignored by Mistral."}),
+            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
             "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "H3 duration in seconds of EACH generated scene (4–15 seconds)."}),

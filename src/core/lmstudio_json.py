@@ -142,8 +142,10 @@ def model_settings(client, model):
         top_k=QWEN35_TOP_K, min_p=QWEN35_MIN_P, repeat_penalty=QWEN35_REPEAT_PENALTY,
     )
     thinking = REQUEST_THINKING.get()
-    if thinking is not None:
+    if thinking is not None and profile.NAME not in {"GPT-OSS", "OpenAI"}:
         settings = {**settings, "thinking": bool(thinking)}
+    if profile.NAME == "GPT-OSS":
+        settings = {**settings, "thinking": True}
     return profile, settings
 
 
@@ -221,6 +223,12 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                     local_stop = "reasoning_fallback"
                     print("    LLM: reasoning returned with thinking disabled; retrying structured JSON with raw ChatML.", flush=True)
                     break
+                if reasoning_chars and not settings["thinking"] and profile.NAME in {"Gemma", "Mistral"}:
+                    raise RuntimeError(
+                        "LM Studio returned reasoning with thinking disabled. Check that the loaded model's "
+                        "chat template and runtime support disabling reasoning with this model's request controls, "
+                        "or enable thinking on this node."
+                    )
                 raw += content
                 complete = _complete_json_prefix(raw)
                 if complete is not None:
@@ -243,7 +251,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             if stream is not None:
                 stream.close()
             diagnostics = (
-                f"attempt={attempt + 1}, thinking={settings['thinking'] if profile.NAME == 'Qwen' else False}, max_tokens={request_max_tokens}, "
+                f"attempt={attempt + 1}, thinking={settings['thinking']}, max_tokens={request_max_tokens}, "
                 f"content_chars={content_chars}, reasoning_chars={reasoning_chars}, "
                 f"finish_reason={finish_reason}, local_stop={local_stop}"
             )

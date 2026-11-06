@@ -30,6 +30,8 @@ Turn novel chapters into organized character, location and object references, th
 
 The chapter picker supports TXT, Markdown and searchable PDF files. Review the adapter's chapter scenes before extraction, or reload edited scenes with **Load Cinematic Chapters**. See [examples](examples/README.md) for workflow details and saved-file loading.
 
+Each processing node's `thinking` checkbox controls reasoning requests for Qwen, Gemma and Mistral in LM Studio. Saved configurations and stream logs reflect that setting. The loaded model and its chat template must support switching reasoning off; Gemma/Mistral requests fail if reasoning is returned while disabled. `reasoning_chars` reports the actual returned reasoning. GPT-OSS always reasons and reports `thinking=true`; its effort is set in LM Studio. Hosted OpenAI requests have no thinking control in this plugin. Character evidence auditing uses its separate `audit_thinking` checkbox.
+
 ## Nodes
 
 | Node | What it does |

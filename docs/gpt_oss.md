@@ -17,6 +17,12 @@ raisonnement de la réponse finale. Aucun préfixe Qwen, paramètre `enable_thin
 ou repli ChatML n'est envoyé. Les réglages `qwen35_*` et le bouton `thinking`
 des nodes ne contrôlent pas GPT-OSS. Configurer l'effort de raisonnement dans
 LM Studio ; le profil ne prétend pas le forcer via l'API Chat Completions.
+Les configurations et journaux indiquent donc `thinking=true`, même si la case
+du node ou `audit_thinking` est décochée : GPT-OSS ne propose pas de mode sans raisonnement.
+Pour Gemma et Mistral, la case du node contrôle respectivement `enable_thinking`
+et `reasoning_effort` (`high`/`none`). Le modèle, son template et le moteur LM Studio
+doivent prendre en charge ces paramètres. Si du raisonnement est reçu malgré la
+désactivation, la requête échoue et le journal conserve le vrai nombre de caractères.
 
 Le profil conserve la température et `max_tokens` du node, utilise `top_p = 1.0`
 et permet une reprise compacte du transport. Les corrections métier du node

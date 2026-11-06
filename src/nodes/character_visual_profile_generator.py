@@ -21,7 +21,7 @@ class CharacterVisualProfileGeneratorNode:
             "out_dir": ("STRING", {"default": "character_visual_profiles"}),
         }, "optional": {
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Reuse edited physical defaults."}),
-            "thinking": ("BOOLEAN", {"default": False}),
+            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000}),
             "context_tokens": ("INT", {"default": 65536, "min": 8192, "max": 2000000}),
