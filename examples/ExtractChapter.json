@@ -269,10 +269,10 @@
         "Node name for S&R": "LoadConsolidatedReferencesNode"
       },
       "widgets_values": [
-        "20261106144428\\references_gemma"
+        "references"
       ],
       "widgets_values_named": {
-        "consolidated_path": "20261106144428\\references_gemma"
+        "consolidated_path": "references"
       }
     },
     {
@@ -400,10 +400,10 @@
         "Node name for S&R": "LoadSpatialContinuityNode"
       },
       "widgets_values": [
-        "20261023181509\\spatial_continuity"
+        "spatial_continuity"
       ],
       "widgets_values_named": {
-        "spatial_path": "20261023181509\\spatial_continuity"
+        "spatial_path": "spatial_continuity"
       }
     },
     {
@@ -552,10 +552,10 @@
         "Node name for S&R": "LoadConsolidatedReferencesNode"
       },
       "widgets_values": [
-        "20261023222151\\references"
+        "references"
       ],
       "widgets_values_named": {
-        "consolidated_path": "20261023222151\\references"
+        "consolidated_path": "references"
       }
     },
     {
@@ -998,8 +998,8 @@
         2,
         false,
         "h3_prompts",
-        false,
-        false,
+        true,
+        true,
         ""
       ],
       "widgets_values_named": {
@@ -1016,8 +1016,8 @@
         "repair_attempts": 2,
         "force": false,
         "out_dir": "h3_prompts",
-        "refine_camera": false,
-        "enable_spatial_continuity": false,
+        "refine_camera": true,
+        "enable_spatial_continuity": true,
         "camera_direction": ""
       }
     },
@@ -1529,8 +1529,8 @@
         1762.5805674736207
       ],
       "size": [
-        384.28125,
-        578
+        400,
+        632
       ],
       "flags": {},
       "order": 26,
@@ -1921,10 +1921,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.8534322792769269,
+      "scale": 0.9387755072046207,
       "offset": [
-        1300.3834170146322,
-        -1596.973606878841
+        -1140.4185443423542,
+        -1497.257020437413
       ]
     },
     "frontendVersion": "1.57.6"
