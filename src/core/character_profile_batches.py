@@ -188,7 +188,12 @@ class Requests:
                     result = util.load_json(candidate)
                     validate_document(result, contract["schema"], contract["name"])
                     check(result)
-                except (ValueError, TypeError, KeyError, OSError):
+                except FileNotFoundError:
+                    if candidate != cache:
+                        logger.info("%s: resume cache miss (no matching request)", contract['name'])
+                    continue
+                except (ValueError, TypeError, KeyError, OSError) as exc:
+                    logger.info("%s: cache rejected (%s)", contract['name'], type(exc).__name__)
                     continue
                 if candidate != cache:
                     # Promote only revalidated hits; never modify the previous run.
@@ -197,7 +202,11 @@ class Requests:
                 self.stats["cache_hits"] += 1
                 hits = self.stats['cache_hits_by_schema']
                 hits[contract['name']] = hits.get(contract['name'], 0) + 1
+                logger.info("%s: cache hit (%s)", contract['name'],
+                            "previous run" if candidate != cache else "current run")
                 return result
+        elif self.resume_cache_dir is not None:
+            logger.info("%s: resume cache bypassed (force=True)", contract['name'])
         correction = ""
         attempts = self.args.correction_attempts + 1 if max_attempts is None else max_attempts
         for attempt in range(attempts):

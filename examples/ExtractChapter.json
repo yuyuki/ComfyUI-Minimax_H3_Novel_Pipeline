@@ -1,8 +1,8 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 202,
-  "last_link_id": 275,
+  "last_node_id": 207,
+  "last_link_id": 283,
   "nodes": [
     {
       "id": 67,
@@ -26,7 +26,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            273
+            283
           ]
         }
       ],
@@ -218,7 +218,7 @@
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
           "links": [
-            272
+            282
           ]
         },
         {
@@ -233,10 +233,10 @@
         "Node name for S&R": "LoadChapterCatalogsNode"
       },
       "widgets_values": [
-        "chapter_catalogs_gemma"
+        "chapter_catalogs"
       ],
       "widgets_values_named": {
-        "catalog_path": "chapter_catalogs_gemma"
+        "catalog_path": "chapter_catalogs"
       }
     },
     {
@@ -269,10 +269,10 @@
         "Node name for S&R": "LoadConsolidatedReferencesNode"
       },
       "widgets_values": [
-        "20261023222151\\references"
+        "20261106144428\\references_gemma"
       ],
       "widgets_values_named": {
-        "consolidated_path": "20261023222151\\references"
+        "consolidated_path": "20261106144428\\references_gemma"
       }
     },
     {
@@ -348,10 +348,10 @@
         "Node name for S&R": "LoadCinematicChaptersNode"
       },
       "widgets_values": [
-        "20261105173817\\cinematic_chapters"
+        "cinematic_chapters"
       ],
       "widgets_values_named": {
-        "cinematic_path": "20261105173817\\cinematic_chapters"
+        "cinematic_path": "cinematic_chapters"
       }
     },
     {
@@ -746,12 +746,12 @@
       "id": 162,
       "type": "CinematicChapterAdapterNode",
       "pos": [
-        -1887.0807409602282,
-        1962.8357531698794
+        -1891.7676974969424,
+        1888.7818255863367
       ],
       "size": [
-        400,
-        300
+        422.48569218823286,
+        399.779167553333
       ],
       "flags": {},
       "order": 27,
@@ -1070,7 +1070,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            255
+            278
           ]
         }
       ],
@@ -1106,7 +1106,7 @@
           "name": "chapter_selection",
           "type": "MINIMAX_CHAPTER_SELECTION",
           "links": [
-            256
+            279
           ]
         }
       ],
@@ -1146,7 +1146,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            275
+            281
           ]
         }
       ],
@@ -1182,7 +1182,7 @@
           "name": "character_evidence",
           "type": "MINIMAX_CHARACTER_EVIDENCE",
           "links": [
-            274
+            280
           ]
         },
         {
@@ -1197,10 +1197,10 @@
         "Node name for S&R": "LoadCharacterEvidenceNode"
       },
       "widgets_values": [
-        "20261024163701/character_evidence"
+        "character_evidence"
       ],
       "widgets_values_named": {
-        "evidence_path": "20261024163701/character_evidence"
+        "evidence_path": "character_evidence"
       }
     },
     {
@@ -1239,74 +1239,6 @@
       ],
       "widgets_values_named": {
         "Constant": "LmConfig"
-      }
-    },
-    {
-      "id": 186,
-      "type": "CharacterEvidenceExtractorNode",
-      "pos": [
-        -937.8041571611204,
-        2918.354134284681
-      ],
-      "size": [
-        386.82287709187,
-        378.6229697757384
-      ],
-      "flags": {},
-      "order": 32,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "lmstudio_config",
-          "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 255
-        },
-        {
-          "name": "chapter_selection",
-          "type": "MINIMAX_CHAPTER_SELECTION",
-          "link": 256
-        }
-      ],
-      "outputs": [
-        {
-          "name": "character_evidence",
-          "type": "MINIMAX_CHARACTER_EVIDENCE",
-          "links": null
-        },
-        {
-          "name": "saved_file",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "7baa283a65c3c2e14d2b6c7dbfb82dd3c2a7ae90",
-        "Node name for S&R": "CharacterEvidenceExtractorNode"
-      },
-      "widgets_values": [
-        "character_evidence",
-        5500,
-        true,
-        0.3,
-        16384,
-        2,
-        false,
-        "proper_names",
-        "",
-        ""
-      ],
-      "widgets_values_named": {
-        "out_dir": "character_evidence",
-        "chunk_chars": 5500,
-        "thinking": true,
-        "temperature": 0.3,
-        "max_tokens": 16384,
-        "correction_attempts": 2,
-        "force": false,
-        "character_scope": "proper_names",
-        "audit_thinking": "",
-        "resume_run": ""
       }
     },
     {
@@ -1401,7 +1333,7 @@
       "widgets_values": [
         "character_visual_profiles",
         "",
-        false,
+        true,
         0.12,
         8192,
         65536,
@@ -1411,7 +1343,7 @@
       "widgets_values_named": {
         "out_dir": "character_visual_profiles",
         "visual_designs_path": "",
-        "thinking": false,
+        "thinking": true,
         "temperature": 0.12,
         "max_tokens": 8192,
         "context_tokens": 65536,
@@ -1456,15 +1388,149 @@
       }
     },
     {
-      "id": 198,
-      "type": "ConsolidateReferencesNode",
+      "id": 205,
+      "type": "CharacterEvidenceExtractorNode",
       "pos": [
-        -290.10132989442195,
-        1754.03741720294
+        -929.7017722150956,
+        2913.335343159639
       ],
       "size": [
-        513.2256705534547,
-        625.5232700678182
+        384.379611293086,
+        385.3171825443308
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "lmstudio_config",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "link": 278
+        },
+        {
+          "name": "chapter_selection",
+          "type": "MINIMAX_CHAPTER_SELECTION",
+          "link": 279
+        }
+      ],
+      "outputs": [
+        {
+          "name": "character_evidence",
+          "type": "MINIMAX_CHARACTER_EVIDENCE",
+          "links": null
+        },
+        {
+          "name": "saved_file",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "c912f7bd216d67b3fc7dde17b11f7a0803413b61",
+        "Node name for S&R": "CharacterEvidenceExtractorNode"
+      },
+      "widgets_values": [
+        "character_evidence",
+        5500,
+        true,
+        0.15,
+        8192,
+        2,
+        false,
+        "proper_names",
+        false,
+        ""
+      ],
+      "widgets_values_named": {
+        "out_dir": "character_evidence",
+        "chunk_chars": 5500,
+        "thinking": true,
+        "temperature": 0.15,
+        "max_tokens": 8192,
+        "correction_attempts": 2,
+        "force": false,
+        "character_scope": "proper_names",
+        "audit_thinking": false,
+        "resume_run": ""
+      }
+    },
+    {
+      "id": 206,
+      "type": "ConsolidateCharacterProfilesNode",
+      "pos": [
+        15.671978513843328,
+        2925.7089556179703
+      ],
+      "size": [
+        429.0683090219295,
+        351.1306992144628
+      ],
+      "flags": {},
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "character_evidence",
+          "type": "MINIMAX_CHARACTER_EVIDENCE",
+          "link": 280
+        },
+        {
+          "name": "lmstudio_config",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "link": 281
+        }
+      ],
+      "outputs": [
+        {
+          "name": "character_profiles",
+          "type": "MINIMAX_CHARACTER_PROFILES",
+          "links": null
+        },
+        {
+          "name": "saved_file",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "c912f7bd216d67b3fc7dde17b11f7a0803413b61",
+        "Node name for S&R": "ConsolidateCharacterProfilesNode"
+      },
+      "widgets_values": [
+        "character_profiles",
+        true,
+        0.12,
+        16384,
+        65536,
+        0,
+        false,
+        "persistent",
+        ""
+      ],
+      "widgets_values_named": {
+        "out_dir": "character_profiles",
+        "thinking": true,
+        "temperature": 0.12,
+        "max_tokens": 16384,
+        "context_tokens": 65536,
+        "correction_attempts": 0,
+        "force": false,
+        "persistence_filter": "persistent",
+        "resume_run": ""
+      }
+    },
+    {
+      "id": 207,
+      "type": "ConsolidateReferencesNode",
+      "pos": [
+        -183.925719750167,
+        1759.7683917636589
+      ],
+      "size": [
+        384.28125,
+        578
       ],
       "flags": {},
       "order": 26,
@@ -1473,12 +1539,12 @@
         {
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
-          "link": 272
+          "link": 282
         },
         {
           "name": "lmstudio_config",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 273
+          "link": 283
         },
         {
           "name": "character_visual_profiles",
@@ -1501,7 +1567,7 @@
       ],
       "properties": {
         "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "7b7c233a6ab2e845b92cfb3c789b2df3f45aabb0",
+        "ver": "85b7a7bec82420594fe3c80a9b42fc2e58f9df59",
         "Node name for S&R": "ConsolidateReferencesNode"
       },
       "widgets_values": [
@@ -1511,18 +1577,20 @@
         4,
         3,
         2,
-        1,
+        4,
         false,
         120,
         true,
         0.12,
-        16384,
-        "references_gemma",
+        8500,
+        "references",
         0.68,
         24,
-        1,
+        3,
+        "20261108103644",
+        false,
         "cinematic photographic",
-        "character_visual_profiles_gemma\\visual_designs.json",
+        "character_visual_profiles\\visual_designs.json",
         65536
       ],
       "widgets_values_named": {
@@ -1532,85 +1600,21 @@
         "max_character_base_views": 4,
         "max_location_base_views": 3,
         "max_object_base_views": 2,
-        "asset_batch_size": 1,
+        "asset_batch_size": 4,
         "no_audit": false,
         "audit_max_entities": 120,
         "thinking": true,
         "temperature": 0.12,
-        "max_tokens": 16384,
-        "out_dir": "references_gemma",
+        "max_tokens": 8500,
+        "out_dir": "references",
         "audit_similarity": 0.68,
         "audit_cluster_size": 24,
-        "max_attempts": 1,
-        "image_style": "cinematic photographic",
-        "visual_designs_path": "character_visual_profiles_gemma\\visual_designs.json",
-        "context_tokens": 65536
-      }
-    },
-    {
-      "id": 199,
-      "type": "ConsolidateCharacterProfilesNode",
-      "pos": [
-        6.0474154138481016,
-        2912.6780124929755
-      ],
-      "size": [
-        419.7759059817477,
-        386.18073225889873
-      ],
-      "flags": {},
-      "order": 33,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "character_evidence",
-          "type": "MINIMAX_CHARACTER_EVIDENCE",
-          "link": 274
-        },
-        {
-          "name": "lmstudio_config",
-          "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 275
-        }
-      ],
-      "outputs": [
-        {
-          "name": "character_profiles",
-          "type": "MINIMAX_CHARACTER_PROFILES",
-          "links": null
-        },
-        {
-          "name": "saved_file",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "e1817e5fdca9ef9fc841120d54430b9774c9f0ff",
-        "Node name for S&R": "ConsolidateCharacterProfilesNode"
-      },
-      "widgets_values": [
-        "character_profiles",
-        true,
-        0.12,
-        16384,
-        65536,
-        2,
-        false,
-        "persistent",
-        ""
-      ],
-      "widgets_values_named": {
-        "out_dir": "character_profiles",
-        "thinking": true,
-        "temperature": 0.12,
-        "max_tokens": 16384,
-        "context_tokens": 65536,
-        "correction_attempts": 2,
+        "max_attempts": 3,
+        "resume_run": "20261108103644",
         "force": false,
-        "persistence_filter": "persistent",
-        "resume_run": ""
+        "image_style": "cinematic photographic",
+        "visual_designs_path": "character_visual_profiles\\visual_designs.json",
+        "context_tokens": 65536
       }
     }
   ],
@@ -1720,22 +1724,6 @@
       "MINIMAX_SPATIAL_CONTINUITY"
     ],
     [
-      255,
-      170,
-      0,
-      186,
-      0,
-      "MINIMAX_LMSTUDIO_CONFIG"
-    ],
-    [
-      256,
-      171,
-      0,
-      186,
-      1,
-      "MINIMAX_CHAPTER_SELECTION"
-    ],
-    [
       267,
       190,
       0,
@@ -1760,34 +1748,50 @@
       "MINIMAX_CHAPTER_SELECTION"
     ],
     [
-      272,
-      91,
+      278,
+      170,
       0,
-      198,
+      205,
       0,
-      "MINIMAX_CHAPTERS"
-    ],
-    [
-      273,
-      67,
-      0,
-      198,
-      1,
       "MINIMAX_LMSTUDIO_CONFIG"
     ],
     [
-      274,
+      279,
+      171,
+      0,
+      205,
+      1,
+      "MINIMAX_CHAPTER_SELECTION"
+    ],
+    [
+      280,
       177,
       0,
-      199,
+      206,
       0,
       "MINIMAX_CHARACTER_EVIDENCE"
     ],
     [
-      275,
+      281,
       176,
       0,
-      199,
+      206,
+      1,
+      "MINIMAX_LMSTUDIO_CONFIG"
+    ],
+    [
+      282,
+      91,
+      0,
+      207,
+      0,
+      "MINIMAX_CHAPTERS"
+    ],
+    [
+      283,
+      67,
+      0,
+      207,
       1,
       "MINIMAX_LMSTUDIO_CONFIG"
     ]
@@ -1799,8 +1803,8 @@
       "bounding": [
         -660.7944537858515,
         1682.2762560902395,
-        907.354577493125,
-        797.5674396057095
+        905.4798234853516,
+        840.6874254400252
       ],
       "color": "#3f789e",
       "flags": {}
@@ -1847,8 +1851,8 @@
       "bounding": [
         -2360.527040166144,
         1670.6522452300132,
-        896.2583383265851,
-        618.4717854940304
+        905.6322514000137,
+        640.031814169829
       ],
       "color": "#8A8",
       "flags": {}
@@ -1917,10 +1921,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.8534322792769263,
+      "scale": 0.8534322792769269,
       "offset": [
-        1497.8476014833684,
-        -1460.7802577106681
+        1300.3834170146322,
+        -1598.8483608866145
       ]
     },
     "frontendVersion": "1.57.6"

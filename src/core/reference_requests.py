@@ -28,12 +28,20 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
                     result = util.load_json(candidate)
                     validate_document(result, schema["schema"], schema["name"])
                     validate(result)
-                except (ValueError, TypeError, KeyError, OSError):
+                except FileNotFoundError:
+                    if candidate != cache:
+                        print(f"[minimax_h3_novel] {schema['name']}: resume cache miss (no matching request)", flush=True)
+                    continue
+                except (ValueError, TypeError, KeyError, OSError) as exc:
+                    print(f"[minimax_h3_novel] {schema['name']}: cache rejected ({type(exc).__name__})", flush=True)
                     continue
                 if candidate != cache:
                     util.save_json(cache, result)
-                print(f"[minimax_h3_novel] {schema['name']}: cache hit", flush=True)
+                origin = "previous run" if candidate != cache else "current run"
+                print(f"[minimax_h3_novel] {schema['name']}: cache hit ({origin})", flush=True)
                 return result
+        elif resume is not None:
+            print(f"[minimax_h3_novel] {schema['name']}: resume cache bypassed (force=True)", flush=True)
     correction = ""
     profile, settings = lmstudio_json.model_settings(client, model)
     if hasattr(args, "max_attempts"):

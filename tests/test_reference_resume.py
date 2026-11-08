@@ -31,7 +31,7 @@ def request(chat, args, prompt="chapter", model="mock"):
 
 
 @pytest.mark.parametrize("change", [None, "prompt", "model", "temperature", "force", "malformed", "semantic", "schema"])
-def test_request_cache_revalidates_and_invalidates(setup, change):
+def test_request_cache_revalidates_and_invalidates(setup, change, capsys):
     old = setup / "20261101000000/references/.cache"
     current = setup / "20261101000001/references/.cache"
     args = SimpleNamespace(cache_dir=old, temperature=0.1, max_tokens=100, max_attempts=2, force=False)
@@ -54,6 +54,15 @@ def test_request_cache_revalidates_and_invalidates(setup, change):
     assert chat.call_count == (1 if change is None else 2)
     assert saved.read_bytes() == before
     assert len(list(current.glob("*.json"))) == 1
+    log = capsys.readouterr().out
+    if change is None:
+        assert "cache hit (previous run)" in log
+    elif change == "force":
+        assert "resume cache bypassed (force=True)" in log
+    elif change in {"malformed", "semantic", "schema"}:
+        assert "cache rejected" in log
+    else:
+        assert "resume cache miss (no matching request)" in log
 
 
 def test_interrupted_node_resumes_each_stage_and_writes_current_run(setup, monkeypatch):

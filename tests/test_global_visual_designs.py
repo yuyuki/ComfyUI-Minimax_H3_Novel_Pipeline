@@ -54,7 +54,8 @@ def setup(tmp_path, monkeypatch):
     return tmp_path, data, result, chapter, entity, calls
 
 
-def test_enrichment_resumes_chapter_cache_and_force_bypasses_it(setup):
+def test_enrichment_resumes_chapter_cache_and_force_bypasses_it(setup, caplog):
+    caplog.set_level('INFO')
     root, data, result, chapter, entity, calls = setup
     args = settings(context_tokens=131072)
     first = root / '20261101000000/references'
@@ -66,11 +67,13 @@ def test_enrichment_resumes_chapter_cache_and_force_bypasses_it(setup):
     current = root / '20261101000001/references'
     integration.apply(result['visual_designs'], [chapter], [deepcopy(entity)], current, None, 'mock', args)
     assert len(calls) == count
+    assert 'cache hit (previous run)' in caplog.text
     assert list((current / '.cache/chapter1').glob('*.json'))
     assert previous == {p.relative_to(first): p.read_bytes() for p in first.rglob('*') if p.is_file()}
     args.force = True
     integration.apply(result['visual_designs'], [chapter], [deepcopy(entity)], current, None, 'mock', args)
     assert len(calls) > count
+    assert 'resume cache bypassed (force=True)' in caplog.text
 
 
 @pytest.mark.parametrize('disk', [False, True])
