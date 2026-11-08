@@ -107,7 +107,7 @@ def apply(designs, chapters, registry, output, client, model, args):
             raise ValueError('source_facts differs from validated physical traits; edit character_profiles and rerun the physical generator.')
     local_results, imported, assigned_profiles, assigned_registry = {}, {}, {}, {}
     required_mappings = set()
-    options = SimpleNamespace(**{**vars(args), 'force': False,
+    options = SimpleNamespace(**{**vars(args), 'force': getattr(args, 'force', False),
                                  'correction_attempts': getattr(args, 'max_attempts', 3) - 1})
     for chapter_index, chapter in enumerate(chapters):
         progress.report(chapter_index / len(chapters))
@@ -134,6 +134,8 @@ def apply(designs, chapters, registry, output, client, model, args):
         cid = chapter['chapter_id']
         requests = Requests(output, client, model, options)
         requests.cache_dir = output / '.cache' / cid
+        if requests.resume_cache_dir is not None:
+            requests.resume_cache_dir = requests.resume_cache_dir / cid
         mapped, proposed, contested = {}, {}, set()
         # Contextual comparisons, never registry/profile ID equality or name-only joins.
         for entity in registry:

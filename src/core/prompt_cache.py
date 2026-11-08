@@ -7,7 +7,8 @@ from . import lmstudio_json
 
 def fingerprint(model, args, *content, client=None):
     settings = {key: value for key, value in vars(args).items()
-                if key not in {"out_dir", "force"} and isinstance(value, (str, int, float, bool, type(None)))}
+                if key not in {"out_dir", "force", "cache_dir", "resume_cache_dir"}
+                and isinstance(value, (str, int, float, bool, type(None)))}
     backend = {key: getattr(lmstudio_json, key) for key in (
         "THINKING_ENABLED", "CHAT_BACKEND", "QWEN35_LENGTH_RETRIES", "QWEN35_TOP_K",
         "QWEN35_MIN_P", "QWEN35_REPEAT_PENALTY",

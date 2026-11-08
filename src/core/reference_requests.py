@@ -1,7 +1,8 @@
 """Bounded semantic validation on top of the existing JSON request retries."""
 import json
 
-from . import lmstudio_json
+from . import lmstudio_json, prompt_cache, util
+from .editable_schemas import validate_document
 from .lmstudio_pipeline import comfy_interrupt_check
 
 
@@ -11,6 +12,28 @@ class InvalidResponse(ValueError):
 
 def validated_request(chat, client, model, system, user, schema, args, validate, *, include_previous=False):
     original = user if isinstance(user, str) else json.dumps(user, ensure_ascii=False)
+    cache_dir = getattr(args, "cache_dir", None)
+    cache = None
+    if cache_dir is not None:
+        key = prompt_cache.fingerprint(model, args, "reference-decisions-v1", system, original, schema, client=client)
+        cache = cache_dir / f"{key}.json"
+        candidates = [cache]
+        resume = getattr(args, "resume_cache_dir", None)
+        if resume is not None:
+            candidates.append(resume / cache.name)
+        comfy_interrupt_check()
+        if not getattr(args, "force", False):
+            for candidate in candidates:
+                try:
+                    result = util.load_json(candidate)
+                    validate_document(result, schema["schema"], schema["name"])
+                    validate(result)
+                except (ValueError, TypeError, KeyError, OSError):
+                    continue
+                if candidate != cache:
+                    util.save_json(cache, result)
+                print(f"[minimax_h3_novel] {schema['name']}: cache hit", flush=True)
+                return result
     correction = ""
     profile, settings = lmstudio_json.model_settings(client, model)
     if hasattr(args, "max_attempts"):
@@ -23,6 +46,8 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
         result = chat(client, model, system, original + correction, schema, args.temperature, args.max_tokens)
         try:
             validate(result)
+            if cache is not None:
+                util.save_json(cache, result)
             return result
         except ValueError as exc:
             if attempt == retries:

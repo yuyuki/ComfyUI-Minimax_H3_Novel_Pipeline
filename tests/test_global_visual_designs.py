@@ -54,6 +54,25 @@ def setup(tmp_path, monkeypatch):
     return tmp_path, data, result, chapter, entity, calls
 
 
+def test_enrichment_resumes_chapter_cache_and_force_bypasses_it(setup):
+    root, data, result, chapter, entity, calls = setup
+    args = settings(context_tokens=131072)
+    first = root / '20261101000000/references'
+    integration.apply(result['visual_designs'], [chapter], [deepcopy(entity)], first, None, 'mock', args)
+    count = len(calls)
+    assert count > 0
+    previous = {p.relative_to(first): p.read_bytes() for p in first.rglob('*') if p.is_file()}
+    args.resume_cache_dir = first / '.cache'
+    current = root / '20261101000001/references'
+    integration.apply(result['visual_designs'], [chapter], [deepcopy(entity)], current, None, 'mock', args)
+    assert len(calls) == count
+    assert list((current / '.cache/chapter1').glob('*.json'))
+    assert previous == {p.relative_to(first): p.read_bytes() for p in first.rglob('*') if p.is_file()}
+    args.force = True
+    integration.apply(result['visual_designs'], [chapter], [deepcopy(entity)], current, None, 'mock', args)
+    assert len(calls) > count
+
+
 @pytest.mark.parametrize('disk', [False, True])
 @pytest.mark.parametrize('mapped', [False, True])
 def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, disk, mapped):

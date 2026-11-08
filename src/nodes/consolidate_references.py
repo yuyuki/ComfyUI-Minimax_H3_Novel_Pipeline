@@ -46,6 +46,10 @@ class ConsolidateReferencesNode:
             "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
             "max_attempts": ("INT", {"default": 3, "min": 1, "max": 20, "tooltip": "Maximum validation attempts per consolidation decision, including the first response. 1 disables correction attempts. JSON transport retries use the LM Studio configuration."}),
         }, "optional": {
+            "resume_run": ("STRING", {"default": "", "tooltip":
+                "Reuse validated requests from a previous timestamped run with the same out_dir. "
+                "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
+            "force": ("BOOLEAN", {"default": False}),
             "character_visual_profiles": ("MINIMAX_CHARACTER_VISUAL_PROFILES",),
             "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional chapter or global visual_designs.json inside output/minimax_h3_novel; only matching chapter entities are imported. Leave empty on the first run; consolidation saves this file automatically."}),
@@ -87,6 +91,17 @@ class ConsolidateReferencesNode:
         if character_visual_profiles is not None and path_designs and 'character_profiles' in path_designs:
             raise ValueError('Choose either character_visual_profiles or a character visual_designs_path.')
         output = stage_output(lmstudio_config, out_dir.strip())
+        resume_run = params.get("resume_run", "")
+        if not isinstance(resume_run, str):
+            raise ValueError("resume_run must be a previous timestamped run folder name.")
+        resume_run = resume_run.strip()
+        resume_cache_dir = None
+        if resume_run:
+            resume_cache_dir = stage_output({"run_folder": resume_run}, out_dir.strip()) / ".cache"
+            if resume_cache_dir == output / ".cache":
+                raise ValueError("resume_run must refer to a previous run, not the current run.")
+            if not resume_cache_dir.is_dir():
+                raise ValueError("Previous run cache does not exist; use the same out_dir as that run.")
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         pipeline = lmstudio_pipeline.load("consolidate")
@@ -105,6 +120,7 @@ class ConsolidateReferencesNode:
                 raise ValueError("Unknown image style.")
             _log(f"LM Studio consolidation: model={resolved_model}, chapters={len(chapters)}")
             args.thinking = bool(thinking)
+            args.force = bool(params.get("force", False))
             snapshot = configuration_snapshot.start(
                 output, "consolidate", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapter_catalogs_sha256": configuration_snapshot.content_digest(chapters),
@@ -112,13 +128,20 @@ class ConsolidateReferencesNode:
                         if character_visual_profiles is not None else None,
                         "chapter_ids": [chapter["chapter_id"] for chapter in chapters],
                         "visual_designs_sha256": configuration_snapshot.file_digest(designs_path) if designs_path else None},
-                extra={"visual_designs_path": str(designs_path) if designs_path else ""},
+                extra={"visual_designs_path": str(designs_path) if designs_path else "", "resume_run": resume_run},
             )
+            args.cache_dir = output / ".cache"
+            if resume_cache_dir is not None:
+                args.resume_cache_dir = resume_cache_dir
             export_schemas(output)
             registry: list[dict[str, Any]] = []
             for chapter in progress.steps(chapters, 0, 0.1, label="Chapter reconciliation"):
                 lmstudio_pipeline.comfy_interrupt_check()
+                args.cache_dir = util.output_path(output / ".cache" / chapter["chapter_id"])
+                args.resume_cache_dir = util.output_path(resume_cache_dir / chapter["chapter_id"]) if resume_cache_dir else None
                 registry = pipeline.reconcile_chapter(client, resolved_model, chapter, registry, args)
+            args.cache_dir = output / ".cache"
+            args.resume_cache_dir = resume_cache_dir
             lmstudio_pipeline.comfy_interrupt_check()
             _log("Auditing reference identities")
             with progress.scope(0.1, 0.15):

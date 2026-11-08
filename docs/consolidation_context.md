@@ -28,3 +28,18 @@ Increase `context_tokens` only if LM Studio has sufficient loaded context, or re
 
 After updating the plugin, restart ComfyUI and reload the workflow to expose the new
 widget. The bundled ExtractChapter workflow explicitly sets it to 65,536.
+
+## Resume a previous consolidation
+
+Set `resume_run` to the previous run's 14-digit folder name, for example
+`20261031202452`, and keep the same `out_dir`. Consolidation revalidates matching
+cached requests from `<resume_run>/<out_dir>/.cache/` and copies valid hits into
+the current run. The previous run stays unchanged. Reconciliation and character
+enrichment caches use `.cache/<chapter_id>/`; shared audit, design and asset
+requests use `.cache/` directly.
+
+Matching depends on the request, schema, model and effective settings. Missing,
+invalid or changed requests are recomputed. `force` ignores both caches. Leave
+`resume_run` empty for a fresh run. Runs made before this feature can only reuse
+the character enrichment caches they already contain. Restart ComfyUI and reload
+the workflow after updating to expose the new controls.

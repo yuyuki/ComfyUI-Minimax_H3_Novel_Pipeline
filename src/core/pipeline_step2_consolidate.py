@@ -6,6 +6,7 @@ from .reference_timeline import merge_timeline, validate_catalogs
 from . import temporal_context
 
 import argparse
+from copy import copy
 import difflib
 import json
 import logging
@@ -551,14 +552,20 @@ def audit_registry(
     if args.no_audit or len(registry) < 2:
         return registry
 
+    audit_args = copy(args)
+    audit_args.temperature = min(args.temperature, 0.10)
+
+    def request_audit(entities):
+        return validated_request(
+            chat_json, client, model, AUDIT_SYSTEM,
+            json.dumps([compact_global(e) for e in entities], ensure_ascii=False, indent=2),
+            AUDIT_SCHEMA, audit_args, lambda result: None,
+        )
+
     # Small registries keep the old whole-registry audit because it is cheap and gives
     # the LLM maximum context. Large registries switch automatically to bounded clusters.
     if len(registry) <= args.audit_max_entities:
-        result = chat_json(
-            client, model, AUDIT_SYSTEM,
-            json.dumps([compact_global(e) for e in registry], ensure_ascii=False, indent=2),
-            AUDIT_SCHEMA, min(args.temperature, 0.10), args.max_tokens,
-        )
+        result = request_audit(registry)
         removed = _apply_audit_result(registry, result)
         return [e for e in registry if e["global_id"] not in removed]
 
@@ -573,11 +580,7 @@ def audit_registry(
         if len(active_ids) < 2:
             continue
         print(f"  audit cluster {i}/{len(clusters)} ({len(active_ids)} entities)")
-        result = chat_json(
-            client, model, AUDIT_SYSTEM,
-            json.dumps([compact_global(by_id[x]) for x in active_ids], ensure_ascii=False, indent=2),
-            AUDIT_SCHEMA, min(args.temperature, 0.10), args.max_tokens,
-        )
+        result = request_audit([by_id[x] for x in active_ids])
         removed = _apply_audit_result([by_id[x] for x in active_ids], result)
         removed_all.update(removed)
     if removed_all:
