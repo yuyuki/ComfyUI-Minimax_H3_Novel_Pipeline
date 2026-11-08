@@ -390,7 +390,7 @@ def test_h3_planning_and_prompts_receive_only_current_states_and_stable_facts(tm
     monkeypatch.setattr(generate, 'validate_prompt', lambda *a: generate.Validation(True, [], 100))
     monkeypatch.setattr(generate, 'check_prompt_continuity', lambda *a: [])
     args = SimpleNamespace(out_dir=tmp_path / 'prompts', force=False, max_scenes=0,
-                           duration=8, max_shots=1, repair_attempts=0, refine_camera=False)
+                           duration=8, max_shots=1, max_tokens=8000, repair_attempts=0, refine_camera=False)
     # Run twice: cached planning must preserve the same scene-local constraints.
     for _ in range(2):
         manifest = generate.process_chapter(chapter, refs, None, 'mock', args)

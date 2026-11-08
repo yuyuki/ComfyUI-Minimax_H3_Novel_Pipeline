@@ -36,14 +36,14 @@ def test_review_batches_cover_all_history_future_and_distant_conflicts(monkeypat
         payload = json.loads(user)
         assert context.fits(system, payload, schema)
         assert schema == generate.CONTINUITY_REVIEW_SCHEMA and schema["strict"]
-        assert max_tokens == 2400
+        assert max_tokens == 9000
         assert payload["current_prompt"] == "current wording"
         calls.append(payload)
         return {"errors": ["Common correction", f"Correction {len(calls)}"]}
 
     monkeypatch.setattr(generate, "chat_json", chat)
     errors = generate.check_prompt_continuity(None, "gemma", scene(-1), "current wording",
-                                               {}, {}, history, future)
+                                               {}, {}, history, future, 9000)
     assert len(calls) > 2
     assert [p["prompt"] for batch in calls for p in batch["previous_final_prompts"]] == [p["prompt"] for p in history]
     assert [s["title"] for batch in calls for s in batch["future_requirements"]] == [s.title for s in future]
@@ -57,6 +57,7 @@ def test_resolver_batches_carry_draft_and_original_previous_state(monkeypatch):
         payload = json.loads(user)
         assert context.fits(system, payload, schema)
         assert schema == generate.CONTINUITY_SCHEMA and schema["strict"]
+        assert max_tokens == 9000
         assert payload["previous_final_state"] == ["original state"]
         if calls:
             assert payload["draft_plan"]["warnings"] == [f"constraint {i}" for i in range(len(calls))]
@@ -66,7 +67,7 @@ def test_resolver_batches_carry_draft_and_original_previous_state(monkeypatch):
 
     monkeypatch.setattr(generate, "chat_json", chat)
     future = [scene(i) for i in range(40)]
-    result = generate.resolve_continuity(None, "gemma", scene(-1), {"final_state": ["original state"]}, future, {})
+    result = generate.resolve_continuity(None, "gemma", scene(-1), {"final_state": ["original state"]}, future, {}, 9000)
     assert len(calls) > 2
     assert [s["title"] for batch in calls for s in batch["future_requirements"]] == [s.title for s in future]
     assert len(result["warnings"]) == len(calls)
@@ -79,7 +80,7 @@ def test_single_oversized_record_fails_explicitly_without_network(monkeypatch, o
     monkeypatch.setattr(generate, "chat_json", unexpected)
     with pytest.raises(ValueError, match="no evidence was discarded"):
         generate.check_prompt_continuity(None, "gemma", scene(0, 50000 if oversized_current else 1),
-                                         "prompt", {}, {}, [], [] if oversized_current else [scene(1, 50000)])
+                                         "prompt", {}, {}, [], [] if oversized_current else [scene(1, 50000)], 8000)
 
 
 def test_later_batch_failure_cannot_be_reported_as_success(monkeypatch):
@@ -92,7 +93,7 @@ def test_later_batch_failure_cannot_be_reported_as_success(monkeypatch):
     monkeypatch.setattr(generate, "chat_json", chat)
     with pytest.raises(ValueError, match="invalid scene continuity review"):
         generate.check_prompt_continuity(None, "gemma", scene(-1), "prompt", {}, {}, [],
-                                         [scene(i) for i in range(30)])
+                                         [scene(i) for i in range(30)], 8000)
     assert len(calls) == 2
 
 

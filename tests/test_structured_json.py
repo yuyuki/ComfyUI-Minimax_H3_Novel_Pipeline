@@ -260,7 +260,7 @@ def test_reasoning_only_length_failure_has_safe_diagnostics(monkeypatch, capsys)
     assert stream.closed
 
 
-@pytest.mark.parametrize("model", ["qwen3.5", "Qwen3.8-9B"])
+@pytest.mark.parametrize("model", ["qwen3.5", "Qwen3.8-9B", "gemma", "mistral", "gpt-oss"])
 @pytest.mark.parametrize("content", [None, '{"value":'])
 @pytest.mark.parametrize("field", ["reasoning_content", "reasoning"])
 def test_thinking_length_retry_reserves_room_for_json(monkeypatch, model, content, field):
@@ -271,12 +271,30 @@ def test_thinking_length_retry_reserves_room_for_json(monkeypatch, model, conten
     )])])
     second = Stream(['{"value":"ok"}'])
     client, create = client_for(first, second)
-    assert lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.1, 3000) == {"value": "ok"}
-    assert [call.kwargs["max_tokens"] for call in create.call_args_list] == [3000, 16384]
+    profile, settings = lmstudio_json.model_settings(client, model)
+    _, expected_extra, _ = profile.request_settings(model, "system", "user", settings)
+    assert lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.1, 2400) == {"value": "ok"}
+    assert [call.kwargs["max_tokens"] for call in create.call_args_list] == [2400, 16384]
     for call in create.call_args_list:
-        assert call.kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+        assert call.kwargs["extra_body"] == expected_extra
+        assert call.kwargs["response_format"]["type"] == "json_schema"
         assert call.kwargs["response_format"]["json_schema"] == SCHEMA
     assert first.closed and second.closed
+
+
+@pytest.mark.parametrize("model", ["gemma", "mistral", "gpt-oss"])
+def test_non_qwen_reasoning_exhaustion_stops_after_one_larger_retry(monkeypatch, model, capsys):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", True)
+    event = SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=None, reasoning_content="private reasoning"), finish_reason="length",
+    )])
+    streams = [Stream([event]), Stream([event])]
+    client, create = client_for(*streams)
+    with pytest.raises(lmstudio_json.StructuredOutputLengthError, match="Thinking exhausted the output budget") as error:
+        lmstudio_json.chat_json(client, model, "system", "user", SCHEMA, 0.1, 2400)
+    assert [call.kwargs["max_tokens"] for call in create.call_args_list] == [2400, 16384]
+    assert all(stream.closed for stream in streams)
+    assert "private reasoning" not in capsys.readouterr().out + str(error.value)
 
 
 @pytest.mark.parametrize("budget,expected", [

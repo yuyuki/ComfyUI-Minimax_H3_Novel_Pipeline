@@ -22,7 +22,7 @@ def test_resolver_receives_future_and_previous_without_mixing_facts(monkeypatch)
 
     monkeypatch.setattr(generate, "chat_json", fake_chat)
     generate.resolve_continuity(None, "qwen", scene, {"final_state": ["Indy is suspended"]},
-                                [future], {"tablet.wall": "right wall"})
+                                [future], {"tablet.wall": "right wall"}, 8000)
     assert captured["previous_final_state"] == ["Indy is suspended"]
     assert captured["future_requirements"][0]["visual_event"] == "Indy faces tablet"
     assert captured["operator_anchors"]["tablet.wall"] == "right wall"
@@ -50,9 +50,9 @@ def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
     monkeypatch.setattr(generate, "chat_json", fake_chat)
     future = [later] * 7
     designs = {"entities": [{"global_id": "room", "added_details": {"layout": "Tablet on the right wall"}}]}
-    generate.resolve_continuity(None, "qwen", scene, {}, future, {}, visual_designs=designs)
+    generate.resolve_continuity(None, "qwen", scene, {}, future, {}, 8000, visual_designs=designs)
     errors = generate.check_prompt_continuity(None, "qwen", scene, "He looks left",
-                                              {"subjects": ["tablet"]}, {}, history, future)
+                                              {"subjects": ["tablet"]}, {}, history, future, 8000)
     assert len(captured[0]["future_requirements"]) == 7
     assert captured[0]["visual_designs"] == designs
     assert captured[0]["future_requirements"][-1]["source_excerpt"].endswith("tablet is on the right")
@@ -67,7 +67,7 @@ def test_malformed_review_is_not_treated_as_success(monkeypatch, result):
     scene = generate.Scene("Now", "Source", "Event", "", [], [], [], False, "")
     monkeypatch.setattr(generate, "chat_json", lambda *args: result)
     with pytest.raises(ValueError, match="invalid scene continuity review"):
-        generate.check_prompt_continuity(None, "qwen", scene, "prompt", {}, {}, [], [])
+        generate.check_prompt_continuity(None, "qwen", scene, "prompt", {}, {}, [], [], 8000)
 
 
 @pytest.mark.parametrize("resolved", [True, False])
@@ -77,7 +77,8 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
     checked = []
     history = [{"prompt": "Tablet on right"}]
 
-    def review(client, model, scene, prompt, bindings, continuity, previous, future, camera):
+    def review(client, model, scene, prompt, bindings, continuity, previous, future, max_tokens, camera):
+        assert max_tokens == 9000
         checked.append(prompt)
         return [] if resolved and prompt == "corrected" else ["Wrong eyeline"]
 
@@ -91,7 +92,7 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
     monkeypatch.setattr(generate, "repair_prompt", repair)
     monkeypatch.setattr(generate, "validate_prompt", lambda *args: generate.Validation(True, [], 100))
     prompt, validation, errors, attempts = generate.review_and_repair_continuity(
-        None, "qwen", scene, "wrong", {}, {}, history, [], Namespace(repair_attempts=1, duration=8),
+        None, "qwen", scene, "wrong", {}, {}, history, [], Namespace(repair_attempts=1, duration=8, max_tokens=9000),
     )
     assert checked == ["wrong", "corrected"]
     assert prompt == "corrected" and attempts == 1
@@ -115,7 +116,7 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
                 "picture_input_order": [], "audio": []}
     args = SimpleNamespace(out_dir=tmp_path / "output", force=False, chunk_chars=3000,
                            overlap_paragraphs=0, max_scenes=0, duration=8, max_shots=1,
-                           spatial_anchors={}, repair_attempts=1, refine_camera=True)
+                           max_tokens=9000, spatial_anchors={}, repair_attempts=1, refine_camera=True)
     monkeypatch.setattr(generate, "plan_scenes", lambda *a: scenes)
     designs = {"entities": [{"global_id": "hero", "added_details": {"hair": "Black hair"}}]}
 
@@ -125,6 +126,7 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
     def resolve(*a):
         assert not external_plan, "The supplied plan must not be replaced by another model call"
         assert a[-1] == designs
+        assert a[-3] == 9000
         return {k: [] for k in generate.CONTINUITY_FIELDS}
 
     monkeypatch.setattr(generate, "resolve_continuity", resolve)
@@ -139,7 +141,8 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
 
     reviews = []
 
-    def review(client, model, scene, prompt, bindings, continuity, previous, future, camera):
+    def review(client, model, scene, prompt, bindings, continuity, previous, future, max_tokens, camera):
+        assert max_tokens == 9000
         assert continuity["visual_designs"] == designs
         if external_plan:
             assert continuity["sequence_plan"]["camera"] == "right"

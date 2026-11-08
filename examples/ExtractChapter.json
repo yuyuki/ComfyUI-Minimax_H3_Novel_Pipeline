@@ -1,8 +1,8 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 208,
-  "last_link_id": 285,
+  "last_node_id": 212,
+  "last_link_id": 297,
   "nodes": [
     {
       "id": 67,
@@ -26,7 +26,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            285
+            291
           ]
         }
       ],
@@ -64,7 +64,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            240
+            297
           ]
         }
       ],
@@ -218,7 +218,7 @@
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
           "links": [
-            284
+            290
           ]
         },
         {
@@ -259,7 +259,7 @@
           "name": "consolidated_references",
           "type": "MINIMAX_REGISTRY",
           "links": [
-            238
+            293
           ]
         }
       ],
@@ -380,7 +380,7 @@
           "name": "spatial_continuity",
           "type": "MINIMAX_SPATIAL_CONTINUITY",
           "links": [
-            242
+            296
           ]
         },
         {
@@ -428,7 +428,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            237
+            292
           ]
         }
       ],
@@ -505,7 +505,7 @@
           "name": "MINIMAX_CHAPTER_SELECTION",
           "type": "MINIMAX_CHAPTER_SELECTION",
           "links": [
-            241
+            295
           ]
         }
       ],
@@ -542,7 +542,7 @@
           "type": "MINIMAX_REGISTRY",
           "links": [
             228,
-            239
+            294
           ]
         }
       ],
@@ -862,163 +862,6 @@
         "force": false,
         "out_dir": "chapter_catalogs",
         "default_temporal_context": "1922"
-      }
-    },
-    {
-      "id": 165,
-      "type": "SpatialContinuityNode",
-      "pos": [
-        709.358549121664,
-        1768.4666242500925
-      ],
-      "size": [
-        343.04296875,
-        170
-      ],
-      "flags": {},
-      "order": 29,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "consolidated_references",
-          "type": "MINIMAX_REGISTRY",
-          "link": 238
-        },
-        {
-          "name": "lmstudio_config",
-          "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 237
-        }
-      ],
-      "outputs": [
-        {
-          "name": "spatial_continuity",
-          "type": "MINIMAX_SPATIAL_CONTINUITY",
-          "links": null
-        },
-        {
-          "name": "spatial_json",
-          "type": "STRING",
-          "links": null
-        },
-        {
-          "name": "summary",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "34348942731573286ca21dfe1ca99d40a0b97459",
-        "Node name for S&R": "SpatialContinuityNode"
-      },
-      "widgets_values": [
-        true,
-        0.1,
-        5000,
-        "spatial_continuity"
-      ],
-      "widgets_values_named": {
-        "thinking": true,
-        "temperature": 0.1,
-        "max_tokens": 5000,
-        "out_dir": "spatial_continuity"
-      }
-    },
-    {
-      "id": 166,
-      "type": "GenerateH3PromptsNode",
-      "pos": [
-        2131.2800121245346,
-        1778.960887121192
-      ],
-      "size": [
-        400,
-        508
-      ],
-      "flags": {},
-      "order": 35,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "consolidated_references",
-          "type": "MINIMAX_REGISTRY",
-          "link": 239
-        },
-        {
-          "name": "lmstudio_config",
-          "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 240
-        },
-        {
-          "name": "chapter_selection",
-          "type": "MINIMAX_CHAPTER_SELECTION",
-          "link": 241
-        },
-        {
-          "name": "spatial_continuity",
-          "shape": 7,
-          "type": "MINIMAX_SPATIAL_CONTINUITY",
-          "link": 242
-        }
-      ],
-      "outputs": [
-        {
-          "name": "prompts",
-          "type": "MINIMAX_PROMPTS",
-          "links": null
-        },
-        {
-          "name": "prompt_text",
-          "type": "STRING",
-          "links": null
-        },
-        {
-          "name": "image_prompt_text",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "34348942731573286ca21dfe1ca99d40a0b97459",
-        "Node name for S&R": "GenerateH3PromptsNode"
-      },
-      "widgets_values": [
-        false,
-        8,
-        1,
-        4,
-        0,
-        8,
-        4,
-        3,
-        0.38,
-        8000,
-        2,
-        false,
-        "h3_prompts",
-        true,
-        true,
-        ""
-      ],
-      "widgets_values_named": {
-        "thinking": false,
-        "duration": 8,
-        "max_shots": 1,
-        "scenes_per_chunk": 4,
-        "max_scenes": 0,
-        "max_pictures": 8,
-        "max_pictures_per_subject": 4,
-        "max_audio": 3,
-        "temperature": 0.38,
-        "max_tokens": 8000,
-        "repair_attempts": 2,
-        "force": false,
-        "out_dir": "h3_prompts",
-        "refine_camera": true,
-        "enable_spatial_continuity": true,
-        "camera_direction": ""
       }
     },
     {
@@ -1522,15 +1365,15 @@
       }
     },
     {
-      "id": 208,
+      "id": 210,
       "type": "ConsolidateReferencesNode",
       "pos": [
-        -171.73974718235962,
-        1762.5805674736207
+        -247.4198305935966,
+        1760.0503273074762
       ],
       "size": [
-        400,
-        632
+        476.12973201125124,
+        723.0738236315033
       ],
       "flags": {},
       "order": 26,
@@ -1539,12 +1382,12 @@
         {
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
-          "link": 284
+          "link": 290
         },
         {
           "name": "lmstudio_config",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 285
+          "link": 291
         },
         {
           "name": "character_visual_profiles",
@@ -1567,7 +1410,7 @@
       ],
       "properties": {
         "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "6dbc4c713dfda06d7580b4fb99fc6e99b765fc46",
+        "ver": "8bdf7a9f7363ced5d807a180102aba997e392f7a",
         "Node name for S&R": "ConsolidateReferencesNode"
       },
       "widgets_values": [
@@ -1582,12 +1425,12 @@
         120,
         true,
         0.12,
-        8500,
+        8192,
         "references",
         0.68,
         24,
-        2,
-        "20261108103644",
+        3,
+        "",
         false,
         "cinematic photographic",
         "character_visual_profiles\\visual_designs.json",
@@ -1605,16 +1448,175 @@
         "audit_max_entities": 120,
         "thinking": true,
         "temperature": 0.12,
-        "max_tokens": 8500,
+        "max_tokens": 8192,
         "out_dir": "references",
         "audit_similarity": 0.68,
         "audit_cluster_size": 24,
-        "max_attempts": 2,
-        "resume_run": "20261108103644",
+        "max_attempts": 3,
+        "resume_run": "",
         "force": false,
         "image_style": "cinematic photographic",
         "visual_designs_path": "character_visual_profiles\\visual_designs.json",
         "context_tokens": 65536
+      }
+    },
+    {
+      "id": 211,
+      "type": "SpatialContinuityNode",
+      "pos": [
+        689.9678226677939,
+        1771.2990301473194
+      ],
+      "size": [
+        343.04296875,
+        170
+      ],
+      "flags": {},
+      "order": 29,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "consolidated_references",
+          "type": "MINIMAX_REGISTRY",
+          "link": 293
+        },
+        {
+          "name": "lmstudio_config",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "link": 292
+        }
+      ],
+      "outputs": [
+        {
+          "name": "spatial_continuity",
+          "type": "MINIMAX_SPATIAL_CONTINUITY",
+          "links": null
+        },
+        {
+          "name": "spatial_json",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "summary",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "8bdf7a9f7363ced5d807a180102aba997e392f7a",
+        "Node name for S&R": "SpatialContinuityNode"
+      },
+      "widgets_values": [
+        true,
+        0.1,
+        8192,
+        "spatial_continuity"
+      ],
+      "widgets_values_named": {
+        "thinking": true,
+        "temperature": 0.1,
+        "max_tokens": 8192,
+        "out_dir": "spatial_continuity"
+      }
+    },
+    {
+      "id": 212,
+      "type": "GenerateH3PromptsNode",
+      "pos": [
+        2101.3221262661314,
+        1768.4868991356589
+      ],
+      "size": [
+        446.86961646843804,
+        657.474096885944
+      ],
+      "flags": {},
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "consolidated_references",
+          "type": "MINIMAX_REGISTRY",
+          "link": 294
+        },
+        {
+          "name": "lmstudio_config",
+          "type": "MINIMAX_LMSTUDIO_CONFIG",
+          "link": 297
+        },
+        {
+          "name": "chapter_selection",
+          "type": "MINIMAX_CHAPTER_SELECTION",
+          "link": 295
+        },
+        {
+          "name": "spatial_continuity",
+          "shape": 7,
+          "type": "MINIMAX_SPATIAL_CONTINUITY",
+          "link": 296
+        }
+      ],
+      "outputs": [
+        {
+          "name": "prompts",
+          "type": "MINIMAX_PROMPTS",
+          "links": null
+        },
+        {
+          "name": "prompt_text",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "image_prompt_text",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "8bdf7a9f7363ced5d807a180102aba997e392f7a",
+        "Node name for S&R": "GenerateH3PromptsNode"
+      },
+      "widgets_values": [
+        true,
+        8,
+        1,
+        4,
+        0,
+        8,
+        4,
+        3,
+        0.38,
+        8192,
+        2,
+        false,
+        "h3_prompts",
+        true,
+        true,
+        "",
+        ""
+      ],
+      "widgets_values_named": {
+        "thinking": true,
+        "duration": 8,
+        "max_shots": 1,
+        "scenes_per_chunk": 4,
+        "max_scenes": 0,
+        "max_pictures": 8,
+        "max_pictures_per_subject": 4,
+        "max_audio": 3,
+        "temperature": 0.38,
+        "max_tokens": 8192,
+        "repair_attempts": 2,
+        "force": false,
+        "out_dir": "h3_prompts",
+        "refine_camera": true,
+        "enable_spatial_continuity": true,
+        "camera_direction": "",
+        "resume_run": ""
       }
     }
   ],
@@ -1676,54 +1678,6 @@
       "MINIMAX_CINEMATIC_CHAPTERS"
     ],
     [
-      237,
-      141,
-      0,
-      165,
-      1,
-      "MINIMAX_LMSTUDIO_CONFIG"
-    ],
-    [
-      238,
-      96,
-      0,
-      165,
-      0,
-      "MINIMAX_REGISTRY"
-    ],
-    [
-      239,
-      154,
-      0,
-      166,
-      0,
-      "MINIMAX_REGISTRY"
-    ],
-    [
-      240,
-      68,
-      0,
-      166,
-      1,
-      "MINIMAX_LMSTUDIO_CONFIG"
-    ],
-    [
-      241,
-      149,
-      0,
-      166,
-      2,
-      "MINIMAX_CHAPTER_SELECTION"
-    ],
-    [
-      242,
-      140,
-      0,
-      166,
-      3,
-      "MINIMAX_SPATIAL_CONTINUITY"
-    ],
-    [
       267,
       190,
       0,
@@ -1780,18 +1734,66 @@
       "MINIMAX_LMSTUDIO_CONFIG"
     ],
     [
-      284,
+      290,
       91,
       0,
-      208,
+      210,
       0,
       "MINIMAX_CHAPTERS"
     ],
     [
-      285,
+      291,
       67,
       0,
-      208,
+      210,
+      1,
+      "MINIMAX_LMSTUDIO_CONFIG"
+    ],
+    [
+      292,
+      141,
+      0,
+      211,
+      1,
+      "MINIMAX_LMSTUDIO_CONFIG"
+    ],
+    [
+      293,
+      96,
+      0,
+      211,
+      0,
+      "MINIMAX_REGISTRY"
+    ],
+    [
+      294,
+      154,
+      0,
+      212,
+      0,
+      "MINIMAX_REGISTRY"
+    ],
+    [
+      295,
+      149,
+      0,
+      212,
+      2,
+      "MINIMAX_CHAPTER_SELECTION"
+    ],
+    [
+      296,
+      140,
+      0,
+      212,
+      3,
+      "MINIMAX_SPATIAL_CONTINUITY"
+    ],
+    [
+      297,
+      68,
+      0,
+      212,
       1,
       "MINIMAX_LMSTUDIO_CONFIG"
     ]
@@ -1921,10 +1923,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.9387755072046207,
+      "scale": 0.8534322792769279,
       "offset": [
-        -1140.4185443423542,
-        -1497.257020437413
+        -886.7988437341384,
+        -1499.7668947331647
       ]
     },
     "frontendVersion": "1.57.6"

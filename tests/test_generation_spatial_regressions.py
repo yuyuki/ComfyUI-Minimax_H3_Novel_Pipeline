@@ -54,7 +54,7 @@ def test_continuity_repair_does_not_replace_complete_prompt_with_missing_descrip
     monkeypatch.setattr(step, 'validate_prompt', lambda prompt, *a: step.Validation(
         prompt == 'complete', [] if prompt == 'complete' else ['Missing detailed_description'], 400))
     prompt, validation, errors, attempts = step.review_and_repair_continuity(
-        None, 'model', scene, 'complete', {}, {}, [], [], SimpleNamespace(repair_attempts=1, duration=8))
+        None, 'model', scene, 'complete', {}, {}, [], [], SimpleNamespace(repair_attempts=1, duration=8, max_tokens=8000))
     assert prompt == 'complete' and attempts == 1
     assert not validation.ok and errors == ['Wrong eyeline']
     assert validation.errors == ['Scene continuity: Wrong eyeline']
@@ -66,7 +66,7 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
     refs = cinematic_registry(path, visual_designs=designs)
     spatial_plan = {'sequence': 1, 'camera': 'right', 'future_detail': 'Tablet revealed'}
     args = SimpleNamespace(out_dir=tmp_path / 'generated', force=False, max_scenes=0,
-                           duration=8, repair_attempts=0, spatial_anchors={},
+                           duration=8, repair_attempts=0, max_tokens=8000, spatial_anchors={},
                            spatial_plan={'chapters': {'chapter': {'sequences': [spatial_plan]}}})
     chunks, histories, generations = [], [], []
 
@@ -106,7 +106,7 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
 def test_review_deduplicates_model_errors(monkeypatch):
     monkeypatch.setattr(step, 'chat_json', lambda *a: {'errors': ['Wrong eyeline', 'Wrong eyeline']})
     scene = step.Scene('Wait', 'Wait', 'Wait', '', [], [], [], False, '')
-    assert step.check_prompt_continuity(None, 'model', scene, 'prompt', {}, {}, [], []) == ['Wrong eyeline']
+    assert step.check_prompt_continuity(None, 'model', scene, 'prompt', {}, {}, [], [], 8000) == ['Wrong eyeline']
 
 
 @pytest.mark.parametrize('recovers', [True, False])

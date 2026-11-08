@@ -136,7 +136,7 @@ CONTINUITY_REVIEW_SCHEMA = {
 
 def resolve_continuity(client: OpenAI, model: str, scene: Scene,
                        previous: dict[str, Any], future: list[Scene],
-                       anchors: dict[str, str], camera_direction: str = "",
+                       anchors: dict[str, str], max_tokens: int, camera_direction: str = "",
                        visual_designs: dict[str, Any] | None = None) -> dict[str, Any]:
     """Resolve a scene with future beats visible; source facts remain separate from choices."""
     system = (
@@ -175,7 +175,7 @@ def resolve_continuity(client: OpenAI, model: str, scene: Scene,
             batch["draft_plan"] = result
         if not continuity_context.fits(system, batch, CONTINUITY_SCHEMA):
             raise ValueError("H3 continuity draft exceeds the safe request budget; no evidence was discarded.")
-        result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_SCHEMA, 0.1, 2400)
+        result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_SCHEMA, 0.1, max_tokens)
         if not isinstance(result, dict) or any(
             not isinstance(result.get(field), list) or
             any(not isinstance(item, str) for item in result[field])
@@ -188,7 +188,7 @@ def resolve_continuity(client: OpenAI, model: str, scene: Scene,
 def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: str,
                             bindings: dict[str, Any], continuity: dict[str, Any],
                             previous_prompts: list[dict[str, Any]], future: list[Scene],
-                            camera_direction: str = "") -> list[str]:
+                            max_tokens: int, camera_direction: str = "") -> list[str]:
     """Review actual final wording against earlier prompts and later source requirements."""
     system = (
         "You are a film continuity supervisor reviewing the CURRENT final H3 prompt. "
@@ -224,7 +224,7 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
     }
     errors = []
     for batch in continuity_context.batches(system, base, groups, CONTINUITY_REVIEW_SCHEMA):
-        result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_REVIEW_SCHEMA, 0.1, 2400)
+        result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_REVIEW_SCHEMA, 0.1, max_tokens)
         if (not isinstance(result, dict) or not isinstance(result.get("errors"), list)
                 or any(not isinstance(error, str) or not error.strip() for error in result["errors"])):
             raise ValueError("LM Studio returned an invalid scene continuity review.")
@@ -240,7 +240,7 @@ def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, promp
     best = None
     for attempt in range(args.repair_attempts + 1):
         errors = check_prompt_continuity(client, model, scene, prompt, bindings, continuity,
-                                         previous_prompts, future, getattr(args, "camera_direction", ""))
+                                         previous_prompts, future, args.max_tokens, getattr(args, "camera_direction", ""))
         validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
         format_errors = len(validation.errors)
         validation.errors.extend(f"Scene continuity: {error}" for error in errors)
@@ -1532,7 +1532,7 @@ def process_chapter(
         previous: dict[str, Any] = {}
         for index, scene in enumerate(progress.steps(scenes, 0.3, 0.45)):
             previous = resolve_continuity(client, model, scene, previous, scenes[index + 1:], anchors,
-                                          getattr(args, "camera_direction", ""), visual_designs)
+                                          args.max_tokens, getattr(args, "camera_direction", ""), visual_designs)
             continuity_states.append(previous)
 
     entries: list[dict[str, Any]] = []

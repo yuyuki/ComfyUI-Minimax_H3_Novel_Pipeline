@@ -279,13 +279,13 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             return result
         except (ValueError, TypeError) as error:
             reasoning_truncated = (
-                profile.NAME == "Qwen" and settings["thinking"]
+                settings["thinking"]
                 and reasoning_chars > content_chars and finish_reason == "length"
             )
             if attempt == retries:
                 hint = (
                     " Thinking exhausted the output budget. Increase max_tokens, reduce passage size, "
-                    "or disable thinking in the node/configuration controlling this request."
+                    "or disable thinking in the node/configuration if the model supports it."
                 ) if reasoning_truncated else (
                     " Structured JSON reached the output token limit. Reduce passage size or increase "
                     "max_tokens; a larger context window alone does not increase the output budget."
