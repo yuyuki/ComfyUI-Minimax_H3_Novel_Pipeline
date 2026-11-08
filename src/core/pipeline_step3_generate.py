@@ -1441,6 +1441,10 @@ def process_chapter(
     chapter_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = confined_path(args.out_dir / ".cache" / chapter_id, args.out_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dirs = [cache_dir]
+    resume_cache_dir = getattr(args, "resume_cache_dir", None)
+    if resume_cache_dir is not None:
+        cache_dirs.append(confined_path(chapter_id, resume_cache_dir))
 
     print(f"{path.name}: {len(chunks)} planning chunk(s)")
     scenes: list[Scene] = []
@@ -1451,11 +1455,13 @@ def process_chapter(
                                       refs.get("source_digest", ""), catalog, i, len(chunks), chunk, client=client)
         cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", args.out_dir)
         chunk_scenes = None
-        if cache_path.exists() and not args.force:
+        for candidate_dir in cache_dirs if not args.force else []:
             try:
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+                candidate = confined_path(cache_path.name, candidate_dir)
+                cached = json.loads(candidate.read_text(encoding="utf-8"))
                 if cached.get("cache_key") == cache_key:
                     chunk_scenes = [scene_from_dict(x) for x in cached["scenes"]]
+                    break
             except Exception:
                 pass
         if chunk_scenes is None:
@@ -1468,12 +1474,13 @@ def process_chapter(
                     scene.adaptation_notes += "\n" + period
                 scene.adaptation_notes += "\nAuthoritative sequence phases: " + json.dumps(sequence["adaptation"], ensure_ascii=False)
                 scene.adaptation_notes += "\nExact reference observations by phase: " + json.dumps(catalog, ensure_ascii=False)
-            cache_path.write_text(
-                json.dumps({"cache_key": cache_key, "scenes": [scene_to_dict(x) for x in chunk_scenes]}, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
         else:
             print(f"  planning chunk {i}/{len(chunks)}: cached")
+        # Carry resumed plans forward so this run can itself be resumed.
+        cache_path.write_text(
+            json.dumps({"cache_key": cache_key, "scenes": [scene_to_dict(x) for x in chunk_scenes]}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
         scenes.extend(chunk_scenes)
 
     # Apply current consolidation decisions even when planning reused a cache entry.
@@ -1538,13 +1545,15 @@ def process_chapter(
         prompt = None
         camera_warnings: list[str] = []
         from_cache = False
-        if prompt_cache.exists() and not args.force:
+        for candidate_dir in cache_dirs if not args.force else []:
             try:
-                cached = json.loads(prompt_cache.read_text(encoding="utf-8"))
+                candidate = confined_path(prompt_cache.name, candidate_dir)
+                cached = json.loads(candidate.read_text(encoding="utf-8"))
                 if cached.get("cache_key") == prompt_key and cached.get("valid") is True:
                     prompt = cached["prompt"]
                     camera_warnings = cached.get("camera_warnings", [])
                     from_cache = True
+                    break
             except Exception:
                 pass
 

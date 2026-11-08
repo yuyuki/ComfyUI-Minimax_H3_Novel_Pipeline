@@ -72,6 +72,8 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     # Optional defaults must be recorded even when old workflows omit them.
     if stage == "consolidate":
         params.pop("image_style")
+    if stage == "generate":
+        params.pop("resume_run")
     cls().run(lmstudio_config=config, **inputs, **params)
     output = root / config["run_folder"] / params["out_dir"]
     path = output / f"{stage}_configuration.json"
@@ -80,6 +82,8 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     assert "secret-must-not-be-saved" not in text
     assert record["lmstudio_config"] == {**defaults(LMStudioConfigurationNode), "api_url": config["api_url"], "model_family": "Qwen"}
     expected_settings = defaults(cls)
+    if stage == "generate":
+        expected_settings["spatial_anchors"] = {}
     assert record["node_settings"] == expected_settings
     assert record["resolved_model"] == "qwen3.5-test"
     assert record["status"] == "completed"
@@ -169,4 +173,4 @@ def test_mistral_records_node_thinking_and_ignores_qwen_sampling(setup, monkeypa
 
 def test_generate_has_no_obsolete_narrative_socket():
     inputs = generate.GenerateH3PromptsNode.INPUT_TYPES()
-    assert set(inputs["optional"]) == {"spatial_continuity", "camera_direction"}
+    assert set(inputs["optional"]) == {"spatial_continuity", "camera_direction", "resume_run"}

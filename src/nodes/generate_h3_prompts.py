@@ -36,6 +36,9 @@ class GenerateH3PromptsNode:
         }, "optional": {
             "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY",),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
+            "resume_run": ("STRING", {"default": "", "tooltip":
+                "Reuse matching scene plans and validated prompts from a previous timestamped run with the same out_dir. "
+                "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING", "STRING")
@@ -65,6 +68,17 @@ class GenerateH3PromptsNode:
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
         output = stage_output(lmstudio_config, out_dir.strip())
+        resume_run = params.get("resume_run", "")
+        if not isinstance(resume_run, str):
+            raise ValueError("resume_run must be a previous timestamped run folder name.")
+        resume_run = resume_run.strip()
+        resume_cache_dir = None
+        if resume_run:
+            resume_cache_dir = stage_output({"run_folder": resume_run}, out_dir.strip()) / ".cache"
+            if resume_cache_dir == output / ".cache":
+                raise ValueError("resume_run must refer to a previous run, not the current run.")
+            if not resume_cache_dir.is_dir():
+                raise ValueError("Previous run cache does not exist; use the same out_dir as that run.")
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         paths = util.discover_inputs([Path(path) for path in selected_chapter_paths(chapter_selection)])
@@ -100,7 +114,10 @@ class GenerateH3PromptsNode:
                 output, "generate", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapters": [str(path) for path in paths],
                         "consolidated_references_sha256": configuration_snapshot.content_digest(consolidated_references)},
+                extra={"resume_run": resume_run},
             )
+            if resume_cache_dir is not None:
+                args.resume_cache_dir = resume_cache_dir
             image_records, image_text = export_image_prompts(consolidated_references, output / "image_prompts")
             manifests = []
             for index, path in enumerate(paths):
