@@ -23,7 +23,7 @@ class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
             "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "H3 duration in seconds of EACH generated scene (4–15 seconds)."}),
@@ -60,7 +60,7 @@ class GenerateH3PromptsNode:
                 )
 
     @progress.node_progress
-    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, thinking: bool = False, **params: Any) -> dict[str, Any]:
+    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, thinking: bool = True, **params: Any) -> dict[str, Any]:
         self.validate_parameters(params)
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
