@@ -8,6 +8,7 @@ from . import temporal_context
 import argparse
 import difflib
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any, Iterable
@@ -15,7 +16,7 @@ from typing import Any, Iterable
 from openai import OpenAI
 
 from .lmstudio_json import chat_json, select_model as select_model
-from .reference_requests import validated_request, validate_assets
+from .reference_requests import InvalidResponse, validated_request, validate_assets
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
 
@@ -676,11 +677,13 @@ def build_audio_specs(registry: list[dict[str, Any]], args: argparse.Namespace) 
 APPEARANCE_SCHEMA = {
     "name": "reference_appearance", "strict": True,
     "schema": {"type": "object", "additionalProperties": False,
-               "properties": {"appearance": {"type": "string", "maxLength": 1600}},
+               "properties": {"appearance": {"type": "string", "minLength": 1, "maxLength": 1600}},
                "required": ["appearance"]},
 }
 APPEARANCE_SYSTEM = """
 Condense the supplied reference facts into one concise appearance paragraph.
+Always return a nonblank appearance string. If no visible traits are established,
+state that the appearance is unspecified in the source language; do not invent traits.
 Preserve the source language of the reference descriptions; do not translate into
 English. For mixed-language facts, prefer the stable_visual_description language.
 Keep JSON keys unchanged.
@@ -709,6 +712,32 @@ for sparse facts, at most 1600 characters. No repeated facts or sentences.
 """.strip()
 
 
+def request_appearance(client, model, system, facts, args, validate, context):
+    """Retry invalid appearance prose, then continue with an explicit unknown."""
+    def validate_with_context(data):
+        value = data.get("appearance")
+        try:
+            validate(data)
+        except ValueError as exc:
+            length = len(value) if isinstance(value, str) else "n/a"
+            raise ValueError(
+                f"{context}: appearance type={type(value).__name__}, length={length}; {exc}. "
+                "Return a nonblank appearance string of at most 1600 characters, using only "
+                "established visible facts. If none are available, state that the appearance "
+                "is unspecified in the source language."
+            ) from exc
+
+    try:
+        result = validated_request(chat_json, client, model, system, facts,
+                                   APPEARANCE_SCHEMA, args, validate_with_context)
+    except InvalidResponse as exc:
+        logging.getLogger(__name__).warning(
+            "%s; continuing with 'Appearance unspecified.'", exc,
+        )
+        return "Appearance unspecified."
+    return result["appearance"].strip()
+
+
 def prepare_picture_appearances(client, model, specs, args):
     """Normalize once per entity/state and reuse the exact prose across its views."""
     appearances = {}
@@ -731,7 +760,7 @@ def prepare_picture_appearances(client, model, specs, args):
         def validate_appearance(data):
             appearance = data.get("appearance")
             if not isinstance(appearance, str) or not appearance.strip() or len(appearance) > 1600:
-                raise ValueError("appearance must be a non-empty paragraph under 1600 characters")
+                raise ValueError("appearance must be a non-empty paragraph of at most 1600 characters")
             if re.search(r"same as above|previous image|<Picture|<Subject|<Audio", appearance, re.I):
                 raise ValueError("Appearance must stand alone without image references or MiniMax labels")
             clauses = [" ".join(re.findall(r"\w+", part.casefold()))
@@ -740,9 +769,10 @@ def prepare_picture_appearances(client, model, specs, args):
             if len(clauses) != len(set(clauses)):
                 raise ValueError("Describe each appearance fact only once; remove repeated sentences")
 
-        result = validated_request(chat_json, client, model, APPEARANCE_SYSTEM, facts,
-                                   APPEARANCE_SCHEMA, args, validate_appearance)
-        appearances[key] = result["appearance"].strip()
+        appearances[key] = request_appearance(
+            client, model, APPEARANCE_SYSTEM, facts, args, validate_appearance,
+            f"entity={key[0]}, variant={key[1]}",
+        )
     return appearances
 
 
@@ -844,14 +874,15 @@ def picture_view_appearances(client, model, specs, args, appearances):
                 def validate(data):
                     value = data.get("appearance")
                     if not isinstance(value, str) or not value.strip() or len(value) > 1600:
-                        raise ValueError("View appearance must be non-empty and under 1600 characters")
+                        raise ValueError("View appearance must be non-empty and at most 1600 characters")
                     if re.search(r"same as above|previous image|<Picture|<Subject|<Audio", value, re.I):
                         raise ValueError("View appearance must stand alone without image references")
 
                 system = FACIAL_APPEARANCE_SYSTEM if is_facial else VIEW_APPEARANCE_SYSTEM
-                response = validated_request(chat_json, client, model, system,
-                                             facts, APPEARANCE_SCHEMA, args, validate)
-                projected[projection_key] = response["appearance"].strip()
+                projected[projection_key] = request_appearance(
+                    client, model, system, facts, args, validate,
+                    f"entity={key[0]}, variant={key[1]}, view={group}",
+                )
                 progress.report(len(projected) / len(jobs))
                 print(f"[minimax_h3_novel] View appearances: {len(projected)}/{len(jobs)} complete", flush=True)
             appearance = projected[projection_key]

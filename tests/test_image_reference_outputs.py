@@ -456,6 +456,45 @@ def test_view_projection_keeps_entity_state_and_detail_separate(monkeypatch):
     }
 
 
+@pytest.mark.parametrize("response", [{}, {"appearance": None}, {"appearance": "   "},
+                                      {"appearance": "x" * 1601}])
+def test_exhausted_appearance_retries_warn_and_continue(monkeypatch, caplog, response):
+    step = lmstudio_pipeline.load("consolidate")
+    args = options()
+    args.max_attempts = 2
+    calls = []
+
+    def chat(*request):
+        calls.append(request)
+        assert request[4]["schema"]["properties"]["appearance"]["minLength"] == 1
+        return response
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    specs = step.build_picture_specs([entity()], args)
+    appearances = step.prepare_picture_appearances(None, "qwen", specs, args)
+    assert appearances == {("CHAR_001", "base"): "Appearance unspecified."}
+    assert len(calls) == 2
+    assert "Return a nonblank appearance string" in calls[1][3]
+    assert "entity=CHAR_001, variant=base" in caplog.text
+    assert "appearance type=" in caplog.text and "length=" in caplog.text
+    views = step.picture_view_appearances(None, "qwen", specs, args, appearances)
+    assert set(views) == {spec["asset_id"] for spec in specs}
+    assert set(views.values()) == {"Appearance unspecified."}
+    assert "view=facial" in caplog.text
+
+
+@pytest.mark.parametrize("error", [RuntimeError("connection failed"), KeyboardInterrupt()])
+def test_appearance_fallback_does_not_swallow_execution_errors(monkeypatch, error):
+    step = lmstudio_pipeline.load("consolidate")
+
+    def chat(*request):
+        raise error
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    with pytest.raises(type(error)):
+        step.prepare_picture_appearances(None, "qwen", step.build_picture_specs([entity()], options()), options())
+
+
 def test_normalized_appearances_do_not_cross_entities(monkeypatch):
     step = lmstudio_pipeline.load("consolidate")
     args = options()
