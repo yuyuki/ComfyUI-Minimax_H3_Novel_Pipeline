@@ -368,15 +368,6 @@ must target a principal entry, without chains or cycles. Saved edits reload on
 execution and are never replaced by an old model response. Correct invalid
 source evidence through **Load Character Evidence** and reconsolidate instead.
 
-Connect **Load Character Profiles** (or the consolidator directly) to
-**Character Visual Profile Generator**, together with **Select Chapters** and
-**Provider Configuration** for the output run folder. See
-[CharacterPhysicalProfiles.json](CharacterPhysicalProfiles.json) for this wiring.
-The generator accepts `chapter_selection`, independently of cinematic adaptation.
-Source file paths distinguish chapters with identical names. Only identities with
-validated evidence in the selected chapters are exported; selection does not imply
-that a character appears on screen.
-
 The generator projects validated permanent physical traits from the entire profile
 document, including other chapters. It makes no model calls, invents no missing
 features and creates no cache. The first selected conflict choice applies; an
