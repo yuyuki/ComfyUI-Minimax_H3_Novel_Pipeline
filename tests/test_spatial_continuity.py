@@ -82,7 +82,8 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
         return [] if resolved and prompt == "corrected" else ["Wrong eyeline"]
 
     def repair(client, model, prompt, scene, bindings, validation, duration, args, continuity):
-        assert continuity["previous_final_prompts"] == history
+        assert "previous_final_prompts" not in continuity
+        assert "future_requirements" not in continuity
         assert "Scene continuity: Wrong eyeline" in validation.errors
         return "corrected"
 

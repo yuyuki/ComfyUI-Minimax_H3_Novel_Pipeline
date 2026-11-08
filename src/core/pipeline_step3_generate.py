@@ -1,7 +1,7 @@
 """ComfyUI pipeline step3 generate implementation."""
 from __future__ import annotations
 
-from . import progress
+from . import progress, continuity_context
 
 import argparse
 import json
@@ -155,20 +155,33 @@ def resolve_continuity(client: OpenAI, model: str, scene: Scene,
         "conflicts in warnings, without silently overriding operator anchors. Do not invent "
         "story events, dialogue, or props. Output concise English strings."
     )
-    user = json.dumps({
+    system += continuity_context.INSTRUCTIONS + (
+        "\nWhen a draft_plan is supplied, refine it with this batch's future requirements. "
+        "Retain constraints and warnings established by earlier batches; report conflicts "
+        "rather than silently replacing them. Keep the draft concise."
+    )
+    base = {
         "operator_anchors": anchors, "camera_direction": camera_direction,
         "visual_designs": visual_designs or {},
         "previous_final_state": previous.get("final_state", []),
         "current_scene": scene_to_dict(scene),
-        "future_requirements": [scene_to_dict(s) for s in future],
-    }, ensure_ascii=False)
-    result = chat_json(client, model, system, user, CONTINUITY_SCHEMA, 0.1, 2400)
-    if not isinstance(result, dict) or any(
-        not isinstance(result.get(field), list) or
-        any(not isinstance(item, str) for item in result[field])
-        for field in CONTINUITY_FIELDS
+    }
+    result = None
+    for batch in continuity_context.batches(
+        system, base, {"future_requirements": [scene_to_dict(s) for s in future]},
+        CONTINUITY_SCHEMA, continuity_context.RESOLVE_RESERVE_BYTES,
     ):
-        raise ValueError("LM Studio returned invalid spatial continuity. Retry the generation or choose a model with structured JSON support.")
+        if result is not None:
+            batch["draft_plan"] = result
+        if not continuity_context.fits(system, batch, CONTINUITY_SCHEMA):
+            raise ValueError("H3 continuity draft exceeds the safe request budget; no evidence was discarded.")
+        result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_SCHEMA, 0.1, 2400)
+        if not isinstance(result, dict) or any(
+            not isinstance(result.get(field), list) or
+            any(not isinstance(item, str) for item in result[field])
+            for field in CONTINUITY_FIELDS
+        ):
+            raise ValueError("LM Studio returned invalid spatial continuity. Retry the generation or choose a model with structured JSON support.")
     return result
 
 
@@ -199,18 +212,24 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
         "If constraints cannot be reconciled, report the conflict explicitly. Return an empty "
         "errors list only if the current prompt is consistent."
     )
-    user = json.dumps({
+    system += continuity_context.INSTRUCTIONS
+    base = {
         "current_scene": scene_to_dict(scene), "current_prompt": prompt,
         "bindings": bindings, "continuity_plan": continuity,
+        "camera_direction": camera_direction,
+    }
+    groups = {
         "previous_final_prompts": previous_prompts,
         "future_requirements": [scene_to_dict(s) for s in future],
-        "camera_direction": camera_direction,
-    }, ensure_ascii=False)
-    result = chat_json(client, model, system, user, CONTINUITY_REVIEW_SCHEMA, 0.1, 2400)
-    if (not isinstance(result, dict) or not isinstance(result.get("errors"), list)
-            or any(not isinstance(error, str) or not error.strip() for error in result["errors"])):
-        raise ValueError("LM Studio returned an invalid scene continuity review.")
-    return list(dict.fromkeys(result["errors"]))
+    }
+    errors = []
+    for batch in continuity_context.batches(system, base, groups, CONTINUITY_REVIEW_SCHEMA):
+        result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_REVIEW_SCHEMA, 0.1, 2400)
+        if (not isinstance(result, dict) or not isinstance(result.get("errors"), list)
+                or any(not isinstance(error, str) or not error.strip() for error in result["errors"])):
+            raise ValueError("LM Studio returned an invalid scene continuity review.")
+        errors.extend(result["errors"])
+    return list(dict.fromkeys(errors))
 
 
 def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, prompt: str,
@@ -231,8 +250,9 @@ def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, promp
             best = (format_errors, prompt, validation, errors)
         if validation.ok or attempt == args.repair_attempts:
             return best[1], best[2], best[3], attempt
-        repair_context = {**continuity, "previous_final_prompts": previous_prompts,
-                          "future_requirements": [scene_to_dict(s) for s in future]}
+        # Review errors contain the requested corrections. Reattaching all history
+        # here would recreate the oversized request; the next review checks every batch.
+        repair_context = continuity
         prompt = repair_prompt(client, model, prompt, scene, bindings, validation,
                                args.duration, args, repair_context)
     raise AssertionError("Continuity repair budget must be non-negative.")
@@ -1317,6 +1337,9 @@ CURRENT PROMPT:
 --- BEGIN ---
 {prompt}
 --- END ---"""
+    if continuity is not None and not continuity_context.fits(system, {"request": user}, PROMPT_SCHEMA):
+        raise ValueError("H3 continuity repair exceeds the safe request budget. "
+                         "Reduce the size of this cinematic sequence; no evidence was discarded.")
     data = chat_json(client, model, system, user, PROMPT_SCHEMA, min(args.temperature, 0.16), args.max_tokens)
     return normalize_prompt(data["prompt_text"])
 
@@ -1539,7 +1562,7 @@ def process_chapter(
             continue
 
         prompt_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, H3_RULES, PROMPT_SCHEMA,
-                                       "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v2",
+                                       "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v3-batched",
                                        scene_to_dict(scene), bindings, continuity, previous_prompts, client=client)
         prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", args.out_dir)
         prompt = None
