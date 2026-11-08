@@ -6,6 +6,8 @@ node implementations live in `nodes/`.
 from __future__ import annotations
 
 import json
+import re
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Dict
 
@@ -216,6 +218,42 @@ def _register_upload_route() -> None:
 
 
 _register_upload_route()
+
+
+def _log_startup() -> None:
+    """Show the package version and the nodes registered by this import."""
+    project_file = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    project_version = "unknown"
+    if project_file.is_file():
+        # Read checkout metadata without requiring tomllib (Python 3.11+).
+        match = re.search(r'^version\s*=\s*"([^"]+)"', project_file.read_text(encoding="utf-8"), re.MULTILINE)
+        if match:
+            project_version = match.group(1)
+    else:
+        try:
+            project_version = version("minimax_h3_novel_pipeline")
+        except PackageNotFoundError:
+            pass
+
+    reset = "\033[0m"
+    cyan = "\033[36m"
+    yellow = "\033[93m"
+    white = "\033[37m"
+    green = "\033[92m"
+    lines = [
+        f"{cyan}[ComfyUI-Minimax_H3_Novel_Pipeline]{reset} "
+        f"v{yellow}{project_version}{reset} | "
+        f"{white}{len(NODE_CLASS_MAPPINGS)} nodes{reset} {green}Loaded{reset}",
+    ]
+    node_ids = list(NODE_CLASS_MAPPINGS)
+    for index, node_id in enumerate(node_ids):
+        branch = "`--" if index == len(node_ids) - 1 else "|--"
+        name = NODE_DISPLAY_NAME_MAPPINGS.get(node_id, node_id)
+        lines.append(f"  {cyan}{branch}{reset} {green}{name}{reset}")
+    print("\n".join(lines))
+
+
+_log_startup()
 
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
