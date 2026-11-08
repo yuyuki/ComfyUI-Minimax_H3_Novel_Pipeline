@@ -1,8 +1,8 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 207,
-  "last_link_id": 283,
+  "last_node_id": 208,
+  "last_link_id": 285,
   "nodes": [
     {
       "id": 67,
@@ -26,7 +26,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            283
+            285
           ]
         }
       ],
@@ -218,7 +218,7 @@
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
           "links": [
-            282
+            284
           ]
         },
         {
@@ -1522,11 +1522,11 @@
       }
     },
     {
-      "id": 207,
+      "id": 208,
       "type": "ConsolidateReferencesNode",
       "pos": [
-        -183.925719750167,
-        1759.7683917636589
+        -171.73974718235962,
+        1762.5805674736207
       ],
       "size": [
         384.28125,
@@ -1539,12 +1539,12 @@
         {
           "name": "chapter_catalogs",
           "type": "MINIMAX_CHAPTERS",
-          "link": 282
+          "link": 284
         },
         {
           "name": "lmstudio_config",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 283
+          "link": 285
         },
         {
           "name": "character_visual_profiles",
@@ -1567,7 +1567,7 @@
       ],
       "properties": {
         "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "85b7a7bec82420594fe3c80a9b42fc2e58f9df59",
+        "ver": "6dbc4c713dfda06d7580b4fb99fc6e99b765fc46",
         "Node name for S&R": "ConsolidateReferencesNode"
       },
       "widgets_values": [
@@ -1586,7 +1586,7 @@
         "references",
         0.68,
         24,
-        3,
+        2,
         "20261108103644",
         false,
         "cinematic photographic",
@@ -1609,7 +1609,7 @@
         "out_dir": "references",
         "audit_similarity": 0.68,
         "audit_cluster_size": 24,
-        "max_attempts": 3,
+        "max_attempts": 2,
         "resume_run": "20261108103644",
         "force": false,
         "image_style": "cinematic photographic",
@@ -1780,18 +1780,18 @@
       "MINIMAX_LMSTUDIO_CONFIG"
     ],
     [
-      282,
+      284,
       91,
       0,
-      207,
+      208,
       0,
       "MINIMAX_CHAPTERS"
     ],
     [
-      283,
+      285,
       67,
       0,
-      207,
+      208,
       1,
       "MINIMAX_LMSTUDIO_CONFIG"
     ]
@@ -1924,7 +1924,7 @@
       "scale": 0.8534322792769269,
       "offset": [
         1300.3834170146322,
-        -1598.8483608866145
+        -1596.973606878841
       ]
     },
     "frontendVersion": "1.57.6"
