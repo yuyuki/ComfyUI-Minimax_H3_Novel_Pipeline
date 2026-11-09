@@ -29,16 +29,14 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
 1. In ComfyUI Settings → MiniMax H3 Novel → Providers, enable a provider, fetch and select a model, then save its URL, key and model. Add **Provider Configuration** and choose that provider. The saved model appears automatically; Qwen controls appear only for a Qwen model in LM Studio.
 2. Add **Select Chapters**, **Extract Chapter References**, **Consolidate
    References** and **Generate H3 Prompts**. Connect configuration to all three.
-   Optionally turn on `enable_spatial_continuity` in **Generate H3 Prompts** to enable
-   automatic staging and model checks of consistency between scenes. No JSON input
-   is needed. Define layout constraints to the location's `added_details.layout` in `visual_designs.json` and
-   import that file through Consolidate.
+   Connect **Spatial Continuity** or **Load Spatial Continuity** to the optional
+   `spatial_continuity` input to use its staging plan and review final prompts.
+   Without a connection, Generate does not infer spatial staging internally.
+   Character-enrichment checks remain independent of the spatial connection.
    Generate checks final prompts after camera refinement, corrects contradictions
    within `repair_attempts`, and records unresolved issues as validation warnings.
-   The existing visual designs are carried by `consolidated_references` and reused
-   automatically. Review `spatial_continuity` in the chapter's existing
-   `manifest.json` for inferred staging and prompt checks; no extra JSON file
-   is created by the toggle alone.
+   Existing visual designs are carried by `consolidated_references`.
+   Review the chapter manifest for spatial plans and prompt checks.
    For a reusable chapter-wide plan, connect **Consolidate References** and
    **Provider Configuration** to **Spatial Continuity**, then its
    `spatial_continuity` output to **Generate H3 Prompts**. This exports

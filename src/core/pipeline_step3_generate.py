@@ -114,75 +114,12 @@ CAMERA_SCHEMA = {
     }, "required": ["shot_cameras"], "additionalProperties": False},
 }
 
-CONTINUITY_FIELDS = {
-    "source_facts": {"type": "array", "items": {"type": "string"}},
-    "inferences": {"type": "array", "items": {"type": "string"}},
-    "initial_state": {"type": "array", "items": {"type": "string"}},
-    "final_state": {"type": "array", "items": {"type": "string"}},
-    "warnings": {"type": "array", "items": {"type": "string"}},
-}
-CONTINUITY_SCHEMA = {
-    "name": "scene_spatial_continuity_v1", "strict": True,
-    "schema": {"type": "object", "properties": CONTINUITY_FIELDS,
-               "required": list(CONTINUITY_FIELDS), "additionalProperties": False},
-}
 CONTINUITY_REVIEW_SCHEMA = {
     "name": "scene_continuity_review_v1", "strict": True,
     "schema": {"type": "object", "properties": {
         "errors": {"type": "array", "items": {"type": "string"}},
     }, "required": ["errors"], "additionalProperties": False},
 }
-
-
-def resolve_continuity(client: OpenAI, model: str, scene: Scene,
-                       previous: dict[str, Any], future: list[Scene],
-                       anchors: dict[str, str], max_tokens: int, camera_direction: str = "",
-                       visual_designs: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Resolve a scene with future beats visible; source facts remain separate from choices."""
-    system = (
-        "You are a film spatial-continuity director. Extract source_facts only from the "
-        "current source excerpt. Treat operator anchors as immutable even if currently "
-        "offscreen. Carry previous final_state into initial_state unless an event explicitly "
-        "changes it. Future scenes constrain staging but their events must not happen now. "
-        "Put unstated physical support and geometry in inferences, never source_facts. "
-        "Choose missing film staging consistently even when no operator anchors are given. "
-        "Reuse approved visual_designs, including location layout and object details; "
-        "do not redesign them. Source-supported chapter changes override default designs. "
-        "Carry persistent staging for returning locations and offscreen objects forward in final_state. "
-        "Describe object ownership, support, orientation, distance, visibility and before/after "
-        "when relevant. Screen right is a camera-relative direction: maintain an explicit camera "
-        "axis when using it; do not confuse it with a fixed rock wall. Report uncertainty and "
-        "conflicts in warnings, without silently overriding operator anchors. Do not invent "
-        "story events, dialogue, or props. Output concise English strings."
-    )
-    system += continuity_context.INSTRUCTIONS + (
-        "\nWhen a draft_plan is supplied, refine it with this batch's future requirements. "
-        "Retain constraints and warnings established by earlier batches; report conflicts "
-        "rather than silently replacing them. Keep the draft concise."
-    )
-    base = {
-        "operator_anchors": anchors, "camera_direction": camera_direction,
-        "visual_designs": visual_designs or {},
-        "previous_final_state": previous.get("final_state", []),
-        "current_scene": scene_to_dict(scene),
-    }
-    result = None
-    for batch in continuity_context.batches(
-        system, base, {"future_requirements": [scene_to_dict(s) for s in future]},
-        CONTINUITY_SCHEMA, continuity_context.RESOLVE_RESERVE_BYTES,
-    ):
-        if result is not None:
-            batch["draft_plan"] = result
-        if not continuity_context.fits(system, batch, CONTINUITY_SCHEMA):
-            raise ValueError("H3 continuity draft exceeds the safe request budget; no evidence was discarded.")
-        result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_SCHEMA, 0.1, max_tokens)
-        if not isinstance(result, dict) or any(
-            not isinstance(result.get(field), list) or
-            any(not isinstance(item, str) for item in result[field])
-            for field in CONTINUITY_FIELDS
-        ):
-            raise ValueError("LM Studio returned invalid spatial continuity. Retry the generation or choose a model with structured JSON support.")
-    return result
 
 
 def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: str,
@@ -1514,7 +1451,6 @@ def process_chapter(
         scenes = scenes[:args.max_scenes]
     print(f"  selected {len(scenes)} scene(s)")
 
-    anchors = getattr(args, "spatial_anchors", None)
     visual_designs = {k: v for k, v in refs.get("visual_designs", {}).items() if k != "character_profiles"}
     continuity_states: list[dict[str, Any]] = []
     if sequence_plans:
@@ -1528,18 +1464,12 @@ def process_chapter(
                                "final entities apply at its end. Follow only the current scene's events, "
                                "carrying intermediate state from previous final prompts. Do not anticipate later actions.",
             })
-    elif anchors is not None:
-        previous: dict[str, Any] = {}
-        for index, scene in enumerate(progress.steps(scenes, 0.3, 0.45)):
-            previous = resolve_continuity(client, model, scene, previous, scenes[index + 1:], anchors,
-                                          args.max_tokens, getattr(args, "camera_direction", ""), visual_designs)
-            continuity_states.append(previous)
 
     entries: list[dict[str, Any]] = []
     previous_prompts: list[dict[str, Any]] = []
-    for i, scene in enumerate(progress.steps(scenes, 0.45 if anchors is not None else 0.3, 0.98), start=1):
-        continuity = ({"operator_anchors": anchors, "visual_designs": visual_designs, **continuity_states[i - 1]}
-                      if anchors is not None else None)
+    for i, scene in enumerate(progress.steps(scenes, 0.3, 0.98), start=1):
+        continuity = ({"visual_designs": visual_designs, **continuity_states[i - 1]}
+                      if spatial_plan is not None else None)
         character_context = sequence_context(refs, chapter_id, scene.sequence)
         if character_context is not None:
             continuity = {**(continuity or {}), "visual_designs": visual_designs,
@@ -1608,7 +1538,7 @@ def process_chapter(
                 "errors": continuity_errors, "repair_attempts_used": continuity_repairs,
                 "valid": validation.ok,
             }
-            if anchors is not None:
+            if spatial_plan is not None:
                 continuity_states[i - 1]["prompt_review"] = prompt_review
 
         prompt_cache.write_text(
@@ -1650,7 +1580,7 @@ def process_chapter(
         "saved_prompt_count": len(saved),
         "outputs": entries,
     }
-    if anchors is not None:
-        manifest["spatial_continuity"] = {"operator_anchors": anchors, "scenes": continuity_states}
+    if spatial_plan is not None:
+        manifest["spatial_continuity"] = {"scenes": continuity_states}
     confined_path(chapter_dir / "manifest.json", chapter_dir).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest

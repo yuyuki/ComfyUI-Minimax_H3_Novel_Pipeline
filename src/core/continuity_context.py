@@ -7,7 +7,6 @@ import json
 # UTF-8 bytes, deliberately not the optimistic characters/4 token estimate.
 # Leaves ample room for templates and completion in a 65,536-token context.
 REQUEST_BYTES = 48000
-RESOLVE_RESERVE_BYTES = 12000
 EVIDENCE_MARKER = "\nAuthoritative sequence phases: "
 
 

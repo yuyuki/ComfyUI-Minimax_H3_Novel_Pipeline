@@ -38,7 +38,7 @@ def test_resume_plans_and_prompts(setup, monkeypatch, change):
         "subject_count": 1, "picture_count": 1, "audio_count": 0})
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261101000000"}
     params = defaults(node.GenerateH3PromptsNode)
-    params.update(enable_spatial_continuity=False, refine_camera=False)
+    params.update(refine_camera=False)
     node.GenerateH3PromptsNode().run(refs, config, {}, **params)
     previous = root / config["run_folder"]
     cache = previous / params["out_dir"] / ".cache/chapter"

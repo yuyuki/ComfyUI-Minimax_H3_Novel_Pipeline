@@ -82,8 +82,6 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     assert "secret-must-not-be-saved" not in text
     assert record["lmstudio_config"] == {**defaults(LMStudioConfigurationNode), "api_url": config["api_url"], "model_family": "Qwen"}
     expected_settings = defaults(cls)
-    if stage == "generate":
-        expected_settings["spatial_anchors"] = {}
     assert record["node_settings"] == expected_settings
     assert record["resolved_model"] == "qwen3.5-test"
     assert record["status"] == "completed"
@@ -98,32 +96,20 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     assert record["model_controls"]["settings"]["thinking"] is expected_settings["thinking"]
 
 
-@pytest.mark.parametrize("toggle,anchors,expected", [
-    (None, None, None),
-    (False, None, None),
-    (True, None, {}),
-    (False, {}, {}),
-
-    (True, {}, {}),
-])
-def test_generate_continuity_toggle_and_plan_connection(setup, monkeypatch, toggle, anchors, expected, cinematic_registry):
+@pytest.mark.parametrize("connected", [False, True])
+def test_generate_continuity_plan_connection(setup, monkeypatch, connected, cinematic_registry):
     root, config, chapter = setup
     pipeline = lmstudio_pipeline.load("generate")
     captured = []
 
     def process(path, registry, client, model, args):
-        captured.append(getattr(args, "spatial_anchors", None))
-        if anchors is not None:
-            assert args.spatial_plan == params["spatial_continuity"]
+        captured.append(getattr(args, "spatial_plan", None))
         return {"chapter_id": "chapter", "outputs": []}
 
     monkeypatch.setattr(pipeline, "process_chapter", process)
     params = defaults(generate.GenerateH3PromptsNode)
-    if toggle is None:
-        params.pop("enable_spatial_continuity")  # Existing workflows omit the new widget.
-    else:
-        params["enable_spatial_continuity"] = toggle
-    if anchors is not None:
+    assert "enable_spatial_continuity" not in params
+    if connected:
         from minimax_h3_novel_pipeline.nodes.spatial_continuity import _FIELDS
         answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in _FIELDS.items()}
         camera = {k: answer.pop(k) for k in list(answer) if k.startswith('camera_')}
@@ -132,9 +118,9 @@ def test_generate_continuity_toggle_and_plan_connection(setup, monkeypatch, togg
                 {"sequence": 1, "camera": camera, **answer}]}}}
     registry = cinematic_registry(chapter, schema_version=util.REGISTRY_SCHEMA, entities=[], picture_assets=[], audio_assets=[])
     generate.GenerateH3PromptsNode().run(registry, config, {}, **params)
-    assert captured == [expected]
+    assert captured == [params.get("spatial_continuity")]
     record = util.load_json(root / config["run_folder"] / params["out_dir"] / "generate_configuration.json")
-    assert record["node_settings"]["enable_spatial_continuity"] is (expected is not None)
+    assert "enable_spatial_continuity" not in record["node_settings"]
 
 
 def test_failed_execution_does_not_claim_completed_results(setup, monkeypatch):

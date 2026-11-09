@@ -50,29 +50,6 @@ def test_review_batches_cover_all_history_future_and_distant_conflicts(monkeypat
     assert errors == ["Common correction", *[f"Correction {i}" for i in range(1, len(calls) + 1)]]
 
 
-def test_resolver_batches_carry_draft_and_original_previous_state(monkeypatch):
-    calls = []
-
-    def chat(client, model, system, user, schema, temperature, max_tokens):
-        payload = json.loads(user)
-        assert context.fits(system, payload, schema)
-        assert schema == generate.CONTINUITY_SCHEMA and schema["strict"]
-        assert max_tokens == 9000
-        assert payload["previous_final_state"] == ["original state"]
-        if calls:
-            assert payload["draft_plan"]["warnings"] == [f"constraint {i}" for i in range(len(calls))]
-        calls.append(payload)
-        return {key: ([f"constraint {i}" for i in range(len(calls))] if key == "warnings" else [])
-                for key in generate.CONTINUITY_FIELDS}
-
-    monkeypatch.setattr(generate, "chat_json", chat)
-    future = [scene(i) for i in range(40)]
-    result = generate.resolve_continuity(None, "gemma", scene(-1), {"final_state": ["original state"]}, future, {}, 9000)
-    assert len(calls) > 2
-    assert [s["title"] for batch in calls for s in batch["future_requirements"]] == [s.title for s in future]
-    assert len(result["warnings"]) == len(calls)
-
-
 @pytest.mark.parametrize("oversized_current", [True, False])
 def test_single_oversized_record_fails_explicitly_without_network(monkeypatch, oversized_current):
     def unexpected(*args):

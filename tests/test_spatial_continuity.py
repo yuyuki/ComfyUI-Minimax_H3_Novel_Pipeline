@@ -10,24 +10,6 @@ def test_removed_anchor_argument_is_rejected():
         SpatialContinuityNode().run(anchors_json='{"tablet.wall": "right wall"}')
 
 
-def test_resolver_receives_future_and_previous_without_mixing_facts(monkeypatch):
-    scene = generate.Scene("Now", "Indy hangs", "Indy sways", "", [], [], [], False, "")
-    future = generate.Scene("Later", "Tablet appears", "Indy faces tablet", "", [], [], [], False, "")
-    captured = {}
-
-    def fake_chat(client, model, system, user, schema, temperature, max_tokens):
-        import json
-        captured.update(json.loads(user))
-        return {key: [] for key in generate.CONTINUITY_FIELDS}
-
-    monkeypatch.setattr(generate, "chat_json", fake_chat)
-    generate.resolve_continuity(None, "qwen", scene, {"final_state": ["Indy is suspended"]},
-                                [future], {"tablet.wall": "right wall"}, 8000)
-    assert captured["previous_final_state"] == ["Indy is suspended"]
-    assert captured["future_requirements"][0]["visual_event"] == "Indy faces tablet"
-    assert captured["operator_anchors"]["tablet.wall"] == "right wall"
-
-
 def test_spatial_node_requires_consolidation_and_configuration():
     inputs = SpatialContinuityNode.INPUT_TYPES()["required"]
     assert inputs["consolidated_references"] == ("MINIMAX_REGISTRY",)
@@ -43,22 +25,20 @@ def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
 
     def fake_chat(client, model, system, user, schema, temperature, max_tokens):
         captured.append(json.loads(user))
-        if schema == generate.CONTINUITY_REVIEW_SCHEMA:
-            return {"errors": ["Turn the character toward the tablet on the right."]}
-        return {key: [] for key in generate.CONTINUITY_FIELDS}
+        assert schema == generate.CONTINUITY_REVIEW_SCHEMA
+        return {"errors": ["Turn the character toward the tablet on the right."]}
 
     monkeypatch.setattr(generate, "chat_json", fake_chat)
     future = [later] * 7
     designs = {"entities": [{"global_id": "room", "added_details": {"layout": "Tablet on the right wall"}}]}
-    generate.resolve_continuity(None, "qwen", scene, {}, future, {}, 8000, visual_designs=designs)
     errors = generate.check_prompt_continuity(None, "qwen", scene, "He looks left",
-                                              {"subjects": ["tablet"]}, {}, history, future, 8000)
+                                              {"subjects": ["tablet"]}, {"visual_designs": designs}, history, future, 8000)
     assert len(captured[0]["future_requirements"]) == 7
-    assert captured[0]["visual_designs"] == designs
+    assert captured[0]["continuity_plan"]["visual_designs"] == designs
     assert captured[0]["future_requirements"][-1]["source_excerpt"].endswith("tablet is on the right")
-    assert captured[1]["previous_final_prompts"] == history
-    assert captured[1]["current_prompt"] == "He looks left"
-    assert captured[1]["bindings"] == {"subjects": ["tablet"]}
+    assert captured[0]["previous_final_prompts"] == history
+    assert captured[0]["current_prompt"] == "He looks left"
+    assert captured[0]["bindings"] == {"subjects": ["tablet"]}
     assert errors == ["Turn the character toward the tablet on the right."]
 
 
@@ -116,20 +96,13 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
                 "picture_input_order": [], "audio": []}
     args = SimpleNamespace(out_dir=tmp_path / "output", force=False, chunk_chars=3000,
                            overlap_paragraphs=0, max_scenes=0, duration=8, max_shots=1,
-                           max_tokens=9000, spatial_anchors={}, repair_attempts=1, refine_camera=True)
+                           max_tokens=9000, repair_attempts=1, refine_camera=True)
     monkeypatch.setattr(generate, "plan_scenes", lambda *a: scenes)
     designs = {"entities": [{"global_id": "hero", "added_details": {"hair": "Black hair"}}]}
 
     if external_plan:
         args.spatial_plan = {"chapters": {"chapter": {"sequences": [{"sequence": 1, "camera": "right"}]}}}
 
-    def resolve(*a):
-        assert not external_plan, "The supplied plan must not be replaced by another model call"
-        assert a[-1] == designs
-        assert a[-3] == 9000
-        return {k: [] for k in generate.CONTINUITY_FIELDS}
-
-    monkeypatch.setattr(generate, "resolve_continuity", resolve)
     monkeypatch.setattr(generate, "build_bindings", lambda *a: bindings)
     monkeypatch.setattr(generate, "generate_prompt", lambda *a: "draft")
     monkeypatch.setattr(generate, "validate_prompt", lambda *a: generate.Validation(True, [], 100))
@@ -157,9 +130,18 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
         manifest = generate.process_chapter(chapter, cinematic_registry(chapter, visual_designs=designs), None, "qwen", args)
         for entry in manifest["outputs"]:
             asset_file = args.out_dir / "chapter" / entry["assets_file"]
-            assert json.loads(asset_file.read_text())["copy_paste_prompt"] == "corrected"
-            assert entry["valid"] and not entry["continuity_review"]["errors"]
+            assert json.loads(asset_file.read_text())["copy_paste_prompt"] == (
+                "corrected" if external_plan else "camera wording with wrong eyeline")
+            assert entry["valid"]
+            if external_plan:
+                assert not entry["continuity_review"]["errors"]
+            else:
+                assert "continuity_review" not in entry
     assert len(camera_calls) == 2  # Reused cached prompts retain their camera pass.
+    if not external_plan:
+        assert reviews == []
+        assert "spatial_continuity" not in manifest
+        return
     assert len(reviews) == 6  # Four initial reviews/repairs, two cache-hit reviews.
     assert reviews[0][0] == "camera wording with wrong eyeline"
     assert reviews[2][1][0]["prompt"] == "corrected"

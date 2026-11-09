@@ -66,7 +66,7 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
     refs = cinematic_registry(path, visual_designs=designs)
     spatial_plan = {'sequence': 1, 'camera': 'right', 'future_detail': 'Tablet revealed'}
     args = SimpleNamespace(out_dir=tmp_path / 'generated', force=False, max_scenes=0,
-                           duration=8, repair_attempts=0, max_tokens=8000, spatial_anchors={},
+                           duration=8, repair_attempts=0, max_tokens=8000,
                            spatial_plan={'chapters': {'chapter': {'sequences': [spatial_plan]}}})
     chunks, histories, generations = [], [], []
 

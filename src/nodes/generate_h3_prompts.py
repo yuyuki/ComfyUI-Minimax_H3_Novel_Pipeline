@@ -32,9 +32,8 @@ class GenerateH3PromptsNode:
             "max_pictures": ("INT", {"default": 8, "min": 1, "max": 9}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 9}), "max_audio": ("INT", {"default": 3, "min": 0, "max": 3}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}), "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning. Reasoning-limit retries use at least 16384 tokens."}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "refine_camera": ("BOOLEAN", {"default": True, "tooltip": "After prompt validation, ask LM Studio for camera-only descriptions for each shot. Adds one request per scene."}),
-            "enable_spatial_continuity": ("BOOLEAN", {"default": True, "tooltip": "Plan staging and review final prompts for consistency within each chapter. Adds LM Studio requests. A connected Spatial Continuity node also enables this pass."}),
         }, "optional": {
-            "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY",),
+            "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY", {"tooltip": "Connect Spatial Continuity or Load Spatial Continuity to use its staging plan and review final prompts for consistency."}),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Reuse matching scene plans and validated prompts from a previous timestamped run with the same out_dir. "
@@ -102,9 +101,6 @@ class GenerateH3PromptsNode:
             args.camera_direction = str(params.get("camera_direction", "")).strip()
             args.refine_camera = bool(params.get("refine_camera", False))
             continuity = params.get("spatial_continuity")
-            args.enable_spatial_continuity = bool(params.get("enable_spatial_continuity", False)) or continuity is not None
-            if args.enable_spatial_continuity:
-                args.spatial_anchors = {}
             if continuity is not None:
                 validate_plan(continuity, consolidated_references)
                 args.spatial_plan = continuity
