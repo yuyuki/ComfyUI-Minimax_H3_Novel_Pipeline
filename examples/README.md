@@ -37,6 +37,13 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    within `repair_attempts`, and records unresolved issues as validation warnings.
    Existing visual designs are carried by `consolidated_references`.
    Review the chapter manifest for spatial plans and prompt checks.
+   The example disables generation thinking and camera refinement. Independent
+   `camera_thinking` and `review_thinking` controls also default to false.
+   Completed structured requests are checkpointed under the node's chapter cache,
+   including individual continuity-review batches. Use `resume_run` and the same
+   `out_dir` to recover matching work after a failure, with `force=false`.
+   Request counts, cache hits and elapsed times are recorded in the chapter cache's
+   `request_metrics.json`. Existing runs cannot supply checkpoints they never saved.
    For a reusable chapter-wide plan, connect **Consolidate References** and
    **Provider Configuration** to **Spatial Continuity**, then its
    `spatial_continuity` output to **Generate H3 Prompts**. This exports

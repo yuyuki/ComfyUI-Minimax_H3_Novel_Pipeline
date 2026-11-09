@@ -159,4 +159,4 @@ def test_mistral_records_node_thinking_and_ignores_qwen_sampling(setup, monkeypa
 
 def test_generate_has_no_obsolete_narrative_socket():
     inputs = generate.GenerateH3PromptsNode.INPUT_TYPES()
-    assert set(inputs["optional"]) == {"spatial_continuity", "camera_direction", "resume_run"}
+    assert set(inputs["optional"]) == {"spatial_continuity", "camera_direction", "resume_run", "camera_thinking", "review_thinking"}

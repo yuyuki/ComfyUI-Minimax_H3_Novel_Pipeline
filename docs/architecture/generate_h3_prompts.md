@@ -4,7 +4,7 @@ This describes the implementation inspected on 2026-11-09. Related: [architectur
 
 ## Current sequence
 
-Every LLM arrow below goes through the shared structured-JSON transport. One arrow can produce multiple HTTP requests through transport retries. All scenes are processed sequentially.
+Every LLM arrow below first checks an exact-request checkpoint, then uses the shared structured-JSON transport on a miss. Successful structured responses are saved immediately. One miss can produce multiple HTTP requests through transport retries. All scenes are processed sequentially.
 
 ```mermaid
 sequenceDiagram
@@ -69,8 +69,8 @@ sequenceDiagram
                             Pipeline->>LLM: Repair current prompt
                         end
                     end
-                    Note over Pipeline,LLM: Review also runs on valid prompt cache hits
-                    Note over Pipeline,Disk: Transport exception aborts before this scene is cached or saved
+                    Note over Pipeline,LLM: Rebuild review requests and reuse matching batch checkpoints
+                    Note over Pipeline,Disk: On failure, completed request checkpoints survive
                     Pipeline->>Pipeline: Add valid final prompt to history
                 else No continuity context
                     Note over Pipeline: No continuity review
@@ -93,6 +93,8 @@ sequenceDiagram
 
 `refine_camera` is independent of this table. It adds camera-only notes to a valid, newly generated prompt. Turning it off does not remove camera instructions already present in prompt generation, the spatial plan, or `camera_direction`. Its output is subsequently subject to continuity review.
 
+`thinking` controls planning, generation and format repairs. `camera_thinking` controls the optional camera pass, and `review_thinking` controls continuity reviews and their repairs. All three default to false. They use the shared model-specific transport: GPT-OSS still always reasons, and OpenAI has no thinking switch. Overrides are restored after each task, including errors and cancellation.
+
 Connect Spatial Continuity or Load Spatial Continuity to enable spatial planning context and final-prompt review. The redundant spatial checkbox and internal staging fallback have been removed. The connected plan defines intended staging; review checks actual generated wording. Camera refinement remains optional and independent.
 
 The bundled example uses the current widget order. For other saved workflows containing the removed checkbox, recreate Generate H3 Prompts and reconnect its inputs before running, then restore the desired settings. This avoids positional widget values shifting into camera_direction or resume_run. No legacy widget format is supported.
@@ -112,32 +114,29 @@ Reasoning and JSON share the completion budget. Gemma exhausted that budget befo
 
 LM Studio reports about 170.8 seconds for the last request. The 25,720-second ComfyUI profile is the cumulative node execution. These excerpts prove why the run stopped, but do not provide a per-stage breakdown of the preceding seven hours. They do not show a context-window overflow; increasing context size alone would not fix the output-budget failure. The attached text snapshot was empty.
 
-## Performance and recovery findings
+## Performance and recovery behavior
 
 1. **Repeated chapter-wide review.** Each scene is reviewed against all previous valid final prompts and all remaining scenes. Context is packed without dropping evidence, with a 48,000 UTF-8-byte request budget; overflow creates additional review requests. Across N scenes this can approach quadratic evidence processing. Repairs repeat the batches.
-2. **Nested retry costs.** With repair_attempts 2, a scene can have up to three camera attempts and three continuity review rounds, plus format and continuity repairs. Each LLM call can itself retry. Camera requests begin at only 1400 tokens while inheriting thinking; reasoning truncation can escalate their retry to 16384 tokens.
-3. **Cached prompts still incur review.** A valid matching prompt skips generation and camera refinement, but not continuity review. A later failure can therefore happen while replaying already completed work.
-4. **Late scene checkpoint.** The current scene's prompt is cached and saved only after review completes. Earlier scenes and planning caches remain on disk, but the failing scene's generated prompt is not checkpointed before the exception. The chapter manifest and combined prompt file are written only after the chapter loop completes.
-5. **Broad cache invalidation.** Fingerprints include most scalar node settings, thinking/backend settings, and previous prompt history. Changing thinking, max_tokens, refine_camera, or max_scenes can invalidate plans and prompts. Do not promise full reuse after changing these controls.
+2. **Nested retry costs.** With repair_attempts 2, a scene can have up to three camera attempts and three continuity review rounds, plus format and continuity repairs. Each LLM call can itself retry. Camera requests begin at 1400 tokens and now use camera_thinking, default false. Explicitly enabling reasoning can still escalate a truncated retry to 16384 tokens.
+3. **Cached reviews avoid model calls.** Valid final prompts still undergo local validation and reconstruct their review requests. Each matching batch response is read from disk, schema-checked, and passed through the normal reviewer-result checks. Review is never skipped solely because a prompt was cached.
+4. **Early request checkpoints.** Generation, camera, repair, and individual review responses are saved before subsequent stages run. An exception is never cached. The final scene output is still written after review, and the chapter manifest/combined text after the chapter completes. Intermediate responses are drafts, not validated deliverables.
+5. **Two levels of invalidation.** Plan/final-prompt keys include node settings and implementation fingerprints; final-prompt keys also include all future scenes. Request keys use the exact instructions, payload, schema, model, endpoint digest, effective model controls, temperature, token budget and transport/profile implementation. Changing review thinking can reuse available generation checkpoints. Changed evidence redoes only requests whose full inputs differ. Only checkpoints present in the current or selected previous run can be reused.
 6. **A small max_scenes is only a generation smoke test.** The cap is applied after planning all sequences in the chapter. It reduces subsequent per-scene work but does not avoid all planning calls. Lowering scenes_per_chunk changes scene selection and can omit story moments; it is not merely a performance adjustment.
 
 ## Immediate operational recommendations
 
-- Try thinking=false on Generate H3 Prompts, retaining the connected spatial plan. The Gemma profile sends chat_template_kwargs.enable_thinking=false. Verify that the loaded LM Studio runtime/template honors it; this code raises an explicit error if reasoning is still returned. This behavior has not been tested against the user's live server here.
-- Set refine_camera=false for the initial trial. This removes an optional post-processing pass while preserving continuity review and the camera information used in initial generation.
+- The example now uses thinking=false, camera_thinking=false, review_thinking=false and refine_camera=false, retaining the connected spatial plan. The Gemma profile sends chat_template_kwargs.enable_thinking=false. Verify that the loaded LM Studio runtime/template honors it; the transport raises an explicit error if reasoning is still returned. This behavior has not been tested against the user's live server here.
+- Enable refine_camera if the additional camera polish is useful. Its thinking setting is independent of generation and review.
 - Keep force=false. To attempt reuse, set resume_run to the failed run's timestamp folder and keep the same out_dir. Only matching caches are reused; the settings changes above will invalidate affected entries. Preserve the failed run for recovery and inspection.
 - If thinking is required, increasing max_tokens (for example to 32768) is an alternative experiment, subject to the loaded model's context capacity. It can cost substantially more time and does not guarantee termination with JSON.
 - Test one chapter with a small max_scenes before a full run, accounting for the planning caveat above. Disconnecting the plan removes its staging context and spatial review, so it should not be used merely to suppress this error without accepting the loss of checks.
 
-## Proposed implementation changes, in priority order
+## Checkpoint storage and measurement
 
-These are recommendations, not implemented behavior changes.
+[generation_requests.py](../../src/core/generation_requests.py) stores responses atomically at `<timestamp>/<out_dir>/.cache/<chapter_id>/requests/<request_hash>.json`. A record contains the response and integrity digest, not credentials or raw reasoning. Cache reads verify the request key, integrity digest and JSON schema. Completed responses reused from a previous run are carried into the current run. `force=true` bypasses all cache reads. Stop checks also run on cache hits.
 
-1. **Checkpoint generation, camera refinement, and each continuity batch separately.** Save drafts as unvalidated and resume only missing stages. Keys must include the exact request, schema/prompt version, model/settings, current prompt, plan, all prior/future evidence, and review policy. Keep caches under the node's existing chapter cache directory.
-2. **Reuse completed reviews safely.** Current prompt keys do not explicitly include the full future-scene list or all reviewer instructions/schema. Add complete review dependencies before allowing cache hits to bypass review. Re-run local validation and invalidate when any relevant evidence changes. Do not simply skip review for from_cache=true.
-3. **Separate reasoning controls by task.** Retain optional thinking for planning/generation while allowing no-thinking camera/review calls. Use the shared model-specific transport, structured schemas, cancellation, and explicit settings in cache keys. Do not silently change the user's reasoning policy on retry.
-4. **Reduce repeated context without losing evidence.** Maintain explicit entity/location state with provenance, temporal changes, and dependencies to earlier/future scenes. Establish equivalent coverage before replacing exhaustive history review; do not truncate arrays or use a last-K-scenes shortcut that misses returning locations.
-5. **Expose stage metrics and actionable failures.** Record chapter/scene, stage, batch, elapsed time, request counts, retries and cache hits. Include the run identifier and resumable stage in failures, without credentials or raw reasoning logs. This supplies the evidence needed to measure speedups.
-The UI simplification is implemented: the spatial connection controls plan usage and spatial review, and camera refinement remains separate. Node IDs and socket types are preserved.
+The chapter cache's `request_metrics.json` records the last stage/status and per-task call counts, checkpoint hits, HTTP completion attempts reported by the shared transport, estimated input/output tokens, and elapsed seconds. Continuity corrections are counted under continuity_review. Console messages identify chapter, sequence/scene and task request number, including the checkpoint path on failure. Token counts are estimates, and SDK-internal HTTP retries are not separately counted. Metrics measure the current execution, not cumulative history across resumed runs.
 
-Mocked regression coverage should exercise reasoning-only length failures, schema preservation on retries, interruption, connected and disconnected spatial plans, enriched context without a spatial plan, recovery after a failed review, exact review-cache invalidation (including future evidence), and lossless evidence coverage. Benchmark request counts and elapsed time on the same chapter/settings before claiming an optimization.
+Existing runs created before request checkpointing cannot supply missing intermediate responses. New fingerprint dependencies may invalidate their plan/final-prompt entries. No old-cache fallback bypasses the new validation dependencies.
+
+The remaining potential optimization is reducing repeated history context. This implementation deliberately retains every previous/future observation and the existing lossless batching. Replacing that with compact entity/location state requires separate evidence-coverage validation. No live seven-hour workload speedup is claimed from offline tests.

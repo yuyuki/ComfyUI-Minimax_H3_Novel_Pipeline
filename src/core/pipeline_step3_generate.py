@@ -1,19 +1,21 @@
 """ComfyUI pipeline step3 generate implementation."""
 from __future__ import annotations
 
-from . import progress, continuity_context
+from . import progress, continuity_context, generation_requests
 
 import argparse
 import json
 import re
 import sys
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
 
-from .lmstudio_json import chat_json, select_model as select_model
+from .lmstudio_json import select_model as select_model
+from .generation_requests import chat_json
 
 from .path_access import confined_path
 from .prompt_cache import fingerprint as cache_fingerprint
@@ -1383,7 +1385,16 @@ def process_chapter(
     model: str,
     args: argparse.Namespace,
 ) -> dict[str, Any]:
+    chapter_id, _ = selected_timeline(refs, path)
+    with generation_requests.chapter(chapter_id, args):
+        return _process_chapter(path, refs, client, model, args)
+
+
+def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
     chapter_id, sequences = selected_timeline(refs, path)
+    # Covers reviewer/camera instructions and local validation, not just schemas.
+    implementation = [sha256(Path(module).read_bytes()).hexdigest() for module in
+                      (__file__, continuity_context.__file__, generation_requests.__file__)]
     catalog = chapter_catalog(refs, chapter_id)
     if not catalog:
         print(f"WARNING: no consolidated entity mapping for {chapter_id}.", file=sys.stderr)
@@ -1409,10 +1420,12 @@ def process_chapter(
     print(f"{path.name}: {len(chunks)} planning chunk(s)")
     scenes: list[Scene] = []
     for i, chunk in enumerate(progress.steps(chunks, 0, 0.3), start=1):
+        generation_requests.position(f"{chapter_id} sequence {i}/{len(chunks)}")
         sequence = sequences[i - 1]
         catalog = sequence_catalog(refs, chapter_id, sequence["sequence"])
         cache_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, PLAN_SYSTEM, SCENE_SCHEMA,
-                                      refs.get("source_digest", ""), catalog, i, len(chunks), chunk, client=client)
+                                      refs.get("source_digest", ""), catalog, i, len(chunks), chunk,
+                                      implementation, generation_requests.backend_signature(client, model), client=client)
         cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", args.out_dir)
         chunk_scenes = None
         for candidate_dir in cache_dirs if not args.force else []:
@@ -1426,7 +1439,8 @@ def process_chapter(
                 pass
         if chunk_scenes is None:
             print(f"  planning chunk {i}/{len(chunks)}")
-            chunk_scenes = plan_scenes(client, model, chapter_id, chunk, i, len(chunks), catalog, args)
+            with generation_requests.task("planning"):
+                chunk_scenes = plan_scenes(client, model, chapter_id, chunk, i, len(chunks), catalog, args)
             chunk_scenes = dedupe_scenes(chunk_scenes)
             for scene in chunk_scenes:
                 scene.sequence = sequence["sequence"]
@@ -1468,6 +1482,7 @@ def process_chapter(
     entries: list[dict[str, Any]] = []
     previous_prompts: list[dict[str, Any]] = []
     for i, scene in enumerate(progress.steps(scenes, 0.3, 0.98), start=1):
+        generation_requests.position(f"{chapter_id} scene {i}/{len(scenes)}")
         continuity = ({"visual_designs": visual_designs, **continuity_states[i - 1]}
                       if spatial_plan is not None else None)
         character_context = sequence_context(refs, chapter_id, scene.sequence)
@@ -1493,7 +1508,9 @@ def process_chapter(
 
         prompt_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, H3_RULES, PROMPT_SCHEMA,
                                        "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v3-batched",
-                                       scene_to_dict(scene), bindings, continuity, previous_prompts, client=client)
+                                       scene_to_dict(scene), bindings, continuity, previous_prompts,
+                                       [scene_to_dict(s) for s in scenes[i:]], CONTINUITY_REVIEW_SCHEMA,
+                                       implementation, generation_requests.backend_signature(client, model), client=client)
         prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", args.out_dir)
         prompt = None
         camera_warnings: list[str] = []
@@ -1511,26 +1528,31 @@ def process_chapter(
                 pass
 
         if prompt is None:
-            prompt = generate_prompt(client, model, scene, bindings, args.duration, args, continuity)
+            with generation_requests.task("generation"):
+                prompt = generate_prompt(client, model, scene, bindings, args.duration, args, continuity)
 
         validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
         repairs = 0
         while not validation.ok and repairs < args.repair_attempts:
+            from_cache = False
             repairs += 1
             print(f"    repair {repairs}/{args.repair_attempts}: {'; '.join(validation.errors[:3])}")
-            prompt = repair_prompt(client, model, prompt, scene, bindings, validation, args.duration, args, continuity)
+            with generation_requests.task("format_repair"):
+                prompt = repair_prompt(client, model, prompt, scene, bindings, validation, args.duration, args, continuity)
             validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
 
         if getattr(args, "refine_camera", False) and validation.ok and not from_cache:
-            prompt, camera_warnings = refine_camera_prompt(client, model, prompt, scene, continuity, args, bindings)
+            with generation_requests.task("camera", getattr(args, "camera_thinking", False)):
+                prompt, camera_warnings = refine_camera_prompt(client, model, prompt, scene, continuity, args, bindings)
             validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
             for warning in camera_warnings:
                 print(f"    {warning}")
 
         if continuity is not None:
-            prompt, validation, continuity_errors, continuity_repairs = review_and_repair_continuity(
-                client, model, scene, prompt, bindings, continuity, previous_prompts, scenes[i:], args,
-            )
+            with generation_requests.task("continuity_review", getattr(args, "review_thinking", False)):
+                prompt, validation, continuity_errors, continuity_repairs = review_and_repair_continuity(
+                    client, model, scene, prompt, bindings, continuity, previous_prompts, scenes[i:], args,
+                )
             if validation.ok:
                 previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
                                          "bindings": bindings, "continuity_errors": []})

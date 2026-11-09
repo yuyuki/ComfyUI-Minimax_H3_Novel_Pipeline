@@ -23,7 +23,7 @@ class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for scene planning, prompt generation and format repairs. Camera and continuity review have separate controls. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
             "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "H3 duration in seconds of EACH generated scene (4–15 seconds)."}),
@@ -36,8 +36,10 @@ class GenerateH3PromptsNode:
             "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY", {"tooltip": "Connect Spatial Continuity or Load Spatial Continuity to use its staging plan and review final prompts for consistency."}),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
             "resume_run": ("STRING", {"default": "", "tooltip":
-                "Reuse matching scene plans and validated prompts from a previous timestamped run with the same out_dir. "
+                "Reuse matching plans, prompts and completed request checkpoints from a previous timestamped run with the same out_dir. "
                 "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
+            "camera_thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for the optional camera-only pass. Independent of generation thinking. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "review_thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for continuity reviews and their repairs. Off avoids spending the review budget on reasoning. GPT-OSS always reasons; OpenAI has no thinking control."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING", "STRING")
@@ -62,7 +64,7 @@ class GenerateH3PromptsNode:
                 )
 
     @progress.node_progress
-    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, thinking: bool = True, **params: Any) -> dict[str, Any]:
+    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, thinking: bool = False, **params: Any) -> dict[str, Any]:
         self.validate_parameters(params)
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
@@ -100,6 +102,8 @@ class GenerateH3PromptsNode:
                 raise ValueError("max_shots must be between 1 and 6. Set it on Generate H3 Prompts.")
             args.camera_direction = str(params.get("camera_direction", "")).strip()
             args.refine_camera = bool(params.get("refine_camera", False))
+            args.camera_thinking = bool(params.get("camera_thinking", False))
+            args.review_thinking = bool(params.get("review_thinking", False))
             continuity = params.get("spatial_continuity")
             if continuity is not None:
                 validate_plan(continuity, consolidated_references)
