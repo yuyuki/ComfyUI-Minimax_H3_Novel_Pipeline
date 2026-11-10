@@ -510,6 +510,12 @@ Keep the companion's reply, then the torch's approach and the character's reacti
 do not open with the torch already arriving or invent a view of who lowers it.
 
 Use global IDs only from the supplied chapter entity catalog.
+Entity global_id values identify subjects (for example CHAR_001); picture asset_id
+values identify images (for example PIC_CHAR_001_FULL_BODY_FRONT). Never put an
+asset_id in any entity ID field, including reference_view_requests.global_id.
+For a full-body reference, request global_id CHAR_001 with view_types
+["full_body_front"], not the picture asset ID.
+If the sequence leaves the setting unknown, do not invent a backdrop or location.
 - visible_entity_ids: catalogued characters/locations/objects actually visible.
 - speaking_entity_ids: catalogued characters who speak in this planned beat,
   including off-screen speakers; exclude speakers present only in contextual prose.
@@ -562,18 +568,46 @@ CHAPTER ENTITY CATALOG:
 {chunk}
 --- END NOVEL PASSAGE ---"""
     valid_ids = {e["global_id"] for e in catalog}
+    # Each request gets its own schema; never leak one sequence's IDs into another.
+    schema = json.loads(json.dumps(SCENE_SCHEMA))
+    properties = schema["schema"]["properties"]["scenes"]["items"]["properties"]
+    for field in ("visible_entity_ids", "speaking_entity_ids"):
+        if valid_ids:
+            properties[field]["items"]["enum"] = sorted(valid_ids)
+        else:
+            properties[field]["maxItems"] = 0
+    properties["location_global_id"]["enum"] = ["", *sorted(valid_ids)]
+    references = properties["reference_view_requests"]
+    if valid_ids:
+        references["items"]["properties"]["global_id"]["enum"] = sorted(valid_ids)
+    else:
+        references["maxItems"] = 0
     for attempt in range(getattr(args, "repair_attempts", 2) + 1):
-        data = chat_json(client, model, PLAN_SYSTEM, user, SCENE_SCHEMA, 0.24, 6500)
+        data = chat_json(client, model, PLAN_SYSTEM, user, schema, 0.24, 6500)
         requested_ids = set()
-        for raw in data.get("scenes", [])[:args.scenes_per_chunk]:
+        invalid_fields = []
+        for scene_index, raw in enumerate(data.get("scenes", [])[:args.scenes_per_chunk]):
             requested_ids.update(raw["visible_entity_ids"] + raw["speaking_entity_ids"])
             requested_ids.update(req["global_id"] for req in raw.get("reference_view_requests", []))
             if raw["location_global_id"]:
                 requested_ids.add(raw["location_global_id"])
+            for field in ("visible_entity_ids", "speaking_entity_ids", "location_global_id"):
+                values = [raw[field]] if field == "location_global_id" else raw[field]
+                for value in values:
+                    if value and value not in valid_ids:
+                        invalid_fields.append(f"scenes[{scene_index}].{field}={value!r}")
+            for request_index, request in enumerate(raw.get("reference_view_requests", [])):
+                if request["global_id"] not in valid_ids:
+                    invalid_fields.append(
+                        f"scenes[{scene_index}].reference_view_requests[{request_index}].global_id="
+                        f"{request['global_id']!r}")
         invalid_ids = requested_ids - valid_ids
         if not invalid_ids:
             break
-        error = (f"Scene plan introduces entities absent from this sequence: {sorted(invalid_ids)}. "
+        error = (f"Scene plan contains IDs absent from this sequence's entity catalog: {sorted(invalid_ids)}. "
+                 f"Invalid fields: {', '.join(invalid_fields)}. "
+                 f"Allowed entity global_id values: {sorted(valid_ids)}. "
+                 "Use entity global_id values, never picture asset_id values; select image views through view_types. "
                  "Replan only the supplied sequence's events; do not anticipate later revelations.")
         if attempt == getattr(args, "repair_attempts", 2):
             raise ValueError(error)

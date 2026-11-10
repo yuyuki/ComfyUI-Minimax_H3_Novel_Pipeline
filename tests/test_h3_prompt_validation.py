@@ -249,7 +249,7 @@ def test_offscreen_reply_survives_planning_and_reaches_generation(monkeypatch):
 
     def chat(client, model, system, user, schema, *unused):
         requests.append(user)
-        if schema is step.SCENE_SCHEMA:
+        if schema["name"] == step.SCENE_SCHEMA["name"]:
             assert excerpt in user
             assert "retain its short replies and calls" in system
             assert "reference metadata, not a timeline" in system
