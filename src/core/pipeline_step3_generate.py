@@ -1,7 +1,8 @@
 """ComfyUI pipeline step3 generate implementation."""
 from __future__ import annotations
 
-from . import progress, continuity_context, generation_requests
+from . import progress, continuity_context, generation_requests, generation_evidence
+from . import character_visual_integration, reference_timeline
 
 import argparse
 import ast
@@ -468,9 +469,9 @@ def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> li
     return result
 
 
-def constrain_character_presence(refs: dict[str, Any], chapter_id: str, scene: Scene) -> None:
+def constrain_character_presence(refs: dict[str, Any], chapter_id: str, scene: Scene, *, contexts=None) -> None:
     """Keep mapped mentions and offscreen voices out of visual reference bindings."""
-    context = sequence_context(refs, chapter_id, scene.sequence)
+    context = sequence_context(refs, chapter_id, scene.sequence) if contexts is None else contexts[scene.sequence]
     if context is None or context['sequence'] is None:
         return
     mapping = context['registry_ids']
@@ -1506,14 +1507,8 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
         print(f"WARNING: no consolidated entity mapping for {chapter_id}.", file=sys.stderr)
 
     spatial_plan = getattr(args, "spatial_plan", None)
-    sequence_plans = ({p["sequence"]: p for p in spatial_plan["chapters"][chapter_id]["sequences"]}
-                      if spatial_plan is not None else {})
     # Spatial plans may infer future/offscreen geometry; they cannot select story beats.
     period = temporal_context.prompt(refs["chapter_timelines"][chapter_id].get("default_temporal_context", ""))
-    chunks = [json.dumps({**sequence, **({"temporal_context": period} if period else {}),
-                          **({"character_enrichment": sequence_context(refs, chapter_id, sequence['sequence'])}
-                             if refs.get('character_enrichment') else {})}, ensure_ascii=False)
-              for sequence in sequences]
     chapter_dir = confined_path(chapter_id, args.out_dir)
     chapter_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = confined_path(args.out_dir / ".cache" / chapter_id, args.out_dir)
@@ -1523,12 +1518,28 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
     if resume_cache_dir is not None:
         cache_dirs.append(confined_path(chapter_id, resume_cache_dir))
 
+    bundle, evidence_status = generation_evidence.prepare(
+        refs, chapter_id, sequences, spatial_plan, period, cache_dirs,
+        catalog_for=sequence_catalog, context_for=sequence_context, force=args.force,
+        dependencies={str(Path(module).name): sha256(Path(module).read_bytes()).hexdigest()
+                      for module in (__file__, character_visual_integration.__file__, reference_timeline.__file__)},
+    )
+    print(f"  upstream evidence: {evidence_status['status']}")
+    evidence_rows = {row["sequence"]["sequence"]: row for row in bundle["sequences"]}
+    contexts = {number: row["character_context"] for number, row in evidence_rows.items()}
+    sequence_plans = {number: row["spatial_plan"] for number, row in evidence_rows.items()
+                      if row["spatial_plan"] is not None}
+    chunks = [json.dumps({**row["sequence"], **({"temporal_context": period} if period else {}),
+                          **({"character_enrichment": row["character_context"]}
+                             if refs.get('character_enrichment') else {})}, ensure_ascii=False)
+              for row in bundle["sequences"]]
+
     print(f"{path.name}: {len(chunks)} planning chunk(s)")
     scenes: list[Scene] = []
     for i, chunk in enumerate(progress.steps(chunks, 0, 0.3), start=1):
         generation_requests.position(f"{chapter_id} sequence {i}/{len(chunks)}")
         sequence = sequences[i - 1]
-        catalog = sequence_catalog(refs, chapter_id, sequence["sequence"])
+        catalog = evidence_rows[sequence["sequence"]]["catalog"]
         cache_key = planning_key(client, model, args, chapter_id, chunk, i, len(chunks), catalog, plan_implementation)
         cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", args.out_dir)
         chunk_scenes = None
@@ -1554,13 +1565,13 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
 
     # Apply current consolidation decisions even when planning reused a cache entry.
     for scene in scenes:
-        constrain_character_presence(refs, chapter_id, scene)
+        constrain_character_presence(refs, chapter_id, scene, contexts=contexts)
 
     if args.max_scenes > 0:
         scenes = scenes[:args.max_scenes]
     print(f"  selected {len(scenes)} scene(s)")
 
-    visual_designs = {k: v for k, v in refs.get("visual_designs", {}).items() if k != "character_profiles"}
+    visual_designs = bundle["visual_designs"]
     continuity_states: list[dict[str, Any]] = []
     if sequence_plans:
         for scene in scenes:
@@ -1580,12 +1591,12 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
         generation_requests.position(f"{chapter_id} scene {i}/{len(scenes)}")
         continuity = ({"visual_designs": visual_designs, **continuity_states[i - 1]}
                       if spatial_plan is not None else None)
-        character_context = sequence_context(refs, chapter_id, scene.sequence)
+        character_context = contexts[scene.sequence]
         if character_context is not None:
             continuity = {**(continuity or {}), "visual_designs": visual_designs,
                           "character_enrichment": character_context}
         print(f"  [{i}/{len(scenes)}] {scene.title}")
-        bindings = build_bindings(refs, scene, chapter_id, args)
+        bindings = build_bindings(bundle["references"], scene, chapter_id, args)
         if continuity is not None:
             # Designs are appearance references, not a chapter-wide cast to depict.
             scene_ids = set(scene.visible_entity_ids + scene.speaking_entity_ids)
@@ -1694,6 +1705,7 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
         confined_path(chapter_dir / "all_prompts.txt", chapter_dir).write_text("\n\n\n".join(blocks) + "\n", encoding="utf-8")
 
     manifest = {
+        "evidence_bundle": evidence_status,
         "chapter_id": chapter_id,
         "source_file": str(path),
         "model": model,

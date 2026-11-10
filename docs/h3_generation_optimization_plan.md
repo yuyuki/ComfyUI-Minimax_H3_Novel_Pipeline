@@ -16,7 +16,8 @@ Date: 2026-11-10. Status: implementation started; first milestone validated offl
   occurrences and proving lossless reconstruction and smaller batch counts.
 - [x] Isolate planning cache keys from unrelated camera/review/generation
   settings and source declarations; write plan checkpoints atomically.
-- [ ] Compile the complete reusable upstream evidence bundle with provenance.
+- [x] Compile the reusable upstream evidence bundle with phase provenance,
+  exact reference/character context, approved designs and separate spatial plans.
 - [ ] Introduce structured issue targets and dedicated scene/binding repairs.
 - [ ] Complete granular artifact dependencies, integrity and coverage manifests
   beyond the planning cache and existing exact-request checkpoints.
@@ -27,6 +28,21 @@ First milestone validation: 1,199 tests passed, 3 skipped, 111 subtests passed;
 repository lint passed and the generated architecture map was refreshed. Tests
 use mocked model calls. The active run and its output files were not modified.
 No live speedup or model-quality equivalence has been established yet.
+
+Second milestone: generation now consumes a deterministic chapter evidence
+bundle from its own `.cache/<chapter_id>/evidence_bundle.json`. Exact input and
+implementation digests, payload integrity checks, atomic writes, force and
+read-only resume/carry-forward are implemented. Phase occurrence IDs preserve
+provenance; no LLM call, summarisation, inferred identity or state propagation is
+introduced. Planning, presence constraints and scene generation reuse the same
+compiled per-sequence context. Final prompt reviews remain required.
+
+Validation: 1,217 tests passed, 3 skipped, 111 subtests passed; lint passed.
+The architecture freshness test was deliberately deselected (one test): per the
+operator's instruction, refresh and verify the map after all implementation
+changes. Live quality/performance comparisons remain pending. This step avoids
+repeated local evidence preparation and establishes a trustworthy cache input
+for targeted repairs; it does not by itself eliminate required semantic reviews.
 
 ## Objective and boundaries
 
