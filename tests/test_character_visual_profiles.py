@@ -31,6 +31,18 @@ def cinematic(data):
                             'adaptation': {p: source['source_text'] for p in ('initialState', 'event', 'endingState')}}]}]
 
 
+def test_persistent_scar_cannot_disappear_from_visual_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    data = consolidated(observation('Une cicatrice sur le menton.', value='cicatrice sur le menton'))
+    profile = data['profiles'][0]
+    profile['global_traits'][0]['trait'] = 'distinguishing_mark'
+    result, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'valid')
+    assert 'cicatrice sur le menton' in result['visual_designs']['entities'][0]['source_facts']['stable_visual_description']
+    profile['global_traits'] = []
+    recovered, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'missing')
+    assert 'cicatrice sur le menton' in recovered['visual_designs']['entities'][0]['source_facts']['stable_visual_description']
+
+
 
 def test_node_uses_selection_without_model_or_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path / kind)

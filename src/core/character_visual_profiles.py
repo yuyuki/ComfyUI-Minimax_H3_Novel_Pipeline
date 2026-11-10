@@ -12,6 +12,17 @@ PHYSICAL = ("age_appearance", "skin", "facial_features", "hair", "eyes", "build"
 def prepare_profiles(data):
     profiles = selection.project(data)
     for profile in profiles:
+        # Preserve explicit permanent observations omitted by precise classification.
+        # Existing choices and chronology remain authoritative, including exclusions.
+        covered = {key for field in ('global_traits', 'temporary_states', 'unresolved_conflicts')
+                   for row in profile[field] for key in row['evidence_ids']}
+        covered.update(row[key] for row in profile['chronological_changes']
+                       for key in ('before_id', 'after_id'))
+        covered.update(ref['evidence_id'] for row in profile['trait_relations'] for ref in row['evidence'])
+        permanent = [row for row in profile['attributes']['stable_physical']
+                     if row['evidence_id'] not in covered and row['classification'] == 'explicit'
+                     and row['persistence'] == 'persistent'
+                     and row['attribute'] in ('age', 'physical_appearance', 'distinguishing_feature')]
         conflicts = {rows[0]['trait'] for rows in profile['linked_trait_conflicts']}
         evolving = {row['trait'] for row in profile['chronological_changes']}
         profile['ignored_traits'] = sorted(set(profile['ignored_traits']) | conflicts)
@@ -19,6 +30,12 @@ def prepare_profiles(data):
                                           {selection.field_for(t) for t in conflicts | evolving})
         profile['effective_traits'] = [r for r in profile['effective_traits']
             if r['trait'] not in conflicts | evolving | {'clothing', 'accessory', 'injury', 'context'}]
+        profile['effective_traits'].extend({'trait': row['attribute'], 'value': row['value'],
+                                            'evidence_ids': [row['evidence_id']]} for row in permanent)
+        if permanent:
+            # No precise field was assigned: prevent invented defaults from
+            # contradicting any of these source-supported physical observations.
+            profile['blocked_fields'] = sorted(set(profile['blocked_fields']) | set(PHYSICAL))
     return profiles
 
 

@@ -1,4 +1,4 @@
-"""Stable physical imports, contextual identity joins and scene-local enrichment."""
+"""Stable physical imports, validated alias joins and scene-local enrichment."""
 from contextlib import nullcontext
 from copy import deepcopy
 import json
@@ -36,8 +36,6 @@ def setup(tmp_path, monkeypatch):
     def chat(client, model, system, prompt, schema, *args):
         payload = json.loads(prompt.split('\nRejected:')[0])
         calls.append((schema, payload))
-        if schema == integration.IDENTITY:
-            return {'same': True, 'source_quote': 'She wears a red dress.', 'reason': 'Context identifies the person.'}
         if schema == local.PRESENCE:
             return {'characters': [{'local_id': c['local_id'], 'presence': 'visible',
                 'source_quote': payload['sequence']['source'], 'label': c['canonical_name']} for c in payload['candidates']],
@@ -81,10 +79,8 @@ def test_enrichment_resumes_chapter_cache_and_force_bypasses_it(setup, caplog):
 def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, disk, mapped):
     root, data, result, chapter, entity, calls = setup
     if not mapped:
-        original = lmstudio_json.chat_json
-        monkeypatch.setattr(lmstudio_json, 'chat_json', lambda *a: {
-            'same': False, 'source_quote': '', 'reason': 'Identity uncertain.'}
-            if a[4] == integration.IDENTITY else original(*a))
+        result['visual_designs']['character_profiles']['profiles'][0]['identity_status'] = 'ambiguous'
+        util.save_json(root / 'visual/visual_designs.json', result['visual_designs'])
     pipeline = SimpleNamespace(reconcile_chapter=lambda *a: [deepcopy(entity)],
         audit_registry=lambda c, m, r, a: r, natural_key=lambda value: value,
         chat_json=lambda *a: pytest.fail('No new design needed for imported character') if mapped else {'added_details': []},
@@ -107,14 +103,12 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
         return original_requests(output, client, model, args)
     monkeypatch.setattr(integration, 'Requests', configured_requests)
     extra = {'visual_designs_path': str(root / 'visual/visual_designs.json')} if disk else {'character_visual_profiles': result}
-    with nullcontext() if mapped else pytest.warns(UserWarning):
+    with nullcontext() if mapped else pytest.warns(UserWarning), \
+            nullcontext() if mapped else pytest.raises(ValueError, match='no unique validated registry mapping'):
         payload, _ = node.ConsolidateReferencesNode().run([chapter], {'api_url': 'http://127.0.0.1:1234/v1', 'run_folder': '20261028120000'}, **options, **extra)['result']
     if not mapped:
-        assert payload['entities'][0]['stable_visual_description'] == 'Wrong eyes'
-        assert 'character_id' not in payload['entities'][0]
-        assert payload['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'Wrong eyes'
-        assert integration.sequence_context(payload, 'chapter1', 1)['registry_ids'] == {}
-        assert util.load_json(root / 'references/visual_designs.json') == payload['visual_designs']
+        assert not (root / 'references/visual_designs.json').exists()
+        assert not (root / 'references/consolidated_references.json').exists()
         return
     assert payload['entities'][0]['stable_visual_description'] == 'green eyes'
     assert payload['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'green eyes'
@@ -131,30 +125,8 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
     assert integration.sequence_context(payload, 'chapter1', 2)['sequence'] is None
 
 
-@pytest.mark.parametrize('max_attempts', [1, 2, 4])
-def test_character_identity_respects_attempt_limit(setup, monkeypatch, max_attempts):
-    root, data, result, chapter, entity, calls = setup
-    original = lmstudio_json.chat_json
-    attempts = []
 
-    def chat(*args):
-        if args[4] == integration.IDENTITY:
-            attempts.append(args)
-            return {'same': True, 'source_quote': 'Not in the source.', 'reason': 'Rejected quote.'}
-        return original(*args)
 
-    monkeypatch.setattr(lmstudio_json, 'chat_json', chat)
-    with pytest.warns(UserWarning) as caught:
-        enriched, imported = integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None,
-                                                'mock', settings(max_attempts=max_attempts))
-    assert imported == {}
-    assert any('no unique validated registry mapping' in str(w.message) for w in caught)
-    assert enriched['chapter1']['registry_ids'] == {}
-    assert entity['stable_visual_description'] == 'Wrong eyes'
-    assert len(attempts) == max_attempts
-    assert all(call[4] == integration.IDENTITY for call in attempts)
-    evidence = vp.prepare_profiles(data)[0]['supporting_evidence']
-    assert all(row['evidence_id'] in call[3] for call in attempts for row in evidence)
 
 
 @pytest.mark.parametrize('max_attempts', [1, 2, 4])
@@ -171,31 +143,24 @@ def test_reference_validation_respects_attempt_limit(max_attempts):
         raise ValueError('Missing requested entities.')
 
     with pytest.raises(InvalidResponse, match='Missing requested entities'):
-        validated_request(chat, None, 'mock', 'system', {'entities': ['A', 'B']}, integration.IDENTITY,
+        validated_request(chat, None, 'mock', 'system', {'entities': ['A', 'B']}, local.PRESENCE,
                           settings(max_attempts=max_attempts), reject)
     assert len(attempts) == max_attempts
-    assert all(call[4] == integration.IDENTITY and '"A", "B"' in call[3] for call in attempts)
+    assert all(call[4] == local.PRESENCE and '"A", "B"' in call[3] for call in attempts)
 
 
-@pytest.mark.parametrize('kind', ['ambiguous', 'homonym', 'two_registry_entities', 'exhausted'])
+@pytest.mark.parametrize('kind', ['ambiguous', 'two_registry_entities'])
 def test_no_arbitrary_identity_mapping(setup, monkeypatch, kind):
     root, data, result, chapter, entity, calls = setup
     designs = result['visual_designs']
     entities = [entity]
     if kind == 'ambiguous':
         designs['character_profiles']['profiles'][0]['identity_status'] = 'ambiguous'
-    elif kind in ('homonym', 'exhausted'):
-        original = lmstudio_json.chat_json
-        monkeypatch.setattr(lmstudio_json, 'chat_json', lambda *a: {
-            'same': kind == 'exhausted', 'source_quote': '', 'reason': 'Name alone is insufficient.'}
-            if a[4] == integration.IDENTITY else original(*a))
     else:
         entities.append({**entity, 'global_id': 'CHAR_043'})
-    with pytest.warns(UserWarning):
-        enriched, imported = integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
-    assert imported == {}
-    assert enriched['chapter1']['registry_ids'] == {}
-    assert enriched['chapter1']['validation']['confidence'] == 'low'
+    with pytest.warns(UserWarning), pytest.raises(ValueError, match='no unique validated registry mapping'):
+        integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
+    assert util.load_json(root / 'refs/chapter1/character_chapter_enrichment.json')['validation']['confidence'] == 'low'
     assert all('character_id' not in e for e in entities)
 
 
@@ -220,10 +185,46 @@ def test_embedded_later_chapter_profile_is_used_without_exported_design(setup):
     _, imported = integration.apply(designs, [chapter], [entity], root / 'refs', None, 'mock', settings())
     assert entity['stable_visual_description'] == 'green eyes'
     assert imported['CHAR_042']['source_facts']['stable_visual_description'] == 'green eyes'
-    identity_calls = [payload for schema, payload in calls if schema == integration.IDENTITY]
-    assert identity_calls
-    assert all(r['observation']['provenance']['file'] != 'chapter1.txt'
-               for r in identity_calls[0]['profile']['supporting_evidence'])
+    assert all(schema['name'] != 'character_registry_identity' for schema, _ in calls)
+
+
+@pytest.mark.parametrize('name', ['Indy', ' indy ', 'Henry Jones Jr.'])
+def test_validated_alias_imports_unclassified_permanent_facts_without_identity_llm(setup, name):
+    root, data, result, chapter, entity, calls = setup
+    designs = result['visual_designs']
+    profile = designs['character_profiles']['profiles'][0]
+    profile['canonical_name'], profile['aliases'] = 'Henry Jones Jr.', ['Indy']
+    profile['global_traits'] = []  # The validated permanent observation still exists.
+    entity['canonical_name'] = name
+    original = deepcopy(designs)
+    _, imported = integration.apply(designs, [chapter], [entity], root / 'refs', None, 'mock', settings())
+    assert entity['character_id'] == profile['local_id']
+    assert imported['CHAR_042']['source_facts']['stable_visual_description'] == 'green eyes'
+    assert all(schema['name'] != 'character_registry_identity' for schema, _ in calls)
+    assert designs == original
+
+
+def test_shared_alias_between_profiles_is_not_chosen_arbitrarily(setup):
+    root, data, result, chapter, entity, calls = setup
+    designs = result['visual_designs']
+    p = designs['character_profiles']['profiles'][0]
+    # Separate valid profiles own distinct observations but share the same alias.
+    other = deepcopy(p)
+    other['local_id'] = 'independent_identity'
+    other['canonical_name'] = 'Another person'
+    other['aliases'] = [entity['canonical_name']]
+    other['supporting_evidence'] = p['supporting_evidence'][:1]
+    ids = {r['evidence_id'] for r in other['supporting_evidence']}
+    p['supporting_evidence'] = p['supporting_evidence'][1:]
+    for target, keep in ((other, ids), (p, {r['evidence_id'] for r in p['supporting_evidence']})):
+        target['identity_support'] = [k for k in target['identity_support'] if k in keep]
+        target['attributes'] = {k: [r for r in rows if r['evidence_id'] in keep] for k, rows in target['attributes'].items()}
+        for field in ('global_traits', 'temporary_states'):
+            target[field] = [r for r in target[field] if set(r['evidence_ids']) <= keep]
+    designs['character_profiles']['profiles'].append(other)
+    with pytest.warns(UserWarning), pytest.raises(ValueError, match='no unique validated registry mapping'):
+        integration.apply(designs, [chapter], [entity], root / 'refs', None, 'mock', settings())
+    assert 'character_id' not in entity
 
 
 def test_manual_defaults_are_separate_and_ignored_fields_cannot_return(setup):
@@ -236,72 +237,8 @@ def test_manual_defaults_are_separate_and_ignored_fields_cannot_return(setup):
     assert item['source_facts']['stable_visual_description'] == 'green eyes'
 
 
-def test_identity_retry_uses_shared_schema_and_keeps_all_observations(tmp_path, monkeypatch):
-    from tests.test_structured_json import Stream, client_for
-    from minimax_h3_novel_pipeline.core.character_profile_batches import Requests
-    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
-    data = consolidated(observation(), observation('Other chapter.'))
-    client, create = client_for(Stream(['{"same":']), Stream([json.dumps({
-        'same': False, 'source_quote': '', 'reason': 'Insufficient context'})]))
-    requests = Requests(tmp_path / 'requests', client, 'mock', settings())
-    evidence = data['profiles'][0]['supporting_evidence']
-    local.request(requests, integration.IDENTITY_SYSTEM, integration.IDENTITY,
-                  {'supporting_evidence': evidence}, lambda value: None)
-    assert create.call_count == 2
-    for call in create.call_args_list:
-        assert call.kwargs['response_format'] == {'type': 'json_schema', 'json_schema': integration.IDENTITY}
-        assert all(row['evidence_id'] in str(call.kwargs['messages']) for row in evidence)
 
 
-def test_identity_budget_deduplicates_timeline_without_losing_evidence(setup, monkeypatch):
-    from minimax_h3_novel_pipeline.core.character_profile_batches import Requests, encoded
-
-    root, data, result, chapter, entity, calls = setup
-    # Real catalogs repeat their sequence states in each reconciled registry entity.
-    states = {'1': {'event': [{'chapter_appearance': 'Detailed observation. ' * 1400,
-                              'evidence': ['Independent catalog observation.']}]}}
-    chapter['characters'][0]['state_by_sequence'] = states
-    entity['timeline'] = {'chapter1': deepcopy(states)}
-    other = deepcopy(chapter['characters'][0])
-    other.update(local_id='OTHER', canonical_name='Another person', state_by_sequence={})
-    chapter['characters'].append(other)
-    original_entity = deepcopy(entity)
-    original_chapter = deepcopy(chapter)
-    options = settings(max_tokens=8500)
-    requests = Requests(root / 'probe', None, 'mock', options)
-    capacity = requests.capacity(integration.IDENTITY_SYSTEM, integration.IDENTITY)
-    identity_calls = []
-    original_chat = lmstudio_json.chat_json
-
-    def chat(client, model, system, prompt, schema, *args):
-        if schema == integration.IDENTITY:
-            payload = json.JSONDecoder().raw_decode(prompt)[0]
-            identity_calls.append(payload)
-            assert len(prompt.encode()) <= requests.context - options.max_tokens
-            if len(identity_calls) == 1:
-                return {'same': True, 'source_quote': 'Not in the source.', 'reason': 'Invalid quotation.'}
-        return original_chat(client, model, system, prompt, schema, *args)
-
-    monkeypatch.setattr(lmstudio_json, 'chat_json', chat)
-    enriched, imported = integration.apply(result['visual_designs'], [chapter], [entity],
-                                          root / 'refs', None, 'mock', options)
-    assert len(identity_calls) == 2  # The correction retains the complete payload.
-    assert identity_calls[0] == identity_calls[1]
-    payload = identity_calls[0]
-    assert len(encoded(payload).encode()) <= capacity
-    assert len(encoded({**payload, 'registry_character': original_entity}).encode()) > capacity
-    assert 'timeline' not in payload['registry_character']
-    assert payload['registry_character'] == {k: v for k, v in original_entity.items() if k != 'timeline'}
-    assert payload['chapter_id'] == 'chapter1'
-    assert payload['catalog_characters'] == original_chapter['characters']
-    assert payload['chapter_sources'] == [s['source'] for s in original_chapter['sequences']]
-    profile = vp.prepare_profiles(data)[0]
-    assert payload['profile']['supporting_evidence'] == profile['supporting_evidence']
-    assert payload['profile']['identity_support'] == profile['identity_support']
-    assert chapter == original_chapter
-    assert entity['timeline'] == original_entity['timeline']
-    assert enriched['chapter1']['registry_ids'][profile['local_id']] == entity['global_id']
-    assert entity['global_id'] in imported
 
 
 def test_wrong_source_identity_fails_instead_of_ignoring_facts(setup):
@@ -329,9 +266,8 @@ def test_consolidated_designs_can_be_imported_with_independent_registry_ids(setu
 def test_changed_source_snapshot_is_not_silently_ignored_or_trusted(setup):
     root, data, result, chapter, entity, calls = setup
     result['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] = 'Contradictory black eyes'
-    with pytest.raises(ValueError, match='source_facts differs from validated physical traits'):
-        integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None, 'mock', settings())
-    assert calls == []
+    integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None, 'mock', settings())
+    assert entity['stable_visual_description'] == 'green eyes'
 
 
 @pytest.mark.parametrize('field', ['character_id', 'identity_status'])
