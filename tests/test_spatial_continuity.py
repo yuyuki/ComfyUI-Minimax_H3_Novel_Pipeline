@@ -3,6 +3,7 @@ import pytest
 
 from minimax_h3_novel_pipeline.nodes.spatial_continuity import SpatialContinuityNode
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as generate
+from tests.h3_review_helpers import issue
 
 
 def test_removed_anchor_argument_is_rejected():
@@ -27,7 +28,7 @@ def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
         from tests.test_continuity_context import expanded
         captured.append(expanded(json.loads(user)))
         assert schema == generate.CONTINUITY_REVIEW_SCHEMA
-        return {"errors": ["Turn the character toward the tablet on the right."]}
+        return {"errors": [issue("Turn the character toward the tablet on the right.")]}
 
     monkeypatch.setattr(generate, "chat_json", fake_chat)
     future = [later] * 7
@@ -40,7 +41,7 @@ def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
     assert captured[0]["previous_final_prompts"] == history
     assert captured[0]["current_prompt"] == "He looks left"
     assert captured[0]["bindings"] == {"subjects": ["tablet"]}
-    assert errors == ["Turn the character toward the tablet on the right."]
+    assert [error["message"] for error in errors] == ["Turn the character toward the tablet on the right."]
 
 
 @pytest.mark.parametrize("result", [{}, {"errors": "wrong"}, {"errors": [42]}, {"errors": [""]}])
@@ -61,7 +62,7 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
     def review(client, model, scene, prompt, bindings, continuity, previous, future, max_tokens, camera):
         assert max_tokens == 9000
         checked.append(prompt)
-        return [] if resolved and prompt == "corrected" else ["Wrong eyeline"]
+        return [] if resolved and prompt == "corrected" else [issue()]
 
     def repair(client, model, prompt, scene, bindings, validation, duration, args, continuity):
         assert "previous_final_prompts" not in continuity
@@ -78,7 +79,7 @@ def test_corrections_are_rechecked_and_unresolved_conflicts_invalidate_prompt(mo
     assert checked == ["wrong", "corrected"]
     assert prompt == "corrected" and attempts == 1
     assert validation.ok is resolved
-    assert errors == ([] if resolved else ["Wrong eyeline"])
+    assert errors == ([] if resolved else [issue()])
 
 
 @pytest.mark.parametrize("external_plan", [False, True])
@@ -122,7 +123,7 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
             assert continuity["sequence_plan"]["camera"] == "right"
             assert continuity["scenes_in_sequence"] == 2
         reviews.append((prompt, list(previous)))
-        return ["Wrong eyeline"] if prompt != "corrected" else []
+        return [issue()] if prompt != "corrected" else []
 
     monkeypatch.setattr(generate, "refine_camera_prompt", camera)
     monkeypatch.setattr(generate, "check_prompt_continuity", review)

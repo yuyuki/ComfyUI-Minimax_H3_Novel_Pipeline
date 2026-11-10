@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from tests.h3_review_helpers import issue
 
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
@@ -49,14 +50,14 @@ def test_planner_retries_future_entity_instead_of_silently_dropping_id(monkeypat
 
 def test_continuity_repair_does_not_replace_complete_prompt_with_missing_description(monkeypatch):
     scene = step.Scene('Wait', 'Wait', 'Wait', '', [], [], [], False, '')
-    monkeypatch.setattr(step, 'check_prompt_continuity', lambda *a: ['Wrong eyeline'])
+    monkeypatch.setattr(step, 'check_prompt_continuity', lambda *a: [issue()])
     monkeypatch.setattr(step, 'repair_prompt', lambda *a: 'missing description')
     monkeypatch.setattr(step, 'validate_prompt', lambda prompt, *a: step.Validation(
         prompt == 'complete', [] if prompt == 'complete' else ['Missing detailed_description'], 400))
     prompt, validation, errors, attempts = step.review_and_repair_continuity(
         None, 'model', scene, 'complete', {}, {}, [], [], SimpleNamespace(repair_attempts=1, duration=8, max_tokens=8000))
     assert prompt == 'complete' and attempts == 1
-    assert not validation.ok and errors == ['Wrong eyeline']
+    assert not validation.ok and errors == [issue()]
     assert validation.errors == ['Scene continuity: Wrong eyeline']
 
 
@@ -87,7 +88,7 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
 
     def review(client, model, scene, prompt, bindings, continuity, previous, *unused):
         histories.append(deepcopy(previous))
-        return ['Wrong eyeline']
+        return [issue()]
 
     monkeypatch.setattr(step, 'plan_scenes', plan)
     monkeypatch.setattr(step, 'build_bindings', lambda *a: deepcopy(bindings))
@@ -107,9 +108,10 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
 
 
 def test_review_deduplicates_model_errors(monkeypatch):
-    monkeypatch.setattr(step, 'chat_json', lambda *a: {'errors': ['Wrong eyeline', 'Wrong eyeline']})
+    monkeypatch.setattr(step, 'chat_json', lambda *a: {'errors': [issue(), issue()]})
     scene = step.Scene('Wait', 'Wait', 'Wait', '', [], [], [], False, '')
-    assert step.check_prompt_continuity(None, 'model', scene, 'prompt', {}, {}, [], [], 8000) == ['Wrong eyeline']
+    errors = step.check_prompt_continuity(None, 'model', scene, 'prompt', {}, {}, [], [], 8000)
+    assert [error['message'] for error in errors] == ['Wrong eyeline']
 
 
 @pytest.mark.parametrize('recovers', [True, False])

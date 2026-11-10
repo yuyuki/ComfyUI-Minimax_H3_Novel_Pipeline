@@ -18,7 +18,7 @@ Date: 2026-11-10. Status: implementation started; first milestone validated offl
   settings and source declarations; write plan checkpoints atomically.
 - [x] Compile the reusable upstream evidence bundle with phase provenance,
   exact reference/character context, approved designs and separate spatial plans.
-- [ ] Introduce structured issue targets and dedicated scene/binding repairs.
+- [x] Introduce structured issue targets and dedicated scene/binding repairs.
 - [ ] Complete granular artifact dependencies, integrity and coverage manifests
   beyond the planning cache and existing exact-request checkpoints.
 - [ ] Add backend-reported usage and complete artifact invalidation diagnostics.
@@ -43,6 +43,30 @@ operator's instruction, refresh and verify the map after all implementation
 changes. Live quality/performance comparisons remain pending. This step avoids
 repeated local evidence preparation and establishes a trustworthy cache input
 for targeted repairs; it does not by itself eliminate required semantic reviews.
+
+Third milestone: continuity review uses a strict v2 issue schema with repair
+targets and JSON-pointer evidence references. References must resolve within the
+actual request batch; cited values travel with the issue into targeted repair.
+Prompt errors use text repair. Binding errors rebuild the table deterministically.
+Scene-plan errors use a bounded strict-schema correction of dialogue presence,
+visible/speaking entity IDs, location and available reference views. Beat, source,
+exact adaptation notes, sequence order and approved upstream inputs cannot be
+rewritten. Upstream conflicts and rejected/no-op corrections remain invalid.
+
+Corrected metadata/bindings invalidate previous prompt validation; wording is
+reconciled, locally validated, camera-refined when enabled and valid, and fully
+reviewed again. Repeated candidate states stop without approval. Final prompt
+checkpoints now carry the corrected scene, rebuilt bindings and an integrity
+digest; resume restores them only under the matching original dependency key
+and verifies immutable beat fields and deterministic bindings. Old prompt-cache
+contracts are recomputed rather than accepted through compatibility paths.
+
+Third milestone validation: 1,238 tests passed, 3 skipped, 111 subtests passed;
+lint passed. The one architecture freshness test remains deferred as requested.
+New tests cover invalid evidence pointers, strict schemas on transport retries,
+invented IDs/views, offscreen visibility, non-prompt issue routing, rejected
+corrections, full re-review and corrected-scene resume. Live model quality and
+performance remain unverified; current run outputs were not modified.
 
 ## Objective and boundaries
 

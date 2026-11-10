@@ -6,6 +6,7 @@ import pytest
 
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 from tests.test_h3_prompt_validation import BINDINGS, prompt_with_shots
+from tests.h3_review_helpers import issue
 
 
 @pytest.mark.parametrize("field,value,invalidates", [
@@ -75,7 +76,7 @@ def test_malformed_draft_is_repaired_before_any_semantic_review(monkeypatch):
 def test_failed_semantic_repair_cannot_trigger_review_or_hide_original_errors(monkeypatch):
     valid = prompt_with_shots("[Shot 1] A figure pauses.")
     scene = step.Scene("Wait", "Wait", "Wait", "", [], [], [], False, "")
-    review = Mock(return_value=["Wrong eyeline"])
+    review = Mock(return_value=[issue()])
     monkeypatch.setattr(step, "check_prompt_continuity", review)
     monkeypatch.setattr(step, "repair_prompt", Mock(return_value="malformed"))
     prompt, validation, errors, _ = step.review_and_repair_continuity(
@@ -84,13 +85,13 @@ def test_failed_semantic_repair_cannot_trigger_review_or_hide_original_errors(mo
     assert review.call_count == 1
     assert prompt == valid
     assert not validation.ok
-    assert errors == ["Wrong eyeline"]
+    assert errors == [issue()]
 
 
 def test_unchanged_repair_stops_without_approving(monkeypatch):
     valid = prompt_with_shots("[Shot 1] A figure pauses.")
     scene = step.Scene("Wait", "Wait", "Wait", "", [], [], [], False, "")
-    review = Mock(return_value=["Wrong eyeline"])
+    review = Mock(return_value=[issue()])
     repair = Mock(return_value=valid)
     monkeypatch.setattr(step, "check_prompt_continuity", review)
     monkeypatch.setattr(step, "repair_prompt", repair)

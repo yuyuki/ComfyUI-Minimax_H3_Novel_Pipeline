@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from . import progress, continuity_context, generation_requests, generation_evidence
 from . import character_visual_integration, reference_timeline
+from . import continuity_issues
 
 import argparse
 import ast
@@ -118,18 +119,13 @@ CAMERA_SCHEMA = {
     }, "required": ["shot_cameras"], "additionalProperties": False},
 }
 
-CONTINUITY_REVIEW_SCHEMA = {
-    "name": "scene_continuity_review_v1", "strict": True,
-    "schema": {"type": "object", "properties": {
-        "errors": {"type": "array", "items": {"type": "string"}},
-    }, "required": ["errors"], "additionalProperties": False},
-}
+CONTINUITY_REVIEW_SCHEMA = continuity_issues.SCHEMA
 
 
 def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: str,
                             bindings: dict[str, Any], continuity: dict[str, Any],
                             previous_prompts: list[dict[str, Any]], future: list[Scene],
-                            max_tokens: int, camera_direction: str = "") -> list[str]:
+                            max_tokens: int, camera_direction: str = "") -> list[dict[str, Any]]:
     """Review actual final wording against earlier prompts and later source requirements."""
     system = (
         "You are a film continuity supervisor reviewing the CURRENT final H3 prompt. "
@@ -160,7 +156,7 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
         "If constraints cannot be reconciled, report the conflict explicitly. Return an empty "
         "errors list only if the current prompt is consistent."
     )
-    system += continuity_context.INSTRUCTIONS
+    system += continuity_context.INSTRUCTIONS + continuity_issues.INSTRUCTIONS
     base = {
         "current_scene": scene_to_dict(scene), "current_prompt": prompt,
         "bindings": bindings, "continuity_plan": continuity,
@@ -172,23 +168,26 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
     }
     errors = []
     for index, batch in enumerate(continuity_context.batches(system, base, groups, CONTINUITY_REVIEW_SCHEMA), 1):
+        packed = continuity_context.pack(batch)
         with generation_requests.detail(batch=index):
-            result = chat_json(client, model, system, continuity_context.pack(batch), CONTINUITY_REVIEW_SCHEMA, 0.1, max_tokens)
-        if (not isinstance(result, dict) or not isinstance(result.get("errors"), list)
-                or any(not isinstance(error, str) or not error.strip() for error in result["errors"])):
-            raise ValueError("LM Studio returned an invalid scene continuity review.")
-        errors.extend(result["errors"])
-    return list(dict.fromkeys(errors))
+            result = chat_json(client, model, system, packed, CONTINUITY_REVIEW_SCHEMA, 0.1, max_tokens)
+        errors.extend(continuity_issues.validate(result, json.loads(packed)))
+    return continuity_issues.unique(errors)
 
 
 def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, prompt: str,
                                  bindings: dict[str, Any], continuity: dict[str, Any],
                                  previous_prompts: list[dict[str, Any]], future: list[Scene],
-                                 args: argparse.Namespace) -> tuple[str, Validation, list[str], int]:
+                                 args: argparse.Namespace, *, repair_inputs=None) -> tuple[str, Validation, list[dict[str, Any]], int]:
     """Recheck every correction, including its H3 format, within the repair budget."""
     best = None
+    seen = {}
     for attempt in range(args.repair_attempts + 1):
         prompt = normalize_prompt(prompt, bindings)
+        state_key = generation_requests.digest([scene_to_dict(scene), bindings, prompt, continuity])
+        if state_key in seen:
+            validation, errors = seen[state_key]
+            return prompt, validation, errors, attempt
         validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
         format_errors = len(validation.errors)
         errors = []
@@ -199,13 +198,44 @@ def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, promp
                 errors = check_prompt_continuity(client, model, scene, prompt, bindings, continuity,
                                                  previous_prompts, future, args.max_tokens,
                                                  getattr(args, "camera_direction", ""))
-        validation.errors.extend(f"Scene continuity: {error}" for error in errors)
+        validation.errors.extend(f"Scene continuity: {error['message']}" for error in errors)
         validation.ok = not validation.errors
+        seen[state_key] = (validation, errors)
         # Do not replace a structurally sound prompt with a damaged repair.
         if best is None or format_errors <= best[0]:
             best = (format_errors, prompt, validation, errors)
         if validation.ok or attempt == args.repair_attempts:
             return best[1], best[2], best[3], attempt
+        targets = {error["target"] for error in errors}
+        if "upstream_conflict" in targets:
+            # Approved inputs cannot be rewritten by a generated prompt repair.
+            return best[1], best[2], best[3], attempt
+        inputs_changed = False
+        if targets & {"scene_plan", "binding"}:
+            if repair_inputs is None:
+                return best[1], best[2], best[3], attempt
+            try:
+                with generation_requests.task("scene_metadata_repair", getattr(args, "review_thinking", False)), \
+                        generation_requests.detail(attempt=attempt + 1):
+                    candidate_scene, candidate_bindings = repair_inputs(errors)
+            except ValueError:
+                validation.errors.append("Scene metadata/binding repair rejected: correction failed local validation.")
+                return prompt, validation, errors, attempt + 1
+            if scene_to_dict(candidate_scene) == scene_to_dict(scene) and candidate_bindings == bindings:
+                return best[1], best[2], best[3], attempt + 1
+            scene.__dict__.update(candidate_scene.__dict__)
+            bindings.clear()
+            bindings.update(candidate_bindings)
+            # Earlier wording/validation refers to different metadata/bindings.
+            best = None
+            inputs_changed = True
+            validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
+            validation.errors.extend(f"Scene continuity: {error['message']}" for error in errors
+                                     if error["target"] == "prompt")
+            validation.errors.append(
+                "Scene metadata and bindings were corrected. Reconcile the prompt with the supplied "
+                "current beat and exact binding table; do not edit those inputs.")
+            validation.ok = False
         # Review errors contain the requested corrections. Reattaching all history
         # here would recreate the oversized request; the next review checks every batch.
         repair_context = continuity
@@ -213,9 +243,15 @@ def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, promp
                 generation_requests.detail(attempt=attempt + 1):
             candidate = repair_prompt(client, model, prompt, scene, bindings, validation,
                                       args.duration, args, repair_context)
-        if normalize_prompt(candidate, bindings) == prompt:
+        if not inputs_changed and normalize_prompt(candidate, bindings) == prompt:
             return best[1], best[2], best[3], attempt + 1
         prompt = candidate
+        if inputs_changed and getattr(args, "refine_camera", False) and validate_prompt(
+                prompt, bindings, args.duration, getattr(args, "max_shots", 1)).ok:
+            with generation_requests.task("camera", getattr(args, "camera_thinking", False)):
+                prompt, warnings = refine_camera_prompt(client, model, prompt, scene, continuity, args, bindings)
+            for warning in warnings:
+                print(f"    {warning}")
     raise AssertionError("Continuity repair budget must be non-negative.")
 
 H3_RULES = r"""
@@ -1496,11 +1532,29 @@ def planning_key(client, model, args, chapter_id, chunk, index, total, catalog, 
     ])
 
 
+def repair_scene_inputs(client, model, scene, bindings, row, references, chapter_id, issues, args,
+                        continuity=None, visual_designs=None):
+    metadata_issues = [issue for issue in issues if issue["target"] == "scene_plan"]
+    candidate = scene_from_dict(scene_to_dict(scene))
+    if metadata_issues:
+        data = continuity_issues.repair_metadata(client, model, scene_to_dict(scene), row,
+                                                 metadata_issues, args, chat_json)
+        candidate = scene_from_dict(data)
+    # Binding issues rebuild the exact table without a language-model request.
+    rebuilt = build_bindings(references, candidate, chapter_id, args)
+    if continuity is not None and visual_designs is not None:
+        ids = set(candidate.visible_entity_ids + candidate.speaking_entity_ids)
+        ids.update(subject["global_id"] for subject in rebuilt["subjects"])
+        continuity["visual_designs"] = {**visual_designs, "entities": [
+            design for design in visual_designs.get("entities", []) if design["global_id"] in ids]}
+    return candidate, rebuilt
+
+
 def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
     chapter_id, sequences = selected_timeline(refs, path)
     # Covers reviewer/camera instructions and local validation, not just schemas.
     implementation = [sha256(Path(module).read_bytes()).hexdigest() for module in
-                      (__file__, continuity_context.__file__, generation_requests.__file__)]
+                      (__file__, continuity_context.__file__, generation_requests.__file__, continuity_issues.__file__)]
     plan_implementation = planning_implementation()
     catalog = chapter_catalog(refs, chapter_id)
     if not catalog:
@@ -1625,7 +1679,25 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
             try:
                 candidate = confined_path(prompt_cache.name, candidate_dir)
                 cached = json.loads(candidate.read_text(encoding="utf-8"))
-                if cached.get("cache_key") == prompt_key and cached.get("valid") is True:
+                if (cached.get("cache_key") == prompt_key and cached.get("valid") is True
+                        and cached.get("contract") == 2
+                        and cached.get("result_digest") == generation_requests.digest(
+                            [cached["prompt"], cached["scene"], cached["bindings"], cached["camera_warnings"]])):
+                    repaired_scene = scene_from_dict(cached["scene"])
+                    # Cache reuse may restore corrected metadata, never a changed beat.
+                    immutable = ("title", "source_excerpt", "visual_event", "adaptation_notes", "sequence")
+                    if any(getattr(repaired_scene, field) != getattr(scene, field) for field in immutable):
+                        continue
+                    repaired_bindings = build_bindings(bundle["references"], repaired_scene, chapter_id, args)
+                    if repaired_bindings != cached["bindings"]:
+                        continue
+                    scene.__dict__.update(repaired_scene.__dict__)
+                    bindings = repaired_bindings
+                    if continuity is not None:
+                        ids = set(scene.visible_entity_ids + scene.speaking_entity_ids)
+                        ids.update(subject["global_id"] for subject in bindings["subjects"])
+                        continuity["visual_designs"] = {**visual_designs, "entities": [
+                            design for design in visual_designs.get("entities", []) if design["global_id"] in ids]}
                     prompt = cached["prompt"]
                     camera_warnings = cached.get("camera_warnings", [])
                     from_cache = True
@@ -1663,6 +1735,9 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
                 with generation_requests.task("continuity_review", getattr(args, "review_thinking", False)):
                     prompt, validation, continuity_errors, continuity_repairs = review_and_repair_continuity(
                         client, model, scene, prompt, bindings, continuity, previous_prompts, scenes[i:], args,
+                        repair_inputs=lambda issues: repair_scene_inputs(
+                            client, model, scene, bindings, evidence_rows[scene.sequence],
+                            bundle["references"], chapter_id, issues, args, continuity, visual_designs),
                     )
             if validation.ok:
                 previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
@@ -1675,10 +1750,13 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
             if spatial_plan is not None:
                 continuity_states[i - 1]["prompt_review"] = prompt_review
 
-        prompt_cache.write_text(
-            json.dumps({"cache_key": prompt_key, "prompt": prompt, "camera_warnings": camera_warnings, "valid": validation.ok}, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        final_scene = scene_to_dict(scene)
+        generation_requests.atomic_json(prompt_cache, {
+            "contract": 2, "cache_key": prompt_key, "prompt": prompt,
+            "scene": final_scene, "bindings": bindings, "camera_warnings": camera_warnings,
+            "result_digest": generation_requests.digest([prompt, final_scene, bindings, camera_warnings]),
+            "valid": validation.ok,
+        })
         entry = save_scene(chapter_dir, i, scene, bindings, prompt, validation)
         if continuity is not None:
             entry["spatial_continuity"] = continuity
