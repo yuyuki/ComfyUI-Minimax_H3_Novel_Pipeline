@@ -8,6 +8,11 @@ by later entries.
 
 ## Unreleased
 
+- Fix character identity consolidation through explicit full-name/nickname
+  bridges, and include established canonical names and aliases in pairwise
+  model requests. Preserve source evidence, homonym separation and temporal
+  traits; add regression coverage for shared identities across chapters.
+
 - Reuse shared streaming SHA-256 hashing in the four editable character/spatial
   loaders after output-path validation, replacing the inline reads flagged by
   the registry scanner. Preserve content-based edit detection and add confinement

@@ -37,7 +37,15 @@ quotations or supplied verbatim source_context with explicit alias wording or a
 full name containing the short name. Two separate given-name/surname labels can
 be linked by their verbatim full name in cited source_context, even if that full
 name is not a supplied label (for example Ada / Lovelace via Ada Lovelace).
+A short name and nickname can likewise connect through an explicitly aliased
+full name in source_context (Jones / Indy via Henry Jones Jr., surnommé Indy).
 This requires contextual confirmation of one person, not adjacent names in a list.
+left_identity and right_identity describe the complete provisional dossiers,
+including already grouped aliases. Their references may be only one evidence
+batch of those dossiers. Compare the people using this context, not just the
+individual physical traits. Metadata alone never proves that two dossiers match.
+Different ages, outfits or narrative periods do not by themselves imply different
+people; trait conflicts and chronological changes are handled after identity.
 Co-occurrence, dialogue, teacher/student or
 observer/observed relationships do not establish identity. Context can establish a name or
 pronoun that is absent from the short physical quotation. Classify identities,
@@ -499,10 +507,13 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
         while parent[i] != i:
             i = parent[i]
         return i
-    signatures = []
+    signatures, identities = [], []
     labels_in_evidence = {item["character"] for item in records.values()}
     for group in groups:
         ids = cp._refs(group["evidence"], records)
+        identities.append({"canonical_name": group["canonical_name"],
+                           "aliases": sorted({records[k]["character"] for k in ids} - {group["canonical_name"]}),
+                           "identity_status": group["identity_status"]})
         selected = {ids[0], *cp._refs(group["identity_support"], records)}
         selected.update(key for key in ids if records[key]["classification"] == "explicit"
                         and sum(label in identity_text(records[key]) for label in labels_in_evidence) > 1)
@@ -532,7 +543,9 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
         candidates[(left, right)] = []
         # Split large identity dossiers, preserving every contextual/name quote.
         # Half-sized sides ensure the combined job fits the actual pair schema.
-        size = requests.capacity(IDENTITY_SYSTEM, IDENTITY_PAIR) // 2 - 256
+        identity_context = {"left_identity": identities[left], "right_identity": identities[right]}
+        overhead = len(encoded(identity_context).encode('utf-8'))
+        size = (requests.capacity(IDENTITY_SYSTEM, IDENTITY_PAIR) - overhead) // 2 - 256
         sides = []
         for i in (left, right):
             chunks, current = [], []
@@ -544,7 +557,7 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
             sides.append(chunks + [current])
         for a, b in product(*sides):
             jobs.append({"job_id": str(len(jobs)), "left_group": left, "right_group": right,
-                         "left": a, "right": b})
+                         **identity_context, "left": a, "right": b})
     def check(decision, job):
         allowed = {r["evidence_id"] for r in job["left"] + job["right"]}
         ids = cp._refs(decision["evidence"], allowed)

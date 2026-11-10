@@ -26,6 +26,8 @@ context; keep uncertain identities separate with identity_status ambiguous.
 canonical_name must be a supplied character label.
 identity_support contains explicit physical observations with identifying quotation context. Different
 labels need explicit alias wording or a full name containing the short name.
+A short name and nickname may connect through a verbatim full name with explicit
+alias wording, even when that full name is not a supplied observation label.
 A verbatim full name may connect separate given-name and surname labels, even
 when that full name is not itself a supplied label. Cite that source evidence;
 keep canonical_name among the supplied labels. Do not infer a link from proximity.
@@ -224,16 +226,24 @@ def _alias_link(left, right, contexts):
         if first != second and re.search(name, second):
             if any(re.search(r"(?<!\w)" + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
                 return True
+        # A short label can occur inside the explicitly named alias anchor:
+        # "Jones" -> "Henry Jones Jr., surnommé Indy". The intervening
+        # words must be contiguous proper-name tokens, never clauses, lists or
+        # sentence boundaries. A final dot allows a name suffix/initial.
+        alias_anchor = name
+        if first.isalpha() and first.istitle():
+            proper_token = r"[A-ZÀ-ÖØ-Þ][\w’'-]*"
+            alias_anchor += rf"(?:[ \t]+{proper_token}){{0,4}}\.?"
         connector = (r"\s*,?\s*(?:(?:aussi |également )?(?:appelé[e]?|surnommé[e]?|nommé[e]?)"
                      r"|(?:était|est) (?:aussi |également )?(?:appelé[e]?|surnommé[e]?|nommé[e]?)"
                      r"|alias|(?:also )?known as|(?:was |is )(?:also )?(?:called|known as))\s+"
                      r"[\"«]?\s*")
-        if any(re.search(name + connector + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
+        if any(re.search(alias_anchor + connector + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
             return True
         # Explicit anaphoric naming after a formal name (e.g. diploma -> nickname).
         naming = (r"\s*\.?\s*(?:Mais |But )?(?:ceux qui (?:le|la) connaissaient "
                   r"l[’']appelaient|those who knew (?:him|her) called (?:him|her))\s+")
-        if any(re.search(name + naming + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
+        if any(re.search(alias_anchor + naming + re.escape(second) + r"(?!\w)", _normalized(t)) for t in contexts):
             return True
     return False
 

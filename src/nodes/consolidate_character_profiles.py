@@ -9,7 +9,11 @@ from ..core.run_output import stage_output
 
 
 class ConsolidateCharacterProfilesNode:
-    DESCRIPTION = "Reconcile selected character evidence with the configured LM Studio model, retaining exact sources and conflicting observations."
+    DESCRIPTION = (
+        "Consolidate evidence across chapters into shared character identities with source-supported aliases. "
+        "Retain every observation and its source; keep permanent traits, temporary states and chronological changes distinct. "
+        "Feed the resulting profiles to Character Visual Profile Generator for the selected chapter."
+    )
 
     @classmethod
     def INPUT_TYPES(cls):

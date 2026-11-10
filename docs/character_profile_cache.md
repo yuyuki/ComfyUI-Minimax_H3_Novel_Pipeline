@@ -1,5 +1,33 @@
 # Reprendre les décisions de consolidation des personnages
 
+## Identités et alias entre chapitres
+
+**Consolidate Character Profiles** reçoit les preuves des chapitres du roman
+à réunir. Une fusion validée produit un profil commun, un nom canonique et
+les autres libellés dans `aliases`. Les comparaisons transmettent au modèle
+ces noms déjà regroupés, ainsi que leurs preuves contextuelles. Un nom court
+et un surnom peuvent être reliés par un nom complet explicitement associé
+au surnom dans le texte, même si ce nom complet n'est pas un libellé des deux
+observations comparées. Le nom canonique reste un libellé fourni en entrée.
+
+Les noms communs ne déclenchent pas de fusion automatique : la décision du
+modèle, les preuves citées et les contrôles d'identité restent nécessaires.
+Les homonymes explicitement distincts restent séparés. Chaque observation
+garde sa provenance ; les vêtements temporaires, contradictions et changements
+chronologiques sont analysés après le rapprochement des identités.
+
+Après une correction de consolidation, recharger les preuves existantes avec
+**Load Character Evidence**, puis relancer **Consolidate Character Profiles**.
+Il n'est pas nécessaire de refaire l'extraction. Utiliser sa nouvelle sortie
+dans **Character Visual Profile Generator**, avec uniquement les chapitres
+souhaités, puis relancer **Consolidate References**. Vérifier les alias et les
+traits du nouveau profil avant d'utiliser les prompts ; des identités restées
+incertaines nécessitent une revue. Les anciennes sorties ne sont pas corrigées
+rétroactivement. La sélection des profils visuels par chapitre conserve son
+fonctionnement actuel ; cette correction porte sur la consolidation amont.
+
+## Cache et reprise
+
 Dans **Consolidate Character Profiles**, `resume_run` accepte le nom d'un run
 précédent, par exemple `20261031202452`. Conserver le même `out_dir` que dans ce
 run et laisser `force = false`. Le nœud lit uniquement
