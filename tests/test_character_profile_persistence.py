@@ -5,11 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from minimax_h3_novel_pipeline.core import character_profile_batches as batches, path_access
+from minimax_h3_novel_pipeline.core import character_profile_batches as batches, character_profiles as cp, path_access
 from minimax_h3_novel_pipeline.core.character_profile_document import validate_document
 from minimax_h3_novel_pipeline.nodes import consolidate_character_profiles as node
 from tests.test_character_evidence import observation
-from tests.test_character_profiles import document
+from tests.test_character_profiles import document, group
 from tests.test_character_profile_batches import fake_model, request_payload
 
 
@@ -65,6 +65,9 @@ def test_invalid_identity_pairs_are_not_retried_or_subdivided(tmp_path, monkeypa
     monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen"))
     rejected = []
     def respond(*args):
+        if args[4] == cp.SCHEMA:
+            return {'profiles': [group([row['evidence_id']], identity_status='ambiguous')
+                                 for row in request_payload(args[3])['observations']]}
         result = fake_model(*args)
         if args[4] == batches.IDENTITY_PAIR:
             rejected.append(request_payload(args[3]))

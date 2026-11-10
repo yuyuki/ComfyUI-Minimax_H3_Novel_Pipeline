@@ -91,7 +91,7 @@ def test_no_valid_identity_decision_keeps_retry_budget_and_uncertainty(tmp_path,
     assert not list(requests.cache_dir.glob('*.json'))
 
 
-def test_unsupported_alias_retry_explains_uncertainty_without_losing_evidence(tmp_path, monkeypatch):
+def test_unsupported_alias_is_skipped_without_losing_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
     records = cp.prepare_evidence(document(
         observation('Élise regardait Lise.'),
@@ -108,11 +108,8 @@ def test_unsupported_alias_retry_explains_uncertainty_without_losing_evidence(tm
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', model)
     requests = batches.Requests(tmp_path, None, 'qwen', settings(correction_attempts=2))
     profiles = batches.reconcile_identities(groups, records, requests)
-    assert len(prompts) == 2
-    assert 'job_id=0' in prompts[1]
-    assert 'return uncertain' in prompts[1]
-    assert 'Missing identity proof does not justify different' in prompts[1]
-    assert request_payload(prompts[0]) == request_payload(prompts[1])
+    assert not prompts
+    assert requests.stats['identity_pairs_pruned'] == 1
     assert len(profiles) == 2
     assert {row['evidence_id'] for p in profiles for row in p['supporting_evidence']} == set(records)
 

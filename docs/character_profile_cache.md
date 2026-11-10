@@ -16,6 +16,33 @@ Les homonymes explicitement distincts restent séparés. Chaque observation
 garde sa provenance ; les vêtements temporaires, contradictions et changements
 chronologiques sont analysés après le rapprochement des identités.
 
+Le regroupement initial remplit les lots au-delà des frontières de chapitre,
+dans les budgets d'entrée et de sortie configurés. Une fusion entre chapitres
+doit citer des preuves explicites de chaque chapitre concerné. Cela évite de
+créer systématiquement un nouveau dossier par chapitre pour le même personnage.
+Les passages contextuels identiques ou chevauchants d'une même source sont
+transmis une seule fois, avec leurs offsets et les références de chaque
+observation. Aucune citation ni observation n'est tronquée.
+
+Le schéma de réponse impose désormais une seule observation aux profils
+`ambiguous`. Un groupe `confirmed` signifie que ses observations décrivent une
+même personne ; il ne signifie pas que tous ses noms ou traits sont connus.
+Les contrôles locaux de couverture, d'alias et de provenance restent appliqués.
+
+Avant les comparaisons par paires, le nœud calcule les chaînes de noms que les
+preuves explicites peuvent relier selon le même validateur d'alias que celui
+des profils. Une simple cooccurrence dans un passage ne suffit plus à déclencher
+un appel LLM si aucune chaîne ne permettrait de valider cette fusion. Les
+homonymes et les chaînes indirectes restent comparés ; ce filtre ne confirme
+aucune identité. Le journal annonce le nombre de dossiers, de comparaisons et
+de paires éliminées à chaque passe. `identity_passes` et `identity_pairs_pruned`
+en conservent les comptes dans le rapport final.
+
+Si le temps est dominé par le raisonnement du modèle, essayer `thinking = false`
+sur une nouvelle exécution avec un modèle/runtime qui respecte ce contrôle.
+Ce réglage ne modifie pas une exécution déjà lancée et change les empreintes
+de cache. Une mise à jour du code nécessite également un redémarrage de ComfyUI.
+
 Après une correction de consolidation, recharger les preuves existantes avec
 **Load Character Evidence**, puis relancer **Consolidate Character Profiles**.
 Il n'est pas nécessaire de refaire l'extraction. Utiliser sa nouvelle sortie
@@ -43,6 +70,23 @@ ignore les deux caches. Laisser `resume_run` vide désactive la reprise.
 `character_profiles_requests.json` indique les appels dans `requests`, les accès
 au cache dans `cache_hits`, dont ceux du run précédent dans `resume_cache_hits`.
 `requests_by_schema` et `cache_hits_by_schema` distinguent les étapes.
+`request_seconds`, `request_seconds_by_schema` et `request_timings` mesurent
+le temps des appels au transport LLM, y compris leurs reprises JSON internes
+et les appels échoués, mais pas les lectures du cache ni le traitement local.
+Le journal affiche aussi la durée de chaque appel.
+
+Pendant une exécution, `identity_decisions_reused` compte les comparaisons
+validées réutilisées lorsque seuls les numéros de lot/groupe/comparaison changent.
+Les noms, alias, statuts, preuves et leur ordre doivent rester identiques ; la
+décision repasse les contrôles du dossier actuel. Une reprise corrective ne
+remplace pas une décision rejetée par celle d'un autre job. `force = true`
+désactive aussi cette réutilisation en mémoire. Les comparaisons nécessaires
+pour détecter des homonymes ou des contradictions restent effectuées.
+
+Le format compact des demandes utilise une nouvelle version d'empreinte : les
+caches de décisions antérieurs à cette optimisation ne correspondent plus.
+Ils restent intacts. La reprise fonctionne entre exécutions de la nouvelle version
+avec les mêmes entrées et réglages.
 
 Lorsqu'une comparaison d'identités par lot contient des décisions valides et
 d'autres invalides ou absentes, les décisions validées sont conservées dès la
@@ -63,8 +107,15 @@ invalides ou absentes deviennent `uncertain`, sans perdre leurs observations ;
 partielle conserve ses décisions valides mais ne déclenche aucun appel supplémentaire.
 Les lectures de cache ne consomment pas ce budget. Ce plafond concerne les
 comparaisons d'un même dossier : une nouvelle comparaison après enrichissement
-du dossier par fusion reste distincte. Il ne plafonne ni le regroupement initial,
-ni les reprises de transport JSON internes à un appel de décision.
+du dossier par fusion reste distincte. Les reprises de transport JSON internes
+à un appel de décision ne sont pas incluses dans ce plafond.
+
+Le regroupement initial applique désormais le même plafond de
+`1 + correction_attempts` par observation : après une réponse partielle,
+les profils validés sont conservés et seules les observations non résolues
+sont redemandées avec le budget restant. `early_partition_recoveries` compte
+ces récupérations. Une réduction du lot ne recrée pas de budget ; à épuisement,
+les observations restantes gardent des profils individuels ambigus.
 
 `identity_attempt_diagnostics` décrit chaque tentative d'identité rejetée :
 numéro de requête, tentative, identifiants des comparaisons et des décisions

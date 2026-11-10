@@ -38,6 +38,10 @@ source_context is verbatim text around the observation, with source offsets. Use
 to resolve pronouns, aliases and narrative continuity. It is not a new physical fact.
 Group observations belonging to the same person when context establishes continuity;
 do not split a person into one profile per body feature. Keep homonyms separate.
+identity_status describes certainty that these observations belong to ONE person,
+not whether their full name, all aliases or every physical trait is known.
+Use confirmed for a source-supported group, even if that person's name is incomplete.
+Use ambiguous only for ONE unresolved observation, never for a group of observations.
 Prefer the most complete supplied name for canonical_name. Never invent a longer name.
 Do not analyse traits yet. Preserve all IDs, also on compact retries.
 """
@@ -51,11 +55,12 @@ def _object(properties):
 _TEXT = {"type": "string", "minLength": 1}
 _REFS = {"type": "array", "items": _object({"evidence_id": _TEXT})}
 SCHEMA = {"name": "character_profile_plan", "strict": True, "schema": _object({
-    "profiles": {"type": "array", "items": _object({
+    "profiles": {"type": "array", "items": {"anyOf": [_object({
         "canonical_name": _TEXT,
-        "identity_status": {"type": "string", "enum": ["confirmed", "ambiguous"]},
-        "evidence": {**_REFS, "minItems": 1}, "identity_support": _REFS,
-    })},
+        "identity_status": {"type": "string", "enum": [status]},
+        "evidence": {**_REFS, "minItems": 1, **({"maxItems": 1} if status == "ambiguous" else {})},
+        "identity_support": _REFS,
+    }) for status in ("confirmed", "ambiguous")]}},
 })}
 
 
@@ -183,6 +188,14 @@ def _usable(records):
 
 def _validate_shape(value, schema):
     """Validate the small transport contract also on cache reads and mocked backends."""
+    if "anyOf" in schema:
+        for branch in schema["anyOf"]:
+            try:
+                _validate_shape(value, branch)
+                return
+            except ValueError:
+                pass
+        raise ValueError("Response object fields or identity status do not match the profile plan contract.")
     kind = schema["type"]
     if kind == "object":
         if not isinstance(value, dict) or set(value) != set(schema["properties"]):

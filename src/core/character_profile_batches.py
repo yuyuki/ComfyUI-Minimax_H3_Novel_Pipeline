@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from copy import deepcopy
 from itertools import combinations, product
+from time import perf_counter
 import json
 import logging
 import re
@@ -15,9 +16,14 @@ from . import character_profiles as cp, lmstudio_json, lmstudio_pipeline, progre
 from .editable_schemas import validate_document
 
 logger = logging.getLogger(__name__)
-DECISION_VERSION = 6
+DECISION_VERSION = 7
 RESERVE = 8192  # ChatML, compact retry instructions and bounded semantic corrections.
 TEXT = {"type": "string", "minLength": 1}
+CONTEXT_INSTRUCTION = (
+    "\nsource_context entries reference source_contexts by passage_id. Read the referenced verbatim "
+    "text at the entry's original start_char/end_char offsets (relative to the passage start_char). "
+    "Shared passages are source context, not additional observations or identity proof by themselves."
+)
 
 
 def schema(name, fields):
@@ -137,14 +143,64 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def shared_context_payload(payload):
+    """Share overlapping source spans without dropping observations or altering quotes."""
+    if 'source_contexts' in payload:
+        return payload
+    spans = defaultdict(list)
+    for row in payload.get('observations', []):
+        item = row.get('observation', {})
+        for span in item.get('source_context', []):
+            spans[(item['source_file'], item['chapter'])].append(span)
+    if not spans:
+        return payload
+    passages, references = [], {}
+    for source, chunks in spans.items():
+        merged = []
+        for span in sorted(chunks, key=lambda s: (s['start_char'], s['end_char'])):
+            start, end, text = span['start_char'], span['end_char'], span['text']
+            if len(text) != end - start:
+                raise ValueError('Source context offsets do not match its text.')
+            if merged and start < merged[-1]['end_char']:
+                previous = merged[-1]
+                overlap = min(previous['end_char'], end) - start
+                offset = start - previous['start_char']
+                if previous['text'][offset:offset + overlap] != text[:overlap]:
+                    raise ValueError('Overlapping source contexts disagree.')
+                if end > previous['end_char']:
+                    previous['text'] += text[overlap:]
+                    previous['end_char'] = end
+            else:
+                merged.append(dict(span))
+        for span in merged:
+            passage_id = f'p{len(passages)}'
+            passages.append({'passage_id': passage_id, 'source_file': source[0], 'chapter': source[1], **span})
+            for chunk in chunks:
+                if span['start_char'] <= chunk['start_char'] and chunk['end_char'] <= span['end_char']:
+                    references[(*source, chunk['start_char'], chunk['end_char'])] = passage_id
+    rows = []
+    for row in payload['observations']:
+        item = row.get('observation', {})
+        if 'source_context' in item:
+            item = {**item, 'source_context': [
+                {'passage_id': references[(item['source_file'], item['chapter'], span['start_char'], span['end_char'])],
+                 'start_char': span['start_char'], 'end_char': span['end_char']}
+                for span in item['source_context']]}
+        rows.append({**row, 'observation': item})
+    return {**payload, 'observations': rows, 'source_contexts': passages}
+
+
 class Requests:
     def __init__(self, output, client, model, args):
         self.output, self.client, self.model, self.args = output, client, model, args
         self.cache_dir = output / ".cache"
         self.resume_cache_dir = getattr(args, 'resume_cache_dir', None)
         self.context = getattr(args, "context_tokens", 65536)
+        self.identity_decisions = {}
         self.stats = {"requests": 0, "cache_hits": 0, "resume_cache_hits": 0, "max_input_bytes": 0,
                       "requests_by_schema": {}, "cache_hits_by_schema": {},
+                      "identity_decisions_reused": 0, "request_seconds": 0.0,
+                      "request_seconds_by_schema": {}, "request_timings": [],
                       "context_tokens": self.context, "response_tokens": args.max_tokens,
                       "warnings": []}
 
@@ -152,7 +208,7 @@ class Requests:
         # UTF-8 bytes deliberately overestimate ordinary Qwen tokenization, rather
         # than assuming four characters/token for arbitrary novel text or IDs.
         capacity = self.context - self.args.max_tokens - RESERVE - len(
-            (system + encoded(contract)).encode("utf-8"))
+            (system + CONTEXT_INSTRUCTION + encoded(contract)).encode("utf-8"))
         if capacity < 512:
             raise ValueError("context_tokens leaves no input budget after max_tokens, schema and retry reserve.")
         return capacity
@@ -162,13 +218,13 @@ class Requests:
         batch = []
         for item in items:
             lmstudio_pipeline.comfy_interrupt_check()
-            if len(encoded({field: [item]}).encode()) > capacity:
+            if len(encoded(shared_context_payload({field: [item]})).encode()) > capacity:
                 raise ValueError(f"Character profiles: indivisible {field} item exceeds input budget "
                                  f"({capacity} UTF-8 bytes, context_tokens={self.context}, "
                                  f"max_tokens={self.args.max_tokens}). Increase the configured context "
                                  "only if LM Studio supports it, or reduce max_tokens. No evidence was truncated.")
             if batch and (len(batch) >= max(1, self.args.max_tokens // 256)
-                          or len(encoded({field: batch + [item]}).encode()) > capacity):
+                          or len(encoded(shared_context_payload({field: batch + [item]})).encode()) > capacity):
                 yield batch
                 batch = []
             batch.append(item)
@@ -176,8 +232,11 @@ class Requests:
             yield batch
 
     def call(self, system, contract, payload, check, salvage=None, *, recover_partial=False, max_attempts=None):
+        payload = shared_context_payload(payload)
         prompt = encoded(payload)
         capacity = self.capacity(system, contract)
+        if 'source_contexts' in payload:
+            system += CONTEXT_INSTRUCTION
         if len(prompt.encode()) > capacity:
             raise ValueError(f"{contract['name']}: character profile request requires {len(prompt.encode())} "
                              f"UTF-8 input bytes but the budget is {capacity} "
@@ -227,8 +286,21 @@ class Requests:
                 logger.info("Character profiles: request %s, %s, %s input bytes",
                             self.stats["requests"], contract["name"], len(prompt.encode()))
                 self.stats["max_input_bytes"] = max(self.stats["max_input_bytes"], len((prompt + correction).encode()))
-                result = lmstudio_json.chat_json(self.client, self.model, system, prompt + correction,
-                                                 contract, self.args.temperature, self.args.max_tokens)
+                started = perf_counter()
+                try:
+                    result = lmstudio_json.chat_json(self.client, self.model, system, prompt + correction,
+                                                     contract, self.args.temperature, self.args.max_tokens)
+                finally:
+                    elapsed = perf_counter() - started
+                    self.stats['request_seconds'] += elapsed
+                    timings = self.stats['request_seconds_by_schema']
+                    timings[contract['name']] = timings.get(contract['name'], 0.0) + elapsed
+                    self.stats['request_timings'].append({
+                        'request': self.stats['requests'], 'schema': contract['name'],
+                        'seconds': elapsed, 'input_bytes': len((prompt + correction).encode()),
+                        'response_received': result is not None,
+                    })
+                    logger.info('Character profiles: %s completed in %.1fs', contract['name'], elapsed)
                 validate_document(result, contract["schema"], contract["name"])
                 check(result)
                 lmstudio_pipeline.comfy_interrupt_check()
@@ -267,16 +339,19 @@ class Requests:
                         # Independent decisions have passed the same semantic checks.
                         # Let decisions() retry only missing jobs, never cache this partial batch.
                         self.stats['partial_responses_salvaged'] = self.stats.get('partial_responses_salvaged', 0) + 1
-                        self.stats['early_identity_recoveries'] = self.stats.get('early_identity_recoveries', 0) + 1
-                        self.stats.setdefault('identity_jobs_preserved', 0)
-                        self.stats['identity_jobs_preserved'] += len(partial['decisions'])
+                        field = 'decisions' if contract == IDENTITY_PAIR else 'profiles'
+                        metric = 'early_identity_recoveries' if contract == IDENTITY_PAIR else 'early_partition_recoveries'
+                        self.stats[metric] = self.stats.get(metric, 0) + 1
+                        if contract == IDENTITY_PAIR:
+                            self.stats.setdefault('identity_jobs_preserved', 0)
+                            self.stats['identity_jobs_preserved'] += len(partial[field])
                         self.stats['warnings'].append({
                             'schema': contract['name'], 'attempts': attempt + 1,
                             'reason': str(exc)[:1200], 'input': payload, 'response': deepcopy(result),
-                            'recovery': 'retry_missing_identity_jobs',
+                            'recovery': 'retry_missing_identity_jobs' if contract == IDENTITY_PAIR else 'retry_missing_profiles',
                         })
-                        logger.info('Character profiles: preserving %s validated identity decisions; retrying missing jobs only.',
-                                    len(partial['decisions']))
+                        logger.info('Character profiles: preserving %s validated %s; retrying unresolved inputs only.',
+                                    len(partial[field]), field)
                         return partial
                 if attempt == attempts - 1:
                     warning = {"schema": contract["name"], "attempts": attempt + 1,
@@ -316,6 +391,7 @@ class Requests:
             if contract == IDENTITY_PAIR and remaining is None:
                 remaining = self.args.correction_attempts + 1
             indexed = {job["job_id"]: job for job in batch}
+            expected = set(indexed)
             def complete(decision):
                 job = indexed[decision["job_id"]]
                 if contract == IDENTITY_PAIR:
@@ -339,7 +415,7 @@ class Requests:
                                                  for side in ("left", "right")]}
             def check(result):
                 seen = [d["job_id"] for d in result["decisions"]]
-                if len(seen) != len(set(seen)) or set(seen) != set(indexed):
+                if len(seen) != len(set(seen)) or set(seen) != expected:
                     raise ValueError("Return every job_id exactly once.")
                 for decision in result["decisions"]:
                     completed = complete(decision)
@@ -350,15 +426,43 @@ class Requests:
                 if validate:
                     validate(completed, indexed[row["job_id"]])
             def salvage(result):
-                rows = valid_rows(result, "decisions", "job_id", indexed, contract, validate_one)
+                rows = valid_rows(result, "decisions", "job_id", expected, contract, validate_one)
                 return {"decisions": rows} if rows else None
+            # Group/job numbers are scheduling metadata. Reuse only identical model
+            # inputs, including names, aliases, status, quotes and support ordering.
+            keys = {job['job_id']: cp._digest([system, contract, {
+                k: v for k, v in job.items() if k not in {'job_id', 'left_group', 'right_group'}
+            }]) for job in batch} if contract == IDENTITY_PAIR else {}
+            cached, pending = [], []
+            for job in batch:
+                saved = self.identity_decisions.get(keys.get(job['job_id'])) if recover and not self.args.force else None
+                if saved is not None:
+                    row = {**deepcopy(saved), 'job_id': job['job_id']}
+                    try:
+                        validate_one(row)
+                    except (ValueError, TypeError, KeyError):
+                        pass
+                    else:
+                        cached.append(row)
+                        self.stats['identity_decisions_reused'] += 1
+                        continue
+                pending.append(job)
+            if not pending:
+                for row in cached:
+                    yield complete(row), indexed[row['job_id']]
+                return
+            expected = {job['job_id'] for job in pending}
             before = self.stats['requests']
-            result = self.call(system, contract, decision_payload(batch), check, salvage,
+            result = self.call(system, contract, decision_payload(pending), check, salvage,
                                recover_partial=contract == IDENTITY_PAIR and recover and self.args.correction_attempts > 0,
                                max_attempts=remaining)
             if remaining is not None:
                 remaining -= self.stats['requests'] - before
             accepted = result["decisions"] if result is not None else []
+            for row in accepted:
+                if row['job_id'] in keys:
+                    self.identity_decisions[keys[row['job_id']]] = deepcopy(row)
+            accepted = cached + accepted
             missing = [job for job in batch if job["job_id"] not in {d["job_id"] for d in accepted}]
             can_retry = remaining is None or remaining > 0
             if missing and accepted and recover and can_retry:
@@ -430,7 +534,7 @@ def decision_payload(jobs):
             if isinstance(job.get(side), list):
                 for position, ref in enumerate(job[side]):
                     ref["position"] = position
-    return {"jobs": rows, "observations": list(observations.values())}
+    return shared_context_payload({"jobs": rows, "observations": list(observations.values())})
 
 
 def compact_record(key, item, *, identity_context=True):
@@ -443,8 +547,25 @@ def compact_record(key, item, *, identity_context=True):
 
 def partition_identities(records, requests):
     groups = []
-    def resolve(batch):
+    system = cp.SYSTEM + (
+        '\nWhen grouping observations across source chapters, identity_support must cite explicit '
+        'observations from EVERY involved source_file/chapter establishing narrative continuity. '
+        'A matching name alone is insufficient. Otherwise retain separate profiles.'
+    )
+    def resolve(batch, remaining=None):
+        if remaining is None:
+            remaining = requests.args.correction_attempts + 1
         subset = {item["evidence_id"]: records[item["evidence_id"]] for item in batch}
+        def build(result, selected):
+            profiles = cp.build_profiles(result, selected)
+            for row in result['profiles']:
+                def chapters(refs):
+                    return {(selected[r['evidence_id']]['provenance']['file'],
+                             selected[r['evidence_id']]['provenance']['chapter']) for r in refs}
+                sources = chapters(row['evidence'])
+                if len(sources) > 1 and chapters(row['identity_support']) != sources:
+                    raise ValueError('Cross-chapter identity grouping must cite explicit identity_support from every source chapter.')
+            return profiles
         def salvage(result):
             rows = result.get("profiles") if isinstance(result, dict) else None
             if not isinstance(rows, list):
@@ -454,7 +575,7 @@ def partition_identities(records, requests):
             for row in rows:
                 try:
                     ids = cp._refs(row["evidence"], subset)
-                    cp.build_profiles({"profiles": [row]}, {key: subset[key] for key in ids})
+                    build({"profiles": [row]}, {key: subset[key] for key in ids})
                     valid.append((row, ids))
                     for key in ids:
                         counts[key] += 1
@@ -462,24 +583,25 @@ def partition_identities(records, requests):
                     continue
             kept = [row for row, ids in valid if all(counts[key] == 1 for key in ids)]
             return {"profiles": kept} if kept else None
-        response = requests.call(cp.SYSTEM, cp.SCHEMA, {"observations": batch},
-                                 lambda result: cp.build_profiles(result, subset), salvage)
+        before = requests.stats['requests']
+        response = requests.call(system, cp.SCHEMA, {"observations": batch},
+                                 lambda result: build(result, subset), salvage,
+                                 recover_partial=requests.args.correction_attempts > 0,
+                                 max_attempts=remaining)
+        remaining -= requests.stats['requests'] - before
         kept = response["profiles"] if response else []
         assigned = {r["evidence_id"] for row in kept for r in row["evidence"]}
         missing = [item for item in batch if item["evidence_id"] not in assigned]
-        if len(missing) > 1 and requests.args.correction_attempts > 0:
-            middle = len(missing) // 2
-            return kept + resolve(missing[:middle]) + resolve(missing[middle:])
+        if missing and remaining > 0:
+            return kept + resolve(missing, remaining)
         return kept + [{"canonical_name": records[row["evidence_id"]]["character"], "identity_status": "ambiguous",
                         "evidence": [{"evidence_id": row["evidence_id"]}], "identity_support": []} for row in missing]
-    # Keep chapter context together where it fits. Every observation remains in a
-    # validated local identity; later comparisons can link identities across batches.
-    chapters = defaultdict(list)
-    for key, item in records.items():
-        chapters[(item["provenance"]["file"], item["provenance"]["chapter"])].append(compact_record(key, item))
-    for observations in progress.steps(list(chapters.values())):
-        for batch in requests.batches(observations, cp.SYSTEM, cp.SCHEMA, "observations"):
-            groups.extend(resolve(batch))
+    # Source order keeps neighboring observations together, but a chapter boundary
+    # alone must not create another provisional identity for the same person.
+    # Every row retains its chapter/file; homonyms still need contextual validation.
+    observations = [compact_record(key, item) for key, item in records.items()]
+    for batch in progress.steps(list(requests.batches(observations, system, cp.SCHEMA, "observations"))):
+        groups.extend(resolve(batch))
     return groups
 
 
@@ -488,20 +610,47 @@ def identity_text(item):
     return "\n".join([item["quotation"], *(part["text"] for part in item.get("_source_context", []))])
 
 
+def _identity_components(records):
+    """Necessary alias connectivity under the SAME rules as build_profiles.
+
+    This only rejects impossible merges. It never confirms an identity. Use all
+    explicit input evidence so a bridge discovered in a later dossier is retained.
+    """
+    names = sorted({item['character'] for item in records.values()})
+    parent = {name: name for name in names}
+    def root(name):
+        while parent[name] != name:
+            name = parent[name]
+        return name
+    normalized = {name: cp._normalized(name) for name in names}
+    contexts = dict.fromkeys(text for item in records.values() if item['classification'] == 'explicit'
+                             for text in [item['quotation'], *(p['text'] for p in item.get('_source_context', []))])
+    for text in contexts:
+        lmstudio_pipeline.comfy_interrupt_check()
+        normalized_text = cp._normalized(text)
+        present = [name for name in names if normalized[name] in normalized_text]
+        for left, right in combinations(present, 2):
+            a, b = root(left), root(right)
+            if a != b and cp._alias_link(left, right, [text]):
+                parent[b] = a
+    return {name: root(name) for name in names}
+
+
 def reconcile_identities(groups, records, requests):
     # A validated merge can supply the alias/continuity evidence missing from
     # earlier pairwise comparisons. Revisit whole dossiers until no merge occurs.
     # Preserve explicit negative decisions across passes, including transitively.
     blocked, compared = set(), set()
+    components = _identity_components(records)
     while True:
-        merged = _reconcile_identity_pass(groups, records, requests, blocked, compared)
+        merged = _reconcile_identity_pass(groups, records, requests, blocked, compared, components)
         profiles = cp.build_profiles({"profiles": merged}, records)
         if len(merged) == len(groups):
             return profiles
         groups = merged
 
 
-def _reconcile_identity_pass(groups, records, requests, blocked, compared):
+def _reconcile_identity_pass(groups, records, requests, blocked, compared, components):
     parent = list(range(len(groups)))
     def root(i):
         while parent[i] != i:
@@ -521,6 +670,7 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
     candidates = {}
     jobs = []
     forbidden = set()
+    pruned = 0
     for left, right in combinations(range(len(groups)), 2):
         if any(frozenset((a["evidence_id"], b["evidence_id"])) in blocked
                for a in groups[left]["evidence"] for b in groups[right]["evidence"]):
@@ -540,6 +690,11 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
         if not (labels[0] & labels[1] or any(n in quotes[1] for n in labels[0])
                 or any(n in quotes[0] for n in labels[1])):
             continue
+        # Mere co-occurrence cannot pass build_profiles' explicit alias checks.
+        # Preserve homonyms and every possible transitive name bridge for the LLM.
+        if {components[name] for name in labels[0]}.isdisjoint(components[name] for name in labels[1]):
+            pruned += 1
+            continue
         candidates[(left, right)] = []
         # Split large identity dossiers, preserving every contextual/name quote.
         # Half-sized sides ensure the combined job fits the actual pair schema.
@@ -550,7 +705,7 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
         for i in (left, right):
             chunks, current = [], []
             for row in signatures[i]:
-                if current and len(encoded(current + [row]).encode()) > size:
+                if current and len(encoded(shared_context_payload({'observations': current + [row]})).encode()) > size:
                     chunks.append(current)
                     current = []
                 current.append(row)
@@ -576,6 +731,10 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared):
                     "with valid support positions on both sides. Missing identity proof does not "
                     "justify different; use different only with evidence of distinct people."
                 ) from exc
+    requests.stats['identity_pairs_pruned'] = requests.stats.get('identity_pairs_pruned', 0) + pruned
+    requests.stats.setdefault('identity_passes', []).append({'groups': len(groups), 'jobs': len(jobs), 'pruned_pairs': pruned})
+    logger.info('Character profiles: identity pass, %s provisional groups, %s comparison jobs, %s impossible alias pairs skipped',
+                len(groups), len(jobs), pruned)
     for index, (decision, job) in enumerate(requests.decisions(jobs, IDENTITY_SYSTEM, IDENTITY_PAIR, check), 1):
         candidates[(job["left_group"], job["right_group"])].append(decision)
         progress.report(index / len(jobs))

@@ -114,6 +114,8 @@ def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
         for name, value in node.get("properties", {}).items():
             if isinstance(value, dict):
                 limit(value, name)
+        for branch in node.get("anyOf", []):
+            limit(branch, field_name)
 
     limit(compact["schema"])
     return compact
@@ -121,6 +123,8 @@ def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 def _validate_canonical_names(value: Any, schema: dict[str, Any]) -> None:
     """Enforce nonblank names where the request schema requires them."""
+    for branch in schema.get("anyOf", []):
+        _validate_canonical_names(value, branch)
     if isinstance(value, dict):
         props = schema.get("properties", {})
         if props.get("canonical_name", {}).get("minLength", 0) > 0:

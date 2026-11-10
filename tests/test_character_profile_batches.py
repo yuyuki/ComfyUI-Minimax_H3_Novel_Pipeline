@@ -25,6 +25,14 @@ def workspace(tmp_path, monkeypatch):
 
 def request_payload(prompt):
     payload = json.JSONDecoder().raw_decode(prompt)[0]
+    passages = {row['passage_id']: row for row in payload.get('source_contexts', [])}
+    for row in payload.get('observations', []):
+        for span in row['observation'].get('source_context', []):
+            if 'passage_id' in span:
+                passage = passages[span.pop('passage_id')]
+                start = span['start_char'] - passage['start_char']
+                end = span['end_char'] - passage['start_char']
+                span['text'] = passage['text'][start:end]
     table = {row["evidence_id"]: row for row in payload.get("observations", [])}
     def hydrate(value):
         if isinstance(value, dict):
@@ -46,7 +54,11 @@ def fake_model(*args):
         groups = {}
         for row in payload["observations"]:
             groups.setdefault(row["observation"]["character"], []).append(row["evidence_id"])
-        return {"profiles": [group(ids, canonical_name=name) for name, ids in groups.items()]}
+        explicit = {row['evidence_id'] for row in payload['observations']
+                    if row['observation']['classification'] == 'explicit'}
+        return {"profiles": [group(ids, canonical_name=name,
+                                  identity_support=[{'evidence_id': key} for key in ids if key in explicit])
+                             for name, ids in groups.items()]}
     if contract == batches.TRAITS:
         rows = []
         for row in payload["observations"]:
@@ -101,7 +113,7 @@ def test_complete_pipeline_precise_conflicts_and_schema(workspace, monkeypatch):
     assert json.loads(Path(saved).read_text(encoding="utf-8")) == result
     assert (workspace / "character_profiles.schema.json").is_file()
     assert {c.args[4]["name"] for c in chat.call_args_list} == {
-        cp.SCHEMA["name"], batches.IDENTITY_PAIR["name"], batches.TRAITS["name"],
+        cp.SCHEMA["name"], batches.TRAITS["name"],
         batches.RELATIONS["name"]}
     assert all(c.args[4]["strict"] for c in chat.call_args_list)
     assert validate_document(result) is result
@@ -151,6 +163,9 @@ def test_batches_reconcile_distant_values_no_loss_and_resume(workspace, monkeypa
 
 def test_homonyms_do_not_merge_on_shared_name(workspace, monkeypatch):
     def separate(*args):
+        if args[4] == cp.SCHEMA:
+            return {'profiles': [group([row['evidence_id']], identity_status='ambiguous')
+                                 for row in request_payload(args[3])['observations']]}
         result = fake_model(*args)
         if args[4] == batches.IDENTITY_PAIR:
             for decision in result["decisions"]:
@@ -250,9 +265,10 @@ def test_empty_identity_profile_corrected_with_schema_and_full_evidence(workspac
     for call in create.call_args_list:
         contract = call.kwargs["response_format"]
         assert contract == {"type": "json_schema", "json_schema": cp.SCHEMA}
-        fields = contract["json_schema"]["schema"]["properties"]["profiles"]["items"]["properties"]
-        assert fields["evidence"]["minItems"] == 1
-        assert "minItems" not in fields["identity_support"]
+        for branch in contract["json_schema"]["schema"]["properties"]["profiles"]["items"]["anyOf"]:
+            fields = branch["properties"]
+            assert fields["evidence"]["minItems"] == 1
+            assert "minItems" not in fields["identity_support"]
         assert all(key in str(call.kwargs["messages"]) for key in ids)
     assert "Rejected:" in str(create.call_args_list[1].kwargs["messages"])
     cache = list((workspace / ".cache").glob("*.json"))
@@ -310,6 +326,9 @@ def test_invalid_decisions_do_not_block_export_or_lose_sources(workspace, monkey
     def broken(*args):
         if args[4] == contract:
             return {}
+        if contract == batches.IDENTITY_PAIR and args[4] == cp.SCHEMA:
+            return {'profiles': [group([row['evidence_id']], identity_status='ambiguous')
+                                 for row in request_payload(args[3])['observations']]}
         return fake_model(*args)
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", broken)
     data = fixture_document()
