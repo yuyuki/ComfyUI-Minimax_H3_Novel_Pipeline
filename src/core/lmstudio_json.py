@@ -179,6 +179,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
         stream = None
         raw = ""
         content_chars = reasoning_chars = 0
+        reasoning_non_whitespace_chars = 0
         finish_reason = "not_received"
         local_stop = "stream_end"
         try:
@@ -218,12 +219,15 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                     reasoning = getattr(delta, field, None)
                     if isinstance(reasoning, str):
                         reasoning_chars += len(reasoning)
+                        reasoning_non_whitespace_chars += sum(not char.isspace() for char in reasoning)
                 if reasoning_chars and allow_chatml and not raw_chatml:
                     raw_chatml = True
                     local_stop = "reasoning_fallback"
                     print("    LLM: reasoning returned with thinking disabled; retrying structured JSON with raw ChatML.", flush=True)
                     break
-                if reasoning_chars and not settings["thinking"] and profile.NAME in {"Gemma", "Mistral"}:
+                # An empty thought block may stream a newline even with thinking
+                # disabled. Count it for metrics, but do not mistake it for reasoning.
+                if reasoning_non_whitespace_chars and not settings["thinking"] and profile.NAME in {"Gemma", "Mistral"}:
                     raise RuntimeError(
                         "LM Studio returned reasoning with thinking disabled. Check that the loaded model's "
                         "chat template and runtime support disabling reasoning with this model's request controls, "
@@ -253,6 +257,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             diagnostics = (
                 f"attempt={attempt + 1}, thinking={settings['thinking']}, max_tokens={request_max_tokens}, "
                 f"content_chars={content_chars}, reasoning_chars={reasoning_chars}, "
+                f"reasoning_non_whitespace_chars={reasoning_non_whitespace_chars}, "
                 f"finish_reason={finish_reason}, local_stop={local_stop}"
             )
             print(f"    LLM stream: {diagnostics}", flush=True)

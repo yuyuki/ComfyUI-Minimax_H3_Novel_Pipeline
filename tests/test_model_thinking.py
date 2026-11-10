@@ -62,6 +62,39 @@ def test_disabled_thinking_rejects_unwanted_reasoning(family, capsys):
     assert "reasoning_chars=15" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("family", ["Gemma", "Mistral"])
+@pytest.mark.parametrize("field", ["reasoning_content", "reasoning"])
+def test_disabled_thinking_accepts_empty_thought_block(family, field, capsys):
+    pieces = [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+        content=None, **{field: whitespace}))]) for whitespace in ("\n", " ", "\t")]
+    stream = Stream([*pieces, '{"value":"ok"}'])
+    client, create = client_for(stream)
+    client._minimax_h3_profile = lmstudio_models.get_profile(family)
+    client._minimax_h3_settings = {"thinking": False}
+    assert lmstudio_json.chat_json(client, "model-alias", "system", "user", SCHEMA, .12, 6500) == {"value": "ok"}
+    assert stream.closed and create.call_count == 1
+    assert create.call_args.kwargs["response_format"] == {"type": "json_schema", "json_schema": SCHEMA}
+    log = capsys.readouterr().out
+    assert "reasoning_chars=3" in log
+    assert "reasoning_non_whitespace_chars=0" in log
+
+
+@pytest.mark.parametrize("field", ["reasoning_content", "reasoning"])
+def test_real_reasoning_after_empty_block_still_fails(field, capsys):
+    pieces = [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(
+        content=None, **{field: text}))]) for text in ("\n", " ", "Private reasoning")]
+    stream = Stream([*pieces, '{"value":"ok"}'])
+    client, create = client_for(stream)
+    client._minimax_h3_profile = lmstudio_models.get_profile("Gemma")
+    client._minimax_h3_settings = {"thinking": False}
+    with pytest.raises(RuntimeError, match="returned reasoning with thinking disabled"):
+        lmstudio_json.chat_json(client, "gemma", "system", "user", SCHEMA, .12, 6500)
+    assert stream.closed and stream.consumed == 3 and create.call_count == 1
+    log = capsys.readouterr().out
+    assert "reasoning_non_whitespace_chars=16" in log
+    assert "Private reasoning" not in log
+
+
 def test_gpt_oss_logs_native_reasoning_even_during_disabled_audit(capsys):
     client, _ = client_for(Stream(['{"value":"ok"}']))
     token = lmstudio_json.REQUEST_THINKING.set(False)
