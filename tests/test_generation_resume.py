@@ -65,7 +65,7 @@ def test_resume_plans_and_prompts(setup, monkeypatch, change):
         util.save_json(current / ".cache/chapter/plan_001.json", {"cache_key": "stale"})
         util.save_json(current / ".cache/chapter/prompt_001.json", {"cache_key": "stale"})
     node.GenerateH3PromptsNode().run(refs, config, {}, **params)
-    assert plan.call_count == (2 if change in {"force", "model", "temperature", "timeline", "bad_plan"} else 1)
+    assert plan.call_count == (2 if change in {"force", "model", "timeline", "bad_plan"} else 1)
     assert generate.call_count == (2 if change in {
         "force", "model", "temperature", "timeline", "bad_prompt", "invalid_prompt", "prompt_key"} else 1)
     assert before == {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()}

@@ -60,7 +60,8 @@ def test_continuity_repair_does_not_replace_complete_prompt_with_missing_descrip
     assert validation.errors == ['Scene continuity: Wrong eyeline']
 
 
-def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypatch, cinematic_registry):
+@pytest.mark.parametrize('failure', ['format', 'continuity'])
+def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypatch, cinematic_registry, failure):
     path = tmp_path / 'chapter.txt'
     designs = {'entities': [{'global_id': 'hero'}, {'global_id': 'future_tablet'}]}
     refs = cinematic_registry(path, visual_designs=designs)
@@ -86,17 +87,19 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
 
     def review(client, model, scene, prompt, bindings, continuity, previous, *unused):
         histories.append(deepcopy(previous))
-        return []
+        return ['Wrong eyeline']
 
     monkeypatch.setattr(step, 'plan_scenes', plan)
     monkeypatch.setattr(step, 'build_bindings', lambda *a: deepcopy(bindings))
     monkeypatch.setattr(step, 'generate_prompt', generate)
     monkeypatch.setattr(step, 'check_prompt_continuity', review)
+    if failure == 'continuity':
+        monkeypatch.setattr(step, 'validate_prompt', lambda *a: step.Validation(True, [], 400))
     for _ in range(2):
         manifest = step.process_chapter(path, refs, None, 'model', args)
         assert all(not entry['valid'] for entry in manifest['outputs'])
     assert len(generations) == 4
-    assert histories == [[], [], [], []]
+    assert histories == ([[], [], [], []] if failure == 'continuity' else [])
     assert chunks == refs['chapter_timelines']['chapter']['sequences']
     assert refs['visual_designs'] == designs
     cached = json.loads((args.out_dir / '.cache/chapter/prompt_001.json').read_text())

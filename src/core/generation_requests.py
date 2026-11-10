@@ -16,6 +16,7 @@ from .path_access import confined_path
 VERSION = 1
 _SESSION = ContextVar("h3_generation_requests", default=None)
 _TASK = ContextVar("h3_generation_task", default="planning")
+_DETAIL = ContextVar("h3_generation_detail", default={})
 
 
 def digest(value):
@@ -67,6 +68,26 @@ def position(label):
 
 
 @contextmanager
+def detail(**values):
+    """Attach bounded progress labels without changing request identity."""
+    token = _DETAIL.set({**_DETAIL.get(), **values})
+    try:
+        yield
+    finally:
+        _DETAIL.reset(token)
+
+
+def write_metrics(state, stage, status, **values):
+    try:
+        atomic_json(confined_path("request_metrics.json", state["directory"]),
+                    {"last_position": state["position"], "last_stage": stage,
+                     "last_status": status, "detail": _DETAIL.get(),
+                     "tasks": state["tasks"], **values})
+    except OSError:
+        print("    H3: could not persist request metrics.", flush=True)
+
+
+@contextmanager
 def chapter(chapter_id, args):
     directory = confined_path(args.out_dir / ".cache" / chapter_id, args.out_dir)
     sources = [directory]
@@ -99,6 +120,7 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
     stats = state["tasks"].setdefault(stage, {
         "calls": 0, "cache_hits": 0, "llm_requests": 0,
         "estimated_input_tokens": 0, "estimated_output_tokens": 0, "seconds": 0.0,
+        "request_bytes": 0, "cache_misses": 0, "invalid_checkpoints": 0,
     })
     stats["calls"] += 1
     label = f"{state['position']} / {stage} / request {stats['calls']}"
@@ -111,6 +133,9 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
     metrics = {"llm_requests": 0, "estimated_input_tokens": 0, "estimated_output_tokens": 0}
     metric_token = lmstudio_json.REQUEST_METRICS.set(metrics)
     status = "failed"
+    request_bytes = len(system.encode("utf-8")) + len(user.encode("utf-8")) + len(
+        json.dumps(schema, ensure_ascii=False).encode("utf-8"))
+    started_at = time.time()
     try:
         for source in state["sources"] if not state["force"] else []:
             try:
@@ -119,8 +144,12 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
                 if (record.get("version") != VERSION or record.get("key") != key
                         or record.get("result_digest") != digest(result)
                         or not isinstance(result, dict) or not validator.is_valid(result)):
+                    stats["invalid_checkpoints"] += 1
                     continue
+            except FileNotFoundError:
+                continue
             except (OSError, ValueError, KeyError, TypeError):
+                stats["invalid_checkpoints"] += 1
                 continue
             lmstudio_pipeline.comfy_interrupt_check()
             if source != state["directory"]:
@@ -130,6 +159,11 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
             print(f"    H3 {label}: cached", flush=True)
             return result
         print(f"    H3 {label}: requesting structured JSON", flush=True)
+        stats["cache_misses"] += 1
+        stats["request_bytes"] += request_bytes
+        write_metrics(state, stage, "requesting", request_started_at=started_at,
+                      request_bytes=request_bytes,
+                      cache_reason="force" if state["force"] else "no_valid_exact_checkpoint")
         result = lmstudio_json.chat_json(client, model, system, user, schema, temperature, max_tokens)
         lmstudio_pipeline.comfy_interrupt_check()
         if isinstance(result, dict) and validator.is_valid(result):
@@ -147,9 +181,5 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
         for name, value in metrics.items():
             stats[name] += value
         stats["seconds"] = round(stats["seconds"] + time.perf_counter() - started, 3)
-        try:
-            atomic_json(confined_path("request_metrics.json", state["directory"]),
-                        {"last_position": state["position"], "last_stage": stage,
-                         "last_status": status, "tasks": state["tasks"]})
-        except OSError:
-            print("    H3: could not persist request metrics.", flush=True)
+        write_metrics(state, stage, status, request_started_at=started_at,
+                      request_elapsed_seconds=round(time.perf_counter() - started, 3))

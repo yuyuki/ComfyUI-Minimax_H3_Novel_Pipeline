@@ -24,7 +24,8 @@ def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
     captured = []
 
     def fake_chat(client, model, system, user, schema, temperature, max_tokens):
-        captured.append(json.loads(user))
+        from tests.test_continuity_context import expanded
+        captured.append(expanded(json.loads(user)))
         assert schema == generate.CONTINUITY_REVIEW_SCHEMA
         return {"errors": ["Turn the character toward the tablet on the right."]}
 

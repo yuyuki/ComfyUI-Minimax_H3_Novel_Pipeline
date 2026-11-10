@@ -8,6 +8,23 @@ from minimax_h3_novel_pipeline.core import continuity_context as context
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as generate
 
 
+def expanded(payload):
+    """Independent reconstruction for asserting full evidence coverage."""
+    excerpts = payload.get("shared_source_excerpts", {})
+    def visit(value):
+        if isinstance(value, list):
+            return [visit(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {key: visit(item) for key, item in value.items()}
+        if "source_excerpt_ref" in result:
+            result["source_excerpt"] = excerpts[result.pop("source_excerpt_ref")]
+        return result
+    result = visit(payload)
+    result.pop("shared_source_excerpts", None)
+    return result
+
+
 def scene(index, size=2500):
     return generate.Scene(str(index), "é" * size, f"event {index}", "room",
                           [], [], [], False, f"local {index}" + context.EVIDENCE_MARKER
@@ -17,7 +34,7 @@ def scene(index, size=2500):
 def test_packing_preserves_exact_evidence_without_mutating_scenes():
     payload = {"scenes": [generate.scene_to_dict(scene(i)) for i in range(4)]}
     original = copy.deepcopy(payload)
-    packed = json.loads(context.pack(payload))
+    packed = expanded(json.loads(context.pack(payload)))
     assert payload == original
     assert len(packed["shared_sequence_evidence"]) == 1
     for old, new in zip(original["scenes"], packed["scenes"]):
@@ -27,14 +44,14 @@ def test_packing_preserves_exact_evidence_without_mutating_scenes():
 
 
 def test_review_batches_cover_all_history_future_and_distant_conflicts(monkeypatch):
-    history = [{"scene": generate.scene_to_dict(scene(i)), "prompt": f"prompt {i}",
+    history = [{"scene": generate.scene_to_dict(scene(i, 2500 + i)), "prompt": f"prompt {i}",
                 "bindings": {"global_id": f"entity {i}"}} for i in range(30)]
-    future = [scene(i) for i in range(30, 60)]
+    future = [scene(i, 2500 + i) for i in range(30, 60)]
     calls = []
 
     def chat(client, model, system, user, schema, temperature, max_tokens):
-        payload = json.loads(user)
-        assert context.fits(system, payload, schema)
+        assert len(system.encode()) + len(user.encode()) + len(json.dumps(schema).encode()) <= context.REQUEST_BYTES
+        payload = expanded(json.loads(user))
         assert schema == generate.CONTINUITY_REVIEW_SCHEMA and schema["strict"]
         assert max_tokens == 9000
         assert payload["current_prompt"] == "current wording"
@@ -70,7 +87,7 @@ def test_later_batch_failure_cannot_be_reported_as_success(monkeypatch):
     monkeypatch.setattr(generate, "chat_json", chat)
     with pytest.raises(ValueError, match="invalid scene continuity review"):
         generate.check_prompt_continuity(None, "gemma", scene(-1), "prompt", {}, {}, [],
-                                         [scene(i) for i in range(30)], 8000)
+                                         [scene(i, 2500 + i) for i in range(30)], 8000)
     assert len(calls) == 2
 
 
@@ -85,3 +102,17 @@ def test_repair_refuses_oversized_corrections_before_network(monkeypatch):
         generate.repair_prompt(None, "gemma", "prompt", scene(0, 1), {},
                                generate.Validation(False, ["correction " * 6000], 0), 8,
                                SimpleNamespace(temperature=0.1, max_tokens=8000), {})
+
+
+def test_repeated_source_prose_reduces_batches_without_merging_beats():
+    scenes = [generate.scene_to_dict(scene(i, 6000)) for i in range(12)]
+    original = {"future_requirements": scenes}
+    packed = json.loads(context.pack(original))
+    assert len(packed["shared_source_excerpts"]) == 1
+    restored = expanded(packed)
+    for old, new in zip(scenes, restored["future_requirements"]):
+        new["adaptation_notes"] += restored["shared_sequence_evidence"][new.pop("sequence_evidence_ref")]
+        assert new == old
+    assert len(list(context.batches("system", {}, original, {}))) == 1
+    assert len(json.dumps(original).encode()) > context.REQUEST_BYTES
+    assert len(context.pack(original).encode()) < context.REQUEST_BYTES

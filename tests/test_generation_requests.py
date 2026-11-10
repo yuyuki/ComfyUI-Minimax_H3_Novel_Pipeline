@@ -139,6 +139,29 @@ def test_stop_is_checked_on_cache_hit(setup, monkeypatch):
     assert network.call_count == 1
 
 
+def test_inflight_metrics_and_scoped_details_do_not_change_cache_identity(setup, monkeypatch):
+    client, args = setup
+    path = args.out_dir / ".cache/chapter/request_metrics.json"
+    def network(*a):
+        metrics = json.loads(path.read_text())
+        assert metrics["last_status"] == "requesting"
+        assert metrics["detail"] == {"review_round": 2, "batch": 3}
+        assert metrics["request_started_at"] > 0
+        assert metrics["request_bytes"] > 0
+        return {"value": "review"}
+    monkeypatch.setattr(lmstudio_json, "chat_json", network)
+    with requests.chapter("chapter", args), requests.task("continuity_review"):
+        with requests.detail(review_round=2), requests.detail(batch=3):
+            call(client)
+        call(client)
+    metrics = json.loads(path.read_text())
+    assert metrics["last_status"] == "cached"
+    assert metrics["detail"] == {}
+    assert metrics["tasks"]["continuity_review"]["cache_misses"] == 1
+    assert metrics["tasks"]["continuity_review"]["cache_hits"] == 1
+    assert "never-save-this-key" not in path.read_text()
+
+
 def test_review_failure_resumes_generation_and_each_completed_evidence_batch(setup, monkeypatch, cinematic_registry):
     from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step, continuity_context
     client, args = setup
@@ -147,7 +170,7 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
                          spatial_plan={"chapters": {"chapter": {"sequences": [{"sequence": 1}]}}})
     path = args.out_dir.parent / "chapter.txt"
     refs = cinematic_registry(path)
-    scenes = [step.Scene(str(i), "evidence " * 300, f"event {i}", "", [], [], [], False, "") for i in range(4)]
+    scenes = [step.Scene(str(i), "evidence " * (300 + i), f"event {i}", "", [], [], [], False, "") for i in range(4)]
     monkeypatch.setattr(continuity_context, "REQUEST_BYTES", 11000)
     monkeypatch.setattr(step, "plan_scenes", lambda *a: deepcopy(scenes))
     monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [{"global_id": "hero"}], "audio": []})

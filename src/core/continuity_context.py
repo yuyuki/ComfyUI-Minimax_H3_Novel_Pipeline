@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 
 # UTF-8 bytes, deliberately not the optimistic characters/4 token estimate.
@@ -11,9 +12,22 @@ EVIDENCE_MARKER = "\nAuthoritative sequence phases: "
 
 
 def pack(payload):
-    """Intern repeated sequence evidence without changing cached scene records."""
+    """Intern exact shared evidence/excerpts; retain every scene occurrence."""
     evidence = {}
     ids = {}
+    excerpts = Counter()
+    def count(value):
+        if isinstance(value, list):
+            for item in value:
+                count(item)
+        elif isinstance(value, dict):
+            excerpt = value.get("source_excerpt")
+            if isinstance(excerpt, str) and len(excerpt) >= 256:
+                excerpts[excerpt] += 1
+            for item in value.values():
+                count(item)
+    count(payload)
+    shared_excerpts, excerpt_ids = {}, {}
 
     def visit(value):
         if isinstance(value, list):
@@ -31,11 +45,21 @@ def pack(payload):
                 evidence[key] = shared
             result["adaptation_notes"] = local
             result["sequence_evidence_ref"] = ids[shared]
+        excerpt = result.get("source_excerpt")
+        if isinstance(excerpt, str) and excerpts[excerpt] > 1:
+            if excerpt not in excerpt_ids:
+                key = f"source_excerpt_{len(excerpt_ids) + 1}"
+                excerpt_ids[excerpt] = key
+                shared_excerpts[key] = excerpt
+            del result["source_excerpt"]
+            result["source_excerpt_ref"] = excerpt_ids[excerpt]
         return result
 
     result = visit(payload)
     if evidence:
         result["shared_sequence_evidence"] = evidence
+    if shared_excerpts:
+        result["shared_source_excerpts"] = shared_excerpts
     return json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -75,4 +99,7 @@ INSTRUCTIONS = (
     "\nResolve each sequence_evidence_ref using shared_sequence_evidence; its full text "
     "belongs to that scene. Evidence may arrive in batches. Judge only supplied evidence; "
     "absence from this batch is not evidence of absence. Preserve explicit temporal changes."
+    " Resolve each source_excerpt_ref using shared_source_excerpts: it replaces that scene's "
+    "source_excerpt with the EXACT original prose, not a summary. Shared text does not merge "
+    "scene occurrences or their separately assigned beats."
 )

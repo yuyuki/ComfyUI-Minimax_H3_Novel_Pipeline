@@ -1,6 +1,32 @@
 # H3 generation optimisation plan
 
-Date: 2026-11-10. Status: proposed; implementation has not started.
+Date: 2026-11-10. Status: implementation started; first milestone validated offline.
+
+## Implementation progress
+
+- [x] Persist in-flight request status, start time, request bytes, cache misses
+  and invalid checkpoints; expose review rounds, batches and repair attempts.
+- [x] Separate continuity repair timing from review timing.
+- [x] Clarify current-beat versus sequence-wide review instructions, preserving
+  checks against all supplied history and future evidence.
+- [x] Normalize unambiguous, binding-consistent task-type brackets locally.
+- [x] Gate chapter reviews on local validity; recheck format after semantic
+  repairs and stop unchanged repairs without approving invalid output.
+- [x] Share repeated exact source excerpts within each request, retaining all
+  occurrences and proving lossless reconstruction and smaller batch counts.
+- [x] Isolate planning cache keys from unrelated camera/review/generation
+  settings and source declarations; write plan checkpoints atomically.
+- [ ] Compile the complete reusable upstream evidence bundle with provenance.
+- [ ] Introduce structured issue targets and dedicated scene/binding repairs.
+- [ ] Complete granular artifact dependencies, integrity and coverage manifests
+  beyond the planning cache and existing exact-request checkpoints.
+- [ ] Add backend-reported usage and complete artifact invalidation diagnostics.
+- [ ] Run isolated live quality/performance comparisons and a full chapter.
+
+First milestone validation: 1,199 tests passed, 3 skipped, 111 subtests passed;
+repository lint passed and the generated architecture map was refreshed. Tests
+use mocked model calls. The active run and its output files were not modified.
+No live speedup or model-quality equivalence has been established yet.
 
 ## Objective and boundaries
 
