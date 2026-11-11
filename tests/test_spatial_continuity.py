@@ -1,8 +1,10 @@
 """Offline validation of the spatial continuity interface and resolver."""
+import json
+
 import pytest
 
 from minimax_h3_novel_pipeline.nodes.spatial_continuity import SpatialContinuityNode
-from minimax_h3_novel_pipeline.core import pipeline_step3_generate as generate
+from minimax_h3_novel_pipeline.core import continuity_issues, pipeline_step3_generate as generate
 from tests.h3_review_helpers import issue
 
 
@@ -18,7 +20,6 @@ def test_spatial_node_requires_consolidation_and_configuration():
 
 
 def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
-    import json
     scene = generate.Scene("Now", "He sees the tablet", "He looks", "room", [], [], [], False, "")
     later = generate.Scene("Later", "x" * 1500 + "tablet is on the right", "Tablet", "room", [], [], [], False, "")
     history = [{"prompt": "Tablet on the right", "bindings": {"global_id": "tablet"}}]
@@ -50,6 +51,40 @@ def test_malformed_review_is_not_treated_as_success(monkeypatch, result):
     monkeypatch.setattr(generate, "chat_json", lambda *args: result)
     with pytest.raises(ValueError, match="invalid scene continuity review"):
         generate.check_prompt_continuity(None, "qwen", scene, "prompt", {}, {}, [], [], 8000)
+
+
+@pytest.mark.parametrize("retry_valid", [True, False])
+def test_review_retries_unresolved_evidence_once_and_fails_closed(monkeypatch, caplog, retry_valid):
+    scene = generate.Scene("Now", "Source", "He calls for help.", "", [], [], [], False, "")
+    calls = []
+
+    def review(client, model, system, user, schema, temperature, max_tokens):
+        payload = json.loads(user)
+        calls.append((system, payload))
+        if len(calls) == 1:
+            return {"errors": [issue("Check the call", path="/current_scene/visual_event/description")]}
+        assert schema == generate.CONTINUITY_REVIEW_SCHEMA
+        assert "diagnostic only, not evidence" in system
+        assert payload["review_validation_feedback"]["unresolved_evidence_paths"] == [
+            "/current_scene/visual_event/description"]
+        return {"errors": [issue("Check the call", path=(
+            "/current_scene/visual_event" if retry_valid
+            else "/review_validation_feedback/rejected_review/errors/0/message"))]}
+
+    monkeypatch.setattr(generate, "chat_json", review)
+    if retry_valid:
+        errors = generate.check_prompt_continuity(
+            None, "qwen", scene, "prompt", {}, {}, [], [], 8000)
+        assert errors[0]["evidence"] == [{
+            "path": "/current_scene/visual_event", "value": "He calls for help."}]
+    else:
+        with pytest.raises(continuity_issues.UnresolvedEvidenceError):
+            generate.check_prompt_continuity(None, "qwen", scene, "prompt", {}, {}, [], [], 8000)
+        assert "failed evidence validation" in caplog.text
+    assert "retrying" in caplog.text
+    assert "/current_scene/visual_event/description" in caplog.text
+    assert len(calls) == 2
+    assert calls[0][1]["current_scene"] == calls[1][1]["current_scene"]
 
 
 @pytest.mark.parametrize("resolved", [True, False])

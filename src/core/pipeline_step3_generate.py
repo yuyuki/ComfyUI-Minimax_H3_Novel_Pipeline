@@ -9,6 +9,7 @@ from . import generation_artifacts
 import argparse
 import ast
 import json
+import logging
 import re
 import sys
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from . import temporal_context
 from .character_visual_integration import sequence_context
 from .cinematic_references import PHASES, parse_chapters
 from .reference_timeline import state_at
+
+logger = logging.getLogger(__name__)
 
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
@@ -177,9 +180,60 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
     try:
         for index, batch in enumerate(batches, 1):
             packed = continuity_context.pack(batch)
-            with generation_requests.detail(batch=index):
-                result = chat_json(client, model, system, packed, CONTINUITY_REVIEW_SCHEMA, 0.1, max_tokens)
-            batch_errors = continuity_issues.validate(result, json.loads(packed))
+            payload = json.loads(packed)
+            request_system, request_payload = system, payload
+            unresolved_paths: list[str] = []
+            rejected_review: dict[str, Any] | None = None
+            for attempt in range(2):
+                if attempt:
+                    request_system = system + (
+                        "\nA review_validation_feedback object may be present in the request. "
+                        "It is diagnostic only, not evidence. Correct the rejected evidence paths, "
+                        "cite only existing values in the original request fields, and return the "
+                        "complete review using the same schema."
+                    )
+                    request_payload = {
+                        **payload,
+                        "review_validation_feedback": {
+                            "unresolved_evidence_paths": unresolved_paths,
+                            "rejected_review": rejected_review,
+                        },
+                    }
+                    if not continuity_context.fits(
+                            request_system, request_payload, CONTINUITY_REVIEW_SCHEMA):
+                        raise ValueError(
+                            "H3 continuity evidence retry exceeds the safe request budget; "
+                            "no evidence was discarded."
+                        )
+                    request_user = continuity_context.pack(request_payload)
+                else:
+                    request_user = packed
+                try:
+                    with generation_requests.detail(batch=index, evidence_retry=attempt):
+                        result = chat_json(
+                            client, model, request_system, request_user,
+                            CONTINUITY_REVIEW_SCHEMA, 0.1, max_tokens)
+                    batch_errors = continuity_issues.validate(result, payload)
+                except continuity_issues.UnresolvedEvidenceError as exc:
+                    paths = [path[:200] for path in exc.paths[:10]]
+                    if len(exc.paths) > len(paths):
+                        paths.append(f"... {len(exc.paths) - len(paths)} more")
+                    if attempt:
+                        logger.error(
+                            "H3 continuity review failed evidence validation "
+                            "(sequence=%s, batch=%s/%s, unresolved_paths=%s)",
+                            scene.sequence, index, len(batches), paths,
+                        )
+                        raise
+                    unresolved_paths = list(exc.paths)
+                    rejected_review = result
+                    logger.warning(
+                        "H3 continuity review returned unresolved evidence paths; retrying "
+                        "(sequence=%s, batch=%s/%s, unresolved_paths=%s)",
+                        scene.sequence, index, len(batches), paths,
+                    )
+                    continue
+                break
             errors.extend(batch_errors)
             coverage.completed(index - 1, result, batch_errors)
         coverage.finish()

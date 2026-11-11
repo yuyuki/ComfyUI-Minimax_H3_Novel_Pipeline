@@ -1,6 +1,6 @@
 # H3 generation optimisation plan
 
-Date: 2026-11-10. Status: implementation started; first milestone validated offline.
+Date: 2026-11-10. Status: implementation complete and validated offline; live comparisons pending.
 
 ## Implementation progress
 
@@ -21,7 +21,7 @@ Date: 2026-11-10. Status: implementation started; first milestone validated offl
 - [x] Introduce structured issue targets and dedicated scene/binding repairs.
 - [x] Complete granular artifact dependencies, integrity and coverage manifests
   beyond the planning cache and existing exact-request checkpoints.
-- [ ] Add backend-reported usage and complete artifact invalidation diagnostics.
+- [x] Add backend-reported usage and complete artifact invalidation diagnostics.
 - [ ] Run isolated live quality/performance comparisons and a full chapter.
 
 First milestone validation: 1,199 tests passed, 3 skipped, 111 subtests passed;
@@ -65,8 +65,11 @@ Third milestone validation: 1,238 tests passed, 3 skipped, 111 subtests passed;
 lint passed. The one architecture freshness test remains deferred as requested.
 New tests cover invalid evidence pointers, strict schemas on transport retries,
 invented IDs/views, offscreen visibility, non-prompt issue routing, rejected
-corrections, full re-review and corrected-scene resume. Live model quality and
-performance remain unverified; current run outputs were not modified.
+corrections, full re-review and corrected-scene resume. An unresolvable review
+pointer now gets one strict-schema retry; evidence in retry feedback is never
+accepted as source evidence. Retry/failure logs include sequence, batch and
+bounded unresolved pointers, but never source text or prompts. Live model
+quality and performance remain unverified; current run outputs were not modified.
 
 Fourth milestone (2026-11-11): independent draft, successful-format and camera
 artifacts now use consumed settings, exact inputs, effective backend/thinking
@@ -93,6 +96,83 @@ lint passed. The architecture freshness check remains the single deliberately
 deselected test until implementation is finished. Live quality and performance
 comparisons remain pending. Backend-reported token usage and more detailed
 invalidation explanations are the next implementation step.
+
+Fifth milestone (2026-11-11): H3 requests opt into streaming usage reporting.
+Metrics keep backend `prompt_tokens`, `completion_tokens` and `total_tokens`
+separate from character-based estimates. Repeated usage snapshots are counted
+once per underlying attempt; retries and ChatML fallback attempts are distinct.
+Usage-only chunks are inspected before choices. Only nonnegative integer counters
+are retained, never arbitrary backend metadata. Cache hits add no token usage.
+Failed attempts retain any counters received, and request scopes are restored.
+Other nodes retain their existing transport options and metrics behavior.
+
+`backend_usage_reported_requests` and `backend_usage_missing_requests` report
+availability, with `backend_<counter>_requests` providing coverage for each
+individual counter. Absent counters are unknown, not measured zero. These are
+the latest received backend snapshots, not necessarily final billed totals:
+the existing stop-on-complete-JSON behavior is preserved. Usage sent only after
+that stop, or after cancellation, remains unavailable; the stream is not drained
+for accounting. Live availability still needs verification against LM Studio.
+
+Evidence, planning, draft, format, camera, final-prompt and exact-request caches
+now expose source-specific rejection reasons in chapter `request_metrics.json`:
+missing, forced, contract/key mismatch, changed dependencies, integrity failure,
+invalid content, unreadable records, immutable-beat changes and binding mismatch.
+The source index is 0 for the current cache and 1 for the selected resume cache.
+Reason totals are complete; the event list retains the latest 100 events and
+reports the number discarded. Existing coverage manifests remain audit-only.
+
+Atomic diagnostic snapshots in `.cache/<chapter_id>/diagnostics/` contain only
+named component digests. They compare the last attempted inputs at the same
+stage/position/detail and identify changed settings, inputs, implementation or
+backend components. They do not authorize reuse or prove which historical record
+caused a miss: actual cache checks remain authoritative. A changed snapshot can
+coexist with a hit when an older exact artifact is reusable. Missing diagnostic
+history cannot explain past component changes; corrupt/unwritable diagnostics
+never weaken cache checks. Selected previous-run files remain read-only.
+
+Fifth milestone validation: 1,262 tests passed, 3 skipped, 111 subtests passed;
+repository lint passed. The architecture map was regenerated and its freshness
+test now passes in the full suite (no deliberate deselection). Tests ran offline
+outside the sandbox, using a dedicated temporary directory because Windows
+denied access to pytest's shared default temporary directory. The active run and
+upstream outputs were not modified. Next: isolated live quality/performance
+comparisons, followed by a full chapter when the server is available.
+
+Live-comparison preflight (2026-11-11): the local LM Studio model-list endpoint
+responds and exposes `gemma-4-26b-it`; this does not establish that inference is
+idle. ComfyUI's usual `127.0.0.1:8188/queue` endpoint was unreachable. The baseline
+`20261110202656/h3_prompts` was absent from the expected plugin output root.
+The operator has been asked for its current location; historical timings in this
+plan alone cannot establish a controlled before/after comparison.
+
+Available `references/consolidated_references.json` and
+`spatial_continuity/spatial_continuity.json` under the ComfyUI plugin output root
+passed current registry/timeline and spatial validation without modification:
+`00_PROLOGUE`, 15 sequences, 29 image briefs and one audio brief, with matching
+source digests. The saved `ExtractChapter.json` workflow requests 8-second clips,
+one shot, four scenes per planning chunk, no chapter scene limit, temperature
+0.38, 8,192 output tokens and two repair attempts; generation, camera and review
+thinking are enabled, as is camera refinement. These are candidate settings,
+not yet verified against the missing baseline generation snapshot.
+No inference workload or full chapter was started during this preflight.
+The final checklist item remains pending until comparable runs and quality
+inspection are completed.
+
+Restored-baseline follow-up (2026-11-11): ComfyUI is now reachable and its queue
+was empty. The restored baseline contains all 15 planning checkpoints (41 scenes).
+The loaded consolidation digest and spatial payload exactly match its generation
+snapshot. Its `request_metrics.json` contains null bytes rather than JSON, so it
+cannot provide reliable historical timings. Preserve it unchanged.
+
+A fresh full-chapter graph using the original settings, no resume, and the
+isolated output name `h3_live_validation` was submitted as prompt
+`81aac009-23b1-4aa7-b803-1943fb436680`. It failed in Provider Configuration before
+inference: LM Studio needs a saved API key and model in ComfyUI's provider
+settings. No generation output directory was created. Browser/native automation
+was unavailable, so the existing provider settings could not be resynchronized
+through the interface. Save the LM Studio provider in the running ComfyUI UI,
+then resubmit the same isolated graph. Live validation remains pending.
 
 ## Objective and boundaries
 

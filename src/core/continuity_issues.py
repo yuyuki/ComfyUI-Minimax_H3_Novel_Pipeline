@@ -16,6 +16,16 @@ SCHEMA = {"name": "scene_continuity_review_v2", "strict": True, "schema": {
     "type": "object", "properties": {"errors": {"type": "array", "items": ISSUE}},
     "required": ["errors"], "additionalProperties": False}}
 
+
+class UnresolvedEvidenceError(ValueError):
+    def __init__(self, paths):
+        self.paths = tuple(paths)
+        super().__init__(
+            "LM Studio returned an invalid scene continuity review: unresolved evidence "
+            f"path(s) {', '.join(repr(path) for path in self.paths)}."
+        )
+
+
 INSTRUCTIONS = """
 Classify each issue's target: prompt for incorrect generated wording; scene_plan
 for incorrect current-beat dialogue/visibility/reference metadata; binding for
@@ -41,8 +51,10 @@ def resolve(payload, path):
             if not part.isdecimal():
                 raise ValueError("Invalid evidence array index.")
             value = value[int(part)]
-        else:
+        elif isinstance(value, dict):
             value = value[part]
+        else:
+            raise ValueError("Evidence path continues past a scalar value.")
     return value
 
 
@@ -50,17 +62,23 @@ def validate(result, payload):
     if not Draft202012Validator(SCHEMA["schema"]).is_valid(result):
         raise ValueError("LM Studio returned an invalid scene continuity review.")
     issues = []
-    try:
-        for issue in result["errors"]:
-            if not issue["message"].strip():
-                raise ValueError("Empty correction.")
+    unresolved_paths = []
+    for issue in result["errors"]:
+        if not issue["message"].strip():
+            raise ValueError("LM Studio returned an invalid scene continuity review: empty correction.")
+        evidence = []
+        for path in issue["evidence_paths"]:
+            try:
+                value = resolve(payload, path)
+            except (KeyError, IndexError, TypeError, ValueError):
+                unresolved_paths.append(path)
+                continue
             # Keep exact cited values with the issue: later repairs may run
             # after this batch is gone. No second interpretation or truncation.
-            evidence = [{"path": path, "value": deepcopy(resolve(payload, path))}
-                        for path in issue["evidence_paths"]]
-            issues.append({**issue, "evidence": evidence})
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise ValueError("LM Studio returned an invalid scene continuity review: unresolved evidence.") from exc
+            evidence.append({"path": path, "value": deepcopy(value)})
+        issues.append({**issue, "evidence": evidence})
+    if unresolved_paths:
+        raise UnresolvedEvidenceError(unresolved_paths)
     return issues
 
 

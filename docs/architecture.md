@@ -401,7 +401,7 @@ flowchart TD
 | `src/core/cinematic_references.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.temporal_context`, `core.util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
 | `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_model_openai`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/core/continuity_context.py` | — | `batches`, `fits`, `pack` |
-| `src/core/continuity_issues.py` | `core.continuity_context`, `core.generation_requests` | `metadata_schema`, `repair_metadata`, `resolve`, `unique`, `validate` |
+| `src/core/continuity_issues.py` | `core.continuity_context`, `core.generation_requests` | `UnresolvedEvidenceError`, `metadata_schema`, `repair_metadata`, `resolve`, `unique`, `validate` |
 | `src/core/editable_schemas.py` | `core.path_access` | `export_schema`, `export_schemas`, `obj`, `validate_document` |
 | `src/core/generation_artifacts.py` | `core.generation_requests`, `core.lmstudio_pipeline`, `core.path_access` | `ReviewCoverage`, `cached`, `implementation` |
 | `src/core/generation_evidence.py` | `core.generation_requests`, `core.lmstudio_pipeline`, `core.path_access` | `prepare` |

@@ -43,6 +43,14 @@ def test_invalid_review_or_unresolved_evidence_is_not_success(bad):
         issues.validate({"errors": [bad]}, {"current_prompt": "draft", "list": ["fact"]})
 
 
+def test_evidence_pointer_cannot_continue_through_a_scalar():
+    payload = {"current_scene": {"visual_event": "He calls for help."}}
+    with pytest.raises(issues.UnresolvedEvidenceError, match="unresolved evidence path") as error:
+        issues.validate(
+            {"errors": [issue(path="/current_scene/visual_event/description")]}, payload)
+    assert error.value.paths == ("/current_scene/visual_event/description",)
+
+
 def test_metadata_repairs_use_strict_schema_on_initial_request_and_transport_retry():
     response = metadata()
     client, network = client_for(Stream(['{']), Stream([json.dumps(response)]))
