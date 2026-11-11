@@ -173,6 +173,52 @@ def test_invalid_shots_still_require_repair(shots, error):
     assert any(error in message for message in result.errors)
 
 
+@pytest.mark.parametrize("dialogue", [
+    "[French]— Doriane ! Envoyez une autre torche !",
+    "[English]Help!",
+    "[French] — Doriane !",
+    "[French]\nDoriane !",
+])
+def test_dialogue_spacing_is_normalized_without_changing_words(dialogue):
+    expected = dialogue.replace("[French]—", "[French] —").replace("[English]Help", "[English] Help")
+    prompt = prompt_with_shots(f"[Shot 1] He calls <d>{dialogue}</d>. Then <d>[French]Jones !</d>.")
+    normalized = step.normalize_prompt(prompt)
+    assert normalized == prompt.replace(f"<d>{dialogue}</d>", f"<d>{expected}</d>").replace(
+        "<d>[French]Jones !</d>", "<d>[French] Jones !</d>"
+    )
+    assert step.normalize_prompt(normalized) == normalized
+    assert step.validate_prompt(normalized, BINDINGS, 8).ok
+
+
+@pytest.mark.parametrize("dialogue", ["Doriane !", "[French]", "[French]   ", "[]Doriane !"])
+def test_dialogue_normalization_preserves_missing_language_and_text_errors(dialogue):
+    prompt = prompt_with_shots(f"[Shot 1] He calls <d>{dialogue}</d>.")
+    result = step.validate_prompt(step.normalize_prompt(prompt), BINDINGS, 8)
+    assert not result.ok
+    assert any(error.startswith("Each <d>") for error in result.errors)
+
+
+def test_generation_fixes_dialogue_spacing_without_model_repair(monkeypatch):
+    raw = prompt_with_shots("[Shot 1] Indy calls <d>[French]— Doriane ! Envoyez une autre torche !</d>.")
+    calls = []
+
+    def chat_json(*args):
+        calls.append(args)
+        return {"prompt_text": raw}
+
+    monkeypatch.setattr(step, "chat_json", chat_json)
+    scene = SimpleNamespace(title="Cry", visual_event="Indy calls", dialogue_present=True,
+                            adaptation_notes="", source_excerpt="— Doriane ! Envoyez une autre torche !")
+    args = SimpleNamespace(temperature=0.38, max_tokens=8000, duration=8, repair_attempts=2)
+    generated = step.generate_prompt(None, "model", scene, BINDINGS, 8, args)
+    assert generated == raw.replace("[French]—", "[French] —")
+    for prompt in (generated, raw):
+        formatted = step.format_prompt(None, "model", prompt, scene, BINDINGS, args, None)
+        assert formatted == {"prompt": generated, "repairs": 0}
+        assert step.validate_prompt(formatted["prompt"], BINDINGS, 8).ok
+    assert len(calls) == 1
+
+
 def test_inline_sections_are_normalized_without_changing_content():
     canonical = prompt_with_shots("[Shot 1] At the doorway, a figure pauses.")
     inline = canonical

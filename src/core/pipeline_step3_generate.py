@@ -1146,8 +1146,14 @@ timeline. Return only the six-section H3 prompt inside prompt_text, with no Mark
 
 
 def normalize_prompt(prompt: str, bindings: dict[str, Any] | None = None) -> str:
-    """Canonicalize inline section bodies without inventing or dropping content."""
+    """Canonicalize section and dialogue spacing without changing content."""
     prompt = re.sub(r"<think>.*?</think>", "", prompt, flags=re.S | re.I).strip()
+
+    def space_dialogue(match):
+        body = re.sub(r"^(\s*\[[^\]]+\])(?=\S)", r"\1 ", match.group(1), count=1)
+        return f"<d>{body}</d>"
+
+    prompt = re.sub(r"<d>(.*?)</d>", space_dialogue, prompt, flags=re.S)
     for name in SECTIONS:
         prompt = re.sub(
             rf"(?mi)^[ \t]*{re.escape(name)}[ \t]*:[ \t]*(?=\S)",
@@ -1343,7 +1349,7 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float, max_
     for match in re.finditer(r"<d>(.*?)</d>", prompt, flags=re.S):
         body = match.group(1).strip()
         if not re.match(r"^\[[^\]]+\]\s+.+", body, flags=re.S):
-            errors.append("Each <d> dialogue span must begin with [Language].")
+            errors.append("Each <d> dialogue span must begin with [Language] followed by whitespace and dialogue text.")
             break
     if "```" in prompt:
         errors.append("Prompt contains a Markdown fence.")

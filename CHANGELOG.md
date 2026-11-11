@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Normalize missing whitespace after H3 dialogue language tags before validation,
+  preserving spoken text and avoiding unnecessary model repairs. Clarify dialogue
+  validation errors and add regression coverage.
+
 - Resume completed H3 scene files from a matching previous run, preserving their
   continuity context and continuing with missing scenes.
 
