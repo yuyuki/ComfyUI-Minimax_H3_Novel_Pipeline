@@ -163,6 +163,9 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
     system += continuity_context.INSTRUCTIONS + continuity_issues.INSTRUCTIONS
     base = {
         "current_scene": scene_to_dict(scene), "current_prompt": prompt,
+        "current_prompt_sections": {
+            name: section_body(prompt, name) for name in SECTIONS
+        },
         "bindings": bindings, "continuity_plan": continuity,
         "camera_direction": camera_direction,
     }

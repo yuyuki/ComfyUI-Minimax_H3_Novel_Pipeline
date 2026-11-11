@@ -37,7 +37,12 @@ Each issue needs an actionable message and evidence_paths: absolute JSON pointer
 to the actual supplied request, e.g. /current_scene/visual_event or
 /continuity_plan/sequence_plan. Cite the supplied evidence supporting the issue,
 not an imagined record or a record from a different batch. Return errors: [] only
-when there are no issues. Use the supplied structured schema exactly.
+when there are no issues. The current_prompt field is one complete string; cite
+/current_prompt for evidence from the whole prompt. For section-specific prompt
+evidence, cite /current_prompt_sections/<section_name>, such as
+/current_prompt_sections/detailed_description. These values contain the exact
+section text from current_prompt. Do not append section names to /current_prompt.
+Use the supplied structured schema exactly.
 """
 
 

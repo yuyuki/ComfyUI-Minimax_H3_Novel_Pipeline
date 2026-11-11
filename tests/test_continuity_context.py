@@ -68,6 +68,38 @@ def test_review_batches_cover_all_history_future_and_distant_conflicts(monkeypat
     assert [error["message"] for error in errors] == ["Common correction", *[f"Correction {i}" for i in range(1, len(calls) + 1)]]
 
 
+def test_review_exposes_exact_prompt_sections_as_evidence(monkeypatch):
+    scene_data = scene(0)
+    prompt = "\n".join(
+        f"{name}:\nExact {name} text."
+        for name in generate.SECTIONS
+    )
+    calls = []
+
+    def chat(client, model, system, user, schema, temperature, max_tokens):
+        payload = json.loads(user)
+        calls.append((system, payload))
+        assert payload["current_prompt"] == prompt
+        assert payload["current_prompt_sections"]["detailed_description"] == (
+            "Exact detailed_description text."
+        )
+        return {"errors": [issue(
+            "Correct the detailed description.",
+            path="/current_prompt_sections/detailed_description",
+        )]}
+
+    monkeypatch.setattr(generate, "chat_json", chat)
+    errors = generate.check_prompt_continuity(
+        None, "gemma", scene_data, prompt, {}, {}, [], [], 8000)
+
+    assert len(calls) == 1
+    assert "current_prompt_sections/<section_name>" in calls[0][0]
+    assert errors[0]["evidence"] == [{
+        "path": "/current_prompt_sections/detailed_description",
+        "value": "Exact detailed_description text.",
+    }]
+
+
 @pytest.mark.parametrize("oversized_current", [True, False])
 def test_single_oversized_record_fails_explicitly_without_network(monkeypatch, oversized_current):
     def unexpected(*args):
