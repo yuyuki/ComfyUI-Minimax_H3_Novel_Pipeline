@@ -51,6 +51,32 @@ def test_evidence_pointer_cannot_continue_through_a_scalar():
     assert error.value.paths == ("/current_scene/visual_event/description",)
 
 
+def test_prompt_section_citation_is_corrected_without_mutating_response(caplog):
+    payload = {"current_prompt": "Full prompt", "current_prompt_sections": {
+        "detailed_description": "The rope is visible."}}
+    response = {"errors": [issue("Include the rope", path="/current_prompt/detailed_description")]}
+    original = deepcopy(response)
+    result = issues.validate(response, payload)
+    assert result[0]["evidence_paths"] == ["/current_prompt_sections/detailed_description"]
+    assert result[0]["evidence"] == [{
+        "path": "/current_prompt_sections/detailed_description", "value": "The rope is visible."}]
+    assert result[0]["message"] == "Include the rope"
+    assert response == original
+    assert "Corrected H3 continuity evidence path" in caplog.text
+
+
+@pytest.mark.parametrize("path", [
+    "/current_prompt/missing", "/current_prompt/detailed_description/extra",
+    "/other_prompt/detailed_description",
+])
+def test_prompt_section_correction_does_not_guess_other_paths(path):
+    payload = {"current_prompt": "Full prompt", "current_prompt_sections": {
+        "detailed_description": "The rope is visible."}}
+    with pytest.raises(issues.UnresolvedEvidenceError) as error:
+        issues.validate({"errors": [issue(path=path)]}, payload)
+    assert error.value.paths == (path,)
+
+
 def test_metadata_repairs_use_strict_schema_on_initial_request_and_transport_retry():
     response = metadata()
     client, network = client_for(Stream(['{']), Stream([json.dumps(response)]))

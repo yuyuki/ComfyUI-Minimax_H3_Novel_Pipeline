@@ -1,10 +1,14 @@
 """Strict, evidence-linked continuity issues and bounded metadata corrections."""
 from copy import deepcopy
+import logging
 
 from jsonschema import Draft202012Validator
 
 from . import continuity_context
 from .generation_requests import digest
+
+
+logger = logging.getLogger(__name__)
 
 
 ISSUE = {"type": "object", "properties": {
@@ -72,16 +76,31 @@ def validate(result, payload):
         if not issue["message"].strip():
             raise ValueError("LM Studio returned an invalid scene continuity review: empty correction.")
         evidence = []
+        evidence_paths = []
         for path in issue["evidence_paths"]:
             try:
                 value = resolve(payload, path)
             except (KeyError, IndexError, TypeError, ValueError):
-                unresolved_paths.append(path)
-                continue
+                # Correct only a misplaced, existing prompt section. Other
+                # unresolved pointers must still fail evidence validation.
+                parts = path.split("/")
+                sections = payload.get("current_prompt_sections")
+                section = parts[-1].replace("~1", "/").replace("~0", "~")
+                if (len(parts) != 3 or parts[1] != "current_prompt"
+                        or not isinstance(payload.get("current_prompt"), str)
+                        or not isinstance(sections, dict)
+                        or not isinstance(sections.get(section), str)):
+                    unresolved_paths.append(path)
+                    continue
+                corrected_path = "/current_prompt_sections/" + parts[-1]
+                value = resolve(payload, corrected_path)
+                logger.warning("Corrected H3 continuity evidence path %r to %r", path, corrected_path)
+                path = corrected_path
             # Keep exact cited values with the issue: later repairs may run
             # after this batch is gone. No second interpretation or truncation.
             evidence.append({"path": path, "value": deepcopy(value)})
-        issues.append({**issue, "evidence": evidence})
+            evidence_paths.append(path)
+        issues.append({**issue, "evidence_paths": evidence_paths, "evidence": evidence})
     if unresolved_paths:
         raise UnresolvedEvidenceError(unresolved_paths)
     return issues

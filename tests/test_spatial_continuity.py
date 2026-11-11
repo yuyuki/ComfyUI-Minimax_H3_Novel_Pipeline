@@ -53,6 +53,23 @@ def test_malformed_review_is_not_treated_as_success(monkeypatch, result):
         generate.check_prompt_continuity(None, "qwen", scene, "prompt", {}, {}, [], [], 8000)
 
 
+def test_misplaced_prompt_section_is_corrected_without_another_llm_request(monkeypatch):
+    scene = generate.Scene("Now", "Source", "Event", "", [], [], [], False, "")
+    calls = []
+
+    def review(*args):
+        calls.append(args)
+        return {"errors": [issue("Include the rope", path="/current_prompt/detailed_description")]}
+
+    monkeypatch.setattr(generate, "chat_json", review)
+    prompt = "\n".join(f"{name}:\nExact {name} text." for name in generate.SECTIONS)
+    errors = generate.check_prompt_continuity(None, "qwen", scene, prompt, {}, {}, [], [], 8000)
+    assert len(calls) == 1
+    assert errors[0]["evidence_paths"] == ["/current_prompt_sections/detailed_description"]
+    assert errors[0]["evidence"] == [{
+        "path": "/current_prompt_sections/detailed_description", "value": "Exact detailed_description text."}]
+
+
 @pytest.mark.parametrize("retry_valid", [True, False])
 def test_review_retries_unresolved_evidence_once_and_fails_closed(monkeypatch, caplog, retry_valid):
     scene = generate.Scene("Now", "Source", "He calls for help.", "", [], [], [], False, "")
