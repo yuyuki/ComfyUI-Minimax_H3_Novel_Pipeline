@@ -28,6 +28,74 @@ def call(client, **changes):
     return requests.chat_json(client, **values)
 
 
+def usage_event(**values):
+    return SimpleNamespace(choices=[], usage=SimpleNamespace(**values))
+
+
+def test_backend_usage_is_per_attempt_and_cache_hits_add_no_usage(setup):
+    _, args = setup
+    first = Stream([usage_event(prompt_tokens=10, completion_tokens=2, total_tokens=12), '{'])
+    second = Stream([usage_event(prompt_tokens=20, completion_tokens=3, total_tokens=23),
+                     usage_event(prompt_tokens=20, completion_tokens=4, total_tokens=24), '{"value":"ok"}'])
+    client, network = client_for(first, second)
+    with requests.chapter("chapter", args):
+        assert call(client) == {"value": "ok"}
+        assert call(client) == {"value": "ok"}
+    stats = json.loads((args.out_dir / ".cache/chapter/request_metrics.json").read_text())["tasks"]["planning"]
+    assert stats["llm_requests"] == 2 and stats["cache_hits"] == 1
+    assert stats["backend_prompt_tokens"] == 30
+    assert stats["backend_completion_tokens"] == 6
+    assert stats["backend_total_tokens"] == 36
+    assert stats["backend_usage_reported_requests"] == 2
+    assert stats["backend_total_tokens_requests"] == 2
+    assert all(c.kwargs["stream_options"] == {"include_usage": True} for c in network.call_args_list)
+    assert first.closed and second.closed
+
+
+def test_missing_usage_does_not_drain_stream_or_invent_counts(setup):
+    _, args = setup
+    stream = Stream(['{"value":"ok"}', usage_event(prompt_tokens=100, total_tokens=110)])
+    client, _ = client_for(stream)
+    with requests.chapter("chapter", args):
+        call(client)
+    stats = json.loads((args.out_dir / ".cache/chapter/request_metrics.json").read_text())["tasks"]["planning"]
+    assert stats["backend_usage_missing_requests"] == 1
+    assert "backend_total_tokens" not in stats
+    assert stats["estimated_output_tokens"] > 0
+    assert stream.consumed == 1 and stream.closed
+
+
+def test_partial_usage_and_failed_attempt_are_persisted_without_metadata(setup):
+    _, args = setup
+    stream = Stream([usage_event(prompt_tokens=7, completion_tokens=-1, total_tokens=True,
+                                secret="never-save-this-key"), '{'])
+    client, _ = client_for(stream, RuntimeError("backend failed"))
+    with pytest.raises(RuntimeError), requests.chapter("chapter", args):
+        call(client)
+    text = (args.out_dir / ".cache/chapter/request_metrics.json").read_text()
+    stats = json.loads(text)["tasks"]["planning"]
+    assert stats["backend_prompt_tokens"] == 7
+    assert "backend_total_tokens" not in stats and "backend_completion_tokens" not in stats
+    assert stats["backend_usage_reported_requests"] == 1
+    assert "never-save-this-key" not in text
+    assert stream.closed and lmstudio_json.REQUEST_METRICS.get() is None
+    assert lmstudio_json.REQUEST_USAGE.get() is False
+
+
+def test_raw_chatml_usage_is_collected(setup):
+    _, args = setup
+    stream = Stream([usage_event(prompt_tokens=5, completion_tokens=2, total_tokens=7),
+                     SimpleNamespace(choices=[SimpleNamespace(text='{"value":"ok"}')])])
+    create = Mock(return_value=stream)
+    client = SimpleNamespace(base_url="http://localhost/v1", completions=SimpleNamespace(create=create),
+                             _minimax_h3_chatml_models={("http://localhost/v1", "qwen3.5")})
+    with requests.chapter("chapter", args):
+        assert call(client, model="qwen3.5") == {"value": "ok"}
+    assert create.call_args.kwargs["stream_options"] == {"include_usage": True}
+    stats = json.loads((args.out_dir / ".cache/chapter/request_metrics.json").read_text())["tasks"]["planning"]
+    assert stats["backend_total_tokens"] == 7
+
+
 def test_carry_forward_immutable_checkpoints_and_revalidate_schema(setup, monkeypatch):
     client, args = setup
     network = Mock(side_effect=lambda *a: {"value": "draft"})

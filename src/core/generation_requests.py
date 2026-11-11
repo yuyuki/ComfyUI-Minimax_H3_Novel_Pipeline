@@ -72,6 +72,55 @@ def cache_context():
     return _SESSION.get()
 
 
+def cache_event(stage, reason, *, source=None, changed=()):
+    """Bounded diagnostics containing labels and hashes only, never payloads."""
+    state = _SESSION.get()
+    if state is None:
+        return
+    counts = state.setdefault("cache_reasons", {}).setdefault(stage, {})
+    counts[reason] = counts.get(reason, 0) + 1
+    events = state.setdefault("cache_events", [])
+    events.append({"stage": stage, "reason": reason, "position": state["position"],
+                   "detail": _DETAIL.get(), "source": source, "changed_components": list(changed)})
+    if len(events) > 100:
+        del events[:-100]
+        state["cache_events_dropped"] = state.get("cache_events_dropped", 0) + 1
+
+
+def cache_dependencies(stage, dependencies):
+    """Compare diagnostic snapshots at the same logical slot, never grant reuse.
+
+    Only component digests are persisted. A missing/corrupt snapshot means the
+    previous dependencies are unknown; authoritative cache checks still run.
+    """
+    state = _SESSION.get()
+    if state is None:
+        return
+    components = {name: digest(value) for name, value in dependencies.items()}
+    slot = digest([stage, state["position"], _DETAIL.get()])
+    relative = Path("diagnostics") / f"{slot}.json"
+    try:
+        for index, directory in enumerate(state["sources"]):
+            try:
+                record = json.loads(confined_path(relative, directory).read_text(encoding="utf-8"))
+                previous = record["components"]
+                if not isinstance(previous, dict) or record["digest"] != digest(previous):
+                    raise ValueError("Invalid diagnostic snapshot")
+                # Emit only current, caller-owned component names, never file contents.
+                changed = sorted(name for name in components if previous.get(name) != components[name])
+                if changed or previous.keys() != components.keys():
+                    cache_event(stage, "dependencies_changed", source=index, changed=changed)
+                break
+            except FileNotFoundError:
+                continue
+            except (ValueError, KeyError, TypeError):
+                cache_event(stage, "diagnostic_invalid", source=index)
+        atomic_json(confined_path(relative, state["directory"]),
+                    {"components": components, "digest": digest(components)})
+    except OSError:
+        cache_event(stage, "diagnostic_unavailable")
+
+
 @contextmanager
 def detail(**values):
     """Attach bounded progress labels without changing request identity."""
@@ -89,6 +138,9 @@ def write_metrics(state, stage, status, **values):
                     {"last_position": state["position"], "last_stage": stage,
                      "last_status": status, "detail": _DETAIL.get(),
                      "tasks": state["tasks"], "artifacts": state.get("artifacts", {}),
+                     "cache_reasons": state.get("cache_reasons", {}),
+                     "cache_events": state.get("cache_events", []),
+                     "cache_events_dropped": state.get("cache_events_dropped", 0),
                      "review_coverage": state.get("review_coverage"),
                      "chapter_status": state.get("chapter_status", "running"), **values})
     except OSError:
@@ -140,35 +192,48 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
     label = f"{state['position']} / {stage} / request {stats['calls']}"
     key = digest([VERSION, model, backend_signature(client, model),
                   system, user, schema, temperature, max_tokens])
+    diagnostic_stage = f"request:{stage}"
+    cache_dependencies(diagnostic_stage, dict(version=VERSION, model=model,
+                       backend=backend_signature(client, model), system=system, user=user,
+                       schema=schema, temperature=temperature, max_tokens=max_tokens))
     relative = Path("requests") / f"{key}.json"
     target = confined_path(relative, state["directory"])
     validator = Draft202012Validator(schema["schema"])
     started = time.perf_counter()
     metrics = {"llm_requests": 0, "estimated_input_tokens": 0, "estimated_output_tokens": 0}
     metric_token = lmstudio_json.REQUEST_METRICS.set(metrics)
+    usage_token = lmstudio_json.REQUEST_USAGE.set(True)
     status = "failed"
     request_bytes = len(system.encode("utf-8")) + len(user.encode("utf-8")) + len(
         json.dumps(schema, ensure_ascii=False).encode("utf-8"))
     started_at = time.time()
     try:
-        for source in state["sources"] if not state["force"] else []:
+        if state["force"]:
+            cache_event(diagnostic_stage, "force")
+        for index, source in enumerate(state["sources"] if not state["force"] else []):
             try:
                 record = json.loads(confined_path(relative, source).read_text(encoding="utf-8"))
                 result = record["result"]
-                if (record.get("version") != VERSION or record.get("key") != key
-                        or record.get("result_digest") != digest(result)
-                        or not isinstance(result, dict) or not validator.is_valid(result)):
+                reason = ("contract_mismatch" if record.get("version") != VERSION else
+                          "key_mismatch" if record.get("key") != key else
+                          "integrity_mismatch" if record.get("result_digest") != digest(result) else
+                          "validation_failed" if not isinstance(result, dict) or not validator.is_valid(result) else None)
+                if reason:
+                    cache_event(diagnostic_stage, reason, source=index)
                     stats["invalid_checkpoints"] += 1
                     continue
             except FileNotFoundError:
+                cache_event(diagnostic_stage, "missing", source=index)
                 continue
-            except (OSError, ValueError, KeyError, TypeError):
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                cache_event(diagnostic_stage, "unreadable_record", source=index)
                 stats["invalid_checkpoints"] += 1
                 continue
             lmstudio_pipeline.comfy_interrupt_check()
             if source != state["directory"]:
                 atomic_json(target, record)
             stats["cache_hits"] += 1
+            cache_event(diagnostic_stage, "hit", source=index)
             status = "cached"
             print(f"    H3 {label}: cached", flush=True)
             return result
@@ -183,6 +248,8 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
         if isinstance(result, dict) and validator.is_valid(result):
             atomic_json(target, {"version": VERSION, "key": key, "result": result,
                                  "result_digest": digest(result)})
+        else:
+            cache_event(diagnostic_stage, "not_cacheable")
         status = "completed"
         return result
     except Exception:
@@ -192,8 +259,9 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
         raise
     finally:
         lmstudio_json.REQUEST_METRICS.reset(metric_token)
+        lmstudio_json.REQUEST_USAGE.reset(usage_token)
         for name, value in metrics.items():
-            stats[name] += value
+            stats[name] = stats.get(name, 0) + value
         stats["seconds"] = round(stats["seconds"] + time.perf_counter() - started, 3)
         write_metrics(state, stage, status, request_started_at=started_at,
                       request_elapsed_seconds=round(time.perf_counter() - started, 3))

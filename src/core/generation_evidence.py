@@ -4,7 +4,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
-from .generation_requests import atomic_json, digest
+from .generation_requests import atomic_json, cache_dependencies, cache_event, digest
 from .lmstudio_pipeline import comfy_interrupt_check
 from .path_access import confined_path
 
@@ -34,27 +34,36 @@ def prepare(refs, chapter_id, sequences, spatial_plan, period, cache_dirs, *,
             raise ValueError("H3 spatial evidence is stale; rerun Spatial Continuity.")
     dependencies = {**dependencies, "evidence_compiler": sha256(Path(__file__).read_bytes()).hexdigest()}
     key = digest([VERSION, refs, chapter_id, sequences, spatial_plan, period, dependencies])
+    cache_dependencies("evidence", dict(contract=VERSION, upstream=refs, sequences=sequences,
+                                       spatial_plan=spatial_plan, period=period, implementation=dependencies))
     target = confined_path("evidence_bundle.json", cache_dirs[0])
     reasons = []
-    for directory in cache_dirs if not force else []:
+    if force:
+        cache_event("evidence", "force")
+    for index, directory in enumerate(cache_dirs if not force else []):
         try:
             record = json.loads(confined_path("evidence_bundle.json", directory).read_text(encoding="utf-8"))
             if record["version"] != VERSION or record["key"] != key:
+                cache_event("evidence", "contract_mismatch" if record["version"] != VERSION else "dependencies_changed", source=index)
                 reasons.append("dependencies_changed")
                 continue
             bundle = record["bundle"]
             if record["bundle_digest"] != digest(bundle) or not _valid(bundle, chapter_id, sequence_ids):
+                cache_event("evidence", "integrity_mismatch" if record["bundle_digest"] != digest(bundle) else "validation_failed", source=index)
                 reasons.append("invalid_bundle")
                 continue
         except FileNotFoundError:
+            cache_event("evidence", "missing", source=index)
             reasons.append("missing")
             continue
         except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+            cache_event("evidence", "unreadable_record", source=index)
             reasons.append("invalid_bundle")
             continue
         comfy_interrupt_check()
         if directory != cache_dirs[0]:
             atomic_json(target, record)
+        cache_event("evidence", "hit", source=index)
         return deepcopy(bundle), {"status": "cached", "digest": record["bundle_digest"]}
 
     rows = []

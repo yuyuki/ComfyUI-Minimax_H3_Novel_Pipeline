@@ -59,25 +59,35 @@ def cached(stage, dependencies, compute, valid):
         return compute()
     comfy_interrupt_check()
     key = requests.digest([VERSION, stage, dependencies])
+    requests.cache_dependencies(stage, {"contract": VERSION, **dependencies})
     relative = Path("artifacts") / stage / f"{key}.json"
     target = confined_path(relative, state["directory"])
-    for directory in state["sources"] if not state["force"] else []:
+    if state["force"]:
+        requests.cache_event(stage, "force")
+    for index, directory in enumerate(state["sources"] if not state["force"] else []):
         try:
             record = json.loads(confined_path(relative, directory).read_text(encoding="utf-8"))
             result = record["result"]
-            if (record.get("version") != VERSION or record.get("key") != key
-                    or record.get("result_digest") != requests.digest(result) or not valid(result)):
+            reason = ("contract_mismatch" if record.get("version") != VERSION else
+                      "key_mismatch" if record.get("key") != key else
+                      "integrity_mismatch" if record.get("result_digest") != requests.digest(result) else
+                      "validation_failed" if not valid(result) else None)
+            if reason:
+                requests.cache_event(stage, reason, source=index)
                 _stats(state, stage, "invalid")
                 continue
         except FileNotFoundError:
+            requests.cache_event(stage, "missing", source=index)
             continue
         except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+            requests.cache_event(stage, "unreadable_record", source=index)
             _stats(state, stage, "invalid")
             continue
         comfy_interrupt_check()
         if directory != state["directory"]:
             requests.atomic_json(target, record)
         _stats(state, stage, "hit")
+        requests.cache_event(stage, "hit", source=index)
         return deepcopy(result)
     _stats(state, stage, "forced" if state["force"] else "miss")
     result = compute()
@@ -87,6 +97,7 @@ def cached(stage, dependencies, compute, valid):
                                       "result_digest": requests.digest(result)})
     else:
         _stats(state, stage, "not_cacheable")
+        requests.cache_event(stage, "not_cacheable")
     return deepcopy(result)
 
 

@@ -50,6 +50,61 @@ def test_failure_or_invalid_result_never_becomes_an_artifact(scope):
     assert not list(scope.out_dir.rglob("artifacts/**/*.json"))
 
 
+@pytest.mark.parametrize("damage,reason", [
+    ("version", "contract_mismatch"), ("key", "key_mismatch"),
+    ("result", "integrity_mismatch"), ("validation", "validation_failed"),
+    ("json", "unreadable_record"), ("shape", "unreadable_record"),
+])
+def test_artifact_diagnostics_distinguish_rejection_causes(scope, damage, reason):
+    compute = Mock(return_value="draft")
+    with requests.chapter("chapter", scope):
+        artifacts.cached("draft", {}, compute, lambda r: True)
+    path = next(scope.out_dir.rglob("artifacts/draft/*.json"))
+    record = json.loads(path.read_text())
+    if damage in {"version", "key", "result"}:
+        record[damage] = "damaged"
+    path.write_text("{" if damage == "json" else "[]" if damage == "shape" else json.dumps(record))
+    with requests.chapter("chapter", scope):
+        artifacts.cached("draft", {}, compute, lambda r: damage != "validation")
+    metrics = json.loads((scope.out_dir / ".cache/chapter/request_metrics.json").read_text())
+    assert metrics["cache_reasons"]["draft"][reason] == 1
+    assert compute.call_count == 2
+
+
+def test_dependency_diagnostics_resume_are_hash_only_and_never_authorize_reuse(scope, tmp_path):
+    def run(dependencies):
+        with requests.chapter("chapter", scope):
+            return artifacts.cached("draft", dependencies, lambda: "draft", lambda r: True)
+    run({"settings": {"temperature": .2}, "inputs": "private source"})
+    previous = scope.out_dir / ".cache"
+    before = {p: p.read_bytes() for p in previous.rglob("*.json")}
+    scope.resume_cache_dir = previous
+    scope.out_dir = tmp_path / "second/h3"
+    run({"settings": {"temperature": .4}, "inputs": "private source"})
+    assert all(p.read_bytes() == data for p, data in before.items())
+    metrics = json.loads((scope.out_dir / ".cache/chapter/request_metrics.json").read_text())
+    event = next(e for e in metrics["cache_events"] if e["reason"] == "dependencies_changed")
+    assert event["changed_components"] == ["settings"] and event["source"] == 1
+    assert "private source" not in "".join(p.read_text() for p in scope.out_dir.rglob("diagnostics/*.json"))
+    # Corrupt diagnostic data cannot turn an absent artifact into a cache hit.
+    diagnostic = next(scope.out_dir.rglob("diagnostics/*.json"))
+    diagnostic.write_text('[]')
+    run({"settings": {"temperature": .6}, "inputs": "private source"})
+    metrics = json.loads((scope.out_dir / ".cache/chapter/request_metrics.json").read_text())
+    assert metrics["artifacts"]["draft"]["miss"] == 1
+    assert metrics["cache_reasons"]["draft"]["diagnostic_invalid"] == 1
+
+
+def test_cache_diagnostic_events_are_bounded_but_counts_are_complete(scope):
+    with requests.chapter("chapter", scope):
+        for _ in range(110):
+            requests.cache_event("draft", "missing")
+    metrics = json.loads((scope.out_dir / ".cache/chapter/request_metrics.json").read_text())
+    assert len(metrics["cache_events"]) == 100
+    assert metrics["cache_events_dropped"] == 10
+    assert metrics["cache_reasons"]["draft"]["missing"] == 110
+
+
 def test_source_fingerprint_tracks_transitive_helpers_not_other_stages(tmp_path):
     file = tmp_path / "sample.py"
     file.write_text('VALUE = 1\ndef helper(): return VALUE\ndef draft(): return helper()\ndef camera(): return 1\n')

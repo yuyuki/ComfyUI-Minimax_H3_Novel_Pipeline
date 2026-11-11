@@ -1539,6 +1539,11 @@ def finalize_scene_plan(scenes, sequence, catalog, period):
 def planning_key(client, model, args, chapter_id, chunk, index, total, catalog, implementation):
     settings = {name: getattr(args, name, default) for name, default in (
         ("duration", 8), ("max_shots", 1), ("scenes_per_chunk", 4), ("repair_attempts", 2))}
+    generation_requests.cache_dependencies("planning", dict(
+        contract="h3-planning.v2", model=model, chapter=chapter_id, chunk=chunk,
+        index=index, total=total, catalog=catalog, settings=settings, system=PLAN_SYSTEM,
+        schema=SCENE_SCHEMA, implementation=implementation,
+        backend=generation_requests.backend_signature(client, model), requests=generation_requests.VERSION))
     return generation_requests.digest([
         "h3-planning.v2", model, chapter_id, chunk, index, total, catalog, settings,
         PLAN_SYSTEM, SCENE_SCHEMA, implementation,
@@ -1646,16 +1651,25 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
         cache_key = planning_key(client, model, args, chapter_id, chunk, i, len(chunks), catalog, plan_implementation)
         cache_path = confined_path(cache_dir / f"plan_{i:03d}.json", args.out_dir)
         chunk_scenes = None
-        for candidate_dir in cache_dirs if not args.force else []:
+        if args.force:
+            generation_requests.cache_event("planning", "force")
+        for source_index, candidate_dir in enumerate(cache_dirs if not args.force else []):
             try:
                 candidate = confined_path(cache_path.name, candidate_dir)
                 cached = json.loads(candidate.read_text(encoding="utf-8"))
-                if (cached.get("cache_key") == cache_key
-                        and cached.get("scenes_digest") == generation_requests.digest(cached["scenes"])):
-                    chunk_scenes = [scene_from_dict(x) for x in cached["scenes"]]
-                    break
-            except Exception:
-                pass
+                if cached.get("cache_key") != cache_key:
+                    generation_requests.cache_event("planning", "dependencies_changed", source=source_index)
+                    continue
+                if cached.get("scenes_digest") != generation_requests.digest(cached["scenes"]):
+                    generation_requests.cache_event("planning", "integrity_mismatch", source=source_index)
+                    continue
+                chunk_scenes = [scene_from_dict(x) for x in cached["scenes"]]
+                generation_requests.cache_event("planning", "hit", source=source_index)
+                break
+            except FileNotFoundError:
+                generation_requests.cache_event("planning", "missing", source=source_index)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+                generation_requests.cache_event("planning", "unreadable_record", source=source_index)
         if chunk_scenes is None:
             print(f"  planning chunk {i}/{len(chunks)}")
             with generation_requests.task("planning"):
@@ -1728,21 +1742,38 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
         prompt = None
         camera_warnings: list[str] = []
         from_cache = False
-        for candidate_dir in cache_dirs if not args.force else []:
+        generation_requests.cache_dependencies("final_prompt", dict(
+            full_contract=prompt_key, model=model, scene=scene_to_dict(scene), bindings=bindings,
+            settings={key: value for key, value in vars(args).items()
+                      if key not in {"out_dir", "force", "cache_dir", "resume_cache_dir"}
+                      and isinstance(value, (str, int, float, bool, type(None)))},
+            continuity=continuity, history=previous_prompts, future=[scene_to_dict(s) for s in scenes[i:]],
+            implementation=implementation, evidence=evidence_rows[scene.sequence],
+            references=bundle["references"], designs=visual_designs,
+            backend=generation_requests.backend_signature(client, model)))
+        if args.force:
+            generation_requests.cache_event("final_prompt", "force")
+        for source_index, candidate_dir in enumerate(cache_dirs if not args.force else []):
             try:
                 candidate = confined_path(prompt_cache.name, candidate_dir)
                 cached = json.loads(candidate.read_text(encoding="utf-8"))
-                if (cached.get("cache_key") == prompt_key and cached.get("valid") is True
-                        and cached.get("contract") == 2
-                        and cached.get("result_digest") == generation_requests.digest(
-                            [cached["prompt"], cached["scene"], cached["bindings"], cached["camera_warnings"]])):
+                reason = ("contract_mismatch" if cached.get("contract") != 2 else
+                          "dependencies_changed" if cached.get("cache_key") != prompt_key else
+                          "validation_failed" if cached.get("valid") is not True else
+                          "integrity_mismatch" if cached.get("result_digest") != generation_requests.digest(
+                              [cached["prompt"], cached["scene"], cached["bindings"], cached["camera_warnings"]]) else None)
+                if reason:
+                    generation_requests.cache_event("final_prompt", reason, source=source_index)
+                else:
                     repaired_scene = scene_from_dict(cached["scene"])
                     # Cache reuse may restore corrected metadata, never a changed beat.
                     immutable = ("title", "source_excerpt", "visual_event", "adaptation_notes", "sequence")
                     if any(getattr(repaired_scene, field) != getattr(scene, field) for field in immutable):
+                        generation_requests.cache_event("final_prompt", "immutable_beat_changed", source=source_index)
                         continue
                     repaired_bindings = build_bindings(bundle["references"], repaired_scene, chapter_id, args)
                     if repaired_bindings != cached["bindings"]:
+                        generation_requests.cache_event("final_prompt", "bindings_mismatch", source=source_index)
                         continue
                     scene.__dict__.update(repaired_scene.__dict__)
                     bindings = repaired_bindings
@@ -1754,9 +1785,12 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
                     prompt = cached["prompt"]
                     camera_warnings = cached.get("camera_warnings", [])
                     from_cache = True
+                    generation_requests.cache_event("final_prompt", "hit", source=source_index)
                     break
-            except Exception:
-                pass
+            except FileNotFoundError:
+                generation_requests.cache_event("final_prompt", "missing", source=source_index)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+                generation_requests.cache_event("final_prompt", "unreadable_record", source=source_index)
 
         if prompt is None:
             with generation_requests.task("generation"):

@@ -71,6 +71,20 @@ def test_resume_plans_and_prompts(setup, monkeypatch, change):
     assert before == {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()}
     assert (current / ".cache/chapter/plan_001.json").is_file()
     assert (current / ".cache/chapter/prompt_001.json").is_file()
+    metrics = json.loads((current / ".cache/chapter/request_metrics.json").read_text())
+    reasons = metrics["cache_reasons"]
+    if change == "bad_plan":
+        assert reasons["planning"]["unreadable_record"] == 1
+    elif change == "bad_prompt":
+        assert reasons["final_prompt"]["unreadable_record"] == 1
+    elif change == "invalid_prompt":
+        assert reasons["final_prompt"]["validation_failed"] == 1
+    elif change == "prompt_key":
+        assert reasons["final_prompt"]["dependencies_changed"] >= 1
+    elif change == "force":
+        assert all(reasons[stage]["force"] == 1 for stage in ("evidence", "planning", "final_prompt"))
+    elif change is None:
+        assert all(reasons[stage]["hit"] == 1 for stage in ("evidence", "planning", "final_prompt"))
     record = json.loads((current / "generate_configuration.json").read_text())
     assert record["status"] == "completed"
     assert record["node_settings"]["resume_run"] == previous.name

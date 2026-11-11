@@ -78,7 +78,10 @@ flowchart TD
     m_core_cinematic_references["core.cinematic_references"]
     m_core_configuration_snapshot["core.configuration_snapshot"]
     m_core_continuity_context["core.continuity_context"]
+    m_core_continuity_issues["core.continuity_issues"]
     m_core_editable_schemas["core.editable_schemas"]
+    m_core_generation_artifacts["core.generation_artifacts"]
+    m_core_generation_evidence["core.generation_evidence"]
     m_core_generation_requests["core.generation_requests"]
     m_core_image_prompt_export["core.image_prompt_export"]
     m_core_lmstudio_json["core.lmstudio_json"]
@@ -190,7 +193,15 @@ flowchart TD
     m_core_configuration_snapshot --> m_core_lmstudio_models
     m_core_configuration_snapshot --> m_core_util
     m_core_configuration_snapshot --> m_nodes_lmstudio_config
+    m_core_continuity_issues --> m_core_continuity_context
+    m_core_continuity_issues --> m_core_generation_requests
     m_core_editable_schemas --> m_core_path_access
+    m_core_generation_artifacts --> m_core_generation_requests
+    m_core_generation_artifacts --> m_core_lmstudio_pipeline
+    m_core_generation_artifacts --> m_core_path_access
+    m_core_generation_evidence --> m_core_generation_requests
+    m_core_generation_evidence --> m_core_lmstudio_pipeline
+    m_core_generation_evidence --> m_core_path_access
     m_core_generation_requests --> m_core_lmstudio_json
     m_core_generation_requests --> m_core_lmstudio_pipeline
     m_core_generation_requests --> m_core_path_access
@@ -224,6 +235,9 @@ flowchart TD
     m_core_pipeline_step3_generate --> m_core_character_visual_integration
     m_core_pipeline_step3_generate --> m_core_cinematic_references
     m_core_pipeline_step3_generate --> m_core_continuity_context
+    m_core_pipeline_step3_generate --> m_core_continuity_issues
+    m_core_pipeline_step3_generate --> m_core_generation_artifacts
+    m_core_pipeline_step3_generate --> m_core_generation_evidence
     m_core_pipeline_step3_generate --> m_core_generation_requests
     m_core_pipeline_step3_generate --> m_core_lmstudio_json
     m_core_pipeline_step3_generate --> m_core_path_access
@@ -387,8 +401,11 @@ flowchart TD
 | `src/core/cinematic_references.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.temporal_context`, `core.util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
 | `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_model_openai`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/core/continuity_context.py` | — | `batches`, `fits`, `pack` |
+| `src/core/continuity_issues.py` | `core.continuity_context`, `core.generation_requests` | `metadata_schema`, `repair_metadata`, `resolve`, `unique`, `validate` |
 | `src/core/editable_schemas.py` | `core.path_access` | `export_schema`, `export_schemas`, `obj`, `validate_document` |
-| `src/core/generation_requests.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access` | `atomic_json`, `backend_signature`, `chapter`, `chat_json`, `detail`, `digest`, `position`, `task`, `write_metrics` |
+| `src/core/generation_artifacts.py` | `core.generation_requests`, `core.lmstudio_pipeline`, `core.path_access` | `ReviewCoverage`, `cached`, `implementation` |
+| `src/core/generation_evidence.py` | `core.generation_requests`, `core.lmstudio_pipeline`, `core.path_access` | `prepare` |
+| `src/core/generation_requests.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access` | `atomic_json`, `backend_signature`, `cache_context`, `cache_dependencies`, `cache_event`, `chapter`, `chat_json`, `detail`, `digest`, `position`, `task`, `write_metrics` |
 | `src/core/image_prompt_export.py` | `core.path_access`, `core.util` | `export_image_prompts` |
 | `src/core/lmstudio_json.py` | `core.lmstudio_model_qwen`, `core.lmstudio_models`, `core.lmstudio_pipeline` | `StructuredOutputLengthError`, `chat_json`, `model_settings`, `parse_json`, `select_model` |
 | `src/core/lmstudio_model_gemma.py` | — | `allows_chatml`, `matches`, `request_settings`, `retries`, `settings_from_config` |
@@ -404,7 +421,7 @@ flowchart TD
 | `src/core/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
 | `src/core/pipeline_step1_extract.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |
 | `src/core/pipeline_step2_consolidate.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_requests`, `core.reference_timeline`, `core.temporal_context` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `request_appearance`, `similarity`, `stronger`, `threshold`, `write_asset_prompts` |
-| `src/core/pipeline_step3_generate.py` | `core.character_visual_integration`, `core.cinematic_references`, `core.continuity_context`, `core.generation_requests`, `core.lmstudio_json`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.reference_timeline`, `core.temporal_context`, `core.util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `constrain_character_presence`, `dedupe_scenes`, `default_view_order`, `entity_index`, `finalize_scene_plan`, `fingerprint`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `planning_implementation`, `planning_key`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `request_map`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `selected_timeline`, `sequence_catalog`, `slug`, `timestamp_seconds`, `validate_prompt` |
+| `src/core/pipeline_step3_generate.py` | `core.character_visual_integration`, `core.cinematic_references`, `core.continuity_context`, `core.continuity_issues`, `core.generation_artifacts`, `core.generation_evidence`, `core.generation_requests`, `core.lmstudio_json`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.reference_timeline`, `core.temporal_context`, `core.util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `artifact_dependencies`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `constrain_character_presence`, `dedupe_scenes`, `default_view_order`, `entity_index`, `finalize_scene_plan`, `fingerprint`, `format_prompt`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `planning_implementation`, `planning_key`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_prompt`, `repair_scene_inputs`, `request_map`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `selected_timeline`, `sequence_catalog`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/core/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/core/prompt_cache.py` | `core.lmstudio_json` | `fingerprint` |
 | `src/core/reference_requests.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `InvalidResponse`, `validate_assets`, `validated_request` |
@@ -433,4 +450,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.configuration_snapshot`, `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.character_visual_integration`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **60**. Internal dependency edges: **243**.
+Modules: **63**. Internal dependency edges: **254**.

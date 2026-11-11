@@ -21,6 +21,7 @@ QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
 COMPACT_SCHEMA_VERSION = 3
 REQUEST_THINKING = ContextVar("lmstudio_request_thinking", default=None)
 REQUEST_METRICS = ContextVar("lmstudio_request_metrics", default=None)
+REQUEST_USAGE = ContextVar("lmstudio_report_usage", default=False)
 
 # Character counts, not token counts. Preserve visual identity on retries and
 # leave unrelated schema fields alone (this helper is shared by all stages).
@@ -153,6 +154,17 @@ def model_settings(client, model):
     return profile, settings
 
 
+def _reported_usage(event):
+    """Keep only backend integer counters; never serialize response metadata."""
+    usage = getattr(event, "usage", None)
+    result = {}
+    for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
+        if type(value) is int and value >= 0:
+            result[name] = value
+    return result
+
+
 def chat_json(client: OpenAI, model: str, system: str, user: str,
               schema: dict[str, Any], temperature: float, max_tokens: int) -> dict[str, Any]:
     from .lmstudio_pipeline import comfy_interrupt_check
@@ -186,6 +198,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
         reasoning_non_whitespace_chars = 0
         finish_reason = "not_received"
         local_stop = "stream_end"
+        reported_usage = {}
         try:
             options = dict(
                 model=model,
@@ -195,6 +208,8 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             response_format = {"type": "json_schema", "json_schema": request_schema}
             metrics = REQUEST_METRICS.get()
             if metrics is not None:
+                if REQUEST_USAGE.get():
+                    options["stream_options"] = {"include_usage": True}
                 metrics["llm_requests"] += 1
                 metrics["estimated_input_tokens"] += (len(json.dumps(messages, ensure_ascii=False))
                                                        + len(json.dumps(request_schema, ensure_ascii=False)) + 3) // 4
@@ -209,6 +224,10 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 )
             for event in stream:
                 comfy_interrupt_check()
+                # Usage-only chunks have no choices. Repeated counters are
+                # cumulative snapshots of this attempt, not additional tokens.
+                if metrics is not None and REQUEST_USAGE.get():
+                    reported_usage.update(_reported_usage(event))
                 if not event.choices:
                     continue
                 choice = event.choices[0]
@@ -256,6 +275,15 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             metrics = REQUEST_METRICS.get()
             if metrics is not None:
                 metrics["estimated_output_tokens"] += (content_chars + reasoning_chars + 3) // 4
+            if metrics is not None and REQUEST_USAGE.get():
+                availability = "reported" if reported_usage else "missing"
+                counter = f"backend_usage_{availability}_requests"
+                metrics[counter] = metrics.get(counter, 0) + 1
+                for name, value in reported_usage.items():
+                    counter = f"backend_{name}"
+                    metrics[counter] = metrics.get(counter, 0) + value
+                    counter = f"backend_{name}_requests"
+                    metrics[counter] = metrics.get(counter, 0) + 1
             if stream is not None:
                 stream.close()
             diagnostics = (
