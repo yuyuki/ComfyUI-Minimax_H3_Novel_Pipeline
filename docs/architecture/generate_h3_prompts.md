@@ -1,6 +1,6 @@
 # Generate H3 Prompts: execution and failure analysis
 
-This describes the implementation inspected on 2026-11-09. Related: [architecture map](../architecture.md), [node wrapper](../../src/nodes/generate_h3_prompts.py), [generation pipeline](../../src/core/pipeline_step3_generate.py), [JSON transport](../../src/core/lmstudio_json.py).
+This describes the implementation inspected on 2026-11-11. Related: [architecture map](../architecture.md), [node wrapper](../../src/nodes/generate_h3_prompts.py), [generation pipeline](../../src/core/pipeline_step3_generate.py), [JSON transport](../../src/core/lmstudio_json.py).
 
 ## Current sequence
 
@@ -47,8 +47,11 @@ sequenceDiagram
                 end
                 Pipeline->>Pipeline: Validate H3 format locally
                 loop While invalid, up to repair_attempts
-                    Pipeline->>LLM: Repair format
-                    Pipeline->>Pipeline: Validate repaired format
+                    Pipeline->>Pipeline: Translate exact assigned asset IDs to Picture labels
+                    loop Each affected section or coupled group
+                        Pipeline->>LLM: Request strict JSON section patch with targeted errors
+                        Pipeline->>Pipeline: Validate tentative merge, accept only without format regressions
+                    end
                 end
                 alt refine_camera true AND valid AND cache miss
                     loop Camera attempt, up to repair_attempts + 1, stopping on success
@@ -66,7 +69,8 @@ sequenceDiagram
                             LLM-->>Pipeline: Continuity errors
                         end
                         opt Errors and repair budget remains
-                            Pipeline->>LLM: Repair current prompt
+                            Pipeline->>LLM: Patch cited prompt sections, including exact review evidence
+                            Pipeline->>Pipeline: Validate format before next continuity review
                         end
                     end
                     Note over Pipeline,LLM: Rebuild review requests and reuse matching batch checkpoints
@@ -85,6 +89,10 @@ sequenceDiagram
 ```
 
 ## Connection and camera control
+
+Format repairs preserve unaffected sections verbatim. Errors sharing a section are repaired together; malformed section structure requires an atomic six-section patch. `repair_attempts` bounds repair rounds, each of which can issue one request per affected group. A rejected patch keeps the original wording and supplies diagnostic feedback to the next round. Logs identify the target sections, acceptance/rejection, and format error counts. Exact-request caches store model responses, including rejected proposals, but every cached proposal must pass the same merge validation again.
+
+Continuity patches remain provisional until the next full continuity review. Cited section paths determine their scope; issues without a specific section citation and changed input metadata can require multiple sections. Exhausted format failures remain invalid and do not enter continuity history.
 
 | Connected spatial plan | Staging input | Final continuity review |
 |---|---|---|

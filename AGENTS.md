@@ -115,8 +115,9 @@ Preserve existing node IDs and socket types for workflow compatibility.
 - `MANIFEST.in` must include the root entrypoint, runtime requirements,
   documentation, examples and browser JavaScript in the source distribution.
 - Install development tools with `python -m pip install -e ".[dev]"`.
-- Keep `docs/architecture.md` synchronized with active package imports by
-  running `python tools/generate_architecture.py` after architecture changes.
+- Update `docs/architecture.md` only when incrementing `project.version` in
+  `pyproject.toml`; run `python tools/generate_architecture.py` as part of that
+  version bump.
 - Run `python -m pytest`, `ruff check .`, and `python -m build` for layout or
   packaging changes. Pytest configuration lives only in `pyproject.toml`.
 - Add focused regression coverage for affected behavior; mock network work.

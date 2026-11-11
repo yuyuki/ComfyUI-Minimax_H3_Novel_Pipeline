@@ -133,7 +133,7 @@ def test_repair_refuses_oversized_corrections_before_network(monkeypatch):
     monkeypatch.setattr(generate, "chat_json", unexpected)
     with pytest.raises(ValueError, match="repair exceeds the safe request budget"):
         generate.repair_prompt(None, "gemma", "prompt", scene(0, 1), {},
-                               generate.Validation(False, ["correction " * 6000], 0), 8,
+                               generate.Validation(False, ["Scene continuity: " + "correction " * 6000], 0), 8,
                                SimpleNamespace(temperature=0.1, max_tokens=8000), {})
 
 

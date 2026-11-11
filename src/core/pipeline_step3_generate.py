@@ -310,6 +310,7 @@ def review_and_repair_continuity(client: OpenAI, model: str, scene: Scene, promp
         # Review errors contain the requested corrections. Reattaching all history
         # here would recreate the oversized request; the next review checks every batch.
         repair_context = continuity
+        validation.continuity_issues = tuple(errors)
         with generation_requests.task("continuity_repair", getattr(args, "review_thinking", False)), \
                 generation_requests.detail(attempt=attempt + 1):
             candidate = repair_prompt(client, model, prompt, scene, bindings, validation,
@@ -481,6 +482,8 @@ class Validation:
     ok: bool
     errors: list[str]
     word_count: int
+    continuity_issues: tuple[dict[str, Any], ...] = ()
+    repair_feedback: dict[str, Any] | None = None
 
 
 def natural_key(value: str) -> list[Any]:
@@ -1406,6 +1409,81 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float, max_
     return Validation(ok=not errors, errors=errors, word_count=word_count)
 
 
+def replace_prompt_sections(prompt, replacements):
+    """Replace bodies only, preserving all other sections byte for byte."""
+    headings = list(re.finditer(r"(?m)^[ \t]*(" + "|".join(SECTIONS) + r")[ \t]*:[ \t]*(?:\r?\n|$)", prompt))
+    if [match.group(1) for match in headings] != SECTIONS:
+        if set(replacements) != set(SECTIONS):
+            raise ValueError("Malformed section structure requires all six section bodies.")
+        return "\n\n".join(f"{name}:\n{replacements[name].strip()}" for name in SECTIONS)
+    for index in range(len(headings) - 1, -1, -1):
+        match = headings[index]
+        if match.group(1) not in replacements:
+            continue
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(prompt)
+        body = prompt[match.end():end]
+        trailing = body[len(body.rstrip()):]
+        prompt = prompt[:match.end()] + replacements[match.group(1)].strip() + trailing + prompt[end:]
+    return prompt
+
+
+def format_error_sections(error, prompt):
+    """Route related format failures together, without splitting a section's edits."""
+    if error.startswith("Section ") or error.startswith("The six sections"):
+        return tuple(SECTIONS)
+    if error.startswith("summary"):
+        return ("summary",)
+    if "subject_definitions" in error or "definition must cite assigned" in error:
+        return ("subject_definitions",)
+    if "retention" in error:
+        return ("retention_analysis",)
+    if any(word in error for word in ("Shot", "shot", "detailed_description")):
+        return ("detailed_description",)
+    if error.startswith("Each <d>"):
+        return tuple(name for name in SECTIONS if any(
+            not re.match(r"^\[[^\]]+\]\s+.+", body.strip(), flags=re.S)
+            for body in re.findall(r"<d>(.*?)</d>", section_body(prompt, name), flags=re.S))) or tuple(SECTIONS)
+    if error.startswith("Unbound "):
+        labels = error.split(": ", 1)[-1].split(", ")
+        return tuple(name for name in SECTIONS if any(label in section_body(prompt, name) for label in labels))
+    if "Markdown fence" in error:
+        return tuple(name for name in SECTIONS if "```" in section_body(prompt, name)) or tuple(SECTIONS)
+    return tuple(SECTIONS)
+
+
+def repair_binding_notation(prompt, bindings, duration, max_shots):
+    """Translate exact, unambiguous asset IDs only within their assigned definition."""
+    definitions = section_body(prompt, "subject_definitions")
+    original = definitions
+    for subject in bindings.get("subjects", []):
+        label = subject["h3_subject_label"]
+        pattern = rf"(?m)^{re.escape(label)}(?:[ \t]|:)[^\r\n]*"
+        def replace_line(match):
+            line = match.group(0)
+            mapping = {}
+            for picture in subject["pictures"]:
+                asset = picture.get("asset_id")
+                if asset:
+                    mapping.setdefault(asset, set()).add(picture["h3_picture_label"])
+            for asset, labels in mapping.items():
+                if len(labels) == 1:
+                    line = re.sub(rf"(?<![\w]){re.escape(asset)}(?![\w])", lambda _: next(iter(labels)), line)
+            return line
+        definitions = re.sub(pattern, replace_line, definitions)
+    if definitions == original:
+        return prompt
+    try:
+        candidate = replace_prompt_sections(prompt, {"subject_definitions": definitions})
+    except ValueError:
+        return prompt
+    before = set(validate_prompt(prompt, bindings, duration, max_shots).errors)
+    after = set(validate_prompt(candidate, bindings, duration, max_shots).errors)
+    if after < before:
+        print(f"    repair subject_definitions: accepted exact asset labels ({len(before)} -> {len(after)} errors)")
+        return candidate
+    return prompt
+
+
 def repair_prompt(
     client: OpenAI,
     model: str,
@@ -1417,45 +1495,99 @@ def repair_prompt(
     args: argparse.Namespace,
     continuity: dict[str, Any] | None = None,
 ) -> str:
-    system = H3_RULES + """
+    """Request section patches; accept only locally validated, non-regressing merges.
 
-You are repairing a malformed prompt. Fix the listed validation errors while
-preserving the source event and exact binding table. Several Picture labels may
-belong to the same Subject; never split one entity into multiple Subjects merely
-because it has several views. Return only prompt_text JSON.
-"""
-    user = f"""TARGET DURATION: {duration:g}s
-{pacing_instruction(duration, getattr(args, 'max_shots', 1))}
-
-PLANNED SCENE:
-Visual event: {scene.visual_event}
-Adaptation notes: {scene.adaptation_notes}
-CAMERA DIRECTION (preserve operator camera axis and movement):
-{getattr(args, 'camera_direction', '') or 'No operator camera direction supplied.'}
-
-SPATIAL CONTINUITY (preserve operator anchors and scene state):
-{json.dumps(continuity, ensure_ascii=False, indent=2) if continuity else 'No continuity pass supplied.'}
-
-VALIDATION ERRORS:
-{chr(10).join('- ' + x for x in validation.errors)}
-
-BINDINGS:
-{json.dumps(bindings, ensure_ascii=False, indent=2)}
-
-SOURCE:
---- BEGIN ---
-{scene.source_excerpt}
---- END ---
-
-CURRENT PROMPT:
---- BEGIN ---
-{prompt}
---- END ---"""
-    if continuity is not None and not continuity_context.fits(system, {"request": user}, PROMPT_SCHEMA):
-        raise ValueError("H3 continuity repair exceeds the safe request budget. "
-                         "Reduce the size of this cinematic sequence; no evidence was discarded.")
-    data = chat_json(client, model, system, user, PROMPT_SCHEMA, min(args.temperature, 0.16), args.max_tokens)
-    return normalize_prompt(data["prompt_text"], bindings)
+    Semantic patches remain provisional until review_and_repair_continuity rechecks
+    all history and future evidence. A structured response alone is not approval.
+    """
+    max_shots = getattr(args, "max_shots", 1)
+    bindings = {"subjects": [], "audio": [], **bindings}
+    prompt = normalize_prompt(prompt, bindings)
+    prompt = repair_binding_notation(prompt, bindings, duration, max_shots)
+    local = validate_prompt(prompt, bindings, duration, max_shots)
+    semantic = [error for error in validation.errors
+                if error.startswith("Scene continuity:") or error.startswith("Scene metadata and bindings")]
+    groups = {}
+    for error in local.errors:
+        groups.setdefault(format_error_sections(error, prompt), []).append(error)
+    if tuple(SECTIONS) in groups:
+        groups = {tuple(SECTIONS): list(local.errors)}
+    for error in semantic:
+        # Evidence paths identify the affected prompt section. Broader citations or
+        # changed input tables require an atomic multi-section correction.
+        sections = set()
+        for issue in validation.continuity_issues:
+            if error != f"Scene continuity: {issue['message']}":
+                continue
+            for path in issue.get("evidence_paths", []):
+                parts = path.split("/")
+                if len(parts) >= 3 and parts[1] == "current_prompt_sections" and parts[2] in SECTIONS:
+                    sections.add(parts[2])
+        if not sections or error.startswith("Scene metadata and bindings"):
+            sections = set(SECTIONS)
+        groups.setdefault(tuple(name for name in SECTIONS if name in sections), []).append(error)
+    if validation.repair_feedback is None:
+        validation.repair_feedback = {}
+    for sections, errors in groups.items():
+        before = validate_prompt(prompt, bindings, duration, max_shots)
+        errors = [error for error in errors if error in before.errors or error in semantic]
+        if not errors:
+            continue
+        schema = {"name": "h3_section_patch_v1", "strict": True, "schema": {
+            "type": "object", "properties": {name: {"type": "string"} for name in sections},
+            "required": list(sections), "additionalProperties": False}}
+        expected = "reference generation" + (" + audio reference" if bindings.get("audio") else "")
+        system = H3_RULES + (
+            "\nRepair ONLY the requested section bodies. Return the JSON properties specified by the schema, "
+            "without section headings. All other sections are read-only. Fix the listed errors while "
+            "preserving the assigned visual event, exact dialogue and binding table. Use <Picture N> labels, "
+            "not asset_id strings. Do not expand the action to neighbouring beats to meet the word target. "
+            "Continuity issue evidence paths refer to the earlier review; their exact cited values are "
+            "provided with those issues.") + continuity_context.INSTRUCTIONS
+        payload = {
+            "sections_to_repair": list(sections), "errors": errors,
+            "expected_summary_prefix": f"[{expected}]", "duration_seconds": duration,
+            "pacing": pacing_instruction(duration, max_shots),
+            "scene": {"visual_event": scene.visual_event, "adaptation_notes": scene.adaptation_notes,
+                      "source_excerpt": scene.source_excerpt},
+            "bindings": bindings, "continuity": continuity,
+            "camera_direction": getattr(args, "camera_direction", ""),
+            "current_sections": {name: section_body(prompt, name) for name in SECTIONS},
+            "continuity_issues": [issue for issue in validation.continuity_issues
+                                  if f"Scene continuity: {issue['message']}" in errors],
+            "previous_repair_feedback": validation.repair_feedback.get(",".join(sections)),
+        }
+        if sections == tuple(SECTIONS):
+            # Preserve malformed/unparsed content for structural repairs as well.
+            payload["current_prompt"] = prompt
+        if not continuity_context.fits(system, payload, schema):
+            raise ValueError("H3 continuity repair exceeds the safe request budget. "
+                             "Reduce the size of this cinematic sequence; no evidence was discarded.")
+        label = ",".join(sections)
+        with generation_requests.detail(repair_sections=list(sections)):
+            data = chat_json(client, model, system, continuity_context.pack(payload), schema,
+                             min(args.temperature, 0.16), args.max_tokens)
+        if (not isinstance(data, dict) or set(data) != set(sections)
+                or any(not isinstance(body, str) or not body.strip() for body in data.values())
+                or any(re.search(r"(?mi)^\s*(?:" + "|".join(SECTIONS) + r")\s*:", body) for body in data.values())):
+            print(f"    repair {label}: rejected invalid section patch")
+            validation.repair_feedback[label] = "Return exactly the requested nonempty section bodies, without headings."
+            continue
+        candidate = replace_prompt_sections(prompt, data)
+        after = validate_prompt(candidate, bindings, duration, max_shots)
+        remaining = set(errors) & set(after.errors)
+        new_errors = set(after.errors) - set(before.errors)
+        # The target section must be completely repaired, even when a length error
+        # changes its word count/message. Unrelated failures can remain for later jobs.
+        target_errors = [error for error in after.errors if set(format_error_sections(error, candidate)) & set(sections)]
+        if remaining or new_errors or target_errors:
+            print(f"    repair {label}: rejected ({len(target_errors)} target errors, {len(new_errors)} new errors)")
+            validation.repair_feedback[label] = {"errors": after.errors, "rejected_sections": data}
+            continue
+        prompt = candidate
+        status = "pending continuity review" if any(error in semantic for error in errors) else "accepted"
+        print(f"    repair {label}: {status} ({len(before.errors)} -> {len(after.errors)} format errors)")
+    return prompt
 
 
 def scene_asset_sheet(scene: Scene, bindings: dict[str, Any], prompt: str, validation: Validation) -> str:
@@ -1654,10 +1786,11 @@ def format_prompt(client, model, prompt, scene, bindings, args, continuity):
         with generation_requests.detail(attempt=repairs):
             candidate = repair_prompt(client, model, prompt, scene, bindings, validation, args.duration, args, continuity)
         candidate = normalize_prompt(candidate, bindings)
-        if candidate == prompt:
-            break
-        prompt = candidate
-        validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
+        if candidate != prompt:
+            updated = validate_prompt(candidate, bindings, args.duration, getattr(args, "max_shots", 1))
+            if set(updated.errors) <= set(validation.errors):
+                updated.repair_feedback = validation.repair_feedback
+                prompt, validation = candidate, updated
     return {"prompt": prompt, "repairs": repairs}
 
 
