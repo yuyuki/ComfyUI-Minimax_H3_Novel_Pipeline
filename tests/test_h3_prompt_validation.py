@@ -131,6 +131,14 @@ def test_sustained_shots_and_short_continuous_clips_pass(duration, shots):
     assert step.validate_prompt(prompt_with_shots(shots), BINDINGS, duration).ok
 
 
+def test_short_description_does_not_require_repair():
+    prompt = prompt_with_shots("[Shot 1] A figure pauses.")
+    prompt = prompt.replace(step.section_body(prompt, "detailed_description"), "[Shot 1] A figure pauses.")
+    result = step.validate_prompt(prompt, BINDINGS, 8)
+    assert result.word_count < 330
+    assert result.ok
+
+
 def test_five_second_scene_allows_two_readable_shots_only_when_requested():
     two = prompt_with_shots("[Shot 1] The camera follows the rope.\n[Shot 2] At 00:02.500, Indy enters frame.")
     three = prompt_with_shots("[Shot 1] Wall.\n[Shot 2] At 00:01.500, Rope.\n[Shot 3] At 00:03.000, Indy.")

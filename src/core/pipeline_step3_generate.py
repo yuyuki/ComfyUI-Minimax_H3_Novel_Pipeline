@@ -1336,9 +1336,7 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float, max_
                     f"Shot {index} lasts only {end - start:.3f}s; minimum is {minimum:g}s "
                     "including the final shot. Reduce cuts or increase scene duration."
                 )
-    if word_count < 330:
-        errors.append(f"detailed_description is short ({word_count} words; normal target 350-500).")
-    elif word_count > 540:
+    if word_count > 540:
         errors.append(f"detailed_description is long ({word_count} words; normal target 350-500).")
 
     for match in re.finditer(r"<d>(.*?)</d>", prompt, flags=re.S):
