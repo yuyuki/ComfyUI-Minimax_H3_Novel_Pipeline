@@ -1,6 +1,7 @@
 """Resume planning and prompt generation without changing the previous run."""
 from contextlib import nullcontext
 from copy import deepcopy
+from argparse import Namespace
 import json
 from unittest.mock import Mock
 
@@ -110,3 +111,32 @@ def test_bad_resume_rejected_before_client_creation(setup, monkeypatch, resume, 
     with pytest.raises(ValueError, match=match):
         node.GenerateH3PromptsNode().run(refs, {"run_folder": "20261101000000"}, {}, **params)
     client.assert_not_called()
+
+
+def test_completed_scene_files_resume_and_incomplete_scene_does_not(tmp_path, monkeypatch):
+    step = lmstudio_pipeline.load("generate")
+    old, current = tmp_path / "old", tmp_path / "new"
+    chapter, cache = old / "chapter", old / ".cache/chapter"
+    chapter.mkdir(parents=True)
+    cache.mkdir(parents=True)
+    target = current / "chapter"
+    target.mkdir(parents=True)
+    (current / ".cache/chapter").mkdir(parents=True)
+    scene = step.Scene("Wait", "Wait", "Wait", "", [], [], [], False, "")
+    bindings = {"subjects": [], "audio": [], "picture_input_order": []}
+    validation = step.Validation(True, [], 400)
+    monkeypatch.setattr(step, "validate_prompt", lambda *args: validation)
+    entry = step.save_scene(chapter, 1, scene, bindings, "prompt", validation)
+    saved_scene = step.scene_to_dict(scene)
+    record = {"contract": 2, "valid": True, "prompt": "prompt", "scene": saved_scene,
+              "bindings": bindings, "camera_warnings": []}
+    record["result_digest"] = step.generation_requests.digest(
+        [record["prompt"], saved_scene, bindings, []])
+    (cache / "prompt_001.json").write_text(json.dumps(record), encoding="utf-8")
+    args = Namespace(duration=8, max_shots=1)
+    assert step.resume_scene_files(chapter, target, cache, 1, scene, bindings, args) is not None
+    for key in ("assets_file", "prompt_file", "source_file"):
+        assert (target / entry[key]).read_bytes() == (chapter / entry[key]).read_bytes()
+    assert (current / ".cache/chapter/prompt_001.json").is_file()
+    (chapter / entry["source_file"]).unlink()
+    assert step.resume_scene_files(chapter, target, cache, 1, scene, bindings, args) is None

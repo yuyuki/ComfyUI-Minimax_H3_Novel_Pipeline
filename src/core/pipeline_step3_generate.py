@@ -11,6 +11,7 @@ import ast
 import json
 import logging
 import re
+import shutil
 import sys
 from dataclasses import dataclass
 from hashlib import sha256
@@ -1653,6 +1654,48 @@ def save_scene(
     }
 
 
+def resume_scene_files(previous, chapter_dir, cache_dir, index, scene, bindings, args):
+    """Restore a complete scene only when its files match its valid checkpoint."""
+    try:
+        record = json.loads(confined_path(f"prompt_{index:03d}.json", cache_dir).read_text(encoding="utf-8"))
+        if record.get("contract") != 2 or record.get("valid") is not True:
+            return None
+        if record.get("result_digest") != generation_requests.digest(
+                [record["prompt"], record["scene"], record["bindings"], record["camera_warnings"]]):
+            return None
+        saved_scene = scene_from_dict(record["scene"])
+        immutable = ("title", "source_excerpt", "visual_event", "adaptation_notes", "sequence")
+        if any(getattr(saved_scene, key) != getattr(scene, key) for key in immutable) or record["bindings"] != bindings:
+            return None
+        prompt = record["prompt"]
+        validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
+        if not validation.ok:
+            return None
+        stem = f"scene_{index:03d}_{slug(scene.title)}"
+        names = [f"{stem}_assets.json", f"{stem}_prompt.txt", f"{stem}_source.txt"]
+        files = [confined_path(name, previous) for name in names]
+        assets = json.loads(files[0].read_text(encoding="utf-8"))
+        expected_source = (f"TITLE: {saved_scene.title}\n\nVISUAL EVENT:\n{saved_scene.visual_event}\n\n"
+                           f"ADAPTATION NOTES:\n{saved_scene.adaptation_notes}\n\nSOURCE EXCERPT:\n{saved_scene.source_excerpt}\n")
+        if (assets != {**bindings, "copy_paste_prompt": prompt.rstrip(), "valid": True,
+                       "validation_errors": validation.errors}
+                or files[1].read_text(encoding="utf-8") != scene_asset_sheet(saved_scene, bindings, prompt, validation)
+                or files[2].read_text(encoding="utf-8") != expected_source):
+            return None
+        for source, name in zip(files, names):
+            shutil.copyfile(source, confined_path(name, chapter_dir))
+        shutil.copyfile(confined_path(f"prompt_{index:03d}.json", cache_dir),
+                        confined_path(f"prompt_{index:03d}.json", chapter_dir.parent / ".cache" / chapter_dir.name))
+        entry = {"index": index, "title": scene.title, "assets_file": names[0], "prompt_file": names[1],
+                 "source_file": names[2], "valid": True, "validation_errors": validation.errors,
+                 "detailed_description_words": validation.word_count, "picture_count": len(bindings["picture_input_order"]),
+                 "subject_count": len(bindings["subjects"]), "audio_count": len(bindings["audio"]),
+                 "sequence": scene.sequence, "repair_attempts_used": 0}
+        return saved_scene, prompt, entry
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+        return None
+
+
 def scene_to_dict(scene: Scene) -> dict[str, Any]:
     return {
         "title": scene.title,
@@ -1920,6 +1963,24 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
             print(f"    skipped: {reason}")
             continue
 
+        if getattr(args, "resume_scene_files", False):
+            resumed = resume_scene_files(confined_path(chapter_id, resume_cache_dir.parent), chapter_dir,
+                                         confined_path(chapter_id, resume_cache_dir), i, scene, bindings, args)
+            if resumed is not None:
+                saved_scene, prompt, entry = resumed
+                scene.__dict__.update(saved_scene.__dict__)
+                if continuity is not None:
+                    previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
+                                             "bindings": bindings, "continuity_errors": []})
+                    entry["spatial_continuity"] = continuity
+                    entry["continuity_review"] = {"errors": [], "repair_attempts_used": 0,
+                                                  "valid": True, "status": "resumed"}
+                    if spatial_plan is not None:
+                        continuity_states[i - 1]["prompt_review"] = entry["continuity_review"]
+                entries.append(entry)
+                print("    reused completed scene files")
+                continue
+
         prompt_key = cache_fingerprint(model, args, REFERENCE_SCHEMA, H3_RULES, PROMPT_SCHEMA,
                                        "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v3-batched",
                                        scene_to_dict(scene), bindings, continuity, previous_prompts,
@@ -1933,7 +1994,7 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
         generation_requests.cache_dependencies("final_prompt", dict(
             full_contract=prompt_key, model=model, scene=scene_to_dict(scene), bindings=bindings,
             settings={key: value for key, value in vars(args).items()
-                      if key not in {"out_dir", "force", "cache_dir", "resume_cache_dir"}
+                      if key not in {"out_dir", "force", "cache_dir", "resume_cache_dir", "resume_scene_files"}
                       and isinstance(value, (str, int, float, bool, type(None)))},
             continuity=continuity, history=previous_prompts, future=[scene_to_dict(s) for s in scenes[i:]],
             implementation=implementation, evidence=evidence_rows[scene.sequence],

@@ -8,6 +8,9 @@ by later entries.
 
 ## Unreleased
 
+- Resume completed H3 scene files from a matching previous run, preserving their
+  continuity context and continuing with missing scenes.
+
 - Fix character identity consolidation through explicit full-name/nickname
   bridges, and include established canonical names and aliases in pairwise
   model requests. Preserve source evidence, homonym separation and temporal

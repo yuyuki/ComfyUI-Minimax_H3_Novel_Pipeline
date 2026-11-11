@@ -118,6 +118,21 @@ class GenerateH3PromptsNode:
             )
             if resume_cache_dir is not None:
                 args.resume_cache_dir = resume_cache_dir
+                try:
+                    previous = util.load_json(resume_cache_dir.parent / "generate_configuration.json")
+                    current = snapshot[1]
+                    def settings(record):
+                        return {k: v for k, v in record["node_settings"].items()
+                                if k not in {"resume_run", "force", "resume_cache_dir"}}
+                    matching = (
+                        not args.force and settings(previous) == settings(current)
+                        and all(previous.get(k) == current.get(k) for k in
+                                ("lmstudio_config", "resolved_model", "model_controls", "inputs"))
+                    )
+                    if matching:
+                        args.resume_scene_files = resume_cache_dir.parent
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass
             image_records, image_text = export_image_prompts(consolidated_references, output / "image_prompts")
             manifests = []
             for index, path in enumerate(paths):
