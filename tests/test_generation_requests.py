@@ -218,6 +218,7 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
     plan_path = args.out_dir / ".cache/chapter/plan_001.json"
     plan_record = json.loads(plan_path.read_text())
     plan_record["scenes"][-1]["source_excerpt"] = "Changed future evidence."
+    plan_record["scenes_digest"] = requests.digest(plan_record["scenes"])
     plan_path.write_text(json.dumps(plan_record))
     step.process_chapter(path, refs, client, "gemma", args)
     assert len(seen) > before

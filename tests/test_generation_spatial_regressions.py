@@ -99,7 +99,9 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
     for _ in range(2):
         manifest = step.process_chapter(path, refs, None, 'model', args)
         assert all(not entry['valid'] for entry in manifest['outputs'])
-    assert len(generations) == 4
+    # Drafts can be reused, but invalid final results are never accepted or
+    # introduced into continuity history; every resumed candidate is checked.
+    assert len(generations) == 2
     assert histories == ([[], [], [], []] if failure == 'continuity' else [])
     assert chunks == refs['chapter_timelines']['chapter']['sequences']
     assert refs['visual_designs'] == designs

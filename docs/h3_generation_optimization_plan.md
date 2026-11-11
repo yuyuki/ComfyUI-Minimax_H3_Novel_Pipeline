@@ -19,7 +19,7 @@ Date: 2026-11-10. Status: implementation started; first milestone validated offl
 - [x] Compile the reusable upstream evidence bundle with phase provenance,
   exact reference/character context, approved designs and separate spatial plans.
 - [x] Introduce structured issue targets and dedicated scene/binding repairs.
-- [ ] Complete granular artifact dependencies, integrity and coverage manifests
+- [x] Complete granular artifact dependencies, integrity and coverage manifests
   beyond the planning cache and existing exact-request checkpoints.
 - [ ] Add backend-reported usage and complete artifact invalidation diagnostics.
 - [ ] Run isolated live quality/performance comparisons and a full chapter.
@@ -67,6 +67,32 @@ New tests cover invalid evidence pointers, strict schemas on transport retries,
 invented IDs/views, offscreen visibility, non-prompt issue routing, rejected
 corrections, full re-review and corrected-scene resume. Live model quality and
 performance remain unverified; current run outputs were not modified.
+
+Fourth milestone (2026-11-11): independent draft, successful-format and camera
+artifacts now use consumed settings, exact inputs, effective backend/thinking
+configuration, and transitive local function/constant source fingerprints.
+Unchanged stages survive unrelated setting changes. Cached candidates still
+receive current local validation and semantic reviews; a draft is never an
+approval. Atomic records carry integrity digests, resume copies only matching
+records into the current run, force bypasses reuse, and failures are not cached.
+Planning checkpoints now also verify their scene-payload digest. Binding tables
+are deterministically rebuilt and checked against approved assets on final reuse.
+
+Each semantic review writes an ordered coverage manifest under the chapter's
+`reviews/` cache directory: base/contract/input digests, every history/future
+occurrence, per-batch completion and issue counts, and overall review status.
+Coverage must match all evidence in order, including duplicate occurrences.
+Existing request checkpoints reuse exact batches; changing final wording changes
+every batch, while changing one stable evidence batch preserves the others.
+Coverage manifests are audit records, never an approval shortcut: partial,
+failed or corrupted manifests cannot skip revalidation. Chapter metrics expose
+artifact hits/misses/invalid records, latest coverage and interruption status.
+
+Fourth milestone validation: 1,249 tests passed, 3 skipped, 111 subtests passed;
+lint passed. The architecture freshness check remains the single deliberately
+deselected test until implementation is finished. Live quality and performance
+comparisons remain pending. Backend-reported token usage and more detailed
+invalidation explanations are the next implementation step.
 
 ## Objective and boundaries
 

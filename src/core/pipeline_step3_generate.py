@@ -4,6 +4,7 @@ from __future__ import annotations
 from . import progress, continuity_context, generation_requests, generation_evidence
 from . import character_visual_integration, reference_timeline
 from . import continuity_issues
+from . import generation_artifacts
 
 import argparse
 import ast
@@ -167,11 +168,24 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
         "future_requirements": [scene_to_dict(s) for s in future],
     }
     errors = []
-    for index, batch in enumerate(continuity_context.batches(system, base, groups, CONTINUITY_REVIEW_SCHEMA), 1):
-        packed = continuity_context.pack(batch)
-        with generation_requests.detail(batch=index):
-            result = chat_json(client, model, system, packed, CONTINUITY_REVIEW_SCHEMA, 0.1, max_tokens)
-        errors.extend(continuity_issues.validate(result, json.loads(packed)))
+    batches = list(continuity_context.batches(system, base, groups, CONTINUITY_REVIEW_SCHEMA))
+    coverage = generation_artifacts.ReviewCoverage(
+        [model, generation_requests.backend_signature(client, model), system, CONTINUITY_REVIEW_SCHEMA,
+         max_tokens, generation_artifacts.implementation(__file__, ["check_prompt_continuity"],
+                                                       [continuity_context.__file__, continuity_issues.__file__])],
+        base, groups, batches)
+    try:
+        for index, batch in enumerate(batches, 1):
+            packed = continuity_context.pack(batch)
+            with generation_requests.detail(batch=index):
+                result = chat_json(client, model, system, packed, CONTINUITY_REVIEW_SCHEMA, 0.1, max_tokens)
+            batch_errors = continuity_issues.validate(result, json.loads(packed))
+            errors.extend(batch_errors)
+            coverage.completed(index - 1, result, batch_errors)
+        coverage.finish()
+    except BaseException:
+        coverage.failed()
+        raise
     return continuity_issues.unique(errors)
 
 
@@ -1550,6 +1564,41 @@ def repair_scene_inputs(client, model, scene, bindings, row, references, chapter
     return candidate, rebuilt
 
 
+def artifact_dependencies(stage, client, model, args, *inputs):
+    """Only controls consumed by this stage, plus its implementation closure."""
+    roots = {
+        "draft": ["generate_prompt"],
+        "format": ["format_prompt", "validate_prompt"],
+        "camera": ["refine_camera_prompt", "validate_prompt"],
+    }
+    defaults = {"duration": 8, "max_shots": 1, "camera_direction": "", "repair_attempts": 2,
+                "max_tokens": 8192, "temperature": .38}
+    names = {"draft": ("duration", "max_shots", "camera_direction", "max_tokens", "temperature"),
+             "format": tuple(defaults),
+             "camera": ("duration", "max_shots", "camera_direction", "repair_attempts")}
+    return {"model": model, "backend": generation_requests.backend_signature(client, model),
+            "settings": {name: getattr(args, name, defaults[name]) for name in names[stage]},
+            "inputs": inputs, "implementation": generation_artifacts.implementation(
+                __file__, roots[stage], [continuity_context.__file__])}
+
+
+def format_prompt(client, model, prompt, scene, bindings, args, continuity):
+    prompt = normalize_prompt(prompt, bindings)
+    validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
+    repairs = 0
+    while not validation.ok and repairs < args.repair_attempts:
+        repairs += 1
+        print(f"    repair {repairs}/{args.repair_attempts}: {'; '.join(validation.errors[:3])}")
+        with generation_requests.detail(attempt=repairs):
+            candidate = repair_prompt(client, model, prompt, scene, bindings, validation, args.duration, args, continuity)
+        candidate = normalize_prompt(candidate, bindings)
+        if candidate == prompt:
+            break
+        prompt = candidate
+        validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
+    return {"prompt": prompt, "repairs": repairs}
+
+
 def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
     chapter_id, sequences = selected_timeline(refs, path)
     # Covers reviewer/camera instructions and local validation, not just schemas.
@@ -1601,7 +1650,8 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
             try:
                 candidate = confined_path(cache_path.name, candidate_dir)
                 cached = json.loads(candidate.read_text(encoding="utf-8"))
-                if cached.get("cache_key") == cache_key:
+                if (cached.get("cache_key") == cache_key
+                        and cached.get("scenes_digest") == generation_requests.digest(cached["scenes"])):
                     chunk_scenes = [scene_from_dict(x) for x in cached["scenes"]]
                     break
             except Exception:
@@ -1614,7 +1664,9 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
         else:
             print(f"  planning chunk {i}/{len(chunks)}: cached")
         # Carry resumed plans forward so this run can itself be resumed.
-        generation_requests.atomic_json(cache_path, {"cache_key": cache_key, "scenes": [scene_to_dict(x) for x in chunk_scenes]})
+        plan_records = [scene_to_dict(x) for x in chunk_scenes]
+        generation_requests.atomic_json(cache_path, {"cache_key": cache_key, "scenes": plan_records,
+                                                    "scenes_digest": generation_requests.digest(plan_records)})
         scenes.extend(chunk_scenes)
 
     # Apply current consolidation decisions even when planning reused a cache entry.
@@ -1670,7 +1722,8 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
                                        "camera-postprocess.v1", CAMERA_SCHEMA, "continuity-review.v3-batched",
                                        scene_to_dict(scene), bindings, continuity, previous_prompts,
                                        [scene_to_dict(s) for s in scenes[i:]], CONTINUITY_REVIEW_SCHEMA,
-                                       implementation, generation_requests.backend_signature(client, model), client=client)
+                                       implementation, evidence_rows[scene.sequence], bundle["references"], visual_designs,
+                                       generation_requests.backend_signature(client, model), client=client)
         prompt_cache = confined_path(cache_dir / f"prompt_{i:03d}.json", args.out_dir)
         prompt = None
         camera_warnings: list[str] = []
@@ -1707,23 +1760,39 @@ def _process_chapter(path, refs, client, model, args) -> dict[str, Any]:
 
         if prompt is None:
             with generation_requests.task("generation"):
-                prompt = generate_prompt(client, model, scene, bindings, args.duration, args, continuity)
+                prompt = generation_artifacts.cached(
+                    "draft", artifact_dependencies("draft", client, model, args, scene_to_dict(scene), bindings, continuity),
+                    lambda: generate_prompt(client, model, scene, bindings, args.duration, args, continuity),
+                    lambda value: isinstance(value, str) and bool(value.strip()))
 
         prompt = normalize_prompt(prompt, bindings)
         validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
         repairs = 0
-        while not validation.ok and repairs < args.repair_attempts:
+        if not validation.ok:
             from_cache = False
-            repairs += 1
-            print(f"    repair {repairs}/{args.repair_attempts}: {'; '.join(validation.errors[:3])}")
-            with generation_requests.task("format_repair"), generation_requests.detail(attempt=repairs):
-                prompt = repair_prompt(client, model, prompt, scene, bindings, validation, args.duration, args, continuity)
-            prompt = normalize_prompt(prompt, bindings)
+            with generation_requests.task("format_repair"):
+                formatted = generation_artifacts.cached(
+                    "format", artifact_dependencies("format", client, model, args, prompt, scene_to_dict(scene), bindings, continuity),
+                    lambda: format_prompt(client, model, prompt, scene, bindings, args, continuity),
+                    lambda value: isinstance(value, dict) and isinstance(value.get("prompt"), str)
+                    and type(value.get("repairs")) is int and value["repairs"] >= 0
+                    and validate_prompt(value["prompt"], bindings, args.duration, getattr(args, "max_shots", 1)).ok)
+                prompt, repairs = formatted["prompt"], formatted["repairs"]
             validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
 
         if getattr(args, "refine_camera", False) and validation.ok and not from_cache:
             with generation_requests.task("camera", getattr(args, "camera_thinking", False)):
-                prompt, camera_warnings = refine_camera_prompt(client, model, prompt, scene, continuity, args, bindings)
+                camera_input = prompt
+                def camera_result():
+                    value, warnings = refine_camera_prompt(client, model, camera_input, scene, continuity, args, bindings)
+                    return {"prompt": value, "warnings": warnings}
+                camera = generation_artifacts.cached(
+                    "camera", artifact_dependencies("camera", client, model, args, camera_input, scene_to_dict(scene), bindings, continuity),
+                    camera_result,
+                    lambda value: isinstance(value, dict) and isinstance(value.get("prompt"), str)
+                    and isinstance(value.get("warnings"), list) and all(isinstance(w, str) for w in value["warnings"])
+                    and validate_prompt(value["prompt"], bindings, args.duration, getattr(args, "max_shots", 1)).ok)
+                prompt, camera_warnings = camera["prompt"], camera["warnings"]
             validation = validate_prompt(prompt, bindings, args.duration, getattr(args, "max_shots", 1))
             for warning in camera_warnings:
                 print(f"    {warning}")

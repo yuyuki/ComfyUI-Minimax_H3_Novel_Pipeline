@@ -67,6 +67,11 @@ def position(label):
         state["position"] = label
 
 
+def cache_context():
+    """Chapter-local cache scope shared by artifacts and coverage records."""
+    return _SESSION.get()
+
+
 @contextmanager
 def detail(**values):
     """Attach bounded progress labels without changing request identity."""
@@ -78,11 +83,14 @@ def detail(**values):
 
 
 def write_metrics(state, stage, status, **values):
+    state["last_metrics"] = (stage, status, values)
     try:
         atomic_json(confined_path("request_metrics.json", state["directory"]),
                     {"last_position": state["position"], "last_stage": stage,
                      "last_status": status, "detail": _DETAIL.get(),
-                     "tasks": state["tasks"], **values})
+                     "tasks": state["tasks"], "artifacts": state.get("artifacts", {}),
+                     "review_coverage": state.get("review_coverage"),
+                     "chapter_status": state.get("chapter_status", "running"), **values})
     except OSError:
         print("    H3: could not persist request metrics.", flush=True)
 
@@ -100,7 +108,13 @@ def chapter(chapter_id, args):
     started = time.perf_counter()
     try:
         yield
+        state["chapter_status"] = "completed"
+    except BaseException:
+        state["chapter_status"] = "failed_or_interrupted"
+        raise
     finally:
+        stage, status, values = state.get("last_metrics", ("chapter", state.get("chapter_status"), {}))
+        write_metrics(state, stage, status, **values)
         _SESSION.reset(token)
         print(f"  H3 requests for {chapter_id}: {json.dumps(state['tasks'], sort_keys=True)}, "
               f"elapsed={time.perf_counter() - started:.1f}s", flush=True)
