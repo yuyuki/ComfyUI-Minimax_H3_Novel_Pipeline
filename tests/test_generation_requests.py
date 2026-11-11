@@ -239,7 +239,9 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
     path = args.out_dir.parent / "chapter.txt"
     refs = cinematic_registry(path)
     scenes = [step.Scene(str(i), "evidence " * (300 + i), f"event {i}", "", [], [], [], False, "") for i in range(4)]
-    monkeypatch.setattr(continuity_context, "REQUEST_BYTES", 11000)
+    # Allow the complete review instructions plus one evidence record, while
+    # still forcing multiple batches for the resume/interruption assertions.
+    monkeypatch.setattr(continuity_context, "REQUEST_BYTES", 12000)
     monkeypatch.setattr(step, "plan_scenes", lambda *a: deepcopy(scenes))
     monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [{"global_id": "hero"}], "audio": []})
     monkeypatch.setattr(step, "generate_prompt", lambda c, m, *a: step.chat_json(c, m, "generate", "input", step.PROMPT_SCHEMA, .1, 8192)["prompt_text"])

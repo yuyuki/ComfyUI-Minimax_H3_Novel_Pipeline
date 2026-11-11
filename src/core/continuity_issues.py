@@ -41,11 +41,13 @@ Each issue needs an actionable message and evidence_paths: absolute JSON pointer
 to the actual supplied request, e.g. /current_scene/visual_event or
 /continuity_plan/sequence_plan. Cite the supplied evidence supporting the issue,
 not an imagined record or a record from a different batch. Return errors: [] only
-when there are no issues. The current_prompt field is one complete string; cite
-/current_prompt for evidence from the whole prompt. For section-specific prompt
-evidence, cite /current_prompt_sections/<section_name>, such as
-/current_prompt_sections/detailed_description. These values contain the exact
-section text from current_prompt. Do not append section names to /current_prompt.
+when there are no issues. current_prompt_sections contains the complete current
+prompt wording, organized by section. Cite /current_prompt_sections for the whole
+prompt or /current_prompt_sections/<section_name> for a specific section, such as
+/current_prompt_sections/detailed_description. A current_prompt string is supplied
+only when raw text is needed to preserve malformed or unparsed content; cite
+/current_prompt only if that field is actually supplied. Do not append section
+names to /current_prompt.
 Use the supplied structured schema exactly.
 """
 
@@ -87,7 +89,6 @@ def validate(result, payload):
                 sections = payload.get("current_prompt_sections")
                 section = parts[-1].replace("~1", "/").replace("~0", "~")
                 if (len(parts) != 3 or parts[1] != "current_prompt"
-                        or not isinstance(payload.get("current_prompt"), str)
                         or not isinstance(sections, dict)
                         or not isinstance(sections.get(section), str)):
                     unresolved_paths.append(path)

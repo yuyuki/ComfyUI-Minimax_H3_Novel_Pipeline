@@ -163,13 +163,17 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
     )
     system += continuity_context.INSTRUCTIONS + continuity_issues.INSTRUCTIONS
     base = {
-        "current_scene": scene_to_dict(scene), "current_prompt": prompt,
+        "current_scene": scene_to_dict(scene),
         "current_prompt_sections": {
             name: section_body(prompt, name) for name in SECTIONS
         },
         "bindings": bindings, "continuity_plan": continuity,
         "camera_direction": camera_direction,
     }
+    # The six ordered sections already contain all prompt wording. Keep the
+    # raw text only when parsing would lose a preamble or malformed structure.
+    if not prompt_is_fully_sectioned(prompt):
+        base["current_prompt"] = prompt
     groups = {
         "previous_final_prompts": previous_prompts,
         "future_requirements": [scene_to_dict(s) for s in future],
@@ -1188,6 +1192,13 @@ def section_body(prompt: str, name: str) -> str:
     return prompt[start:end].strip()
 
 
+def prompt_is_fully_sectioned(prompt: str) -> bool:
+    """Only omit raw text when every heading and all non-whitespace text are covered."""
+    headings = list(re.finditer(r"(?m)^[ \t]*(" + "|".join(SECTIONS) + r")[ \t]*:[ \t]*(?:\r?\n|$)", prompt))
+    return ([match.group(1) for match in headings] == SECTIONS
+            and not prompt[:headings[0].start()].strip())
+
+
 SHOT_HEADING = re.compile(r"\[Shot\s+(\d+)\](?: At \d{2}:\d{2}\.\d{3}, )?")
 
 
@@ -1562,10 +1573,7 @@ def repair_prompt(
                                   if f"Scene continuity: {issue['message']}" in errors],
             "previous_repair_feedback": validation.repair_feedback.get(",".join(sections)),
         }
-        headings = list(re.finditer(r"(?m)^[ \t]*(" + "|".join(SECTIONS) + r")[ \t]*:[ \t]*(?:\r?\n|$)", prompt))
-        fully_parsed = ([match.group(1) for match in headings] == SECTIONS
-                        and not prompt[:headings[0].start()].strip())
-        if not fully_parsed:
+        if not prompt_is_fully_sectioned(prompt):
             # Preserve malformed/unparsed content for structural repairs as well.
             payload["current_prompt"] = prompt
         if not continuity_context.fits(system, payload, schema):

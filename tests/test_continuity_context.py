@@ -79,7 +79,7 @@ def test_review_exposes_exact_prompt_sections_as_evidence(monkeypatch):
     def chat(client, model, system, user, schema, temperature, max_tokens):
         payload = json.loads(user)
         calls.append((system, payload))
-        assert payload["current_prompt"] == prompt
+        assert "current_prompt" not in payload
         assert payload["current_prompt_sections"]["detailed_description"] == (
             "Exact detailed_description text."
         )
@@ -108,6 +108,56 @@ def test_single_oversized_record_fails_explicitly_without_network(monkeypatch, o
     with pytest.raises(ValueError, match="no evidence was discarded"):
         generate.check_prompt_continuity(None, "gemma", scene(0, 50000 if oversized_current else 1),
                                          "prompt", {}, {}, [], [] if oversized_current else [scene(1, 50000)], 8000)
+
+
+def test_section_only_review_reduces_batches_preserving_all_evidence(monkeypatch):
+    sections = {name: f"Exact {name}: " + ("évidence " * 180).strip() for name in generate.SECTIONS}
+    prompt = "\n\n".join(f"{name}:\n{body}" for name, body in sections.items())
+    current = scene(-1)
+    history = [{"prompt": f"Earlier prompt {i}", "scene": generate.scene_to_dict(scene(i))} for i in range(4)]
+    future = [scene(i, 2500 + i) for i in range(4, 42)]
+    calls = []
+
+    def chat(client, model, system, user, schema, temperature, max_tokens):
+        payload = expanded(json.loads(user))
+        assert "current_prompt" not in payload
+        assert payload["current_prompt_sections"] == sections
+        assert schema["strict"] and schema == generate.CONTINUITY_REVIEW_SCHEMA
+        assert len(system.encode()) + len(user.encode()) + len(json.dumps(schema).encode()) <= context.REQUEST_BYTES
+        calls.append((system, payload, schema))
+        return {"errors": []}
+
+    monkeypatch.setattr(generate, "chat_json", chat)
+    assert generate.check_prompt_continuity(None, "model", current, prompt, {}, {}, history, future, 8192) == []
+    assert [item["prompt"] for _, payload, _ in calls for item in payload["previous_final_prompts"]] == [h["prompt"] for h in history]
+    assert [item["title"] for _, payload, _ in calls for item in payload["future_requirements"]] == [s.title for s in future]
+    old_base = {"current_scene": generate.scene_to_dict(current), "current_prompt": prompt,
+                "current_prompt_sections": sections, "bindings": {}, "continuity_plan": {}, "camera_direction": ""}
+    old_batches = list(context.batches(calls[0][0], old_base, {
+        "previous_final_prompts": history, "future_requirements": [generate.scene_to_dict(s) for s in future]}, calls[0][2]))
+    assert len(calls) < len(old_batches)
+
+
+@pytest.mark.parametrize("damage", ["preamble", "missing", "duplicate", "reordered"])
+def test_review_keeps_raw_text_when_sections_cannot_preserve_it(monkeypatch, damage):
+    names = list(generate.SECTIONS)
+    if damage == "missing":
+        names.pop(0)
+    elif damage == "duplicate":
+        names.insert(0, names[0])
+    elif damage == "reordered":
+        names.reverse()
+    prompt = "\n".join(f"{name}:\nExact {index} text." for index, name in enumerate(names))
+    if damage == "preamble":
+        prompt = "Unparsed important detail.\n" + prompt
+
+    def chat(client, model, system, user, schema, *args):
+        assert json.loads(user)["current_prompt"] == prompt
+        return {"errors": [issue("Preserve raw evidence", path="/current_prompt")]}
+
+    monkeypatch.setattr(generate, "chat_json", chat)
+    errors = generate.check_prompt_continuity(None, "model", scene(0), prompt, {}, {}, [], [], 8192)
+    assert errors[0]["evidence"][0]["value"] == prompt
 
 
 def test_later_batch_failure_cannot_be_reported_as_success(monkeypatch):
