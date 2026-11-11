@@ -150,3 +150,25 @@ def test_partial_patch_preserves_indented_section_headings():
     original = prompt_with_shots("[Shot 1] Wait.").replace("summary:\n", "  summary :\n")
     updated = step.replace_prompt_sections(original, {"summary": "[reference generation] Changed summary."})
     assert updated == original.replace("[reference generation] A quiet scene.", "[reference generation] Changed summary.")
+
+
+@pytest.mark.parametrize("preamble", ["", "Unparsed context before headings.\n"])
+def test_metadata_repair_preserves_unparsed_text_without_duplicating_complete_prompt(monkeypatch, preamble):
+    good = prompt_with_shots("[Shot 1] He waits.")
+    original = preamble + good
+    validation = step.Validation(False, ["Scene metadata and bindings were corrected."], 0)
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        calls.append(payload)
+        assert schema["strict"] and schema["schema"]["required"] == step.SECTIONS
+        assert ("current_prompt" in payload) == bool(preamble)
+        if preamble:
+            assert payload["current_prompt"] == original
+        assert payload["current_sections"] == {name: step.section_body(original, name) for name in step.SECTIONS}
+        return {name: step.section_body(good, name) for name in step.SECTIONS}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    step.repair_prompt(None, "model", original, scene(), BINDINGS, validation, 8, settings(), {})
+    assert len(calls) == 1

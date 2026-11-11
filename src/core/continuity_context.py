@@ -60,6 +60,38 @@ def pack(payload):
         result["shared_sequence_evidence"] = evidence
     if shared_excerpts:
         result["shared_source_excerpts"] = shared_excerpts
+    # Intern repeated citation snapshots only. Keep their paths and occurrences;
+    # a citation may describe an older prompt, so never resolve it against a
+    # newer scene/prompt merely because its original path matches.
+    citations = []
+
+    def collect(value):
+        if isinstance(value, list):
+            for item in value:
+                collect(item)
+        elif isinstance(value, dict):
+            if set(value) == {"path", "value"} and isinstance(value["path"], str):
+                citations.append(value)
+            else:
+                for item in value.values():
+                    collect(item)
+
+    collect(result)
+    fingerprints = [json.dumps(item["value"], ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":")) for item in citations]
+    counts = Counter(fingerprints)
+    shared_citations, citation_ids = {}, {}
+    for citation, fingerprint in zip(citations, fingerprints):
+        if counts[fingerprint] < 2 or len(fingerprint.encode("utf-8")) < 256:
+            continue
+        if fingerprint not in citation_ids:
+            key = f"cited_value_{len(citation_ids) + 1}"
+            citation_ids[fingerprint] = key
+            shared_citations[key] = citation["value"]
+        citation["value_ref"] = citation_ids[fingerprint]
+        del citation["value"]
+    if shared_citations:
+        result["shared_cited_values"] = shared_citations
     return json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -67,6 +99,20 @@ def fits(system, payload, schema, reserve=0):
     return (len(system.encode("utf-8")) + len(pack(payload).encode("utf-8"))
             + len(json.dumps(schema, ensure_ascii=False).encode("utf-8"))
             + reserve <= REQUEST_BYTES)
+
+
+def budget_details(system, payload, schema):
+    """Describe packed byte costs without logging source text or cited values."""
+    packed = pack(payload)
+    system_bytes = len(system.encode("utf-8"))
+    payload_bytes = len(packed.encode("utf-8"))
+    schema_bytes = len(json.dumps(schema, ensure_ascii=False).encode("utf-8"))
+    fields = {key: len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+              for key, value in json.loads(packed).items()}
+    largest = sorted(fields.items(), key=lambda item: item[1], reverse=True)[:5]
+    return (f"request_bytes={system_bytes + payload_bytes + schema_bytes}, limit_bytes={REQUEST_BYTES}, "
+            f"system_bytes={system_bytes}, payload_bytes={payload_bytes}, schema_bytes={schema_bytes}, "
+            f"largest_field_value_bytes={dict(largest)}")
 
 
 def batches(system, base, groups, schema, reserve=0):
@@ -102,4 +148,7 @@ INSTRUCTIONS = (
     " Resolve each source_excerpt_ref using shared_source_excerpts: it replaces that scene's "
     "source_excerpt with the EXACT original prose, not a summary. Shared text does not merge "
     "scene occurrences or their separately assigned beats."
+    " Resolve citation value_ref using shared_cited_values: it replaces the citation's value "
+    "with its exact captured evidence. Keep every citation and issue distinct; these snapshots "
+    "may refer to earlier wording, not the current prompt."
 )

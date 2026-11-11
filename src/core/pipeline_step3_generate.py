@@ -1562,11 +1562,16 @@ def repair_prompt(
                                   if f"Scene continuity: {issue['message']}" in errors],
             "previous_repair_feedback": validation.repair_feedback.get(",".join(sections)),
         }
-        if sections == tuple(SECTIONS):
+        headings = list(re.finditer(r"(?m)^[ \t]*(" + "|".join(SECTIONS) + r")[ \t]*:[ \t]*(?:\r?\n|$)", prompt))
+        fully_parsed = ([match.group(1) for match in headings] == SECTIONS
+                        and not prompt[:headings[0].start()].strip())
+        if not fully_parsed:
             # Preserve malformed/unparsed content for structural repairs as well.
             payload["current_prompt"] = prompt
         if not continuity_context.fits(system, payload, schema):
+            details = continuity_context.budget_details(system, payload, schema)
             raise ValueError("H3 continuity repair exceeds the safe request budget. "
+                             f"scene_sequence={scene.sequence}, sections={','.join(sections)}; {details}. "
                              "Reduce the size of this cinematic sequence; no evidence was discarded.")
         label = ",".join(sections)
         with generation_requests.detail(repair_sections=list(sections)):

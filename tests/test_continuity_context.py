@@ -131,10 +131,36 @@ def test_repair_refuses_oversized_corrections_before_network(monkeypatch):
         pytest.fail("Oversized repair reached the model")
 
     monkeypatch.setattr(generate, "chat_json", unexpected)
-    with pytest.raises(ValueError, match="repair exceeds the safe request budget"):
+    with pytest.raises(ValueError, match="repair exceeds the safe request budget") as failure:
         generate.repair_prompt(None, "gemma", "prompt", scene(0, 1), {},
                                generate.Validation(False, ["Scene continuity: " + "correction " * 6000], 0), 8,
                                SimpleNamespace(temperature=0.1, max_tokens=8000), {})
+    message = str(failure.value)
+    for field in ("scene_sequence=", "sections=", "request_bytes=", "limit_bytes=48000",
+                  "system_bytes=", "payload_bytes=", "schema_bytes=", "largest_field_value_bytes="):
+        assert field in message
+    assert "correction correction" not in message
+
+
+def test_cited_snapshots_are_shared_losslessly_without_merging_issues():
+    value = {"observations": ["évidence " * 100, "distinct observation"], "present": True}
+    payload = {"continuity_issues": [
+        {"message": f"issue {index}", "evidence": [{"path": f"/old/{index}", "value": value}]}
+        for index in range(6)]}
+    payload["continuity_issues"].append({"message": "changed snapshot", "evidence": [
+        {"path": "/old/0", "value": {**value, "present": False}}]})
+    original = copy.deepcopy(payload)
+    packed_text = context.pack(payload)
+    packed = json.loads(packed_text)
+    assert payload == original
+    assert len(packed["shared_cited_values"]) == 1
+    for finding in packed["continuity_issues"]:
+        for citation in finding["evidence"]:
+            if "value_ref" in citation:
+                citation["value"] = packed["shared_cited_values"][citation.pop("value_ref")]
+    del packed["shared_cited_values"]
+    assert packed == original
+    assert len(packed_text.encode()) < len(json.dumps(original, ensure_ascii=False).encode())
 
 
 def test_repeated_source_prose_reduces_batches_without_merging_beats():
