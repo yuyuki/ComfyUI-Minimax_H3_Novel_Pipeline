@@ -1,8 +1,5 @@
 """Dependency-scoped H3 artifacts and explicit, ordered review coverage."""
-import ast
 from copy import deepcopy
-from functools import lru_cache
-from hashlib import sha256
 import json
 from pathlib import Path
 
@@ -11,40 +8,7 @@ from .lmstudio_pipeline import comfy_interrupt_check
 from .path_access import confined_path
 
 
-VERSION = 1
-
-
-@lru_cache(maxsize=32)
-def _declarations(source):
-    declarations = {}
-    for node in ast.parse(source).body:
-        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
-            names = [node.name]
-        elif isinstance(node, ast.Assign):
-            names = [target.id for target in node.targets if isinstance(target, ast.Name)]
-        else:
-            continue
-        dependencies = {child.id for child in ast.walk(node) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)}
-        for name in names:
-            declarations[name] = (ast.get_source_segment(source, node), dependencies)
-    return declarations
-
-
-def implementation(path, roots, extra_files=()):
-    """Include transitive local helpers/constants, excluding unrelated stages."""
-    declarations = _declarations(Path(path).read_text(encoding="utf-8"))
-    if any(root not in declarations for root in roots):
-        raise ValueError("H3 artifact implementation dependencies are incomplete.")
-    pending, included = list(roots), {}
-    while pending:
-        name = pending.pop()
-        if name in included or name not in declarations:
-            continue
-        source, dependencies = declarations[name]
-        included[name] = sha256(source.encode()).hexdigest()
-        pending.extend(dependencies - included.keys())
-    return {"declarations": included, "modules": {
-        Path(file).name: sha256(Path(file).read_bytes()).hexdigest() for file in (*extra_files, __file__)}}
+VERSION = 2
 
 
 def _stats(state, stage, outcome):

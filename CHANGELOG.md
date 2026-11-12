@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Replace H3 runtime source-file hashing and AST inspection with explicit
+  per-stage cache contracts. Preserve exact inputs, model settings, integrity,
+  validation and chapter-local resume; invalidate affected request/artifact caches
+  on contract changes. Add regression coverage, document version maintenance and
+  refresh the generated architecture map.
+
 - Reuse cinematic semantic approvals only for unchanged scenes and neighboring
   context, including across resumed runs. Keep semantic recovery local to rejected
   scenes, recheck affected neighbors, and retain learned smaller reading windows

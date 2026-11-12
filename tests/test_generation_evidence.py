@@ -67,8 +67,8 @@ def test_resume_carries_bundle_forward_without_recomputing_or_writing_old_run(in
     assert inputs["catalog_for"].call_count == inputs["context_for"].call_count == 1
 
 
-@pytest.mark.parametrize("change", ["phase", "source", "name", "asset", "design", "spatial", "implementation", "force"])
-def test_actual_upstream_changes_invalidate_even_with_unchanged_source_digest(inputs, change):
+@pytest.mark.parametrize("change", ["phase", "source", "name", "asset", "design", "spatial", "implementation", "force", "version"])
+def test_actual_upstream_changes_invalidate_even_with_unchanged_source_digest(inputs, change, monkeypatch):
     first, _ = evidence.prepare(**inputs)
     if change == "phase":
         inputs["sequences"][0]["adaptation"]["event"] = "Selected different event"
@@ -84,6 +84,8 @@ def test_actual_upstream_changes_invalidate_even_with_unchanged_source_digest(in
         inputs["spatial_plan"]["chapters"]["chapter"]["sequences"][0]["camera"] = "left"
     elif change == "implementation":
         inputs["dependencies"]["builder"] = "v2"
+    elif change == "version":
+        monkeypatch.setattr(evidence, "VERSION", evidence.VERSION + 1)
     else:
         inputs["force"] = True
     _, status = evidence.prepare(**inputs)

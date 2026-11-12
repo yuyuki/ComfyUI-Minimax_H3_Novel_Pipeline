@@ -13,7 +13,25 @@ from . import lmstudio_json, lmstudio_pipeline
 from .path_access import confined_path
 
 
-VERSION = 1
+VERSION = 2
+# Bump the affected contract when helpers, validation or transport behavior
+# changes cache semantics without changing the serialized inputs/prompts/schema.
+# These versions replace runtime inspection of the package's Python sources.
+CACHE_CONTRACTS = {
+    "transport": 1,  # Shared JSON transport and every model profile.
+    "evidence": 1,  # Catalog, timeline and character-context projection.
+    "metadata": 1,  # Cinematic scene metadata and binding construction.
+    "draft": 1,
+    "format": 1,
+    "camera": 1,
+    "continuity": 1,  # Packing, evidence validation, review and repair.
+    "final_prompt": 1,
+}
+_TASK_CONTRACTS = {
+    "scene_metadata": ("metadata",), "scene_metadata_repair": ("metadata", "continuity"),
+    "generation": ("draft",), "format_repair": ("format",), "camera": ("camera", "format"),
+    "continuity_review": ("continuity",), "continuity_repair": ("continuity",),
+}
 _SESSION = ContextVar("h3_generation_requests", default=None)
 _TASK = ContextVar("h3_generation_task", default="planning")
 _DETAIL = ContextVar("h3_generation_detail", default={})
@@ -21,6 +39,11 @@ _DETAIL = ContextVar("h3_generation_detail", default={})
 
 def digest(value):
     return sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def contracts(*names):
+    """Snapshot explicit cache versions; unknown names are programming errors."""
+    return {name: CACHE_CONTRACTS[name] for name in names}
 
 
 def atomic_json(path, value):
@@ -44,8 +67,7 @@ def backend_signature(client, model):
     return {"profile": profile.NAME, "settings": settings,
             "endpoint_digest": digest(str(getattr(client, "base_url", ""))),
             "transport": lmstudio_json.CHAT_BACKEND,
-            "transport_source": sha256(Path(lmstudio_json.__file__).read_bytes()).hexdigest(),
-            "profile_source": sha256(Path(profile.__file__).read_bytes()).hexdigest(),
+            "contracts": contracts("transport"),
             "compact_schema_version": lmstudio_json.COMPACT_SCHEMA_VERSION}
 
 
@@ -190,10 +212,11 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
     })
     stats["calls"] += 1
     label = f"{state['position']} / {stage} / request {stats['calls']}"
-    key = digest([VERSION, model, backend_signature(client, model),
+    task_contract = contracts(*_TASK_CONTRACTS.get(stage, ()))
+    key = digest([VERSION, task_contract, model, backend_signature(client, model),
                   system, user, schema, temperature, max_tokens])
     diagnostic_stage = f"request:{stage}"
-    cache_dependencies(diagnostic_stage, dict(version=VERSION, model=model,
+    cache_dependencies(diagnostic_stage, dict(version=VERSION, task_contract=task_contract, model=model,
                        backend=backend_signature(client, model), system=system, user=user,
                        schema=schema, temperature=temperature, max_tokens=max_tokens))
     relative = Path("requests") / f"{key}.json"

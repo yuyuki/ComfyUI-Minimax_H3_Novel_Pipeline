@@ -127,7 +127,7 @@ def test_carry_forward_immutable_checkpoints_and_revalidate_schema(setup, monkey
 
 
 @pytest.mark.parametrize("change", ["user", "system", "schema", "temperature", "max_tokens", "model",
-                                  "thinking", "endpoint", "force", "version"])
+                                  "thinking", "endpoint", "force", "version", "transport_contract"])
 def test_exact_request_dependencies_invalidate(setup, monkeypatch, change):
     client, args = setup
     network = Mock(return_value={"value": "draft"})
@@ -151,9 +151,35 @@ def test_exact_request_dependencies_invalidate(setup, monkeypatch, change):
         args.force = True
     elif change == "version":
         monkeypatch.setattr(requests, "VERSION", requests.VERSION + 1)
+    elif change == "transport_contract":
+        monkeypatch.setitem(requests.CACHE_CONTRACTS, "transport", requests.CACHE_CONTRACTS["transport"] + 1)
     with requests.chapter("chapter", args):
         call(client, **values)
     assert network.call_count == 2
+
+
+@pytest.mark.parametrize("stage,contract", [
+    ("continuity_review", "continuity"), ("scene_metadata_repair", "metadata"), ("camera", "format"),
+])
+def test_resume_recomputes_changed_task_contract_but_preserves_draft(setup, monkeypatch, tmp_path, stage, contract):
+    client, args = setup
+    network = Mock(return_value={"value": "draft"})
+    monkeypatch.setattr(lmstudio_json, "chat_json", network)
+    def run():
+        with requests.chapter("chapter", args):
+            for task_name in ("generation", stage):
+                with requests.task(task_name):
+                    assert call(client) == {"value": "draft"}
+    run()
+    assert network.call_count == 2
+    args.resume_cache_dir = args.out_dir / ".cache"
+    args.out_dir = tmp_path / "resumed/h3"
+    monkeypatch.setitem(requests.CACHE_CONTRACTS, contract, requests.CACHE_CONTRACTS[contract] + 1)
+    run()
+    assert network.call_count == 3
+    stats = json.loads((args.out_dir / ".cache/chapter/request_metrics.json").read_text())["tasks"]
+    assert stats["generation"]["cache_hits"] == 1
+    assert stats[stage]["cache_misses"] == 1 and stats[stage]["cache_hits"] == 0
 
 
 def test_review_override_retries_with_schema_and_preserves_generation_thinking(setup):

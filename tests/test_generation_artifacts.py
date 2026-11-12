@@ -106,19 +106,13 @@ def test_cache_diagnostic_events_are_bounded_but_counts_are_complete(scope):
     assert metrics["cache_reasons"]["draft"]["missing"] == 110
 
 
-def test_source_fingerprint_tracks_transitive_helpers_not_other_stages(tmp_path):
-    file = tmp_path / "sample.py"
-    file.write_text('VALUE = 1\ndef helper(): return VALUE\ndef draft(): return helper()\ndef camera(): return 1\n')
-    before = artifacts.implementation(file, ["draft"])
-    file.write_text(file.read_text().replace('def camera(): return 1', 'def camera(): return 2'))
-    assert artifacts.implementation(file, ["draft"]) == before
-    file.write_text(file.read_text().replace('VALUE = 1', 'VALUE = 2'))
-    assert artifacts.implementation(file, ["draft"]) != before
-
-
 @pytest.mark.parametrize("change,drafts,cameras", [
     ("review_thinking", 1, 1), ("camera_thinking", 1, 2),
     ("temperature", 2, 1), ("duration", 2, 2), ("force", 2, 2),
+    ("draft_contract", 2, 1), ("format_contract", 1, 2),
+    ("camera_contract", 1, 2), ("continuity_contract", 1, 1),
+    ("transport_contract", 2, 2),
+    ("evidence_contract", 1, 1), ("metadata_contract", 1, 1), ("final_prompt_contract", 1, 1),
 ])
 def test_settings_recompute_only_affected_stages(scope, monkeypatch, cinematic_registry, change, drafts, cameras):
     chapter = scope.out_dir.parent / "chapter.txt"
@@ -136,13 +130,28 @@ def test_settings_recompute_only_affected_stages(scope, monkeypatch, cinematic_r
     monkeypatch.setattr(step, "save_scene", lambda *a: {"subject_count": 1, "picture_count": 1, "audio_count": 0})
     network = Mock(return_value={"errors": []})
     monkeypatch.setattr(lmstudio_json, "chat_json", network)
+    # Cache identity must not depend on installed Python source availability.
+    from pathlib import Path
+    read_bytes, read_text = Path.read_bytes, Path.read_text
+    def guard(method):
+        def read(path, *args, **kwargs):
+            if path.suffix == ".py":
+                raise AssertionError("H3 caches must not inspect Python sources")
+            return method(path, *args, **kwargs)
+        return read
+    monkeypatch.setattr(Path, "read_bytes", guard(read_bytes))
+    monkeypatch.setattr(Path, "read_text", guard(read_text))
     step.process_chapter(chapter_input(refs), refs, None, "gemma", scope)
-    setattr(scope, change, {"temperature": .7, "duration": 12}.get(change, True))
+    if change.endswith("_contract"):
+        name = change.removesuffix("_contract")
+        monkeypatch.setitem(requests.CACHE_CONTRACTS, name, requests.CACHE_CONTRACTS[name] + 1)
+    else:
+        setattr(scope, change, {"temperature": .7, "duration": 12}.get(change, True))
     result = step.process_chapter(chapter_input(refs), refs, None, "gemma", scope)
     assert generation.call_count == drafts
     assert camera.call_count == cameras
     assert result["outputs"][0]["continuity_review"]["valid"]
-    if change == "review_thinking":
+    if change in {"review_thinking", "continuity_contract"}:
         assert network.call_count == 2
 
 

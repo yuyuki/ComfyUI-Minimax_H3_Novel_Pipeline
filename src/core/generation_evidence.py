@@ -1,15 +1,14 @@
 """Deterministic upstream evidence snapshots for H3; never calls a model."""
 from copy import deepcopy
-from hashlib import sha256
 import json
-from pathlib import Path
 
 from .generation_requests import atomic_json, cache_dependencies, cache_event, digest
 from .lmstudio_pipeline import comfy_interrupt_check
 from .path_access import confined_path
 
 
-VERSION = 1
+# Bump for evidence compiler changes; caller projection versions are dependencies.
+VERSION = 2
 
 
 def prepare(refs, chapter_id, sequences, spatial_plan, period, cache_dirs, *,
@@ -32,7 +31,6 @@ def prepare(refs, chapter_id, sequences, spatial_plan, period, cache_dirs, *,
             raise ValueError("H3 spatial evidence does not cover the selected chapter sequences exactly once.")
         if spatial_plan.get("source_digest", "") != refs.get("source_digest", ""):
             raise ValueError("H3 spatial evidence is stale; rerun Spatial Continuity.")
-    dependencies = {**dependencies, "evidence_compiler": sha256(Path(__file__).read_bytes()).hexdigest()}
     key = digest([VERSION, refs, chapter_id, sequences, spatial_plan, period, dependencies])
     cache_dependencies("evidence", dict(contract=VERSION, upstream=refs, sequences=sequences,
                                        spatial_plan=spatial_plan, period=period, implementation=dependencies))

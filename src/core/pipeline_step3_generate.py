@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from . import progress, continuity_context, generation_requests, generation_evidence
-from . import character_visual_integration, reference_timeline
 from . import continuity_issues
 from . import generation_artifacts
 
@@ -13,7 +12,6 @@ import re
 import shutil
 import sys
 from dataclasses import dataclass
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -136,8 +134,7 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
     batches = list(continuity_context.batches(system, base, groups, continuity_issues.review_schema))
     coverage = generation_artifacts.ReviewCoverage(
         [model, generation_requests.backend_signature(client, model), system, CONTINUITY_REVIEW_SCHEMA,
-         max_tokens, generation_artifacts.implementation(__file__, ["check_prompt_continuity"],
-                                                       [continuity_context.__file__, continuity_issues.__file__])],
+         max_tokens, generation_requests.contracts("continuity")],
         base, groups, batches)
     try:
         for index, batch in enumerate(batches, 1):
@@ -1548,21 +1545,16 @@ def repair_scene_inputs(client, model, scene, bindings, row, references, chapter
 
 
 def artifact_dependencies(stage, client, model, args, *inputs):
-    """Only controls consumed by this stage, plus its implementation closure."""
-    roots = {
-        "draft": ["generate_prompt"],
-        "format": ["format_prompt", "validate_prompt"],
-        "camera": ["refine_camera_prompt", "validate_prompt"],
-    }
+    """Only consumed controls, exact inputs and explicit behavior contracts."""
     defaults = {"duration": 8, "max_shots": 1, "camera_direction": "", "repair_attempts": 2,
                 "max_tokens": 8192, "temperature": .38}
     names = {"draft": ("duration", "max_shots", "camera_direction", "max_tokens", "temperature"),
              "format": tuple(defaults),
              "camera": ("duration", "max_shots", "camera_direction", "repair_attempts")}
+    contract_names = (stage, "format") if stage == "camera" else (stage,)
     return {"model": model, "backend": generation_requests.backend_signature(client, model),
             "settings": {name: getattr(args, name, defaults[name]) for name in names[stage]},
-            "inputs": inputs, "implementation": generation_artifacts.implementation(
-                __file__, roots[stage], [continuity_context.__file__])}
+            "inputs": inputs, "contracts": generation_requests.contracts(*contract_names)}
 
 
 def format_prompt(client, model, prompt, scene, bindings, args, continuity):
@@ -1585,9 +1577,9 @@ def format_prompt(client, model, prompt, scene, bindings, args, continuity):
 
 def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
     chapter_id, sequences = selected_timeline(refs, chapter)
-    # Covers reviewer/camera instructions and local validation, not just schemas.
-    implementation = [sha256(Path(module).read_bytes()).hexdigest() for module in
-                      (__file__, continuity_context.__file__, generation_requests.__file__, continuity_issues.__file__)]
+    # Final reuse includes every stage that can affect the accepted result.
+    implementation = generation_requests.contracts(
+        "evidence", "metadata", "draft", "format", "camera", "continuity", "final_prompt")
     catalog = chapter_catalog(refs, chapter_id)
     if not catalog:
         print(f"WARNING: no consolidated entity mapping for {chapter_id}.", file=sys.stderr)
@@ -1607,8 +1599,7 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
     bundle, evidence_status = generation_evidence.prepare(
         refs, chapter_id, sequences, spatial_plan, period, cache_dirs,
         catalog_for=sequence_catalog, context_for=sequence_context, force=args.force,
-        dependencies={str(Path(module).name): sha256(Path(module).read_bytes()).hexdigest()
-                      for module in (__file__, character_visual_integration.__file__, reference_timeline.__file__)},
+        dependencies=generation_requests.contracts("evidence"),
     )
     print(f"  upstream evidence: {evidence_status['status']}")
     evidence_rows = {row["sequence"]["sequence"]: row for row in bundle["sequences"]}
