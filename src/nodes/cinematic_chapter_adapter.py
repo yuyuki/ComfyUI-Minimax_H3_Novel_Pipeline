@@ -28,8 +28,12 @@ class CinematicChapterAdapterNode:
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
                                           "tooltip": "Retries for invalid fields, source coverage or semantic defects. "
-                                          "When nonzero, persistent semantic defects trigger one final passage rebuild. "
+                                          "When nonzero, persistent semantic defects trigger one final targeted repair round. "
                                           "Remaining doubts become editable proposals; the first is selected automatically."}),
+        }, "optional": {
+            "resume_run": ("STRING", {"default": "", "tooltip":
+                "Previous timestamped run folder, e.g. 20261112124902. Resume matching scenes and drafts "
+                "using the same out_dir, chapters, model and settings. Leave empty for a fresh run."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CINEMATIC_CHAPTERS", "STRING")
@@ -38,9 +42,14 @@ class CinematicChapterAdapterNode:
     CATEGORY = "MiniMax H3 Novel"
     OUTPUT_NODE = True
 
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="cinematic_chapters",
-            chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=2, thinking: bool = True, duration=8.0):
+            chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=2, thinking: bool = True, duration=8.0,
+            resume_run=""):
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         if not isinstance(lmstudio_config, dict):
@@ -54,6 +63,16 @@ class CinematicChapterAdapterNode:
             raise ValueError("No supported chapter files found.")
         lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(lmstudio_config, out_dir.strip())
+        if not isinstance(resume_run, str):
+            raise ValueError("resume_run must be a previous timestamped run folder name.")
+        resume_run = resume_run.strip()
+        resume_cache = None
+        if resume_run:
+            resume_cache = stage_output({"run_folder": resume_run}, out_dir.strip()) / ".cache"
+            if resume_cache == output / ".cache":
+                raise ValueError("resume_run must refer to a previous run, not the current run.")
+            if not resume_cache.is_dir():
+                raise ValueError("Previous run cache does not exist; use the same out_dir as that run.")
         pipeline = lmstudio_pipeline.load("extract")
         client, model = lmstudio_pipeline.make_client_and_model(pipeline, lmstudio_config["api_url"], lmstudio_config)
         settings = dict(duration=float(duration), chunk_chars=int(chunk_chars), temperature=float(temperature),
@@ -63,13 +82,54 @@ class CinematicChapterAdapterNode:
             snapshot = configuration_snapshot.start(
                 output, "cinematic_adapter", lmstudio_config, model, argparse.Namespace(**settings, thinking=bool(thinking)), out_dir=out_dir,
                 inputs={"chapters": [{"file": str(p), "sha256": configuration_snapshot.file_digest(p)} for p in paths]},
-                extra={"schema_version": "minimax-cinematic-chapters.v2"},
+                extra={"schema_version": "minimax-cinematic-chapters.v2", "resume_run": resume_run},
             )
+            if resume_cache is not None:
+                previous = util.load_json(resume_cache.parent / "cinematic_adapter_configuration.json")
+                def comparable(record):
+                    return {**{k: record[k] for k in ("lmstudio_config", "resolved_model", "model_controls", "inputs")},
+                            "node_settings": {k: v for k, v in record["node_settings"].items() if k != "resume_run"}}
+                if comparable(previous) != comparable(snapshot[1]):
+                    raise ValueError("resume_run does not match the chapters, model or settings; restore them or clear resume_run.")
             for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
+                cache_dir = output / ".cache" / f"{index + 1:03d}_{path.stem}"
+                persisted_scenes = 0
+                resume_state = None
+                if resume_cache is not None:
+                    previous_checkpoint = resume_cache / cache_dir.name / "progress.json"
+                    if previous_checkpoint.is_file():
+                        resume_state = util.load_json(previous_checkpoint)
+                        if (resume_state.get("schema_version") != "minimax-cinematic-checkpoint.v1"
+                                or resume_state.get("source_file") != str(path)
+                                or resume_state.get("model") != model
+                                or resume_state.get("settings") != {**settings, "thinking": bool(thinking)}):
+                            raise ValueError(f"Invalid or mismatched cinematic checkpoint for {path.name}.")
+
+                def checkpoint(state):
+                    nonlocal persisted_scenes
+                    # Replace atomically so interruption leaves the last complete
+                    # checkpoint readable. Drafts never masquerade as final output.
+                    data = {"schema_version": "minimax-cinematic-checkpoint.v1",
+                            "source_file": str(path), "model": model,
+                            "settings": {**settings, "thinking": bool(thinking)}, **state}
+                    pending = cache_dir / "progress.json.tmp"
+                    util.save_json(pending, data)
+                    pending.replace(cache_dir / "progress.json")
+                    for scene in state["sequences"][persisted_scenes:]:
+                        target = cache_dir / f"scene_{scene['sequence']:03d}.json"
+                        pending = target.with_suffix(".json.tmp")
+                        util.save_json(pending, scene)
+                        pending.replace(target)
+                        persisted_scenes += 1
+                    print(f"    Cinematic checkpoint: {state['stage']}; "
+                          f"saved_scenes={persisted_scenes}, pending_scenes={len(state['pending_sequences'])}.", flush=True)
+
                 with progress.scope(index / len(paths), (index + 1) / len(paths)):
                     chapter = cinematic_adaptation.adapt_chapter(
                         client, model, util.read_chapter(path), chapter_name=path.stem, **settings,
+                        on_checkpoint=checkpoint,
+                        resume_state=resume_state,
                     )
                     # Persist completed work before progress or cancellation can interrupt it.
                     # The index distinguishes identically named chapters from separate folders.

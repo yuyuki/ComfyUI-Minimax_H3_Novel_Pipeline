@@ -75,7 +75,7 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
 
 
 @pytest.mark.parametrize("attempts", [0, 1, 2])
-def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, attempts):
+def test_final_semantic_recovery_stays_local_and_is_reviewed(monkeypatch, attempts):
     source = "Indy se balance. Il lève les yeux."
     following = " Il attrape la torche."
     bad = {"initial_state": "Il reste immobile.", "events": ["Il lève les yeux."],
@@ -96,15 +96,13 @@ def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, a
         if "rejected_adaptation" in data:
             repairs.append(data)
             assert "Review\nmessages and generated states are fallible" in system
-            if "target_sequence" in data:
-                return {"sequences": [{"source": data["current_passage"], **bad}]}  # Targeted repair fails.
-            assert data["current_passage"] == source
+            assert data["target_sequence"] == 1
+            assert data["current_passage"] == "Indy se balance."
             assert data["previous_final_state"] == ""
-            assert data["defects_to_correct"] == {"1": ["Preserve the swinging motion."]}
-            assert len(data["rejected_adaptation"]) == 2
-            return {"sequences": [{"source": data["current_passage"], **good}]}
+            assert data["defects_to_correct"] == ["Preserve the swinging motion."]
+            return {"sequences": [{"source": data["current_passage"], **(good if len(repairs) > attempts else bad)}]}
         if data["current_passage"] == following:
-            assert data["previous_final_state"] == good["final_state"]
+            assert data["previous_final_state"] == bad["final_state"]
             return {"sequences": [{"source": following, **good}]}
         result = {"sequences": [{"source": "Indy se balance.", **bad},
                                 {"source": "Il lève les yeux.", **bad}]}
@@ -123,7 +121,8 @@ def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, a
     result = ca.adapt_chapter(None, "mock", source + following, **kwargs)
     assert len(repairs) == attempts + 1
     assert len(reviews) == attempts + 3  # Initial, targeted, rebuild, following passage.
-    assert len(reviews[-2]["sequences"]) == 1
+    assert len(reviews[-2]["sequences"]) == 2
+    assert result["sequences"][1]["adaptation"]["endingState"] == bad["final_state"]
     assert result["sequences"][0]["adaptation"]["initialState"] == good["initial_state"]
     assert "".join(s["source"] for s in result["sequences"]) == source + following
 

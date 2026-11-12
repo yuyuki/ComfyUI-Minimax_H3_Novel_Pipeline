@@ -150,7 +150,7 @@ def test_review_batches_preserve_coverage_target_indices_and_boundary_context(mo
         s["source"].strip() for s in sequences}
 
 
-def test_rebuilt_passage_review_length_failure_is_split_and_rechecked(monkeypatch):
+def test_local_repair_keeps_unchanged_approval_and_rechecks_rejected_scene(monkeypatch):
     source = "Il attend. Il part."
     fields = [scene("Il attend."), scene(" Il part.")]
     full_reviews = 0
@@ -160,19 +160,21 @@ def test_rebuilt_passage_review_length_failure_is_split_and_rechecked(monkeypatc
         nonlocal full_reviews
         data = json.loads(prompt)
         if schema != nv.SCHEMA:
-            return {"sequences": deepcopy(fields if isinstance(data.get("rejected_adaptation"), list)
-                                           or "rejected_adaptation" not in data else [scene(data["current_passage"])])}
+            if "rejected_adaptation" in data:
+                assert data["target_sequence"] == 1
+                return {"sequences": [scene(data["current_passage"])]}
+            return {"sequences": deepcopy(fields)}
         if len(data["sequences"]) == 2:
             full_reviews += 1
-            if full_reviews <= 2:
-                return {"issues": [{"target": 1, "message": "Vérifier la posture."}]}
-            raise ca.lmstudio_json.StructuredOutputLengthError("Thinking exhausted the output budget")
+            return {"issues": [{"target": 1, "message": "Vérifier la posture."}]}
         singleton_reviews.append(data)
         return {"issues": []}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     result = run(source, chunk_chars=4000, correction_attempts=1)
-    assert full_reviews == 3 and len(singleton_reviews) == 2
+    assert full_reviews == 1 and len(singleton_reviews) == 1
+    assert singleton_reviews[0]["sequences"][0]["source"] == "Il attend."
+    assert singleton_reviews[0]["next_sequence"]["source"] == " Il part."
     assert "".join(s["source"] for s in result["sequences"]) == source
     assert result["narrative_review"] == {"issues": []}
 

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
+import unicodedata
 from copy import deepcopy
 
 from . import lmstudio_json, lmstudio_pipeline, narrative_choices, narrative_validation, progress
@@ -110,6 +112,16 @@ Correct all source-supported defects while preserving valid details and dialogue
 class _SourceCoverageError(ValueError):
     """Valid adaptation fields whose copied source does not cover the passage."""
 
+    def __init__(self, message, *, expected=None, received=None, position=0):
+        super().__init__(message)
+        self.feedback = message
+        if expected is not None and received is not None:
+            self.feedback += (
+                f" Expected context: {json.dumps(expected[max(0, position - 24):position + 48], ensure_ascii=False)}."
+                f" Received context: {json.dumps(received[max(0, position - 24):position + 48], ensure_ascii=False)}."
+                " Copy the original source exactly; do not omit, repeat or rewrite text."
+            )
+
 
 class _WindowProgressError(ValueError):
     """The window cannot safely advance without more source context."""
@@ -117,6 +129,23 @@ class _WindowProgressError(ValueError):
 
 class _PassageValidationError(ValueError):
     """Invalid generated fields, distinct from client/configuration errors."""
+
+
+def _normalize_text(text: str) -> str:
+    """Canonical typography only; preserve paragraph structure and story content."""
+    return unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n").translate(
+        str.maketrans({"\u2018": "'", "\u2019": "'", "\u00a0": " ", "\u202f": " "})))
+
+
+def _normalized_output(value):
+    """Normalize generated text, including states, reviews and narrative proposals."""
+    if isinstance(value, str):
+        return _normalize_text(value)
+    if isinstance(value, list):
+        return [_normalized_output(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalized_output(item) for key, item in value.items()}
+    return value
 
 
 def source_chunks(text: str, max_chars: int) -> list[str]:
@@ -139,6 +168,8 @@ def source_chunks(text: str, max_chars: int) -> list[str]:
 
 
 def _validated_sequences(result: object, source: str) -> list[dict]:
+    source = _normalize_text(source)
+    result = _normalized_output(result)
     sequences = result.get("sequences") if isinstance(result, dict) else None
     if not isinstance(sequences, list) or not sequences:
         raise ValueError("sequences must be a nonempty array.")
@@ -159,20 +190,30 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
         while cursor < len(source) and source[cursor].isspace():
             cursor += 1
         if not source.startswith(excerpt, cursor):
+            difference = 0
+            while (difference < len(excerpt) and cursor + difference < len(source)
+                   and excerpt[difference] == source[cursor + difference]):
+                difference += 1
             raise _SourceCoverageError(
                 "Source excerpts must copy the complete passage verbatim and in order. "
-                f"Sequence {index} does not match at passage character {cursor + 1}."
+                f"Sequence {index} does not match at passage character {cursor + difference + 1} "
+                f"(sequence starts at {cursor + 1}).",
+                expected=source[cursor:], received=excerpt, position=difference,
             )
         cursor += len(excerpt)
         # Restore boundary whitespace from the actual source, never from the LLM.
         validated.append({**item, "source": source[start:cursor]})
     if source[cursor:].strip():
-        raise _SourceCoverageError("Source excerpts omitted the end of the passage.")
+        raise _SourceCoverageError("Source excerpts omitted the end of the passage. "
+                                   f"Missing source starts at passage character {cursor + 1}.",
+                                   expected=source[cursor:], received="")
     validated[-1]["source"] += source[cursor:]
     return validated
 
 
 def _validated_window(result: object, source: str) -> tuple[list[dict], int]:
+    source = _normalize_text(source)
+    result = _normalized_output(result)
     if not isinstance(result, dict) or set(result) != {"sequences", "unprocessed_source"}:
         raise ValueError("Reading windows require sequences and unprocessed_source.")
     tail = result["unprocessed_source"]
@@ -195,10 +236,48 @@ def _neighbor_context(sequences, index):
             (("previous", index - 1), ("next", index + 1)) if 0 <= position < len(sequences)}
 
 
+def _resume_sequences(state, text, chapter_name, duration):
+    """Validate saved coverage before trusting accepted scenes or pending drafts."""
+    try:
+        if (state["chapter_name"] != chapter_name or state["duration"] != duration
+                or state["source_chars"] != len(text)):
+            raise ValueError("Chapter identity or length changed.")
+        results = deepcopy(state["sequences"])
+        pending = deepcopy(state["pending_sequences"])
+        if not isinstance(results, list) or not isinstance(pending, list):
+            raise ValueError("Expected scene arrays.")
+        committed = "".join(item["source"] for item in results)
+        if not text.startswith(committed):
+            raise ValueError("Committed source no longer matches.")
+        if results:
+            if [s["sequence"] for s in results] != list(range(1, len(results) + 1)):
+                raise ValueError("Invalid scene numbering.")
+            _validated_sequences({"sequences": [
+                {"source": s["source"], "initial_state": s["adaptation"]["initialState"],
+                 "events": [s["adaptation"]["event"]], "final_state": s["adaptation"]["endingState"]}
+                for s in results]}, committed)
+        cursor = len(committed)
+        if pending:
+            source = "".join(s["source"] for s in pending)
+            if not text[cursor:].startswith(source):
+                raise ValueError("Pending source no longer matches.")
+            _validated_sequences({"sequences": [{k: v for k, v in s.items() if k != "chosen_event"}
+                                                for s in pending]}, source)
+            if any("chosen_event" in s and s["events"] != [s["chosen_event"]] for s in pending):
+                raise ValueError("Chosen event does not match validated events.")
+        issues = deepcopy(state["narrative_review"]["issues"])
+        if not isinstance(issues, list) or any(not 1 <= i["sequence"] <= len(results) + len(pending) for i in issues):
+            raise ValueError("Invalid narrative issue target.")
+        return results, pending, issues, cursor
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise ValueError(f"Invalid cinematic resume checkpoint: {exc}") from exc
+
+
 def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                   temperature: float, max_tokens: int, correction_attempts: int,
-                  chapter_name: str = "", duration: float = 8.0) -> dict:
+                  chapter_name: str = "", duration: float = 8.0, on_checkpoint=None, resume_state=None) -> dict:
     """Return a chapter object with its identity and ordered sequence states."""
+    text = _normalize_text(text)
     if not text.strip():
         raise ValueError("Cannot adapt an empty chapter.")
     if type(duration) not in (int, float) or not 4 <= duration <= 15:
@@ -213,10 +292,34 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         system += duration_rules
         print(f"    Cinematic request: stage={schema['name']}, prompt_chars={len(system) + len(user)}, "
               f"schema_chars={len(json.dumps(schema, ensure_ascii=False))}.", flush=True)
-        return lmstudio_json.chat_json(client, model, system, user, schema, temperature, max_tokens)
+        return _normalized_output(lmstudio_json.chat_json(client, model, system, user, schema, temperature, max_tokens))
     narrative_issues = []
+    approved_reviews = set()
+
+    def checkpoint(stage, sequences, *, issues=None):
+        # Drafts are inspectable before semantic review; only committed scenes
+        # belong to the public chapter. The callback must persist synchronously.
+        if on_checkpoint is not None:
+            on_checkpoint({
+                "stage": stage, "chapter_name": chapter_name, "duration": float(duration),
+                "source_cursor": cursor, "source_chars": len(text),
+                "sequences": results, "pending_sequences": sequences,
+                "review_issues": issues,
+                "approved_reviews": sorted(approved_reviews), "window_chars": window_chars,
+                "narrative_review": {"issues": narrative_issues},
+            })
 
     def review_sequences(sequences, previous_state):
+        # Reuse only positive results with identical source, states and both
+        # immediate neighbors. A split/replacement invalidates adjacent scenes
+        # automatically, without invalidating unrelated accepted scenes.
+        keys = []
+        for index, item in enumerate(sequences):
+            context = [model, duration_rules, narrative_validation.SYSTEM, narrative_validation.SCHEMA,
+                       max_tokens, item, _neighbor_context(sequences, index),
+                       sequences[index - 1]["final_state"] if index else previous_state]
+            keys.append(hashlib.sha256(json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest())
+
         def batch(start, end):
             lmstudio_pipeline.comfy_interrupt_check()
             payload = {"stage": "adaptation",
@@ -233,6 +336,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 if oversized and end - start > 1:
                     raise lmstudio_json.StructuredOutputLengthError("Review input requires smaller batches.")
                 issues = narrative_validation.review(request, client, model, payload, end - start, max_tokens)
+                approved_reviews.update(keys[i] for i in range(start, end) if i - start + 1 not in issues)
+                checkpoint("reviewing", sequences)
                 return {target + start: messages for target, messages in issues.items()}
             except lmstudio_json.StructuredOutputLengthError as exc:
                 if end - start == 1:
@@ -244,17 +349,35 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 print(f"    Cinematic review: splitting sequences {start + 1}-{end} into smaller batches.", flush=True)
                 return {**batch(start, middle), **batch(middle, end)}
 
-        return batch(0, len(sequences))
+        issues = {}
+        index = 0
+        reused = sum(key in approved_reviews for key in keys)
+        if reused:
+            print(f"    Cinematic review: reusing {reused}/{len(sequences)} unchanged validations.", flush=True)
+        while index < len(sequences):
+            if keys[index] in approved_reviews:
+                index += 1
+                continue
+            end = index + 1
+            while end < len(sequences) and keys[end] not in approved_reviews:
+                end += 1
+            issues.update(batch(index, end))
+            index = end
+        return issues
 
-    def review_passage(sequences, previous_state, chunk):
-        for attempt in range(correction_attempts + 1):
+    def review_passage(sequences, previous_state):
+        # Preserve the final recovery opportunity, but apply it only to rejected
+        # source spans. Accepted scenes are never regenerated as collateral work.
+        repair_rounds = correction_attempts + int(correction_attempts > 0)
+        for attempt in range(repair_rounds + 1):
             issues = review_sequences(sequences, previous_state)
+            checkpoint("reviewed", sequences, issues=issues)
             if not issues:
                 return sequences
-            if attempt == correction_attempts:
+            if attempt == repair_rounds:
                 break
             print(f"    Cinematic adaptation: semantic correction {attempt + 1}/"
-                  f"{correction_attempts} ({len(issues)} sequences).", flush=True)
+                  f"{repair_rounds} ({len(issues)} sequences).", flush=True)
             offset = 0
             for target, messages in sorted(issues.items()):
                 index = target - 1 + offset
@@ -266,21 +389,15 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                     "previous_final_state": sequences[index - 1]["final_state"] if index else previous_state,
                     "rejected_adaptation": _description(item), "defects_to_correct": messages,
                 }, ensure_ascii=False)
-                replacement = rebuild_passage(prompt, item["source"], repair=True)
+                try:
+                    replacement = rebuild_passage(prompt, item["source"], repair=True)
+                except (_SourceCoverageError, _PassageValidationError, lmstudio_json.StructuredOutputLengthError):
+                    # A failed repair must never replace source-validated work.
+                    print(f"    Cinematic adaptation: retaining sequence {index + 1} after failed repair.", flush=True)
+                    continue
                 sequences[index:index + 1] = replacement
                 offset += len(replacement) - 1
-        if correction_attempts:
-            # One bounded reconstruction removes inconsistent generated boundaries
-            # and states. Never recurse into semantic recovery or accept it unchecked.
-            print("    Cinematic adaptation: rebuilding passage from source after semantic corrections.", flush=True)
-            prompt = json.dumps({
-                "current_passage": chunk, "previous_final_state": previous_state,
-                "rejected_adaptation": [_description(item) for item in sequences], "defects_to_correct": issues,
-            }, ensure_ascii=False)
-            sequences = rebuild_passage(prompt, chunk, repair=True)
-            issues = review_sequences(sequences, previous_state)
-            if not issues:
-                return sequences
+                checkpoint("corrected_pending_review", sequences)
         for target, messages in sorted(issues.items()):
             lmstudio_pipeline.comfy_interrupt_check()
             item = sequences[target - 1]
@@ -292,6 +409,9 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                  "defects_to_resolve": messages}, max_tokens,
             )
             sequence_id = len(results) + target
+            # A resumed pending scene may already have proposals. Replace their
+            # record if a new review requires another choice, rather than duplicate it.
+            narrative_issues[:] = [issue for issue in narrative_issues if issue["sequence"] != sequence_id]
             narrative_issues.append({
                 "id": f"scene_{sequence_id:03d}_issue_01", "sequence": sequence_id,
                 "description": "\n".join(messages), "source_excerpt": item["source"],
@@ -302,6 +422,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                         final_state=chosen["endingState"])
             # Keep the public event text intact rather than numbering it twice.
             item["chosen_event"] = chosen["event"]
+            checkpoint("proposal_selected", sequences, issues=issues)
         return sequences
 
     def rebuild_passage(prompt: str, chunk: str, *, repair: bool = False, partial: bool = False) -> list[dict]:
@@ -317,8 +438,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 return _validated_sequences(result, chunk)
             except ValueError as exc:
                 if attempt == correction_attempts:
-                    raise
-                correction = f"\nPrevious response rejected: {exc} Regenerate using the same source window and schema."
+                    if isinstance(exc, (_SourceCoverageError, _WindowProgressError)):
+                        raise
+                    raise _PassageValidationError(str(exc)) from exc
+                feedback = getattr(exc, "feedback", str(exc))
+                correction = f"\nPrevious response rejected: {feedback} Regenerate using the same source window and schema."
         raise AssertionError("Unreachable")
 
     def adapt_passage(chunk: str, previous_state: str, *, partial: bool) -> tuple[list[dict], int]:
@@ -336,6 +460,10 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 sequences = _validated_sequences(result, chunk)
                 return sequences, len(chunk)
             except ValueError as exc:
+                if isinstance(exc, _SourceCoverageError) and attempt >= 1 and len(chunk) > _MIN_RECOVERY_CHARS:
+                    # Two failed copies of a large window are evidence that its
+                    # size is unsuitable; do not spend every retry on that size.
+                    raise _PassageValidationError(str(exc)) from exc
                 if attempt == correction_attempts:
                     if len(chunk) <= _MIN_RECOVERY_CHARS:
                         if isinstance(exc, _SourceCoverageError):
@@ -350,34 +478,63 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                     if isinstance(exc, _WindowProgressError):
                         raise
                     raise _PassageValidationError(str(exc)) from exc
-                correction = f"\nPrevious response rejected: {exc} Regenerate using the same source window and schema."
+                feedback = getattr(exc, "feedback", str(exc))
+                correction = f"\nPrevious response rejected: {feedback} Regenerate using the same source window and schema."
         raise AssertionError("Unreachable")
 
     results = []
     previous_state = ""
     cursor = 0
     window_chars = chunk_chars
+    resume_pending = []
+    resume_reviewed = False
+    if resume_state is not None:
+        results, resume_pending, narrative_issues, cursor = _resume_sequences(resume_state, text, chapter_name, duration)
+        saved_approvals = resume_state.get("approved_reviews", [])
+        saved_window = resume_state.get("window_chars", chunk_chars)
+        if (not isinstance(saved_approvals, list) or any(not isinstance(k, str) for k in saved_approvals)
+                or type(saved_window) is not int or not 1 <= saved_window <= chunk_chars):
+            raise ValueError("Invalid cinematic resume review cache or window size.")
+        approved_reviews.update(saved_approvals)
+        window_chars = saved_window
+        resume_reviewed = (resume_state["stage"] == "scene_committed"
+                           or resume_state["stage"] == "reviewed" and resume_state.get("review_issues") == {})
+        previous_state = results[-1]["adaptation"]["endingState"] if results else ""
+        checkpoint("resumed", resume_pending)
+        progress.report(cursor / len(text))
+        print(f"    Cinematic resume: committed={cursor}/{len(text)}, scenes={len(results)}, "
+              f"pending_scenes={len(resume_pending)}.", flush=True)
     while cursor < len(text):
-        chunk = source_chunks(text[cursor:], window_chars)[0]
+        chunk = ("".join(s["source"] for s in resume_pending) if resume_pending
+                 else source_chunks(text[cursor:], window_chars)[0])
+        reuse_review = False
         print(f"    Cinematic reading: source {cursor + 1}-{cursor + len(chunk)}/{len(text)} chars; "
               f"committed={cursor}, window={len(chunk)}.", flush=True)
         try:
             with progress.scope(cursor / len(text), (cursor + len(chunk)) / len(text)):
                 with progress.scope(0, 0.5):
                     try:
-                        sequences, consumed = adapt_passage(chunk, previous_state,
-                                                            partial=cursor + len(chunk) < len(text))
+                        if resume_pending:
+                            sequences, consumed = resume_pending, len(chunk)
+                            reuse_review = resume_reviewed
+                            resume_pending = []
+                        else:
+                            sequences, consumed = adapt_passage(chunk, previous_state,
+                                                                partial=cursor + len(chunk) < len(text))
                     except (_PassageValidationError, lmstudio_json.StructuredOutputLengthError):
                         if len(chunk) <= _MIN_RECOVERY_CHARS:
                             raise
                         window_chars = max(_MIN_RECOVERY_CHARS, len(chunk) // 2)
                         print(f"    Cinematic adaptation: retrying unread source with window={window_chars} chars.", flush=True)
+                        checkpoint("window_reduced", [])
                         continue
+                    checkpoint("source_validated_pending_review", sequences)
                 with progress.scope(0.5, 1):
-                    sequences = review_passage(sequences, previous_state, chunk[:consumed])
+                    if not reuse_review:
+                        sequences = review_passage(sequences, previous_state)
         except ValueError as exc:
             raise ValueError(f"Cinematic adaptation at source character {cursor + 1}/{len(text)}: {exc}") from exc
-        for item in sequences:
+        for scene_index, item in enumerate(sequences):
             events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
             adaptation = {
                 "initialState": item["initial_state"],
@@ -386,9 +543,10 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             }
             results.append({"sequence": len(results) + 1,
                             "source": item["source"], "adaptation": adaptation})
+            checkpoint("scene_committed", sequences[scene_index + 1:])
         previous_state = sequences[-1]["final_state"]
         cursor += consumed
-        window_chars = chunk_chars
+        checkpoint("passage_committed", [])
         print(f"    Cinematic reading: committed={cursor}/{len(text)}, "
               f"deferred={len(chunk) - consumed}, scenes={len(results)}.", flush=True)
     return {"chapter_name": chapter_name, "duration": float(duration), "sequences": results,

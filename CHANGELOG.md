@@ -8,6 +8,24 @@ by later entries.
 
 ## Unreleased
 
+- Reuse cinematic semantic approvals only for unchanged scenes and neighboring
+  context, including across resumed runs. Keep semantic recovery local to rejected
+  scenes, recheck affected neighbors, and retain learned smaller reading windows
+  after copy/output failures. Add request-count and resume regression coverage.
+
+- Add cinematic adapter `resume_run` to restore matching accepted scenes and
+  pending drafts from a previous timestamped run into the current run, validating
+  source coverage, input hashes, model controls and settings before reuse.
+
+- Persist cinematic drafts, review results and corrections atomically under each
+  chapter's node-local cache; save accepted scenes individually before the chapter
+  finishes. Cover cancellation and later-window failures without reducing review.
+
+- Normalize cinematic source and generated text typography (NFC, apostrophes,
+  nonbreaking spaces and line endings). Preserve source-validated sequences when
+  semantic repairs fail, resolve remaining issues through narrative proposals,
+  and provide precise mismatch positions and bounded retry context. Add regression tests.
+
 - Adapt cinematic chapters with a source cursor and deferred incomplete scenes;
   reduce duplicated repair context, split oversized or output-limited reviews,
   recover output-limited adaptation windows and log source progress/request sizes.

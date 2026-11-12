@@ -192,7 +192,7 @@ def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monk
     assert all(set(item) == {"sequence", "source", "adaptation"} for item in result["sequences"])
     assert result["sequences"][1]["adaptation"] == {
         "initialState": "Il reste debout.",
-        "event": "1. Il inspire.\n2. Il crie : « À l’aide ! »",
+        "event": "1. Il inspire.\n2. Il crie : « À l'aide ! »",
         "endingState": "Il a crié.",
     }
     assert requests[0]["previous_final_state"] == ""
