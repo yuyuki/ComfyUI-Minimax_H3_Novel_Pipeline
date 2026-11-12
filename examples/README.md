@@ -64,14 +64,15 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    and reloads changed file contents on the next execution without LM Studio.
    Keep chapter/sequence IDs and `source_digest` intact; edit positions, camera,
    states and evidence. A folder path looks for `spatial_continuity.json`.
-   Set `duration` in Generate H3 Prompts to the length of each scene. Set
+   Set `duration` in Cinematic Chapter Adapter to the length of each scene. Set
    `max_shots` to your desired limit (1 by default; a shot needs at least 2.5s).
    Optionally describe the camera axis and movement in `camera_direction`.
    Enable `refine_camera` for a final LM Studio camera-only pass after prompt
    validation. Check `camera_warnings` if the extra description is rejected.
    `repair_attempts` also limits camera-only correction retries after a rejection.
 3. Choose the chapters once in Select Chapters, then connect its
-   `chapter_selection` output to Cinematic Chapter Adapter and Generate. Connect the
+   `chapter_selection` output to Cinematic Chapter Adapter. Connect the adapter's
+   `cinematic_chapters` output to Generate's `cinematic_chapter` input. Connect the
    adapter’s `cinematic_chapters` output to Extract. Share configuration with the adapter. Connect Extract's
    `chapter_catalogs` to Consolidate, then
    Consolidate's `consolidated_references` to Generate. Each of these four processing
@@ -185,15 +186,15 @@ Consolidation audits registries above `audit_max_entities` using likely-duplicat
 
 Only current v4 chapter catalogs and registries are accepted; consolidation requires cinematic phase timelines. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
 
-Generate gives each scene one continuous shot lasting the full `duration`.
-Increase `scenes_per_chunk` (and `max_scenes` if capped) to allow more separate
-moments. Rerun Generate to replace earlier compressed scene plans and prompts.
+The adapter uses `duration` to split the chapter into naturally paced scenes.
+Generate preserves exactly one scene per supplied sequence. Generate reads duration
+from each chapter; `max_scenes=0` generates the complete chapter.
 
 ## Cinematic preprocessing
 
 Use **Cinematic Chapter Adapter** or **Load Cinematic Chapters** for the
-cinematic extraction workflow. Generate uses selected source chapters and the
-current consolidated registry, with optional spatial continuity.
+cinematic extraction workflow. Generate uses those cinematic chapters and the
+matching consolidated registry, with optional spatial continuity.
 Recreate older configuration nodes and use relative `out_dir` subfolders;
 old widget layouts, narrative bundles and absolute output paths are unsupported.
 
@@ -262,16 +263,15 @@ of narrative fidelity. Regenerate adaptations and catalogs from previous runs.
 Original-source Generate inputs remain unchanged; this change provides temporal
 reference metadata, not a replacement for Generate's narrative continuity input.
 
-### Generation from consolidated cinematic timelines
+### Generation from cinematic chapters
 
-Generate H3 Prompts uses the registry's `chapter_timelines`, preserving sequence
-order and `initialState` / `event` / `endingState` observations. Connect the same
-Select Chapters output used by Cinematic Chapter Adapter; selected paths must
-match the registry's source-file provenance. Chapter IDs come from the registry.
-Missing or ambiguous matches require reconsolidating the intended chapters.
-Generation does not reread or rechunk the raw prose. `scenes_per_chunk` limits
-scenes per cinematic sequence; `max_scenes` limits scenes per chapter. Text chunk
-size and paragraph-overlap controls have been removed from Generate.
+Connect Cinematic Chapter Adapter or Load Cinematic Chapters to Generate's
+`cinematic_chapter` input. The connected sequences must match the consolidated
+registry's source provenance, IDs and adaptation phases. Generate preserves one
+scene per sequence, without replanning or deduplication. Generate reads the adapter's
+`duration` (4–15 seconds) from each chapter. Missing duration requires rerunning
+the adapter; changed scenes require regenerating downstream references and plans.
+`max_scenes` limits outputs while retaining all later scenes as continuity evidence.
 
 Each saved scene records its sequence ID. Reference state is scoped to that exact
 sequence and phase, with no automatic carry-forward. Stable visual designs and
@@ -428,3 +428,7 @@ Nodes without caching do not create this directory. Character evidence `resume_r
 uses the same `out_dir` in the selected previous run, including custom output paths.
 Only this cache layout is read; existing caches at older locations are not moved
 or reused automatically.
+
+## H3 cinematic input (2.6.0)
+
+Connect the same Cinematic Chapter Adapter or Load Cinematic Chapters output to Extract Chapter References and Generate H3 Prompts.cinematic_chapter. Set duration in Adapter before adaptation; Generate reads it automatically. One cinematic sequence becomes one H3 scene; Generate does not replan it. Recreate the two nodes when updating existing workflows. Regenerate saved chapters without duration and rebuild references if the adaptation changes.

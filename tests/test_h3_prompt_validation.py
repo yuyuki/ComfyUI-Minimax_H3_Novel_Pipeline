@@ -267,59 +267,8 @@ def test_even_well_spaced_cuts_require_single_shot_repair():
     assert any("exactly one continuous" in error for error in result.errors)
 
 
-def test_planning_keeps_successive_beats_with_shared_context(monkeypatch):
-    excerpt = 'She lights the wood in the hearth. She says, "Stay here."'
-    events = ["She lights the wood in the hearth.", "She speaks with a worried expression."]
-    raw = [dict(title=f"Moment {i}", source_excerpt=excerpt, visual_event=event,
-                location_global_id="", visible_entity_ids=[], speaking_entity_ids=[],
-                reference_view_requests=[], dialogue_present=bool(i),
-                adaptation_notes="Flames remain attached to the wood in the hearth.")
-           for i, event in enumerate(events)]
-
-    def chat_json(client, model, system, user, *args):
-        assert "Split successive actions" in system
-        assert "never pack leftover beats" in system
-        assert "Full duration for EACH single-shot scene: 8 seconds" in user
-        return {"scenes": raw}
-
-    monkeypatch.setattr(step, "chat_json", chat_json)
-    scenes = step.plan_scenes(None, "model", "chapter", excerpt, 1, 1, [],
-                             SimpleNamespace(duration=8, scenes_per_chunk=4))
-    assert [scene.visual_event for scene in step.dedupe_scenes(scenes + scenes)] == events
-    assert all(scene.source_excerpt == excerpt for scene in scenes)
 
 
-def test_offscreen_reply_survives_planning_and_reaches_generation(monkeypatch):
-    excerpt = "— Doriane ! hurla-t-il. Envoyez une autre torche !\n— Jones ! cria Doriane."
-    catalog = [{"global_id": gid} for gid in ("CHAR_001", "CHAR_002")]
-    turns = [("CHAR_001", "Indy calls from below.", "Indy: Doriane ! Envoyez une autre torche !"),
-             ("CHAR_002", "Indy hears Doriane's reply from above.", "Off-screen Doriane: Jones !")]
-    raw = [dict(title=event, source_excerpt=excerpt, visual_event=event,
-                location_global_id="", visible_entity_ids=["CHAR_001"],
-                speaking_entity_ids=[gid], reference_view_requests=[],
-                dialogue_present=True, adaptation_notes=notes)
-           for gid, event, notes in turns]
-    requests = []
-
-    def chat(client, model, system, user, schema, *unused):
-        requests.append(user)
-        if schema["name"] == step.SCENE_SCHEMA["name"]:
-            assert excerpt in user
-            assert "retain its short replies and calls" in system
-            assert "reference metadata, not a timeline" in system
-            return {"scenes": raw}
-        assert "Include every dialogue turn selected" in user
-        assert "Off-screen Doriane: Jones !" in user
-        return {"prompt_text": prompt_with_shots('[Shot 1] Indy listens. Off-screen Doriane calls <d>[French] Jones !</d>.')}
-
-    monkeypatch.setattr(step, "chat_json", chat)
-    args = SimpleNamespace(duration=8, scenes_per_chunk=4, temperature=0.12, max_tokens=8000)
-    scenes = step.dedupe_scenes(step.plan_scenes(None, "model", "chapter", excerpt, 1, 1, catalog, args))
-    assert [scene.speaking_entity_ids for scene in scenes] == [["CHAR_001"], ["CHAR_002"]]
-    assert scenes[1].visible_entity_ids == ["CHAR_001"]
-    prompt = step.generate_prompt(None, "model", scenes[1], BINDINGS, 8, args)
-    assert "<d>[French] Jones !</d>" in prompt
-    assert len(requests) == 2
 
 
 def test_extraction_requests_attributed_speech_from_original_prose(monkeypatch):

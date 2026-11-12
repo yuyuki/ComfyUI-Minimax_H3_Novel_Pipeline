@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Generate reads duration from each cinematic chapter; remove its duplicate widget and record per-chapter duration in execution snapshots.
+
+- 2.6.0: Direct cinematic input for H3, duration-aware adaptation, strict evidence citations, early metadata validation and updated workflow/tests.
+
 - Normalize missing whitespace after H3 dialogue language tags before validation,
   preserving spoken text and avoiding unnecessary model repairs. Clarify dialogue
   validation errors and add regression coverage.

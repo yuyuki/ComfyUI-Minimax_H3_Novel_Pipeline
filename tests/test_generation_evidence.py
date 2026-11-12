@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Upstream evidence compilation is lossless, deterministic and resumable."""
 from copy import deepcopy
 import json
@@ -148,18 +149,17 @@ def test_chapter_reuses_compiled_context_for_all_scenes_and_resume(tmp_path, mon
     catalog, context = Mock(return_value=[]), Mock(return_value=None)
     monkeypatch.setattr(step, "sequence_catalog", catalog)
     monkeypatch.setattr(step, "sequence_context", context)
-    monkeypatch.setattr(step, "plan_scenes", lambda *a: [
-        step.Scene(str(i), f"source {i}", f"beat {i}", "", [], [], [], False, "") for i in range(3)])
+    monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [{"global_id": "hero"}], "audio": []})
     monkeypatch.setattr(step, "generate_prompt", lambda *a: "draft")
     monkeypatch.setattr(step, "validate_prompt", lambda *a: step.Validation(True, [], 400))
     monkeypatch.setattr(step, "save_scene", lambda *a: {"subject_count": 1, "picture_count": 1, "audio_count": 0})
-    first = step.process_chapter(chapter, refs, None, "gemma", args)
+    first = step.process_chapter(chapter_input(refs), refs, None, "gemma", args)
     assert first["evidence_bundle"]["status"] == "compiled"
     args.resume_cache_dir = args.out_dir / ".cache"
     args.out_dir = tmp_path / "second/h3"
-    second = step.process_chapter(chapter, refs, None, "gemma", args)
-    assert len(second["outputs"]) == 3
+    second = step.process_chapter(chapter_input(refs), refs, None, "gemma", args)
+    assert len(second["outputs"]) == len(refs["chapter_timelines"]["chapter"]["sequences"])
     assert second["evidence_bundle"]["status"] == "cached"
     assert first["evidence_bundle"]["digest"] == second["evidence_bundle"]["digest"]
     assert catalog.call_count == context.call_count == 1

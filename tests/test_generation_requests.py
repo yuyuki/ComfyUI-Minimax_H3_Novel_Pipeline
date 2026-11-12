@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Checkpoint recovery must preserve exact requests and never skip evidence."""
 from copy import deepcopy
 import json
@@ -238,11 +239,14 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
                          spatial_plan={"chapters": {"chapter": {"sequences": [{"sequence": 1}]}}})
     path = args.out_dir.parent / "chapter.txt"
     refs = cinematic_registry(path)
-    scenes = [step.Scene(str(i), "evidence " * (300 + i), f"event {i}", "", [], [], [], False, "") for i in range(4)]
+    refs["chapter_timelines"]["chapter"]["sequences"] = [
+        {"sequence": i, "source": "evidence " * (300 + i), "adaptation": {
+            "initialState": "Before", "event": f"event {i}", "endingState": "After"}} for i in range(1, 5)]
+    args.spatial_plan["chapters"]["chapter"]["sequences"] = [{"sequence": i} for i in range(1, 5)]
     # Allow the complete review instructions plus one evidence record, while
     # still forcing multiple batches for the resume/interruption assertions.
-    monkeypatch.setattr(continuity_context, "REQUEST_BYTES", 12000)
-    monkeypatch.setattr(step, "plan_scenes", lambda *a: deepcopy(scenes))
+    monkeypatch.setattr(continuity_context, "REQUEST_BYTES", 18000)
+    monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [{"global_id": "hero"}], "audio": []})
     monkeypatch.setattr(step, "generate_prompt", lambda c, m, *a: step.chat_json(c, m, "generate", "input", step.PROMPT_SCHEMA, .1, 8192)["prompt_text"])
     def camera(c, m, prompt, *a):
@@ -269,12 +273,12 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
         return {"errors": []}
     monkeypatch.setattr(lmstudio_json, "chat_json", network)
     with pytest.raises(lmstudio_json.StructuredOutputLengthError):
-        step.process_chapter(path, refs, client, "gemma", args)
+        step.process_chapter(chapter_input(refs), refs, client, "gemma", args)
     assert len(reviews) == 2
     assert not (args.out_dir / ".cache/chapter/prompt_001.json").exists()
     args.resume_cache_dir = args.out_dir / ".cache"
     args.out_dir = args.out_dir.parent.parent / "second" / "h3"
-    result = step.process_chapter(path, refs, client, "gemma", args)
+    result = step.process_chapter(chapter_input(refs), refs, client, "gemma", args)
     assert len(result["outputs"]) == 4
     assert seen.count(step.PROMPT_SCHEMA["name"]) == 1
     assert seen.count(step.CAMERA_SCHEMA["name"]) == 1
@@ -282,15 +286,11 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
     assert reviews[1] == reviews[2]
     assert reviews.count(reviews[0]) == 1
     before = len(seen)
-    step.process_chapter(path, refs, client, "gemma", args)
+    step.process_chapter(chapter_input(refs), refs, client, "gemma", args)
     assert len(seen) == before  # Complete cached prompts still validate without LLM calls.
     # Changing future evidence invalidates the final prompt and affected review requests.
-    plan_path = args.out_dir / ".cache/chapter/plan_001.json"
-    plan_record = json.loads(plan_path.read_text())
-    plan_record["scenes"][-1]["source_excerpt"] = "Changed future evidence."
-    plan_record["scenes_digest"] = requests.digest(plan_record["scenes"])
-    plan_path.write_text(json.dumps(plan_record))
-    step.process_chapter(path, refs, client, "gemma", args)
+    refs["chapter_timelines"]["chapter"]["sequences"][-1]["source"] = "Changed future evidence."
+    step.process_chapter(chapter_input(refs), refs, client, "gemma", args)
     assert len(seen) > before
     assert any(item["source_excerpt"] == "Changed future evidence."
                for review in reviews for item in review["future_requirements"])

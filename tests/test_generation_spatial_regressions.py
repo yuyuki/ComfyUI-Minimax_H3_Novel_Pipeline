@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Regressions for future spatial states leaking into H3 generation."""
 from copy import deepcopy
 import json
@@ -23,29 +24,6 @@ def test_spatial_future_facts_rejected_but_inferred_geometry_allowed():
     spatial._verify(answer, 4)
 
 
-@pytest.mark.parametrize('fixed', [True, False])
-def test_planner_retries_future_entity_instead_of_silently_dropping_id(monkeypatch, fixed):
-    raw = dict(title='Tablet revealed', source_excerpt='A character waits.',
-               visual_event='Tablet revealed', location_global_id='', visible_entity_ids=['tablet'],
-               speaking_entity_ids=[], reference_view_requests=[], dialogue_present=False,
-               adaptation_notes='')
-    calls = []
-
-    def chat(client, model, system, user, *args):
-        calls.append(user)
-        result = deepcopy(raw)
-        if fixed and len(calls) == 2:
-            result.update(title='Wait', visual_event='Wait', visible_entity_ids=[])
-        return {'scenes': [result]}
-
-    monkeypatch.setattr(step, 'chat_json', chat)
-    args = SimpleNamespace(duration=8, scenes_per_chunk=4, repair_attempts=1)
-    if fixed:
-        assert step.plan_scenes(None, 'model', 'chapter', 'Wait', 1, 1, [], args)[0].title == 'Wait'
-    else:
-        with pytest.raises(ValueError, match='absent from this sequence'):
-            step.plan_scenes(None, 'model', 'chapter', 'Wait', 1, 1, [], args)
-    assert len(calls) == 2 and 'CORRECTION REQUIRED' in calls[1]
 
 
 def test_continuity_repair_does_not_replace_complete_prompt_with_missing_description(monkeypatch):
@@ -70,12 +48,10 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
     args = SimpleNamespace(out_dir=tmp_path / 'generated', force=False, max_scenes=0,
                            duration=8, repair_attempts=0, max_tokens=8000,
                            spatial_plan={'chapters': {'chapter': {'sequences': [spatial_plan]}}})
-    chunks, histories, generations = [], [], []
-
-    def plan(client, model, chapter, chunk, *unused):
-        chunks.append(json.loads(chunk))
-        return [step.Scene(title, title, title, '', ['hero'], [], [], False, '')
-                for title in ('First', 'Second')]
+    refs["chapter_timelines"]["chapter"]["sequences"].append({
+        **deepcopy(refs["chapter_timelines"]["chapter"]["sequences"][0]), "sequence": 2})
+    args.spatial_plan["chapters"]["chapter"]["sequences"].append({**spatial_plan, "sequence": 2})
+    histories, generations = [], []
 
     bindings = {'subjects': [{'global_id': 'hero', 'h3_subject_label': '<Subject 1>',
                              'canonical_name': 'Hero', 'entity_type': 'character', 'pictures': []}],
@@ -90,20 +66,19 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
         histories.append(deepcopy(previous))
         return [issue()]
 
-    monkeypatch.setattr(step, 'plan_scenes', plan)
+    monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     monkeypatch.setattr(step, 'build_bindings', lambda *a: deepcopy(bindings))
     monkeypatch.setattr(step, 'generate_prompt', generate)
     monkeypatch.setattr(step, 'check_prompt_continuity', review)
     if failure == 'continuity':
         monkeypatch.setattr(step, 'validate_prompt', lambda *a: step.Validation(True, [], 400))
     for _ in range(2):
-        manifest = step.process_chapter(path, refs, None, 'model', args)
+        manifest = step.process_chapter(chapter_input(refs), refs, None, 'model', args)
         assert all(not entry['valid'] for entry in manifest['outputs'])
     # Drafts can be reused, but invalid final results are never accepted or
     # introduced into continuity history; every resumed candidate is checked.
     assert len(generations) == 2
     assert histories == ([[], [], [], []] if failure == 'continuity' else [])
-    assert chunks == refs['chapter_timelines']['chapter']['sequences']
     assert refs['visual_designs'] == designs
     cached = json.loads((args.out_dir / '.cache/chapter/prompt_001.json').read_text())
     assert cached['valid'] is False

@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input
 """Per-node reasoning controls reach the client without changing shared settings."""
 import pytest
 
@@ -43,6 +44,7 @@ def test_node_thinking_reaches_client(tmp_path, monkeypatch, cinematic_registry,
         "lmstudio_config": config,
         "chapter_selection": {"chapter_paths": [str(chapter)]},
         "cinematic_chapters": [catalog],
+        "cinematic_chapter": [chapter_input(registry)],
         "chapter_catalogs": [catalog],
         "consolidated_references": registry,
         "character_evidence": {"chapters": []},

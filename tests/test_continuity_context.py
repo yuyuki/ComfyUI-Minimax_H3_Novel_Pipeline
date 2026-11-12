@@ -53,7 +53,7 @@ def test_review_batches_cover_all_history_future_and_distant_conflicts(monkeypat
     def chat(client, model, system, user, schema, temperature, max_tokens):
         assert len(system.encode()) + len(user.encode()) + len(json.dumps(schema).encode()) <= context.REQUEST_BYTES
         payload = expanded(json.loads(user))
-        assert schema == generate.CONTINUITY_REVIEW_SCHEMA and schema["strict"]
+        assert schema["name"] == "scene_continuity_review_v3" and schema["strict"]
         assert max_tokens == 9000
         assert payload["current_prompt"] == "current wording"
         calls.append(payload)
@@ -122,7 +122,7 @@ def test_section_only_review_reduces_batches_preserving_all_evidence(monkeypatch
         payload = expanded(json.loads(user))
         assert "current_prompt" not in payload
         assert payload["current_prompt_sections"] == sections
-        assert schema["strict"] and schema == generate.CONTINUITY_REVIEW_SCHEMA
+        assert schema["strict"] and schema["name"] == "scene_continuity_review_v3"
         assert len(system.encode()) + len(user.encode()) + len(json.dumps(schema).encode()) <= context.REQUEST_BYTES
         calls.append((system, payload, schema))
         return {"errors": []}

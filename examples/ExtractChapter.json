@@ -1,8 +1,8 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 212,
-  "last_link_id": 297,
+  "last_node_id": 216,
+  "last_link_id": 306,
   "nodes": [
     {
       "id": 67,
@@ -46,8 +46,8 @@
       "id": 68,
       "type": "GetNode",
       "pos": [
-        1162.5959437020017,
-        2031.7341716436233
+        1156.9617682336514,
+        2004.267425188937
       ],
       "size": [
         225,
@@ -64,7 +64,7 @@
           "name": "MINIMAX_LMSTUDIO_CONFIG",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
           "links": [
-            297
+            303
           ]
         }
       ],
@@ -358,8 +358,8 @@
       "id": 140,
       "type": "LoadSpatialContinuityNode",
       "pos": [
-        1580.8340337395373,
-        2275.6573315923943
+        1607.5965418431747,
+        2101.701136382735
       ],
       "size": [
         343.04296875,
@@ -380,7 +380,7 @@
           "name": "spatial_continuity",
           "type": "MINIMAX_SPATIAL_CONTINUITY",
           "links": [
-            296
+            304
           ]
         },
         {
@@ -486,42 +486,6 @@
       }
     },
     {
-      "id": 149,
-      "type": "GetNode",
-      "pos": [
-        1181.1557879680126,
-        2163.7227133367587
-      ],
-      "size": [
-        227.271484375,
-        58
-      ],
-      "flags": {},
-      "order": 9,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "MINIMAX_CHAPTER_SELECTION",
-          "type": "MINIMAX_CHAPTER_SELECTION",
-          "links": [
-            295
-          ]
-        }
-      ],
-      "title": "Get_chapterSelection",
-      "properties": {
-        "Node name for S&R": "GetNode",
-        "aux_id": "kijai/ComfyUI-KJNodes"
-      },
-      "widgets_values": [
-        "chapterSelection"
-      ],
-      "widgets_values_named": {
-        "Constant": "chapterSelection"
-      }
-    },
-    {
       "id": 154,
       "type": "LoadConsolidatedReferencesNode",
       "pos": [
@@ -533,7 +497,7 @@
         94
       ],
       "flags": {},
-      "order": 10,
+      "order": 9,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -542,7 +506,7 @@
           "type": "MINIMAX_REGISTRY",
           "links": [
             228,
-            294
+            302
           ]
         }
       ],
@@ -570,7 +534,7 @@
         148.34998718529437
       ],
       "flags": {},
-      "order": 11,
+      "order": 10,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -597,7 +561,7 @@
         233.00000095146527
       ],
       "flags": {},
-      "order": 12,
+      "order": 11,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -624,7 +588,7 @@
         233.00000095146527
       ],
       "flags": {},
-      "order": 13,
+      "order": 12,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -651,7 +615,7 @@
         238.3499809127032
       ],
       "flags": {},
-      "order": 14,
+      "order": 13,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -670,22 +634,22 @@
       "id": 160,
       "type": "MarkdownNote",
       "pos": [
-        1096.8863848000772,
-        1358.2920947222733
+        1097.8238333212448,
+        1231.7442861103068
       ],
       "size": [
         1468.4064105363937,
         262.72469414315367
       ],
       "flags": {},
-      "order": 15,
+      "order": 14,
       "mode": 0,
       "inputs": [],
       "outputs": [],
       "title": "Note for Prompt Generation",
       "properties": {},
       "widgets_values": [
-        "### 5. Prompt generation\n**Generate H3 Prompts** uses the registry, selected chapters, and loaded spatial plan to produce MiniMax H3 scene prompts and image-prompt text. It saves the results; it does not generate images, audio, or videos itself.\n\n**Scene structure:** `duration` (8) = seconds per scene; `max_shots` (1) = maximum camera shots per scene; `scenes_per_chunk` (4) = maximum scenes per cinematic sequence; `max_scenes` (0) = maximum scenes per chapter, with 0 meaning all scenes.\n\n**References:** `max_pictures` (8) = maximum reference images per scene; `max_pictures_per_subject` (4) = maximum per subject; `max_audio` (3) = maximum audio references.\n\n**LLM / output:** `thinking` (false) = planning/generation reasoning; `temperature` (0.38) = output variability; `max_tokens` (8192) = response token budget; `repair_attempts` (2) = repair attempts; `force` = recompute instead of reusing compatible cached results; `out_dir` (`h3_prompts`) = subfolder within the run.\n\n**Camera / continuity:** `refine_camera` (false) = optional camera-description pass; `camera_thinking` (false) and `review_thinking` (false) = independent reasoning controls; `camera_direction` = camera instructions applied to each scene (empty = none); Connect a Spatial Continuity or Load Spatial Continuity output to use its staging plan and enable final-prompt continuity checks.\n\n**Is thinking useful?** Thinking can help with complex scenes, but it costs time and does not guarantee better output.\n\n- `thinking`: planning scene chronology, fitting dialogue into the duration, generating coherent prompts and repairing their format.\n- `review_thinking`: resolving difficult spatial contradictions, camera axes and character orientation during continuity reviews and repairs.\n- `camera_thinking`: reasoning through complicated camera movements in the optional camera-refinement pass. Simpler camera notes may need little reasoning.\n\n**Quality-focused trial:** `thinking=true`, `review_thinking=false`, `camera_thinking=false`. This keeps reasoning for planning/generation while avoiding it in the review stage that exhausted its output budget. `camera_thinking` has no effect when `refine_camera=false`.\n\n**Faster baseline:** all three thinking controls are false in this example. Reasoning and JSON share the output token budget: reasoning can consume it before any JSON is returned. The reported seven-hour run failed this way during continuity review; this does not prove that thinking was useless during planning. Output quality has not been compared with thinking on versus off for this chapter.\n\nThese switches depend on model support: GPT-OSS always reasons, OpenAI has no thinking control, and LM Studio must honor the loaded model's reasoning controls.\n\n**Associated Load nodes:** `Load Consolidated References.consolidated_path` reloads the registry (`20261023222151/references`) without reconsolidation. `Load Spatial Continuity.spatial_path` reloads the plan (`20261023181509/spatial_continuity`) from a folder containing `spatial_continuity.json` or a JSON file, including a manually edited copy. It validates the plan against the connected registry and detects saved edits on the next run. Paths are relative to `ComfyUI/output/minimax_h3_novel`: check that results are compatible and update paths after the preceding stages. `Get_chapterSelection` retrieves the shared selection, not a saved result file."
+        "### 5. Prompt generation\nConnect Load Cinematic Chapters to cinematic_chapter. One cinematic sequence becomes one H3 scene; no replanning. Duration is read from each cinematic chapter. Keep force=false to reuse matching requests. Review validation warnings before using prompts."
       ],
       "widgets_values_named": {
         "text": "### 5. Prompt generation\n**Generate H3 Prompts** uses the registry, selected chapters, and loaded spatial plan to produce MiniMax H3 scene prompts and image-prompt text. It saves the results; it does not generate images, audio, or videos itself.\n\n**Scene structure:** `duration` (8) = seconds per scene; `max_shots` (1) = maximum camera shots per scene; `scenes_per_chunk` (4) = maximum scenes per cinematic sequence; `max_scenes` (0) = maximum scenes per chapter, with 0 meaning all scenes.\n\n**References:** `max_pictures` (8) = maximum reference images per scene; `max_pictures_per_subject` (4) = maximum per subject; `max_audio` (3) = maximum audio references.\n\n**LLM / output:** `thinking` (false) = planning/generation reasoning; `temperature` (0.38) = output variability; `max_tokens` (8192) = response token budget; `repair_attempts` (2) = repair attempts; `force` = recompute instead of reusing compatible cached results; `out_dir` (`h3_prompts`) = subfolder within the run.\n\n**Camera / continuity:** `refine_camera` (false) = optional camera-description pass; `camera_thinking` (false) and `review_thinking` (false) = independent reasoning controls; `camera_direction` = camera instructions applied to each scene (empty = none); Connect a Spatial Continuity or Load Spatial Continuity output to use its staging plan and enable final-prompt continuity checks.\n\n**Is thinking useful?** Thinking can help with complex scenes, but it costs time and does not guarantee better output.\n\n- `thinking`: planning scene chronology, fitting dialogue into the duration, generating coherent prompts and repairing their format.\n- `review_thinking`: resolving difficult spatial contradictions, camera axes and character orientation during continuity reviews and repairs.\n- `camera_thinking`: reasoning through complicated camera movements in the optional camera-refinement pass. Simpler camera notes may need little reasoning.\n\n**Quality-focused trial:** `thinking=true`, `review_thinking=false`, `camera_thinking=false`. This keeps reasoning for planning/generation while avoiding it in the review stage that exhausted its output budget. `camera_thinking` has no effect when `refine_camera=false`.\n\n**Faster baseline:** all three thinking controls are false in this example. Reasoning and JSON share the output token budget: reasoning can consume it before any JSON is returned. The reported seven-hour run failed this way during continuity review; this does not prove that thinking was useless during planning. Output quality has not been compared with thinking on versus off for this chapter.\n\nThese switches depend on model support: GPT-OSS always reasons, OpenAI has no thinking control, and LM Studio must honor the loaded model's reasoning controls.\n\n**Associated Load nodes:** `Load Consolidated References.consolidated_path` reloads the registry (`20261023222151/references`) without reconsolidation. `Load Spatial Continuity.spatial_path` reloads the plan (`20261023181509/spatial_continuity`) from a folder containing `spatial_continuity.json` or a JSON file, including a manually edited copy. It validates the plan against the connected registry and detects saved edits on the next run. Paths are relative to `ComfyUI/output/minimax_h3_novel`: check that results are compatible and update paths after the preceding stages. `Get_chapterSelection` retrieves the shared selection, not a saved result file."
@@ -705,7 +669,7 @@
         251.15788617117698
       ],
       "flags": {},
-      "order": 16,
+      "order": 15,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -876,7 +840,7 @@
         520
       ],
       "flags": {},
-      "order": 17,
+      "order": 16,
       "mode": 0,
       "inputs": [],
       "outputs": [],
@@ -905,7 +869,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 18,
+      "order": 17,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -941,7 +905,7 @@
         200
       ],
       "flags": {},
-      "order": 19,
+      "order": 18,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -981,7 +945,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 20,
+      "order": 19,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -1017,7 +981,7 @@
         113.98751395744591
       ],
       "flags": {},
-      "order": 21,
+      "order": 20,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -1060,7 +1024,7 @@
       "flags": {
         "collapsed": true
       },
-      "order": 22,
+      "order": 21,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -1096,7 +1060,7 @@
         78
       ],
       "flags": {},
-      "order": 23,
+      "order": 22,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -1206,7 +1170,7 @@
         86.00002253233474
       ],
       "flags": {},
-      "order": 24,
+      "order": 23,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -1522,15 +1486,15 @@
       }
     },
     {
-      "id": 212,
+      "id": 214,
       "type": "GenerateH3PromptsNode",
       "pos": [
-        2101.3221262661314,
-        1768.4868991356589
+        2136.2381228378786,
+        1772.1577674701075
       ],
       "size": [
-        446.86961646843804,
-        657.474096885944
+        400,
+        532
       ],
       "flags": {},
       "order": 35,
@@ -1539,23 +1503,23 @@
         {
           "name": "consolidated_references",
           "type": "MINIMAX_REGISTRY",
-          "link": 294
+          "link": 302
         },
         {
           "name": "lmstudio_config",
           "type": "MINIMAX_LMSTUDIO_CONFIG",
-          "link": 297
+          "link": 303
         },
         {
-          "name": "chapter_selection",
-          "type": "MINIMAX_CHAPTER_SELECTION",
-          "link": 295
+          "name": "cinematic_chapter",
+          "type": "MINIMAX_CINEMATIC_CHAPTERS",
+          "link": 306
         },
         {
           "name": "spatial_continuity",
           "shape": 7,
           "type": "MINIMAX_SPATIAL_CONTINUITY",
-          "link": 296
+          "link": 304
         }
       ],
       "outputs": [
@@ -1577,48 +1541,85 @@
       ],
       "properties": {
         "cnr_id": "minimax_h3_novel_pipeline",
-        "ver": "8bdf7a9f7363ced5d807a180102aba997e392f7a",
+        "ver": "abc6ebaffc2cfeb986d25124590a97757d7ff98e",
         "Node name for S&R": "GenerateH3PromptsNode"
       },
       "widgets_values": [
-        false,
-        8,
+        true,
         1,
-        4,
         0,
         8,
         4,
         3,
         0.38,
-        8192,
+        16384,
         2,
         false,
         "h3_prompts",
-        false,
+        true,
         "",
         "",
-        false,
-        false
+        true,
+        true
       ],
       "widgets_values_named": {
-        "thinking": false,
-        "duration": 8,
+        "thinking": true,
         "max_shots": 1,
-        "scenes_per_chunk": 4,
         "max_scenes": 0,
         "max_pictures": 8,
         "max_pictures_per_subject": 4,
         "max_audio": 3,
         "temperature": 0.38,
-        "max_tokens": 8192,
+        "max_tokens": 16384,
         "repair_attempts": 2,
         "force": false,
         "out_dir": "h3_prompts",
-        "refine_camera": false,
+        "refine_camera": true,
         "camera_direction": "",
         "resume_run": "",
-        "camera_thinking": false,
-        "review_thinking": false
+        "camera_thinking": true,
+        "review_thinking": true
+      }
+    },
+    {
+      "id": 216,
+      "type": "LoadCinematicChaptersNode",
+      "pos": [
+        1155.6359513840066,
+        2054.8428906020044
+      ],
+      "size": [
+        270,
+        113.984375
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "cinematic_chapters",
+          "type": "MINIMAX_CINEMATIC_CHAPTERS",
+          "links": [
+            306
+          ]
+        },
+        {
+          "name": "saved_files",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax_h3_novel_pipeline",
+        "ver": "2b662942159e338f6db504c4fbead4cc35cea897",
+        "Node name for S&R": "LoadCinematicChaptersNode"
+      },
+      "widgets_values": [
+        "cinematic_chapters"
+      ],
+      "widgets_values_named": {
+        "cinematic_path": "cinematic_chapters"
       }
     }
   ],
@@ -1768,36 +1769,36 @@
       "MINIMAX_REGISTRY"
     ],
     [
-      294,
+      302,
       154,
       0,
-      212,
+      214,
       0,
       "MINIMAX_REGISTRY"
     ],
     [
-      295,
-      149,
+      303,
+      68,
       0,
-      212,
-      2,
-      "MINIMAX_CHAPTER_SELECTION"
+      214,
+      1,
+      "MINIMAX_LMSTUDIO_CONFIG"
     ],
     [
-      296,
+      304,
       140,
       0,
-      212,
+      214,
       3,
       "MINIMAX_SPATIAL_CONTINUITY"
     ],
     [
-      297,
-      68,
+      306,
+      216,
       0,
-      212,
-      1,
-      "MINIMAX_LMSTUDIO_CONFIG"
+      214,
+      2,
+      "MINIMAX_CINEMATIC_CHAPTERS"
     ]
   ],
   "groups": [
@@ -1925,10 +1926,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.8534322792769279,
+      "scale": 0.9387755072046209,
       "offset": [
-        -886.7988437341384,
-        -1499.7668947331647
+        -316.5509642054307,
+        -1442.1925809819045
       ]
     },
     "frontendVersion": "1.57.6"

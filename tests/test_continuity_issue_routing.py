@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Evidence-linked repairs preserve beats, approved inputs and cache validity."""
 from copy import deepcopy
 import json
@@ -51,18 +52,14 @@ def test_evidence_pointer_cannot_continue_through_a_scalar():
     assert error.value.paths == ("/current_scene/visual_event/description",)
 
 
-def test_prompt_section_citation_is_corrected_without_mutating_response(caplog):
+def test_prompt_section_citation_is_rejected_without_mutating_response():
     payload = {"current_prompt": "Full prompt", "current_prompt_sections": {
         "detailed_description": "The rope is visible."}}
     response = {"errors": [issue("Include the rope", path="/current_prompt/detailed_description")]}
     original = deepcopy(response)
-    result = issues.validate(response, payload)
-    assert result[0]["evidence_paths"] == ["/current_prompt_sections/detailed_description"]
-    assert result[0]["evidence"] == [{
-        "path": "/current_prompt_sections/detailed_description", "value": "The rope is visible."}]
-    assert result[0]["message"] == "Include the rope"
+    with pytest.raises(issues.UnresolvedEvidenceError):
+        issues.validate(response, payload)
     assert response == original
-    assert "Corrected H3 continuity evidence path" in caplog.text
 
 
 @pytest.mark.parametrize("path", [
@@ -150,7 +147,7 @@ def test_changed_metadata_rechecks_prompt_and_keeps_inputs_after_resume(tmp_path
                            max_tokens=8192, repair_attempts=1, refine_camera=False,
                            spatial_plan={"chapters": {"chapter": {"sequences": [{"sequence": 1}]}}})
     monkeypatch.setattr(step, "sequence_catalog", lambda *a: row()["catalog"])
-    monkeypatch.setattr(step, "plan_scenes", lambda *a: [scene()])
+    monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     def bindings(refs, candidate, *a):
         return {"subjects": [{"global_id": "hero"}], "audio": ["voice"] if candidate.dialogue_present else []}
     monkeypatch.setattr(step, "build_bindings", bindings)
@@ -167,7 +164,7 @@ def test_changed_metadata_rechecks_prompt_and_keeps_inputs_after_resume(tmp_path
     repair = Mock(return_value="corrected dialogue")
     monkeypatch.setattr(step, "repair_prompt", repair)
     monkeypatch.setattr(step, "save_scene", lambda *a: {"subject_count": 1, "picture_count": 1, "audio_count": 1})
-    first = step.process_chapter(chapter, refs, None, "gemma", args)
+    first = step.process_chapter(chapter_input(refs), refs, None, "gemma", args)
     assert first["outputs"][0]["continuity_review"]["valid"]
     assert [entry[0] for entry in reviewed] == [False, True]
     assert reviewed[-1][2]["audio"] == ["voice"]
@@ -175,7 +172,7 @@ def test_changed_metadata_rechecks_prompt_and_keeps_inputs_after_resume(tmp_path
     assert record["scene"]["dialogue_present"] is True
     args.resume_cache_dir = args.out_dir / ".cache"
     args.out_dir = tmp_path / "second/h3"
-    second = step.process_chapter(chapter, refs, None, "gemma", args)
+    second = step.process_chapter(chapter_input(refs), refs, None, "gemma", args)
     assert second["outputs"][0]["continuity_review"]["valid"]
     assert reviewed[-1][0] is True
     assert generation.call_count == request.call_count == repair.call_count == 1

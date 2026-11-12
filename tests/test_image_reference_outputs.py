@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input
 """Offline coverage for queued runs, editable designs and copy-paste exports."""
 import copy
 from contextlib import nullcontext
@@ -713,11 +714,9 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
     next_config = {**config, "run_folder": run_output.reserve_run()}
     generate = lmstudio_pipeline.load("generate")
     monkeypatch.setattr(generate, "process_chapter", lambda *a: {"chapter_id": "chapter", "outputs": []})
-    from minimax_h3_novel_pipeline.nodes import generate_h3_prompts as wrapper
-    monkeypatch.setattr(wrapper, "selected_chapter_paths", lambda value: ["chapter.txt"])
     monkeypatch.setattr(util, "discover_inputs", lambda paths: paths)
     response = GenerateH3PromptsNode().run(
-        loaded, next_config, {}, **node_defaults(GenerateH3PromptsNode))
+        loaded, next_config, [chapter_input(loaded)], **node_defaults(GenerateH3PromptsNode))
     prompts, scene_text, image_text = response["result"]
     assert response["ui"] == {"text": [scene_text, image_text]}
     assert scene_text == ""
@@ -729,14 +728,14 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
 
 
 def test_cache_changes_with_prompt_sampling_and_scene_settings(monkeypatch):
-    args = SimpleNamespace(temperature=0.1, max_tokens=2000, scenes_per_chunk=4, force=False, out_dir="old")
+    args = SimpleNamespace(temperature=0.1, max_tokens=2000, max_shots=4, force=False, out_dir="old")
     first = prompt_cache.fingerprint("qwen", args, "prompt.v1")
     args.force, args.out_dir = True, "new"
     assert first == prompt_cache.fingerprint("qwen", args, "prompt.v1")
     assert first != prompt_cache.fingerprint("qwen", args, "prompt.v2")
-    args.scenes_per_chunk = 5
+    args.max_shots = 5
     assert first != prompt_cache.fingerprint("qwen", args, "prompt.v1")
-    args.scenes_per_chunk = 4
+    args.max_shots = 4
     monkeypatch.setattr(lmstudio_json, "QWEN35_TOP_K", 42)
     assert first != prompt_cache.fingerprint("qwen", args, "prompt.v1")
 

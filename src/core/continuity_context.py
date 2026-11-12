@@ -96,6 +96,8 @@ def pack(payload):
 
 
 def fits(system, payload, schema, reserve=0):
+    if callable(schema):
+        schema = schema(json.loads(pack(payload)))
     return (len(system.encode("utf-8")) + len(pack(payload).encode("utf-8"))
             + len(json.dumps(schema, ensure_ascii=False).encode("utf-8"))
             + reserve <= REQUEST_BYTES)

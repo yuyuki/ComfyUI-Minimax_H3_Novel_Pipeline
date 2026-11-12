@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Offline validation of the spatial continuity interface and resolver."""
 import json
 
@@ -28,7 +29,7 @@ def test_review_receives_final_wording_bindings_and_distant_scenes(monkeypatch):
     def fake_chat(client, model, system, user, schema, temperature, max_tokens):
         from tests.test_continuity_context import expanded
         captured.append(expanded(json.loads(user)))
-        assert schema == generate.CONTINUITY_REVIEW_SCHEMA
+        assert schema["name"] == "scene_continuity_review_v3"
         return {"errors": [issue("Turn the character toward the tablet on the right.")]}
 
     monkeypatch.setattr(generate, "chat_json", fake_chat)
@@ -53,18 +54,23 @@ def test_malformed_review_is_not_treated_as_success(monkeypatch, result):
         generate.check_prompt_continuity(None, "qwen", scene, "prompt", {}, {}, [], [], 8000)
 
 
-def test_misplaced_prompt_section_is_corrected_without_another_llm_request(monkeypatch):
+def test_misplaced_prompt_section_requires_precise_retry(monkeypatch):
     scene = generate.Scene("Now", "Source", "Event", "", [], [], [], False, "")
     calls = []
 
     def review(*args):
         calls.append(args)
-        return {"errors": [issue("Include the rope", path="/current_prompt/detailed_description")]}
+        return {"errors": [issue("Include the rope", path=(
+            "/current_prompt/detailed_description" if len(calls) == 1
+            else "/current_prompt_sections/detailed_description"))]}
 
     monkeypatch.setattr(generate, "chat_json", review)
     prompt = "\n".join(f"{name}:\nExact {name} text." for name in generate.SECTIONS)
     errors = generate.check_prompt_continuity(None, "qwen", scene, prompt, {}, {}, [], [], 8000)
-    assert len(calls) == 1
+    assert len(calls) == 2
+    feedback = json.loads(calls[1][3])["review_validation_feedback"]
+    assert feedback["unresolved_evidence_paths"] == ["/current_prompt/detailed_description"]
+    assert "/current_prompt_sections/detailed_description" in feedback["allowed_evidence_paths"]
     assert errors[0]["evidence_paths"] == ["/current_prompt_sections/detailed_description"]
     assert errors[0]["evidence"] == [{
         "path": "/current_prompt_sections/detailed_description", "value": "Exact detailed_description text."}]
@@ -80,7 +86,7 @@ def test_review_retries_unresolved_evidence_once_and_fails_closed(monkeypatch, c
         calls.append((system, payload))
         if len(calls) == 1:
             return {"errors": [issue("Check the call", path="/current_scene/visual_event/description")]}
-        assert schema == generate.CONTINUITY_REVIEW_SCHEMA
+        assert schema["name"] == "scene_continuity_review_v3"
         assert "diagnostic only, not evidence" in system
         assert payload["review_validation_feedback"]["unresolved_evidence_paths"] == [
             "/current_scene/visual_event/description"]
@@ -143,15 +149,13 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     chapter = tmp_path / "chapter.txt"
     chapter.write_text("He enters. He sees the tablet. " * 20, encoding="utf-8")
-    scenes = [generate.Scene(title, title, title, "room", [], [], [], False, "")
-              for title in ("Enter", "Tablet")]
     bindings = {"subjects": [{"h3_subject_label": "<Subject 1>", "canonical_name": "Hero",
                               "entity_type": "character", "global_id": "hero", "pictures": []}],
                 "picture_input_order": [], "audio": []}
     args = SimpleNamespace(out_dir=tmp_path / "output", force=False, chunk_chars=3000,
                            overlap_paragraphs=0, max_scenes=0, duration=8, max_shots=1,
                            max_tokens=9000, repair_attempts=1, refine_camera=True)
-    monkeypatch.setattr(generate, "plan_scenes", lambda *a: scenes)
+    monkeypatch.setattr(generate, "prepare_cinematic_scene", metadata_scene)
     designs = {"entities": [{"global_id": "hero", "added_details": {"hair": "Black hair"}}]}
 
     if external_plan:
@@ -173,7 +177,6 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
         assert continuity["visual_designs"] == designs
         if external_plan:
             assert continuity["sequence_plan"]["camera"] == "right"
-            assert continuity["scenes_in_sequence"] == 2
         reviews.append((prompt, list(previous)))
         return [issue()] if prompt != "corrected" else []
 
@@ -181,7 +184,7 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
     monkeypatch.setattr(generate, "check_prompt_continuity", review)
     monkeypatch.setattr(generate, "repair_prompt", lambda *a: "corrected")
     for _ in range(2):
-        manifest = generate.process_chapter(chapter, cinematic_registry(chapter, visual_designs=designs), None, "qwen", args)
+        manifest = generate.process_chapter(chapter_input(cinematic_registry(chapter, visual_designs=designs)), cinematic_registry(chapter, visual_designs=designs), None, "qwen", args)
         for entry in manifest["outputs"]:
             asset_file = args.out_dir / "chapter" / entry["assets_file"]
             assert json.loads(asset_file.read_text())["copy_paste_prompt"] == (
@@ -191,14 +194,14 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
                 assert not entry["continuity_review"]["errors"]
             else:
                 assert "continuity_review" not in entry
-    assert len(camera_calls) == 2  # Reused cached prompts retain their camera pass.
+    assert len(camera_calls) == 1  # Reused cached prompts retain their camera pass.
     if not external_plan:
         assert reviews == []
         assert "spatial_continuity" not in manifest
         return
-    assert len(reviews) == 6  # Four initial reviews/repairs, two cache-hit reviews.
+    assert len(reviews) == 3  # Initial review, repaired review, cache-hit review.
     assert reviews[0][0] == "camera wording with wrong eyeline"
-    assert reviews[2][1][0]["prompt"] == "corrected"
+    assert reviews[2] == ("corrected", [])
     report = json.loads((args.out_dir / "chapter/manifest.json").read_text())["spatial_continuity"]
     assert all(s["prompt_review"]["valid"] for s in report["scenes"])
     assert not (args.out_dir / "chapter/spatial_continuity.json").exists()

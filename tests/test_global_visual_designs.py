@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Stable physical imports, validated alias joins and scene-local enrichment."""
 from contextlib import nullcontext
 from copy import deepcopy
@@ -312,13 +313,13 @@ def test_h3_planning_and_prompts_receive_only_current_states_and_stable_facts(tm
             [{'local_id': 'profile', 'trait': 'clothing', 'value': 'red dress'}] if seq['sequence'] == 1 else []}
                       for seq in sequences]}}
     planning, prompts = [], []
-    def plan(client, model, cid, chunk, index, count, catalog, args):
-        planning.append(json.loads(chunk))
-        return [generate.Scene('Wait', 'Hero waits.', 'Wait', '', ['hero'], [], [], False, '')]
+    def prepare(client, model, row, period, args):
+        planning.append(deepcopy(row['character_context']))
+        return metadata_scene(client, model, row, period, args)
     def prompt(client, model, scene, bindings, duration, args, continuity):
         prompts.append(deepcopy(continuity))
         return 'draft'
-    monkeypatch.setattr(generate, 'plan_scenes', plan)
+    monkeypatch.setattr(generate, "prepare_cinematic_scene", prepare)
     monkeypatch.setattr(generate, 'build_bindings', lambda *a: {'subjects': [{
         'global_id': 'hero', 'entity_type': 'character', 'canonical_name': 'Hero',
         'h3_subject_label': '<Subject 1>', 'pictures': []}], 'picture_input_order': [], 'audio': []})
@@ -329,12 +330,13 @@ def test_h3_planning_and_prompts_receive_only_current_states_and_stable_facts(tm
                            duration=8, max_shots=1, max_tokens=8000, repair_attempts=0, refine_camera=False)
     # Run twice: cached planning must preserve the same scene-local constraints.
     for _ in range(2):
-        manifest = generate.process_chapter(chapter, refs, None, 'mock', args)
+        manifest = generate.process_chapter(chapter_input(refs), refs, None, 'mock', args)
         assert manifest['saved_prompt_count'] == 2
-    assert len(planning) == len(prompts) == 2
-    for context in (planning, prompts):
-        assert context[0]['character_enrichment']['sequence']['states'][0]['value'] == 'red dress'
-        assert context[1]['character_enrichment']['sequence']['states'] == []
+    assert len(planning) == 4 and len(prompts) == 2
+    assert planning[0]['sequence']['states'][0]['value'] == 'red dress'
+    assert planning[1]['sequence']['states'] == []
+    assert prompts[0]['character_enrichment']['sequence']['states'][0]['value'] == 'red dress'
+    assert prompts[1]['character_enrichment']['sequence']['states'] == []
     assert all(c['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'green eyes'
                for c in prompts)
     assert all('character_profiles' not in c['visual_designs'] for c in prompts)

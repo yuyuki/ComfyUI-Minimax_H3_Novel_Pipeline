@@ -4,11 +4,9 @@ from __future__ import annotations
 from ..core import progress
 
 import argparse
-from pathlib import Path
 from typing import Any
 
-from ..core import configuration_snapshot, lmstudio_pipeline, util
-from .chapter_selection import chapter_path_list as selected_chapter_paths
+from ..core import cinematic_references, configuration_snapshot, lmstudio_pipeline, util
 from ..core.path_access import confined_path
 from ..core.run_output import stage_output
 from ..core.image_prompt_export import export_image_prompts
@@ -23,12 +21,11 @@ class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for scene planning, prompt generation and format repairs. Camera and continuity review have separate controls. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for reference metadata, prompt generation and format repairs. Camera and continuity review have separate controls. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "chapter_selection": ("MINIMAX_CHAPTER_SELECTION", {"tooltip": "Output of Select Chapters."}),
-            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "H3 duration in seconds of EACH generated scene (4–15 seconds)."}),
+            "cinematic_chapter": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Cinematic Chapter Adapter or Load Cinematic Chapters; one H3 scene per supplied sequence."}),
             "max_shots": ("INT", {"default": 1, "min": 1, "max": 6, "tooltip": "Maximum camera shots per scene. Qwen may use fewer; a shot needs at least 2.5 seconds. Default 1 preserves existing workflows."}),
-            "scenes_per_chunk": ("INT", {"default": 4, "min": 1, "max": 100, "tooltip": "Maximum scenes per cinematic sequence, preserving sequence order."}), "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000, "tooltip": "Maximum scenes per chapter; 0 generates all scenes."}),
+            "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000, "tooltip": "Maximum scenes per chapter; 0 generates all scenes."}),
             "max_pictures": ("INT", {"default": 8, "min": 1, "max": 9}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 9}), "max_audio": ("INT", {"default": 3, "min": 0, "max": 3}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}), "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning. Reasoning-limit retries use at least 16384 tokens."}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "refine_camera": ("BOOLEAN", {"default": True, "tooltip": "After prompt validation, ask LM Studio for camera-only descriptions for each shot. Adds one request per scene."}),
@@ -36,7 +33,7 @@ class GenerateH3PromptsNode:
             "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY", {"tooltip": "Connect Spatial Continuity or Load Spatial Continuity to use its staging plan and review final prompts for consistency."}),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
             "resume_run": ("STRING", {"default": "", "tooltip":
-                "Reuse matching plans, prompts and completed request checkpoints from a previous timestamped run with the same out_dir. "
+                "Reuse matching prompts and completed request checkpoints from a previous timestamped run with the same out_dir. "
                 "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
             "camera_thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for the optional camera-only pass. Independent of generation thinking. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "review_thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for continuity reviews and their repairs. Off avoids spending the review budget on reasoning. GPT-OSS always reasons; OpenAI has no thinking control."}),
@@ -51,6 +48,10 @@ class GenerateH3PromptsNode:
     @classmethod
     def validate_parameters(cls, params: dict[str, Any]) -> None:
         """Reject invalid saved/API values before filesystem or network work."""
+        inputs = cls.INPUT_TYPES()
+        unknown = params.keys() - (inputs["required"].keys() | inputs["optional"].keys())
+        if unknown:
+            raise ValueError(f"Unknown Generate H3 parameters: {', '.join(sorted(unknown))}.")
         for name, (kind, *options) in cls.INPUT_TYPES()["required"].items():
             if kind not in ("INT", "FLOAT"):
                 continue
@@ -64,7 +65,7 @@ class GenerateH3PromptsNode:
                 )
 
     @progress.node_progress
-    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], chapter_selection: Any, out_dir: str, thinking: bool = False, **params: Any) -> dict[str, Any]:
+    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], cinematic_chapter: Any, out_dir: str, thinking: bool = False, **params: Any) -> dict[str, Any]:
         self.validate_parameters(params)
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
@@ -82,20 +83,23 @@ class GenerateH3PromptsNode:
                 raise ValueError("Previous run cache does not exist; use the same out_dir as that run.")
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
-        paths = util.discover_inputs([Path(path) for path in selected_chapter_paths(chapter_selection)])
-        if not paths: raise ValueError("No supported chapter files found.")
+        chapters = cinematic_references.parse_chapters(cinematic_chapter)
+        for chapter in chapters:
+            duration = chapter.get("duration")
+            if type(duration) not in (int, float) or not 4 <= duration <= 15:
+                raise ValueError("Cinematic input requires duration (4-15 seconds); rerun Cinematic Chapter Adapter.")
         lmstudio_config = {**lmstudio_config, "thinking": bool(thinking)}
         pipeline = lmstudio_pipeline.load("generate")
         selected_ids = set()
-        for path in paths:
-            chapter_id, _ = pipeline.selected_timeline(consolidated_references, path)
+        for chapter in chapters:
+            chapter_id, _ = pipeline.selected_timeline(consolidated_references, chapter)
             if chapter_id in selected_ids:
-                raise ValueError("Multiple selected files resolve to the same consolidated chapter; "
+                raise ValueError("Multiple cinematic chapters resolve to the same consolidated chapter; "
                                  "re-extract and reconsolidate with source provenance.")
             selected_ids.add(chapter_id)
         client, resolved_model = lmstudio_pipeline.make_client_and_model(pipeline, str(lmstudio_config["api_url"]), lmstudio_config)
         with client:
-            keys = ("duration", "scenes_per_chunk", "max_scenes", "max_pictures", "max_pictures_per_subject", "max_audio", "temperature", "max_tokens", "repair_attempts", "force")
+            keys = ("max_scenes", "max_pictures", "max_pictures_per_subject", "max_audio", "temperature", "max_tokens", "repair_attempts", "force")
             args = argparse.Namespace(**{key: params[key] for key in keys}, out_dir=output,
                                       max_shots=int(params.get("max_shots", 1)))
             if not 1 <= args.max_shots <= 6:
@@ -112,7 +116,7 @@ class GenerateH3PromptsNode:
             args.thinking = bool(thinking)
             snapshot = configuration_snapshot.start(
                 output, "generate", lmstudio_config, resolved_model, args, out_dir=out_dir,
-                inputs={"chapters": [str(path) for path in paths],
+                inputs={"chapters": [{"chapter_name": c["chapter_name"], "duration": c["duration"], "sha256": cinematic_references.chapter_digest(c)} for c in chapters],
                         "consolidated_references_sha256": configuration_snapshot.content_digest(consolidated_references)},
                 extra={"resume_run": resume_run},
             )
@@ -135,10 +139,11 @@ class GenerateH3PromptsNode:
                     pass
             image_records, image_text = export_image_prompts(consolidated_references, output / "image_prompts")
             manifests = []
-            for index, path in enumerate(paths):
+            for index, chapter in enumerate(chapters):
                 lmstudio_pipeline.comfy_interrupt_check()
-                with progress.scope(0.98 * index / len(paths), 0.98 * (index + 1) / len(paths)):
-                    manifests.append(pipeline.process_chapter(path, consolidated_references, client, resolved_model, args))
+                chapter_args = argparse.Namespace(**vars(args), duration=float(chapter["duration"]))
+                with progress.scope(0.98 * index / len(chapters), 0.98 * (index + 1) / len(chapters)):
+                    manifests.append(pipeline.process_chapter(chapter, consolidated_references, client, resolved_model, chapter_args))
             for manifest in manifests:
                 target = confined_path(manifest["chapter_id"], args.out_dir)
                 for scene in manifest["outputs"]:

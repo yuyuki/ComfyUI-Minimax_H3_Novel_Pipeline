@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Quality gates must avoid work without accepting unreviewed candidates."""
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -9,33 +10,8 @@ from tests.test_h3_prompt_validation import BINDINGS, prompt_with_shots
 from tests.h3_review_helpers import issue
 
 
-@pytest.mark.parametrize("field,value,invalidates", [
-    ("camera_thinking", True, False), ("review_thinking", True, False),
-    ("camera_direction", "Track left", False), ("refine_camera", True, False),
-    ("temperature", .8, False), ("max_tokens", 32768, False),
-    ("max_scenes", 3, False), ("duration", 12, True),
-    ("max_shots", 2, True), ("scenes_per_chunk", 2, True),
-    ("repair_attempts", 3, True),
-])
-def test_planning_cache_depends_only_on_consumed_settings(field, value, invalidates):
-    args = SimpleNamespace()
-    implementation = step.planning_implementation()
-    def key():
-        return step.planning_key(None, "gemma", args, "chapter", "exact source", 1, 1, [], implementation)
-    before = key()
-    setattr(args, field, value)
-    assert (key() != before) is invalidates
 
 
-def test_planning_cache_tracks_source_catalog_and_implementation():
-    args = SimpleNamespace()
-    inputs = [None, "gemma", args, "chapter", "source", 1, 1, [], {"planner": "v1"}]
-    before = step.planning_key(*inputs)
-    for index, replacement in [(1, "other-model"), (4, "changed source"),
-                               (7, [{"global_id": "new"}]), (8, {"planner": "v2"})]:
-        changed = list(inputs)
-        changed[index] = replacement
-        assert step.planning_key(*changed) != before
 
 
 @pytest.mark.parametrize("tasks,audio,changed", [
@@ -109,7 +85,7 @@ def test_chapter_does_not_review_exhausted_format_failures(tmp_path, monkeypatch
     args = SimpleNamespace(out_dir=tmp_path / "output", force=False, max_scenes=0,
                            duration=8, max_tokens=8192, repair_attempts=1, refine_camera=True,
                            spatial_plan={"chapters": {"chapter": {"sequences": [{"sequence": 1}]}}})
-    monkeypatch.setattr(step, "plan_scenes", lambda *a: [step.Scene("Wait", "Wait", "Wait", "", [], [], [], False, "")])
+    monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [{"global_id": "hero"}], "audio": []})
     monkeypatch.setattr(step, "generate_prompt", lambda *a: "malformed")
     repair = Mock(return_value="still malformed")
@@ -119,7 +95,7 @@ def test_chapter_does_not_review_exhausted_format_failures(tmp_path, monkeypatch
     monkeypatch.setattr(step, "review_and_repair_continuity", review)
     monkeypatch.setattr(step, "refine_camera_prompt", camera)
     monkeypatch.setattr(step, "save_scene", lambda *a: {})
-    result = step.process_chapter(chapter, cinematic_registry(chapter), None, "gemma", args)
+    result = step.process_chapter(chapter_input(cinematic_registry(chapter)), cinematic_registry(chapter), None, "gemma", args)
     assert repair.call_count == 1
     review.assert_not_called()
     camera.assert_not_called()

@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input
 """Offline execution records, settings coverage and credential exclusion."""
 from contextlib import nullcontext
 import json
@@ -29,8 +30,6 @@ def setup(tmp_path, monkeypatch):
               "api_key": "secret-must-not-be-saved", "unexpected": "secret-must-not-be-saved"}
     chapter = tmp_path / "chapter.txt"
     chapter.write_text("A chapter with a character and a location.\n" * 10, encoding="utf-8")
-    for module in (generate,):
-        monkeypatch.setattr(module, "selected_chapter_paths", lambda selection: [str(chapter)])
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "qwen3.5-test"))
     return tmp_path, config, chapter
 
@@ -67,7 +66,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
             util.save_json(args.out_dir / "chapter/manifest.json", manifest)
             return manifest
         monkeypatch.setattr(pipeline, "process_chapter", process)
-        inputs = {"chapter_selection": {}, "consolidated_references": registry}
+        inputs = {"cinematic_chapter": [chapter_input(registry)], "consolidated_references": registry}
     params = defaults(cls)
     # Optional defaults must be recorded even when old workflows omit them.
     if stage == "consolidate":
@@ -117,7 +116,7 @@ def test_generate_continuity_plan_connection(setup, monkeypatch, connected, cine
             "source_digest": "", "chapters": {"chapter": {"sequences": [
                 {"sequence": 1, "camera": camera, **answer}]}}}
     registry = cinematic_registry(chapter, schema_version=util.REGISTRY_SCHEMA, entities=[], picture_assets=[], audio_assets=[])
-    generate.GenerateH3PromptsNode().run(registry, config, {}, **params)
+    generate.GenerateH3PromptsNode().run(registry, config, [chapter_input(registry)], **params)
     assert captured == [params.get("spatial_continuity")]
     record = util.load_json(root / config["run_folder"] / params["out_dir"] / "generate_configuration.json")
     assert "enable_spatial_continuity" not in record["node_settings"]
@@ -134,6 +133,29 @@ def test_failed_execution_does_not_claim_completed_results(setup, monkeypatch):
     assert "secret-must-not-be-saved" not in text
     assert json.loads(text)["status"] == "started"
     assert json.loads(text)["outputs"] == []
+
+
+def test_generate_uses_each_chapter_duration_and_records_it(setup, monkeypatch, cinematic_registry):
+    from copy import deepcopy
+    root, config, source = setup
+    refs = cinematic_registry(source, schema_version=util.REGISTRY_SCHEMA)
+    second = deepcopy(refs['chapters'][0])
+    second.update(chapter_id='second', source_file=str(source.with_name('second.txt')))
+    refs['chapters'].append(second)
+    refs['chapter_timelines']['second'] = deepcopy(refs['chapter_timelines']['chapter'])
+    chapters = [chapter_input(refs), chapter_input(refs, 'second')]
+    chapters[0]['duration'], chapters[1]['duration'] = 6, 12
+    captured = []
+    def process(chapter, registry, client, model, args):
+        captured.append(args)
+        return {'chapter_id': 'chapter' if len(captured) == 1 else 'second', 'outputs': []}
+    monkeypatch.setattr(lmstudio_pipeline.load('generate'), 'process_chapter', process)
+    params = defaults(generate.GenerateH3PromptsNode)
+    generate.GenerateH3PromptsNode().run(refs, config, chapters, **params)
+    assert [args.duration for args in captured] == [6, 12]
+    record = util.load_json(root / config['run_folder'] / params['out_dir'] / 'generate_configuration.json')
+    assert 'duration' not in record['node_settings']
+    assert [c['duration'] for c in record['inputs']['chapters']] == [6, 12]
 
 
 def test_mistral_records_node_thinking_and_ignores_qwen_sampling(setup, monkeypatch):

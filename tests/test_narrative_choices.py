@@ -79,13 +79,10 @@ def test_file_edit_reloads_changes_extraction_cache_and_reaches_h3(tmp_path, mon
     assert second["narrative_review"]["issues"] == value["narrative_review"]["issues"]
     refs = {"chapters": [{"chapter_id": "chapter", "source_file": str(path)}],
             "chapter_timelines": {"chapter": second}}
-    cid, sequences = generate.selected_timeline(refs, path)
-    captured = []
-    monkeypatch.setattr(generate, "chat_json", lambda *a: captured.append(a[3]) or {"scenes": []})
-    generate.plan_scenes(None, "mock", cid, json.dumps(sequences[0]), 1, 1, [],
-                        SimpleNamespace(duration=8, scenes_per_chunk=4))
-    assert "A chosen event" in captured[0]
-    assert "B chosen" not in captured[0] and "proposals" not in captured[0]
+    cid, sequences = generate.selected_timeline(refs, {**chapters[0], "source_file": str(path)})
+    assert cid == "chapter"
+    assert "A chosen event" in json.dumps(sequences)
+    assert "B chosen" not in json.dumps(sequences) and "proposals" not in json.dumps(sequences)
 
 
 def test_proposal_failure_is_not_swallowed():

@@ -20,6 +20,7 @@ class CinematicChapterAdapterNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "out_dir": ("STRING", {"default": "cinematic_chapters"}),
+            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "Target duration per cinematic scene. Use the same duration in Generate H3 Prompts."}),
             "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
@@ -37,13 +38,15 @@ class CinematicChapterAdapterNode:
 
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="cinematic_chapters",
-            chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=2, thinking: bool = True):
+            chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=2, thinking: bool = True, duration=8.0):
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         if chunk_chars < 1 or correction_attempts < 0 or max_tokens < 1:
             raise ValueError("Invalid adaptation size, token budget or correction attempts.")
+        if type(duration) not in (int, float) or not 4 <= duration <= 15:
+            raise ValueError("duration must be between 4 and 15 seconds.")
         paths = util.discover_inputs([Path(path) for path in chapter_path_list(chapter_selection)])
         if not paths:
             raise ValueError("No supported chapter files found.")
@@ -51,7 +54,7 @@ class CinematicChapterAdapterNode:
         output = stage_output(lmstudio_config, out_dir.strip())
         pipeline = lmstudio_pipeline.load("extract")
         client, model = lmstudio_pipeline.make_client_and_model(pipeline, lmstudio_config["api_url"], lmstudio_config)
-        settings = dict(chunk_chars=int(chunk_chars), temperature=float(temperature),
+        settings = dict(duration=float(duration), chunk_chars=int(chunk_chars), temperature=float(temperature),
                         max_tokens=int(max_tokens), correction_attempts=int(correction_attempts))
         chapters, artifacts = [], []
         with client:

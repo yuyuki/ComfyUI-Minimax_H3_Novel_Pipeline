@@ -10,7 +10,6 @@ from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 
 
 @pytest.mark.parametrize("name,value", [
-    ("duration", 3.9), ("duration", 15.1), ("duration", float("nan")),
     ("max_pictures", 10), ("max_pictures_per_subject", 10),
     ("max_audio", 4), ("max_audio", -1), ("max_audio", 1.5),
     ("max_shots", 7), ("max_scenes", -1),
@@ -20,10 +19,14 @@ def test_invalid_parameters_fail_before_execution(name, value):
         Node().run(None, None, None, "", **{name: value})
 
 
-@pytest.mark.parametrize("duration", [4, 8, 15])
-def test_valid_boundaries(duration):
-    Node.validate_parameters(dict(duration=duration, max_pictures=9,
+def test_valid_boundaries():
+    Node.validate_parameters(dict(max_pictures=9,
                                   max_pictures_per_subject=9, max_audio=3, max_shots=6))
+
+
+def test_duration_override_is_not_supported():
+    with pytest.raises(ValueError, match="Unknown Generate H3 parameters: duration"):
+        Node.validate_parameters({"duration": 8})
 
 
 def test_example_uses_valid_current_defaults():

@@ -32,11 +32,11 @@ def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
         assert "Never fall back to English" in system
         assert "when you support it" not in system
         assert data["current_passage"] == source
-        if schema == ca._SINGLE_SCHEMA:
+        if "rejected_adaptation" in data or calls.count(ca.SCHEMA["name"]) > 2:
             if "rejected_adaptation" in data:
                 assert data["rejected_adaptation"]["events"] == english["events"]
-                return deepcopy(french)
-            return deepcopy(english)
+                return {"sequences": [{"source": source, **deepcopy(french)}]}
+            return {"sequences": [{"source": source, **deepcopy(english)}]}
         return {"sequences": [{"source": "Wrong copy." if recovery else source, **english}]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
@@ -51,4 +51,4 @@ def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
     }
     assert result["narrative_review"] == {"issues": []}
     assert calls.count(nv.SCHEMA["name"]) == 2
-    assert calls.count(ca._SINGLE_SCHEMA["name"]) == (2 if recovery else 1)
+    assert calls.count(ca.SCHEMA["name"]) == (4 if recovery else 2)

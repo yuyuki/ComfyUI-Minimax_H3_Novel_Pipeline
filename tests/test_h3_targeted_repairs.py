@@ -23,7 +23,7 @@ def settings(attempts=2):
 def test_two_error_groups_use_separate_schemas_and_preserve_other_sections(monkeypatch):
     good = prompt_with_shots("[Shot 1] He waits.")
     bad = step.replace_prompt_sections(good, {"summary": "reference generation + video continuation. He waits.",
-                                             "detailed_description": "[Shot 1] He waits."})
+                                             "detailed_description": "[Shot 2] He waits."})
     calls = []
     def chat(client, model, system, user, schema, *args):
         payload = json.loads(user)
@@ -72,15 +72,15 @@ def test_rejected_patch_keeps_original_and_retries_with_feedback(monkeypatch, re
 
 def test_failed_group_does_not_discard_successful_other_group(monkeypatch):
     good = prompt_with_shots("[Shot 1] He waits.")
-    bad = step.replace_prompt_sections(good, {"summary": "Wrong prefix", "detailed_description": "[Shot 1] Wait."})
+    bad = step.replace_prompt_sections(good, {"summary": "Wrong prefix", "detailed_description": "[Shot 2] Wait."})
     def chat(client, model, system, user, schema, *args):
         names = json.loads(user)["sections_to_repair"]
-        return {name: step.section_body(good, name) if name == "summary" else "[Shot 1] Still too short."
+        return {name: step.section_body(good, name) if name == "summary" else "[Shot 2] Still incorrect numbering."
                 for name in names}
     monkeypatch.setattr(step, "chat_json", chat)
     result = step.format_prompt(None, "model", bad, scene(), BINDINGS, settings(), {})
     assert step.section_body(result["prompt"], "summary") == step.section_body(good, "summary")
-    assert step.section_body(result["prompt"], "detailed_description") == "[Shot 1] Wait."
+    assert step.section_body(result["prompt"], "detailed_description") == "[Shot 2] Wait."
     assert not step.validate_prompt(result["prompt"], BINDINGS, 8).ok
 
 

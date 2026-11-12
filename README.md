@@ -25,12 +25,14 @@ Turn novel chapters into organized character, location and object references, th
 
 1. In **ComfyUI Settings → MiniMax H3 Novel → Providers**, enable LM Studio and/or OpenAI. Each card has its own **Test** and **Save** buttons; disabled cards collapse to their title and toggle. For LM Studio, load a supported model, start its API server and enter its URL and API key (use `lm-studio` if authentication is off). For OpenAI, enter your API key and model; the URL is fixed to `https://api.openai.com/v1`. OpenAI processing incurs API charges. Keys are masked, stored in ComfyUI settings, and excluded from workflows and outputs.
 2. Add **Provider Configuration** and choose **LM Studio** or **OpenAI**. Only enabled providers with a saved API key and model appear. The node displays the saved model automatically and reads its API URL from settings. Qwen controls appear only for Qwen models in LM Studio. **Test** checks connectivity and model availability without generating text or saving drafts; **Save** applies the card. Fetch models in the provider card, select one and click **Save** before using the node. Restart ComfyUI and refresh the browser after updating this plugin.
-3. Connect **Select Chapters** → **Cinematic Chapter Adapter** → **Extract Chapter References** → **Consolidate References** → **Generate H3 Prompts**. Share the configuration with each processing node and connect the chapter selection to Generate as well.
+3. Connect **Select Chapters** → **Cinematic Chapter Adapter** → **Extract Chapter References** → **Consolidate References** → **Generate H3 Prompts**. Share the configuration with each processing node and connect the adapter's cinematic_chapters output to Generate's cinematic_chapter input as well. Set the scene duration in Adapter; Generate reads it from each cinematic chapter.
 4. Choose your chapter files, then queue the workflow. The plugin saves results under `ComfyUI/output/minimax_h3_novel/`.
 
 The chapter picker supports TXT, Markdown and searchable PDF files. Review the adapter's chapter scenes before extraction, or reload edited scenes with **Load Cinematic Chapters**. See [examples](examples/README.md) for workflow details and saved-file loading.
 
 Each processing node's `thinking` checkbox controls reasoning requests for Qwen, Gemma and Mistral in LM Studio. Saved configurations and stream logs reflect that setting. The loaded model and its chat template must support switching reasoning off; Gemma/Mistral requests fail if reasoning is returned while disabled. `reasoning_chars` reports the actual returned reasoning. GPT-OSS always reasons and reports `thinking=true`; its effort is set in LM Studio. Hosted OpenAI requests have no thinking control in this plugin. Character evidence auditing uses its separate `audit_thinking` checkbox.
+
+Version 2.6.0 uses one H3 scene per cinematic sequence and validates continuity citations against the supplied evidence. Recreate Adapter and Generate nodes after updating; saved chapters must include the adaptation duration.
 
 ## Nodes
 

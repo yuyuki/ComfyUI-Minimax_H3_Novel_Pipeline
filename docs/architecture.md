@@ -44,15 +44,16 @@ flowchart TD
     designs --> generate["Generate H3 Prompts"]
     consolidate --> generate
     local_enrichment --> generate
-    selector --> generate
+    adapted --> generate
+    loader --> generate
     config --> generate
     generate --> review["H3 validation, camera processing, temporal review/repair"]
 ```
 
 The node wrappers coordinate filesystem access, configuration snapshots and run outputs. The three `pipeline_step*` modules contain the LLM-facing stage implementations.
 H3 repairs request strict JSON patches for affected section bodies, grouping related errors in the same section. Exact assigned image IDs can be translated locally to Picture labels. Each proposed merge must resolve its targeted format errors without introducing new ones; rejected patches retain the previous wording and provide feedback for bounded retries. Continuity evidence routes semantic patches to cited prompt sections, and the complete continuity review must run again before approval.
-`character_profile_batches` separates bounded identity and precise-trait requests with resumable per-request caches. `character_profile_document` validates editable profiles, selections, sources and direct identity links against the bundled schema. `character_visual_profiles` deterministically projects permanent physical facts for source-selected chapters. The visual generator then uses `character_visual_review` for a source-grounded identity pass, caching requests under its own output directory and reprojecting confirmed links into the same design and companion files without editing upstream profiles. `character_visual_integration` maps independent profile and registry identities during consolidation and computes scene-local presence, temporary states and chronological variants through `character_chapter_enrichment`. H3 planning and prompts consume those local decisions; visual bindings exclude mapped mentions and offscreen voices.
-The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its ordered phases feed extraction; catalogs and registries retain temporal observations.
+`character_profile_batches` separates bounded identity and precise-trait requests with resumable per-request caches. `character_profile_document` validates editable profiles, selections, sources and direct identity links against the bundled schema. `character_visual_profiles` deterministically projects permanent physical facts for source-selected chapters. The visual generator then uses `character_visual_review` for a source-grounded identity pass, caching requests under its own output directory and reprojecting confirmed links into the same design and companion files without editing upstream profiles. `character_visual_integration` maps independent profile and registry identities during consolidation and computes scene-local presence, temporary states and chronological variants through `character_chapter_enrichment`. H3 reference metadata and prompts consume those local decisions; visual bindings exclude mapped mentions and offscreen voices.
+The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its duration-aware ordered scenes feed extraction and H3 generation directly; generation preserves one scene per sequence. Catalogs and registries retain temporal observations.
 `narrative_validation` reviews adaptation source fidelity and transitions before targeted sequence repairs, and reviews extracted phases using only earlier identity context. Rejected phase results are not cached; persistent semantic defects stop the stage.
 Adaptation repairs use the full passage source and neighboring sequences as context. When enabled targeted corrections are exhausted, one final source-bound reconstruction of the passage is reviewed before acceptance.
 
@@ -329,6 +330,7 @@ flowchart TD
     m_nodes_extract_chapter_references --> m_core_run_output
     m_nodes_extract_chapter_references --> m_core_temporal_context
     m_nodes_extract_chapter_references --> m_core_util
+    m_nodes_generate_h3_prompts --> m_core_cinematic_references
     m_nodes_generate_h3_prompts --> m_core_configuration_snapshot
     m_nodes_generate_h3_prompts --> m_core_image_prompt_export
     m_nodes_generate_h3_prompts --> m_core_lmstudio_pipeline
@@ -336,7 +338,6 @@ flowchart TD
     m_nodes_generate_h3_prompts --> m_core_progress
     m_nodes_generate_h3_prompts --> m_core_run_output
     m_nodes_generate_h3_prompts --> m_core_util
-    m_nodes_generate_h3_prompts --> m_nodes_chapter_selection
     m_nodes_generate_h3_prompts --> m_nodes_spatial_continuity
     m_nodes_lmstudio_config --> m_core_lmstudio_settings
     m_nodes_lmstudio_config --> m_core_progress
@@ -401,8 +402,8 @@ flowchart TD
 | `src/core/cinematic_adaptation.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.progress` | `adapt_chapter`, `source_chunks` |
 | `src/core/cinematic_references.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.temporal_context`, `core.util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
 | `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_model_openai`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
-| `src/core/continuity_context.py` | — | `batches`, `fits`, `pack` |
-| `src/core/continuity_issues.py` | `core.continuity_context`, `core.generation_requests` | `UnresolvedEvidenceError`, `metadata_schema`, `repair_metadata`, `resolve`, `unique`, `validate` |
+| `src/core/continuity_context.py` | — | `batches`, `budget_details`, `fits`, `pack` |
+| `src/core/continuity_issues.py` | `core.continuity_context`, `core.generation_requests` | `UnresolvedEvidenceError`, `metadata_schema`, `repair_metadata`, `resolve`, `review_schema`, `unique`, `validate` |
 | `src/core/editable_schemas.py` | `core.path_access` | `export_schema`, `export_schemas`, `obj`, `validate_document` |
 | `src/core/generation_artifacts.py` | `core.generation_requests`, `core.lmstudio_pipeline`, `core.path_access` | `ReviewCoverage`, `cached`, `implementation` |
 | `src/core/generation_evidence.py` | `core.generation_requests`, `core.lmstudio_pipeline`, `core.path_access` | `prepare` |
@@ -422,7 +423,7 @@ flowchart TD
 | `src/core/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
 | `src/core/pipeline_step1_extract.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |
 | `src/core/pipeline_step2_consolidate.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_requests`, `core.reference_timeline`, `core.temporal_context` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `request_appearance`, `similarity`, `stronger`, `threshold`, `write_asset_prompts` |
-| `src/core/pipeline_step3_generate.py` | `core.character_visual_integration`, `core.cinematic_references`, `core.continuity_context`, `core.continuity_issues`, `core.generation_artifacts`, `core.generation_evidence`, `core.generation_requests`, `core.lmstudio_json`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.reference_timeline`, `core.temporal_context`, `core.util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `artifact_dependencies`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `constrain_character_presence`, `dedupe_scenes`, `default_view_order`, `entity_index`, `finalize_scene_plan`, `fingerprint`, `format_error_sections`, `format_prompt`, `generate_prompt`, `jaccard`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `plan_scenes`, `planning_implementation`, `planning_key`, `process_chapter`, `prominence_score`, `refine_camera_prompt`, `repair_binding_notation`, `repair_prompt`, `repair_scene_inputs`, `replace_prompt_sections`, `request_map`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `selected_timeline`, `sequence_catalog`, `slug`, `timestamp_seconds`, `validate_prompt` |
+| `src/core/pipeline_step3_generate.py` | `core.character_visual_integration`, `core.cinematic_references`, `core.continuity_context`, `core.continuity_issues`, `core.generation_artifacts`, `core.generation_evidence`, `core.generation_requests`, `core.lmstudio_json`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.reference_timeline`, `core.temporal_context`, `core.util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `artifact_dependencies`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `constrain_character_presence`, `default_view_order`, `entity_index`, `format_error_sections`, `format_prompt`, `generate_prompt`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `prepare_cinematic_scene`, `process_chapter`, `prominence_score`, `prompt_is_fully_sectioned`, `refine_camera_prompt`, `repair_binding_notation`, `repair_prompt`, `repair_scene_inputs`, `replace_prompt_sections`, `request_map`, `resume_scene_files`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `selected_timeline`, `sequence_catalog`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/core/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/core/prompt_cache.py` | `core.lmstudio_json` | `fingerprint` |
 | `src/core/reference_requests.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `InvalidResponse`, `validate_assets`, `validated_request` |
@@ -440,7 +441,7 @@ flowchart TD
 | `src/nodes/consolidate_character_profiles.py` | `core.character_profiles`, `core.configuration_snapshot`, `core.lmstudio_pipeline`, `core.progress`, `core.run_output` | `ConsolidateCharacterProfilesNode` |
 | `src/nodes/consolidate_references.py` | `core.character_visual_integration`, `core.cinematic_references`, `core.configuration_snapshot`, `core.editable_schemas`, `core.image_prompt_export`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_timeline`, `core.run_output`, `core.util`, `core.visual_designs` | `ConsolidateReferencesNode` |
 | `src/nodes/extract_chapter_references.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.lmstudio_pipeline`, `core.progress`, `core.run_output`, `core.temporal_context`, `core.util` | `ExtractChapterReferencesNode` |
-| `src/nodes/generate_h3_prompts.py` | `core.configuration_snapshot`, `core.image_prompt_export`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.run_output`, `core.util`, `nodes.chapter_selection`, `nodes.spatial_continuity` | `GenerateH3PromptsNode` |
+| `src/nodes/generate_h3_prompts.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.image_prompt_export`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.run_output`, `core.util`, `nodes.spatial_continuity` | `GenerateH3PromptsNode` |
 | `src/nodes/lmstudio_config.py` | `core.lmstudio_settings`, `core.progress`, `core.run_output` | `LMStudioConfigurationNode` |
 | `src/nodes/load_chapter_catalogs.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.progress`, `core.util` | `LoadChapterCatalogsNode` |
 | `src/nodes/load_character_evidence.py` | `core.character_evidence`, `core.configuration_snapshot`, `core.progress`, `core.util` | `LoadCharacterEvidenceNode` |

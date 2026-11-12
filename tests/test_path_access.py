@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Confinement regressions with temporary server roots and no network work."""
 import json
 import os
@@ -84,7 +85,7 @@ def test_input_discovery_uses_server_root_and_natural_order(roots, monkeypatch, 
 @pytest.mark.parametrize("node,kwargs", [
     (ExtractChapterReferencesNode, {"cinematic_chapters": []}),
     (ConsolidateReferencesNode, {"chapter_catalogs": [{"chapter_id": "one"}]}),
-    (GenerateH3PromptsNode, {"consolidated_references": {}, "chapter_selection": {}}),
+    (GenerateH3PromptsNode, {"consolidated_references": {}, "cinematic_chapter": []}),
 ])
 def test_all_stages_reject_output_escape_before_loading_pipeline(roots, monkeypatch, tmp_path, node, kwargs):
     load = Mock(side_effect=AssertionError("Must reject before pipeline/network work"))
@@ -99,12 +100,12 @@ def test_all_stages_reject_output_escape_before_loading_pipeline(roots, monkeypa
 @pytest.mark.parametrize("node,extra", [
     (GenerateH3PromptsNode, {"consolidated_references": {}}),
 ])
-def test_chapter_selection_rejects_external_reads(roots, monkeypatch, tmp_path, node, extra):
+def test_cinematic_input_rejects_file_paths(roots, monkeypatch, tmp_path, node, extra):
     load = Mock(side_effect=AssertionError("Must reject before pipeline/network work"))
     monkeypatch.setattr(lmstudio_pipeline, "load", load)
     outside = tmp_path / "private.txt"
     outside.write_text("Private text. " * 20, encoding="utf-8")
-    fields = {"chapter_selection": {"chapter_paths": [str(outside)]}}
+    fields = {"cinematic_chapter": str(outside)}
     with pytest.raises(ValueError):
         node().run(lmstudio_config={}, out_dir="safe", **fields, **extra)
     load.assert_not_called()
@@ -209,7 +210,7 @@ def test_bundled_steps_reject_nested_directory_escape(roots, tmp_path, step_name
         if step_name == "extract":
             step.process_chapter(chapter, output, None, "mock", args)
         else:
-            step.process_chapter(chapter, cinematic_registry(chapter), None, "mock", args)
+            step.process_chapter(chapter_input(cinematic_registry(chapter)), cinematic_registry(chapter), None, "mock", args)
     assert list(outside.iterdir()) == []
 
 
@@ -219,10 +220,11 @@ def test_generated_scene_files_and_manifest_stay_in_output(roots, monkeypatch, c
     chapter = source / "chapter.txt"
     chapter.write_text("Chapter text. " * 20, encoding="utf-8")
     step = lmstudio_pipeline.load("generate")
-    monkeypatch.setattr(step, "plan_scenes", lambda *args: [])
+    monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     args = SimpleNamespace(force=True, chunk_chars=5500, overlap_paragraphs=0,
-                           out_dir=output, duration=8, delay=0, max_scenes=0)
-    manifest = step.process_chapter(chapter, cinematic_registry(chapter), None, "mock", args)
+                           out_dir=output, duration=8, delay=0, max_scenes=0,
+                           max_pictures=8, max_pictures_per_subject=4, max_audio=3)
+    manifest = step.process_chapter(chapter_input(cinematic_registry(chapter)), cinematic_registry(chapter), None, "mock", args)
     assert json.loads((output / "chapter/manifest.json").read_text()) == manifest
     scene = SimpleNamespace(title="A scene", visual_event="An event", adaptation_notes="", source_excerpt="Text")
     bindings = {"picture_input_order": [], "subjects": [], "audio": []}

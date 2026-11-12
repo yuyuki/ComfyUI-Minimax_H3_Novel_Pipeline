@@ -1,6 +1,5 @@
 """Strict, evidence-linked continuity issues and bounded metadata corrections."""
 from copy import deepcopy
-import logging
 
 from jsonschema import Draft202012Validator
 
@@ -8,7 +7,6 @@ from . import continuity_context
 from .generation_requests import digest
 
 
-logger = logging.getLogger(__name__)
 
 
 ISSUE = {"type": "object", "properties": {
@@ -16,7 +14,7 @@ ISSUE = {"type": "object", "properties": {
     "message": {"type": "string", "minLength": 1},
     "evidence_paths": {"type": "array", "minItems": 1, "items": {"type": "string"}},
 }, "required": ["target", "message", "evidence_paths"], "additionalProperties": False}
-SCHEMA = {"name": "scene_continuity_review_v2", "strict": True, "schema": {
+SCHEMA = {"name": "scene_continuity_review_v3", "strict": True, "schema": {
     "type": "object", "properties": {"errors": {"type": "array", "items": ISSUE}},
     "required": ["errors"], "additionalProperties": False}}
 
@@ -48,7 +46,7 @@ prompt or /current_prompt_sections/<section_name> for a specific section, such a
 only when raw text is needed to preserve malformed or unparsed content; cite
 /current_prompt only if that field is actually supplied. Do not append section
 names to /current_prompt.
-Use the supplied structured schema exactly.
+Select evidence_paths only from the enum supplied in the schema. Cite a parent container when a nested field is not offered. adaptation_notes belongs to /current_scene, never /current_prompt_sections. Use the supplied structured schema exactly.
 """
 
 
@@ -69,6 +67,29 @@ def resolve(payload, path):
     return value
 
 
+def review_schema(payload):
+    """Offer only existing evidence addresses, with bounded schema overhead.
+
+    Container citations retain every nested value. Lists expose each record,
+    and scene/section objects expose their immediate fields.
+    """
+    paths = []
+    def escaped(key):
+        return str(key).replace("~", "~0").replace("/", "~1")
+    for key, value in payload.items():
+        if key == "review_validation_feedback":
+            continue
+        root = "/" + escaped(key)
+        paths.append(root)
+        if isinstance(value, dict):
+            paths.extend(root + "/" + escaped(field) for field in value)
+        elif isinstance(value, list):
+            paths.extend(root + "/" + str(index) for index in range(len(value)))
+    schema = deepcopy(SCHEMA)
+    schema["schema"]["properties"]["errors"]["items"]["properties"]["evidence_paths"]["items"]["enum"] = paths
+    return schema
+
+
 def validate(result, payload):
     if not Draft202012Validator(SCHEMA["schema"]).is_valid(result):
         raise ValueError("LM Studio returned an invalid scene continuity review.")
@@ -83,20 +104,8 @@ def validate(result, payload):
             try:
                 value = resolve(payload, path)
             except (KeyError, IndexError, TypeError, ValueError):
-                # Correct only a misplaced, existing prompt section. Other
-                # unresolved pointers must still fail evidence validation.
-                parts = path.split("/")
-                sections = payload.get("current_prompt_sections")
-                section = parts[-1].replace("~1", "/").replace("~0", "~")
-                if (len(parts) != 3 or parts[1] != "current_prompt"
-                        or not isinstance(sections, dict)
-                        or not isinstance(sections.get(section), str)):
-                    unresolved_paths.append(path)
-                    continue
-                corrected_path = "/current_prompt_sections/" + parts[-1]
-                value = resolve(payload, corrected_path)
-                logger.warning("Corrected H3 continuity evidence path %r to %r", path, corrected_path)
-                path = corrected_path
+                unresolved_paths.append(path)
+                continue
             # Keep exact cited values with the issue: later repairs may run
             # after this batch is gone. No second interpretation or truncation.
             evidence.append({"path": path, "value": deepcopy(value)})

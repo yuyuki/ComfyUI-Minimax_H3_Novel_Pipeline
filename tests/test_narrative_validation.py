@@ -31,9 +31,9 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
             reviews.append(deepcopy(data))
             return {"issues": [{"target": 2, "message": "Final state contradicts or omits source facts."}]
                     if data["sequences"][1]["final_state"] == bad else []}
-        if schema == ca._SINGLE_SCHEMA:
+        if "rejected_adaptation" in data:
             repairs.append(data)
-            return {"initial_state": second["initial_state"], "events": [source], "final_state": good}
+            return {"sequences": [{"source": data["current_passage"], "initial_state": second["initial_state"], "events": [source], "final_state": good}]}
         return {"sequences": deepcopy([first, second])}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
@@ -53,15 +53,14 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
     calls = []
 
     def chat(client, model, system, prompt, schema, *args):
+        data, _ = json.JSONDecoder().raw_decode(prompt)
         calls.append(schema["name"])
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
         if schema == nv.SCHEMA:
             return {"issues": [{"target": 1, "message": "Missing explicit action."}]}
         fields = {"initial_state": "Before.", "events": [], "final_state": "After."}
-        if schema == ca._SINGLE_SCHEMA:
-            return fields
-        return {"sequences": [{"source": "Wrong copy.", **fields}]}
+        return {"sequences": [{"source": "Wrong copy." if calls.count(ca.SCHEMA["name"]) <= 2 else data["current_passage"], **fields}]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     result = ca.adapt_chapter(None, "mock", "A bell rings.", chunk_chars=4000,
@@ -71,7 +70,7 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
     assert [p["selected"] for p in issue["proposals"]] == [True, False]
     assert result["sequences"][0]["adaptation"] == issue["proposals"][0]["adaptation"]
     assert calls.count(nv.SCHEMA["name"]) == 3
-    assert calls.count(ca._SINGLE_SCHEMA["name"]) == 3
+    assert calls.count(ca.SCHEMA["name"]) == 5
 
 
 @pytest.mark.parametrize("attempts", [0, 1, 2])
@@ -93,16 +92,16 @@ def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, a
             reviews.append(deepcopy(data))
             return {"issues": [{"target": 1, "message": "Preserve the swinging motion."}]
                     if data["sequences"][0]["initial_state"] == bad["initial_state"] else []}
-        if schema == ca._SINGLE_SCHEMA:
+        if "rejected_adaptation" in data:
             repairs.append(data)
             assert "Review\nmessages and generated states are fallible" in system
             if "target_sequence" in data:
-                return deepcopy(bad)  # Targeted repairs fail; reconstruction succeeds.
+                return {"sequences": [{"source": data["current_passage"], **bad}]}  # Targeted repair fails.
             assert data["current_passage"] == source
             assert data["previous_final_state"] == ""
             assert data["defects_to_correct"] == {"1": ["Preserve the swinging motion."]}
             assert len(data["rejected_adaptation"]) == 2
-            return deepcopy(good)
+            return {"sequences": [{"source": data["current_passage"], **good}]}
         if data["current_passage"] == following:
             assert data["previous_final_state"] == good["final_state"]
             return {"sequences": [{"source": following, **good}]}
@@ -138,10 +137,10 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
         if schema == nv.SCHEMA:
             return {"issues": [{"target": i + 1, "message": "Incorrect posture."}
                                for i, s in enumerate(data["sequences"]) if s["final_state"] == "Wrong."]}
-        if schema == ca._SINGLE_SCHEMA:
+        if "rejected_adaptation" in data:
             repairs.append(data)
-            return {"initial_state": "Il se balance.", "events": [data["current_passage"]],
-                    "final_state": "Il se balance."}
+            return {"sequences": [{"source": data["current_passage"], "initial_state": "Il se balance.", "events": [data["current_passage"]],
+                    "final_state": "Il se balance."}]}
         return {"sequences": deepcopy(sequences)}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
@@ -150,6 +149,33 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
     assert len(repairs) == 2
     assert repairs[1]["previous_final_state"] == "Il se balance."
     assert repairs[1]["context_sequences"][0]["final_state"] == "Il se balance."
+
+
+def test_duration_repair_splits_scene_and_keeps_following_target_and_state(monkeypatch):
+    sources = ["First. Second.", " Third."]
+    fields = {"initial_state": "Before.", "events": ["Action."], "final_state": "Wrong."}
+    repairs = []
+    def chat(client, model, system, prompt, schema, *args):
+        assert "6" in system and "duration" in system
+        data = json.loads(prompt)
+        if schema == nv.SCHEMA:
+            return {"issues": [{"target": i + 1, "message": "Split excessive action or correct state."}
+                               for i, s in enumerate(data["sequences"]) if s["final_state"] == "Wrong."]}
+        assert schema == ca.SCHEMA and schema["strict"]
+        if "target_sequence" in data:
+            repairs.append(data)
+            parts = ["First.", " Second."] if len(repairs) == 1 else [sources[1]]
+            return {"sequences": [{"source": s, **fields, "final_state": "Correct."} for s in parts]}
+        return {"sequences": [{"source": s, **fields} for s in sources]}
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    result = ca.adapt_chapter(None, "mock", "".join(sources), chunk_chars=4000,
+                             temperature=.1, max_tokens=2000, correction_attempts=1, duration=6)
+    assert result["duration"] == 6
+    assert len(result["sequences"]) == 3 and len(repairs) == 2
+    assert repairs[1]["target_sequence"] == 3
+    assert repairs[1]["previous_final_state"] == "Correct."
+    assert repairs[1]["current_passage"].strip() == "Third."
+    assert "".join(s["source"] for s in result["sequences"]) == "".join(sources)
 
 
 @pytest.mark.parametrize("response", [{}, {"issues": None}, {"issues": [{"target": True, "message": "x"}]},
@@ -190,7 +216,7 @@ def test_malformed_reviews_reach_resolvable_proposals(monkeypatch, attempts):
             assert "Missing bell." in prompt
             return proposal_response()
         fields = {"initial_state": "Before.", "events": [source], "final_state": "After."}
-        return fields if schema == ca._SINGLE_SCHEMA else {"sequences": [{"source": source, **fields}]}
+        return {"sequences": [{"source": source, **fields}]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     result = ca.adapt_chapter(None, "mock", source, chunk_chars=4000,

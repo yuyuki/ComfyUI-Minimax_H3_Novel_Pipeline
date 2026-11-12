@@ -1,3 +1,4 @@
+from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Stage reuse never substitutes for final format or complete evidence checks."""
 from copy import deepcopy
 import json
@@ -126,7 +127,7 @@ def test_settings_recompute_only_affected_stages(scope, monkeypatch, cinematic_r
                           repair_attempts=1, refine_camera=True, camera_thinking=False,
                           review_thinking=False, temperature=.38,
                           spatial_plan={"chapters": {"chapter": {"sequences": [{"sequence": 1}]}}})
-    monkeypatch.setattr(step, "plan_scenes", lambda *a: [step.Scene("Wait", "Source", "Wait", "", [], [], [], False, "")])
+    monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [{"global_id": "hero"}], "audio": []})
     generation, camera = Mock(return_value="draft"), Mock(return_value=("camera wording", []))
     monkeypatch.setattr(step, "generate_prompt", generation)
@@ -135,9 +136,9 @@ def test_settings_recompute_only_affected_stages(scope, monkeypatch, cinematic_r
     monkeypatch.setattr(step, "save_scene", lambda *a: {"subject_count": 1, "picture_count": 1, "audio_count": 0})
     network = Mock(return_value={"errors": []})
     monkeypatch.setattr(lmstudio_json, "chat_json", network)
-    step.process_chapter(chapter, refs, None, "gemma", scope)
+    step.process_chapter(chapter_input(refs), refs, None, "gemma", scope)
     setattr(scope, change, {"temperature": .7, "duration": 12}.get(change, True))
-    result = step.process_chapter(chapter, refs, None, "gemma", scope)
+    result = step.process_chapter(chapter_input(refs), refs, None, "gemma", scope)
     assert generation.call_count == drafts
     assert camera.call_count == cameras
     assert result["outputs"][0]["continuity_review"]["valid"]

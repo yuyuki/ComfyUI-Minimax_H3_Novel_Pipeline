@@ -69,12 +69,10 @@ def test_recovery_remains_bounded_and_rejects_invalid_fallback(monkeypatch, inva
 
     def chat(*args):
         requests.append(args[3])
-        if args[4]["name"] == "cinematic_single_passage":
-            return {"initial_state": "Before.", "events": [""], "final_state": "After."}
         return {"sequences": [_sequence(invalid_source)]}
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ValueError, match="Cinematic adaptation passage 1/1: events"):
+    with pytest.raises(ValueError, match="Cinematic adaptation passage 1/1: Source excerpts"):
         adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
                                  temperature=0.15, max_tokens=8192, correction_attempts=1)
     # Two attempts each for the original, its half, the small child and fallback.
@@ -92,10 +90,9 @@ def test_copy_failure_regenerates_whole_passage_and_preserves_continuity(monkeyp
         if payload["current_passage"].strip() == "Il part.":
             assert payload["previous_final_state"] == "Il a crié."
             return {"sequences": [_sequence("Il part.")]}
-        if schema["name"] == "cinematic_single_passage":
-            assert "source" not in schema["schema"]["properties"]
-            return {"initial_state": "Il est debout.", "events": ["Il attend.", "Il crie."],
-                    "final_state": "Il a crié."}
+        if len(requests) > 2:
+            return {"sequences": [{"source": payload["current_passage"], "initial_state": "Il est debout.", "events": ["Il attend.", "Il crie."],
+                    "final_state": "Il a crié."}]}
         return {"sequences": [_sequence(invalid_source)]}
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
@@ -106,7 +103,7 @@ def test_copy_failure_regenerates_whole_passage_and_preserves_continuity(monkeyp
     assert result["sequences"][0]["adaptation"]["event"] == "1. Il attend.\n2. Il crie."
     assert [name for name, _ in requests] == [
         "cinematic_chapter_adaptation", "cinematic_chapter_adaptation",
-        "cinematic_single_passage", "cinematic_chapter_adaptation",
+        "cinematic_chapter_adaptation", "cinematic_chapter_adaptation",
     ]
 
 
@@ -148,7 +145,7 @@ def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monk
                                       chapter_name="Chapitre 1 — Le départ")
     assert [item["sequence"] for item in result["sequences"]] == [1, 2, 3]
     assert "".join(item["source"] for item in result["sequences"]) == source
-    assert set(result) == {"chapter_name", "sequences", "narrative_review"}
+    assert set(result) == {"chapter_name", "sequences", "narrative_review", "duration"}
     assert result["chapter_name"] == "Chapitre 1 — Le départ"
     assert all(set(item) == {"sequence", "source", "adaptation"} for item in result["sequences"])
     assert result["sequences"][1]["adaptation"] == {
@@ -169,11 +166,11 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(adapter, "stage_output", lambda *args: tmp_path / "output")
     monkeypatch.setattr(adapter.lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "mock"))
+    calls = []
     def chat(*args):
+        calls.append(args)
         fields = {"initial_state": "Il est ici.", "events": ["Il part."], "final_state": "Il est parti."}
-        if args[4]["name"] == "cinematic_single_passage":
-            return fields
-        return {"sequences": [{"source": "Incorrect." if copy_failure else source, **fields}]}
+        return {"sequences": [{"source": "Incorrect." if copy_failure and len(calls) <= 3 else source, **fields}]}
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
 
@@ -185,7 +182,7 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
     assert "Il est parti." in response["ui"]["text"][0]
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
     assert saved == {"chapter_name": "chapter", "sequences": chapters[0]["sequences"],
-                     "narrative_review": {"issues": []},
+                     "narrative_review": {"issues": []}, "duration": 8.0,
                      "source_file": str(chapter)}
     assert chapters[0]["chapter_name"] == "chapter"
     assert saved["sequences"] == [{
