@@ -14,6 +14,19 @@ def chapter(review):
             "adaptation": {p: "Original " + p for p in nc.PHASES}}], "narrative_review": review}
 
 
+def test_proposal_rejects_source_metadata_in_events():
+    proposals = [{"reason": "Choix", "adaptation": {
+        "initialState": "Il attend.", "event": "1. Il attend.\n2. source_excerpt: Il attend.",
+        "endingState": "Il attend encore.",
+    }} for _ in range(2)]
+    with pytest.raises(ValueError, match="source_excerpt metadata"):
+        nc.propose(lambda *args: {"proposals": proposals}, None, "mock", {}, 1000)
+
+
+def test_dialogue_mentioning_source_excerpt_is_preserved():
+    nc.validate_scene_text('1. Il dit : « source_excerpt: est une clé JSON. »')
+
+
 @pytest.mark.parametrize("flags,chosen", [([False, False], 0), ([True, True], 0), ([False, True], 1)])
 def test_normalize_apply_without_mutating_input(narrative_review, flags, chosen, capsys):
     for proposal, flag in zip(narrative_review["issues"][0]["proposals"], flags):

@@ -19,6 +19,41 @@ def _sequence(source, initial="Before.", final="After."):
     return {"source": source, "initial_state": initial, "events": ["Action."], "final_state": final}
 
 
+@pytest.mark.parametrize("metadata", [
+    "source_excerpt: Il attend.",
+    '3. source_excerpt: Il attend.',
+    'Il attend.\n3. "source_excerpt": "Il attend."',
+])
+def test_source_metadata_in_events_is_regenerated(monkeypatch, metadata):
+    source = "Il attend."
+    calls = []
+
+    def chat(client, model, system, prompt, schema, *args):
+        calls.append(prompt)
+        assert schema == adaptation.SCHEMA
+        assert schema["strict"] is True
+        item = _sequence(source)
+        item["events"] = ["Il attend.", metadata] if len(calls) == 1 else ["Il attend."]
+        return {"sequences": [item]}
+
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
+                                      temperature=0.15, max_tokens=8192, correction_attempts=1)
+    assert len(calls) == 2
+    assert "source_excerpt metadata must not appear" in calls[1]
+    assert result["sequences"][0]["source"] == source
+    assert result["sequences"][0]["adaptation"]["event"] == "1. Il attend."
+
+
+def test_source_metadata_cannot_be_saved_when_corrections_exhausted(monkeypatch):
+    item = _sequence("Il attend.")
+    item["events"] = ["source_excerpt: Il attend."]
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", lambda *args: {"sequences": [item]})
+    with pytest.raises(ValueError, match="source_excerpt metadata"):
+        adaptation.adapt_chapter(None, "mock", "Il attend.", chunk_chars=4000,
+                                 temperature=0.15, max_tokens=8192, correction_attempts=0)
+
+
 def test_long_passage_recovers_after_corrections_with_lossless_continuity(monkeypatch):
     source = "Il attend. Il crie.\n\n" * 300
     requests = []

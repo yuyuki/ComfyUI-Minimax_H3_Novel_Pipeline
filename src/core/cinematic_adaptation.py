@@ -30,6 +30,8 @@ verbatim, including dialogue in a different language from the narration.
 For EACH sequence return initial_state, events (an ordered list), and final_state.
 initial_state describes ONLY what is already true BEFORE the first event.
 events contains ALL actions and dialogue in strict causal, chronological order.
+Keep verbatim source excerpts only in source. Never insert source_excerpt:
+metadata into initial_state, events or final_state, even as a numbered event.
 final_state describes what is true AFTER those events, with enough continuity
 information for the next passage: characters, positions, held/lost objects,
 distinct instances of similar props and relevant offscreen facts. Preserve
@@ -124,6 +126,8 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
                 raise ValueError(f"{key} must be a nonempty string.")
         if not isinstance(item["events"], list) or any(not isinstance(e, str) or not e.strip() for e in item["events"]):
             raise ValueError("events must be an array of nonempty strings.")
+        for description in (item["initial_state"], *item["events"], item["final_state"]):
+            narrative_choices.validate_scene_text(description)
         excerpt = item["source"].strip()
         start = cursor
         while cursor < len(source) and source[cursor].isspace():

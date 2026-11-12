@@ -1,6 +1,7 @@
 """Editable cinematic alternatives, resolved before any downstream model work."""
 from copy import deepcopy
 import json
+import re
 
 PHASES = ("initialState", "event", "endingState")
 _TEXT = {"type": "string", "minLength": 1}
@@ -36,14 +37,24 @@ generated states do not set the output language. Keep JSON keys unchanged and
 preserve quoted dialogue verbatim even when it uses another language.
 Address all reported doubts together so choices do not overwrite one another.
 Use neighboring sequences only for continuity, never import their events.
+Keep source excerpts in their designated JSON fields. Never insert a
+source_excerpt: metadata line into initialState, event or endingState.
 Explain the tradeoff in reason. Return only JSON matching the schema.
 """
+
+
+def validate_scene_text(text):
+    """Reject source metadata embedded as a scene action or state."""
+    if re.search(r'''^\s*(?:\d+[.)]\s*)?["']?source_excerpt["']?\s*:''', text, re.MULTILINE | re.IGNORECASE):
+        raise ValueError("source_excerpt metadata must not appear in scene descriptions; keep excerpts in source.")
 
 
 def _validate_adaptation(value):
     if (not isinstance(value, dict) or set(value) != set(PHASES)
             or any(not isinstance(value[p], str) or not value[p].strip() for p in PHASES)):
         raise ValueError("Narrative proposal requires nonempty initialState, event and endingState strings.")
+    for phase in PHASES:
+        validate_scene_text(value[phase])
 
 
 def propose(chat, client, model, payload, max_tokens):

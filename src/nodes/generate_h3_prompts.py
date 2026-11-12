@@ -21,12 +21,12 @@ class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for reference metadata, prompt generation and format repairs. Camera and continuity review have separate controls. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for reference metadata, prompt generation and format repairs. Camera and continuity review have separate controls. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "cinematic_chapter": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Cinematic Chapter Adapter or Load Cinematic Chapters; one H3 scene per supplied sequence."}),
             "max_shots": ("INT", {"default": 1, "min": 1, "max": 6, "tooltip": "Maximum camera shots per scene. Qwen may use fewer; a shot needs at least 2.5 seconds. Default 1 preserves existing workflows."}),
             "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000, "tooltip": "Maximum scenes per chapter; 0 generates all scenes."}),
-            "max_pictures": ("INT", {"default": 8, "min": 1, "max": 9}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 9}), "max_audio": ("INT", {"default": 3, "min": 0, "max": 3}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}), "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning. Reasoning-limit retries use at least 16384 tokens."}),
+            "max_pictures": ("INT", {"default": 8, "min": 1, "max": 9}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 9}), "max_audio": ("INT", {"default": 3, "min": 0, "max": 3}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}), "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning. Reasoning-limit retries use at least 16384 tokens."}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "refine_camera": ("BOOLEAN", {"default": True, "tooltip": "After prompt validation, ask LM Studio for camera-only descriptions for each shot. Adds one request per scene."}),
         }, "optional": {
@@ -35,8 +35,8 @@ class GenerateH3PromptsNode:
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Reuse matching prompts and completed request checkpoints from a previous timestamped run with the same out_dir. "
                 "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
-            "camera_thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for the optional camera-only pass. Independent of generation thinking. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "review_thinking": ("BOOLEAN", {"default": False, "tooltip": "Reasoning for continuity reviews and their repairs. Off avoids spending the review budget on reasoning. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "camera_thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for the optional camera-only pass. Independent of generation thinking. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "review_thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for continuity reviews and their repairs. Off avoids spending the review budget on reasoning. GPT-OSS always reasons; OpenAI has no thinking control."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING", "STRING")
@@ -65,7 +65,7 @@ class GenerateH3PromptsNode:
                 )
 
     @progress.node_progress
-    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], cinematic_chapter: Any, out_dir: str, thinking: bool = False, **params: Any) -> dict[str, Any]:
+    def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any], cinematic_chapter: Any, out_dir: str, thinking: bool = True, **params: Any) -> dict[str, Any]:
         self.validate_parameters(params)
         if not isinstance(consolidated_references, dict): raise TypeError("consolidated_references must be a registry object.")
         if not isinstance(out_dir, str) or not out_dir.strip(): raise ValueError("out_dir must be a non-empty string.")
@@ -106,8 +106,8 @@ class GenerateH3PromptsNode:
                 raise ValueError("max_shots must be between 1 and 6. Set it on Generate H3 Prompts.")
             args.camera_direction = str(params.get("camera_direction", "")).strip()
             args.refine_camera = bool(params.get("refine_camera", False))
-            args.camera_thinking = bool(params.get("camera_thinking", False))
-            args.review_thinking = bool(params.get("review_thinking", False))
+            args.camera_thinking = bool(params.get("camera_thinking", True))
+            args.review_thinking = bool(params.get("review_thinking", True))
             continuity = params.get("spatial_continuity")
             if continuity is not None:
                 validate_plan(continuity, consolidated_references)
