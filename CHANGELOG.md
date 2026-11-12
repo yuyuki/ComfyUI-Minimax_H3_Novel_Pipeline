@@ -8,6 +8,18 @@ by later entries.
 
 ## Unreleased
 
+- Align Generate H3 Prompts reasoning-control tests with its enabled-by-default
+  thinking setting, retaining coverage of explicit enable/disable overrides.
+
+- Continue cinematic adaptation after advisory review failures with warning logs
+  and persisted scene/check diagnostics. Keep incomplete reviews unapproved and
+  preserve warnings across resume and downstream reference catalogs. Document the
+  preference for recoverable warnings in AGENTS.md.
+
+- Use the node's full token budget for cinematic reviews and focused checks.
+  Finalize and checkpoint scenes in source order before reviewing successors,
+  including split repairs; resume pending work without regenerating saved scenes.
+
 - Adapt cinematic length recovery immediately: reduce generation reading windows
   without token-budget escalation, and replace an exhausted scene review with
   bounded fidelity, pacing and previous-scene transition checks. Preserve complete
@@ -16,8 +28,8 @@ by later entries.
 - Review cinematic adaptations one scene at a time with only the immediately
   previous scene, including across reading windows and resume. Recheck changed
   scenes and their successors; preserve source fidelity and maximum scene duration.
-  Cap semantic reviews and transport retries at 4096 tokens (or the lower node
-  budget), without disabling thinking or changing generation budgets.
+  Keep thinking enabled and bound semantic reviews and transport retries by the
+  node's configured output budget.
 
 - Repair persistent cinematic source-copy failures through ordered segment IDs,
   reconstruct excerpts from the source before semantic review, and retain bounded

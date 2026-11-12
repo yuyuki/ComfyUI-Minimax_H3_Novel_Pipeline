@@ -185,6 +185,9 @@ def test_single_scene_review_exhaustion_remains_explicit_and_bounded(monkeypatch
         return {"sequences": [scene("Il attend.")]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ca.lmstudio_json.StructuredOutputLengthError, match="sequence 1.*source_fidelity"):
-        run("Il attend.", chunk_chars=4000)
-    assert calls == [ca.SCHEMA["name"], nv.SCHEMA["name"], nv.SCHEMA["name"]]
+    result = run("Il attend.", chunk_chars=4000)
+    assert result["sequences"][0]["review"]["status"] == "incomplete"
+    assert [w["check"] for w in result["narrative_review"]["warnings"]] == [
+        "narrative_semantic_review", *nv.ADAPTATION_REVIEW_FOCUSES,
+    ]
+    assert calls == [ca.SCHEMA["name"], *([nv.SCHEMA["name"]] * 4)]

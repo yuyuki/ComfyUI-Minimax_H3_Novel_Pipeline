@@ -16,7 +16,7 @@ def run(source, **kwargs):
                             max_tokens=2000, correction_attempts=kwargs.pop("correction_attempts", 1), **kwargs)
 
 
-@pytest.mark.parametrize("budget,expected", [(32768, 4096), (2000, 2000)])
+@pytest.mark.parametrize("budget,expected", [(32768, 32768), (2000, 2000)])
 def test_review_budget_is_scoped_and_previous_scene_crosses_windows(monkeypatch, budget, expected):
     source = "Il attend. Il part."
     reviews = []
@@ -63,7 +63,8 @@ def test_local_correction_rechecks_only_changed_scene_and_successor(monkeypatch)
         if "rejected_adaptation" in data:
             repairs.append(data)
             assert data["current_passage"] == fields[3]["source"]
-            assert data["previous_sequence"] == fields[2]
+            assert data["previous_sequence"]["source"] == fields[2]["source"]
+            assert data["previous_sequence"]["final_state"] == fields[2]["final_state"]
             assert "neighboring_sequences" not in data
             assert "next_sequence" not in data
             return {"sequences": [scene(data["current_passage"], "Correct.")]}
@@ -72,8 +73,8 @@ def test_local_correction_rechecks_only_changed_scene_and_successor(monkeypatch)
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     result = run("".join(s["source"] for s in fields))
     assert len(repairs) == 1
-    assert [len(r["sequences"]) for r in reviews] == [1] * 9
-    assert [r["sequences"][0]["source"] for r in reviews[7:]] == [fields[i]["source"] for i in (3, 4)]
+    assert [len(r["sequences"]) for r in reviews] == [1] * 8
+    assert [r["sequences"][0]["source"] for r in reviews] == [fields[i]["source"] for i in (0, 1, 2, 3, 3, 4, 5, 6)]
     assert all("next_sequence" not in r for r in reviews)
     assert result["sequences"][3]["adaptation"]["endingState"] == "Correct."
     assert "".join(s["source"] for s in result["sequences"]) == "".join(s["source"] for s in fields)
@@ -93,7 +94,7 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
         return {"sequences": deepcopy(fields)}
 
     def stop_after_review(state):
-        if state["stage"] == "reviewed":
+        if state["stage"] == "reviewed" and len(state["sequences"]) == 2:
             snapshots.append(deepcopy(state))
             raise RuntimeError("interrupted")
 
@@ -104,7 +105,7 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
     saved = snapshots[-1]
     assert len(saved["approved_reviews"]) == 3
     if change_context:
-        saved["pending_sequences"][1]["final_state"] = "Changed."
+        saved["sequences"][-1]["adaptation"]["endingState"] = "Changed."
     reviews = []
 
     def review(chat, client, model, payload, count, tokens):
@@ -114,7 +115,7 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
     monkeypatch.setattr(ca.narrative_validation, "review", review)
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No generation expected"))
     result = run(source, resume_state=saved)
-    assert [s["source"] for r in reviews for s in r["sequences"]] == [s["source"] for s in fields[1 if change_context else 3:]]
+    assert [s["source"] for r in reviews for s in r["sequences"]] == [s["source"] for s in fields[2 if change_context else 3:]]
     assert len(result["sequences"]) == 4
 
 

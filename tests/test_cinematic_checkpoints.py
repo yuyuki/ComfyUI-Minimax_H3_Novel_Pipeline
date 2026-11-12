@@ -71,8 +71,10 @@ def test_correction_persisted_before_next_review_fails(setup_node, monkeypatch):
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     monkeypatch.setattr(ca.narrative_validation, "review", review)
-    with pytest.raises(RuntimeError, match="review unavailable"):
-        run(correction_attempts=1)
+    result = run(correction_attempts=1)["result"][0][0]
+    assert result["sequences"][0]["adaptation"]["endingState"] == "Corrected."
+    assert result["sequences"][0]["review"]["status"] == "incomplete"
+    assert read_state(output)["narrative_review"]["warnings"] == result["narrative_review"]["warnings"]
 
 
 @pytest.mark.parametrize("fail_next_window", [False, True])

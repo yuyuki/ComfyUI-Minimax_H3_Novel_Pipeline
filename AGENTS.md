@@ -9,6 +9,12 @@
 - Follow user, repository, and system instructions. Do not weaken or bypass requirements. Ask for clarification when safety or a material choice requires it.
 - Do not add or retain legacy code, obsolete formats, or compatibility paths for removed features. Remove related unused tests and documentation; support only current pipeline contracts.
 - Keep responses concise. Do not provide summaries unless requested.
+- Prefer warnings and explicit JSON diagnostics over aborting the pipeline for
+  recoverable review, correction or advisory LLM failures. Record the affected
+  scene, stage/check and failure reason, retain valid generated data, and continue
+  independent work. Mark incomplete reviews as incomplete, never approved. Preserve
+  cancellation, security checks, source/schema integrity and filesystem errors;
+  stop when no valid result can be retained safely.
 - Before researching or changing code in a repository with .codegraph/, use CodeGraph to locate relevant symbols and trace dependencies and callers. Check its source, freshness, and coverage before relying on it. Use text search for exact strings, logs, configuration keys, and prose. Skip CodeGraph if .codegraph/ is absent.
 - Follow [README.md](.github/README.md) when updating the root README.
 - running Python tests and validation commands outside the sandbox.

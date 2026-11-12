@@ -18,7 +18,7 @@ from minimax_h3_novel_pipeline.nodes.spatial_continuity import SpatialContinuity
     (ExtractChapterReferencesNode, True),
     (ConsolidateReferencesNode, True),
     (SpatialContinuityNode, True),
-    (GenerateH3PromptsNode, False),
+    (GenerateH3PromptsNode, True),
     (CharacterEvidenceExtractorNode, True),
     (ConsolidateCharacterProfilesNode, False),
     (CharacterVisualProfileGeneratorNode, False),

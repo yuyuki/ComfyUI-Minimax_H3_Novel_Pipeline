@@ -164,5 +164,10 @@ def test_repair_request_errors_are_not_hidden(monkeypatch, error):
         return {"sequences": [scene("Il attend.")]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    with pytest.raises(type(error)):
-        run("Il attend.")
+    if isinstance(error, KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            run("Il attend.")
+    else:
+        result = run("Il attend.")
+        assert result["sequences"][0]["review"]["status"] == "incomplete"
+        assert result["narrative_review"]["warnings"][0]["check"] == "scene_repair"

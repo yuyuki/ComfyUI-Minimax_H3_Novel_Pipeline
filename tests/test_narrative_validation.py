@@ -42,7 +42,9 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
     assert len(repairs) == 1 and repairs[0]["current_passage"] == " " + source
     assert repairs[0]["previous_final_state"] == first["final_state"]
     assert repairs[0]["target_sequence"] == 2
-    assert repairs[0]["previous_sequence"] == reviews[0]["sequences"][0]
+    assert repairs[0]["previous_sequence"] == {
+        **reviews[0]["sequences"][0], "events": [result["sequences"][0]["adaptation"]["event"]],
+    }
     assert "source" not in repairs[0]["rejected_adaptation"]
     assert "source_context" not in repairs[0] and "context_sequences" not in repairs[0]
     assert len(reviews) == 3
@@ -122,7 +124,7 @@ def test_final_semantic_recovery_stays_local_and_is_reviewed(monkeypatch, attemp
         return
     result = ca.adapt_chapter(None, "mock", source + following, **kwargs)
     assert len(repairs) == attempts + 1
-    assert len(reviews) == attempts + 5  # Two initial scenes, repairs, successor, following passage.
+    assert len(reviews) == attempts + 4  # Current scene, repairs, then successor and following passage once each.
     assert all(len(review["sequences"]) == 1 for review in reviews)
     assert result["sequences"][1]["adaptation"]["endingState"] == bad["final_state"]
     assert result["sequences"][0]["adaptation"]["initialState"] == good["initial_state"]

@@ -26,8 +26,8 @@ class CinematicChapterAdapterNode:
                                     "are read again with new source text. Instructions and review text add to request size."}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768,
-                                   "tooltip": "Generation output budget. Scene validation uses at most 4096 tokens, "
-                                   "or this value when lower, including retries."}),
+                                   "tooltip": "Output budget per request for generation, scene validation and focused checks. "
+                                   "Reasoning and JSON share this budget; retries cannot exceed it."}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
                                           "tooltip": "Retries for invalid fields, source coverage or semantic defects. "
                                           "When nonzero, persistent semantic defects trigger one final targeted repair round. "

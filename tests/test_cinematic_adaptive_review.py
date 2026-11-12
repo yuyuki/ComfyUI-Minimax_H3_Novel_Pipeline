@@ -11,7 +11,7 @@ def scene(source):
     return {"source": source, "initial_state": "Avant.", "events": [source], "final_state": "Après."}
 
 
-@pytest.mark.parametrize("failed_focus", [None, "cinematic_pacing", "local_transition"])
+@pytest.mark.parametrize("failed_focus", [None, "source_fidelity", "cinematic_pacing", "local_transition"])
 def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(monkeypatch, failed_focus):
     scenes = [scene("Il attend."), scene(" Il part.")]
     calls, snapshots = [], []
@@ -21,7 +21,7 @@ def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(mon
         if schema != nv.SCHEMA:
             return {"sequences": deepcopy(scenes)}
         assert schema["strict"]
-        assert tokens == 4096 and ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == 4096
+        assert tokens == 8192 and ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == 8192
         assert len(payload["sequences"]) == 1 and "next_sequence" not in payload
         if payload["sequences"][0]["source"] == scenes[0]["source"]:
             return {"issues": []}
@@ -32,7 +32,8 @@ def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(mon
         assert payload["sequences"] == scenes[1:]
         assert len(system) < len(nv.SYSTEM)
         if focus == "local_transition":
-            assert payload["previous_sequence"] == scenes[0]
+            assert payload["previous_sequence"]["source"] == scenes[0]["source"]
+            assert payload["previous_sequence"]["final_state"] == scenes[0]["final_state"]
         else:
             assert "previous_sequence" not in payload and "previous_final_state" not in payload
         return {"issues": []}
@@ -40,16 +41,20 @@ def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(mon
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     kwargs = dict(chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=1,
                   on_checkpoint=lambda state: snapshots.append(deepcopy(state)))
+    result = ca.adapt_chapter(None, "mock", "Il attend. Il part.", **kwargs)
+    assert calls == [None, "source_fidelity", "cinematic_pacing", "local_transition"]
+    assert "".join(s["source"] for s in result["sequences"]) == "Il attend. Il part."
     if failed_focus:
-        with pytest.raises(ca.lmstudio_json.StructuredOutputLengthError, match=failed_focus):
-            ca.adapt_chapter(None, "mock", "Il attend. Il part.", **kwargs)
         assert max(len(state["approved_reviews"]) for state in snapshots) == 1
-        assert not any(state["stage"] == "scene_committed" for state in snapshots)
+        committed = [state for state in snapshots if state["stage"] == "scene_committed"]
+        assert len(committed) == 2
+        assert committed[0]["sequences"][0]["source"] == scenes[0]["source"]
+        assert committed[0]["pending_sequences"] == scenes[1:]
+        assert result["sequences"][1]["review"]["status"] == "incomplete"
+        assert result["narrative_review"]["warnings"][-1]["check"] == failed_focus
     else:
-        result = ca.adapt_chapter(None, "mock", "Il attend. Il part.", **kwargs)
-        assert calls == [None, "source_fidelity", "cinematic_pacing", "local_transition"]
-        assert "".join(s["source"] for s in result["sequences"]) == "Il attend. Il part."
         assert len(snapshots[-1]["approved_reviews"]) == 2
+        assert result["narrative_review"]["warnings"][0]["status"] == "recovered_by_focused_checks"
     assert ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() is None
 
 
@@ -88,8 +93,9 @@ def test_non_length_errors_do_not_trigger_adaptive_review(monkeypatch):
         return {"sequences": [scene("Il attend.")]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    with pytest.raises(RuntimeError, match="connection failed"):
-        ca.adapt_chapter(None, "mock", "Il attend.", chunk_chars=4000, temperature=0.15,
-                         max_tokens=8192, correction_attempts=1)
+    result = ca.adapt_chapter(None, "mock", "Il attend.", chunk_chars=4000, temperature=0.15,
+                              max_tokens=8192, correction_attempts=1)
+    assert result["sequences"][0]["review"]["status"] == "incomplete"
+    assert result["narrative_review"]["warnings"][0]["reason"] == "request_failed"
     assert calls == [ca.SCHEMA["name"], nv.SCHEMA["name"]]
     assert ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() is None

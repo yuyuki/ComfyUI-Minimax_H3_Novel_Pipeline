@@ -137,14 +137,13 @@ def test_cinematic_adaptation_advances_before_review(bars, monkeypatch, passages
             temperature=0.15, max_tokens=8192, correction_attempts=0,
         )
 
+    result = run()
+    assert len(result["sequences"]) == passages
+    assert bars[0].values[-2:] == [99, 100]
+    assert len(reviewed) == passages
     if review_fails:
-        with pytest.raises(RuntimeError, match="review failed"):
-            run()
-        assert 100 not in bars[0].values
-    else:
-        assert len(run()["sequences"]) == passages
-        assert bars[0].values[-2:] == [99, 100]
-        assert len(reviewed) == passages
+        assert all(scene["review"]["status"] == "incomplete" for scene in result["sequences"])
+        assert len(result["narrative_review"]["warnings"]) == passages
     assert bars[0].values == sorted(bars[0].values)
     assert progress._active.get() is None
 

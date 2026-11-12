@@ -3,11 +3,25 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import re
 import unicodedata
 from copy import deepcopy
 
+import httpx
+from openai import OpenAIError
+
 from . import lmstudio_json, lmstudio_pipeline, narrative_choices, narrative_validation, progress
+
+logger = logging.getLogger(__name__)
+_REVIEW_ERRORS = (RuntimeError, ValueError, OpenAIError, httpx.HTTPError, TimeoutError, ConnectionError)
+
+
+class _ReviewUnavailable(Exception):
+    """Continue with valid scene data, without treating a failed review as approval."""
+
+    def __init__(self, issues=None):
+        self.issues = issues or {}
 
 
 SYSTEM = """You adapt literary chapters into filmable descriptions, not summaries.
@@ -102,8 +116,7 @@ You must complete at least one scene; keep each scene within the target duration
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_MAX_TOKENS = 4096
-_REVIEW_POLICY = "current-and-previous-v2"
+_REVIEW_POLICY = "progressive-warning-reviews-v4"
 
 _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
@@ -322,15 +335,18 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             system += f"\nMaximum scene duration: {duration:g} seconds."
         print(f"    Cinematic request: stage={schema['name']}, prompt_chars={len(system) + len(user)}, "
               f"schema_chars={len(json.dumps(schema, ensure_ascii=False))}.", flush=True)
-        limit = min(max_tokens, _REVIEW_MAX_TOKENS) if schema == narrative_validation.SCHEMA else max_tokens
-        token = lmstudio_json.REQUEST_OUTPUT_LIMIT.set(limit)
+        token = lmstudio_json.REQUEST_OUTPUT_LIMIT.set(max_tokens)
         try:
             return _normalized_output(lmstudio_json.chat_json(
-                client, model, system, user, schema, temperature, limit))
+                client, model, system, user, schema, temperature, max_tokens))
         finally:
             lmstudio_json.REQUEST_OUTPUT_LIMIT.reset(token)
     narrative_issues = []
+    review_warnings = []
     approved_reviews = set()
+
+    def review_report():
+        return {"issues": narrative_issues, **({"warnings": review_warnings} if review_warnings else {})}
 
     def checkpoint(stage, sequences, *, issues=None):
         # Drafts are inspectable before semantic review; only committed scenes
@@ -343,12 +359,10 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 "review_issues": issues,
                 "approved_reviews": sorted(approved_reviews), "window_chars": window_chars,
                 "review_policy": _REVIEW_POLICY,
-                "narrative_review": {"issues": narrative_issues},
+                "narrative_review": review_report(),
             })
 
-    def previous_context(sequences, index):
-        if index:
-            return {"previous_sequence": sequences[index - 1]}
+    def previous_context():
         if results:
             previous = results[-1]
             adaptation = previous["adaptation"]
@@ -358,13 +372,31 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             }}
         return {}
 
+    def review_warning(error, sequence_id, check, *, phase="adaptation"):
+        if lmstudio_json._is_comfy_interrupt(error):
+            raise error
+        reason = "output_limit" if isinstance(error, lmstudio_json.StructuredOutputLengthError) else "request_failed"
+        # Exception text may contain credentials, server bodies or request data.
+        # Persist only bounded diagnostic metadata, never arbitrary backend text.
+        warning = {"sequence": sequence_id, "stage": phase, "check": check,
+                   "status": "incomplete", "reason": reason, "error_type": type(error).__name__,
+                   "message": "Check failed; valid scene data retained without review approval."}
+        review_warnings.append(warning)
+        logger.warning("Cinematic sequence %s: %s/%s failed (%s); continuing with JSON diagnostics.",
+                       sequence_id, phase, check, reason)
+        return warning
+
     def review_scene(payload, sequence_id):
+        phase = "proposal_review" if "defects_to_recheck" in payload else "adaptation"
         try:
             return narrative_validation.review(request, client, model, payload, 1, max_tokens)
-        except lmstudio_json.StructuredOutputLengthError:
-            print(f"    Cinematic review: sequence {sequence_id}, switching to focused checks after output limit.",
-                  flush=True)
+        except lmstudio_json.StructuredOutputLengthError as exc:
+            full_warning = review_warning(exc, sequence_id, "narrative_semantic_review", phase=phase)
+        except _REVIEW_ERRORS as exc:
+            review_warning(exc, sequence_id, "narrative_semantic_review", phase=phase)
+            raise _ReviewUnavailable() from None
         merged = []
+        failed = False
         for focus, instructions in narrative_validation.ADAPTATION_REVIEW_FOCUSES.items():
             lmstudio_pipeline.comfy_interrupt_check()
             focused = {**payload, "review_focus": focus}
@@ -375,115 +407,154 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 issues = narrative_validation.review(
                     request, client, model, focused, 1, max_tokens,
                     system=narrative_validation.ADAPTATION_REVIEW_BASE + instructions)
-            except lmstudio_json.StructuredOutputLengthError as exc:
-                raise lmstudio_json.StructuredOutputLengthError(
-                    f"Cinematic review exhausted its output budget for sequence {sequence_id} "
-                    f"during focused check {focus}. Recovery stopped; this scene is not approved."
-                ) from exc
+            except _REVIEW_ERRORS as exc:
+                review_warning(exc, sequence_id, focus, phase=phase)
+                failed = True
+                continue
             for message in issues.get(1, []):
                 if message not in merged:
                     merged.append(message)
-        return {1: merged} if merged else {}
-
-    def review_sequences(sequences, previous_state):
-        # A changed scene invalidates itself and its successor, never its predecessor.
-        issues = {}
-        for index, item in enumerate(sequences):
-            lmstudio_pipeline.comfy_interrupt_check()
-            payload = {"stage": "adaptation", "sequences": [item],
-                       "previous_final_state": sequences[index - 1]["final_state"] if index else previous_state,
-                       **previous_context(sequences, index)}
-            context = [_REVIEW_POLICY, model, duration_rules, narrative_validation.SYSTEM,
-                       narrative_validation.SCHEMA, narrative_validation.ADAPTATION_REVIEW_BASE,
-                       narrative_validation.ADAPTATION_REVIEW_FOCUSES, min(max_tokens, _REVIEW_MAX_TOKENS), payload]
-            key = hashlib.sha256(json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
-            if key in approved_reviews:
-                continue
-            current = review_scene(payload, len(results) + index + 1)
-            if current:
-                issues[index + 1] = current[1]
-            else:
-                approved_reviews.add(key)
-            checkpoint("reviewing", sequences)
+        issues = {1: merged} if merged else {}
+        if failed:
+            raise _ReviewUnavailable(issues)
+        full_warning["status"] = "recovered_by_focused_checks"
         return issues
 
-    def review_passage(sequences, previous_state):
-        # Preserve the final recovery opportunity, but apply it only to rejected
-        # source spans. Accepted scenes are never regenerated as collateral work.
+    def review_current(sequences):
+        lmstudio_pipeline.comfy_interrupt_check()
+        payload = {"stage": "adaptation", "sequences": [sequences[0]],
+                   "previous_final_state": previous_state, **previous_context()}
+        context = [_REVIEW_POLICY, model, duration_rules, narrative_validation.SYSTEM,
+                   narrative_validation.SCHEMA, narrative_validation.ADAPTATION_REVIEW_BASE,
+                   narrative_validation.ADAPTATION_REVIEW_FOCUSES, max_tokens, payload]
+        key = hashlib.sha256(json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+        if key in approved_reviews:
+            return {}
+        issues = review_scene(payload, len(results) + 1)
+        if not issues:
+            approved_reviews.add(key)
+        checkpoint("reviewing", sequences)
+        return issues
+
+    def commit_scene(sequences, *, incomplete=None):
+        nonlocal cursor, previous_state
+        item = sequences.pop(0)
+        events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
+        results.append({"sequence": len(results) + 1, "source": item["source"], "adaptation": {
+            "initialState": item["initial_state"], "event": item.get("chosen_event", events),
+            "endingState": item["final_state"],
+        }})
+        if incomplete is not None:
+            results[-1]["review"] = {
+                "status": "incomplete", "issues": incomplete.issues.get(1, []),
+                "failed_checks": [{key: warning[key] for key in ("stage", "check", "reason")}
+                                  for warning in review_warnings
+                                  if warning["sequence"] == len(results) and warning["status"] == "incomplete"],
+            }
+        cursor += len(item["source"])
+        previous_state = item["final_state"]
+        checkpoint("scene_committed", sequences)
+
+    def review_passage(sequences):
+        # Finish the head of the queue before inspecting its successor. A repair
+        # may split it; each replacement is reviewed and committed in source order.
         repair_rounds = correction_attempts + int(correction_attempts > 0)
+        while sequences:
+            try:
+                prepare_scene(sequences, repair_rounds)
+            except _ReviewUnavailable as exc:
+                checkpoint("review_incomplete", sequences, issues=exc.issues)
+                commit_scene(sequences, incomplete=exc)
+            else:
+                commit_scene(sequences)
+
+    def prepare_scene(sequences, repair_rounds):
+        if "chosen_event" in sequences[0]:
+            record = next((issue for issue in narrative_issues if issue["sequence"] == len(results) + 1), None)
+            if record is None:
+                raise ValueError("Selected cinematic proposal has no review record.")
+            resolve_current(sequences, {1: [record["description"]]})
+            return
         for attempt in range(repair_rounds + 1):
-            issues = review_sequences(sequences, previous_state)
+            issues = review_current(sequences)
             checkpoint("reviewed", sequences, issues=issues)
-            if not issues:
-                return sequences
-            if attempt == repair_rounds:
+            if not issues or attempt == repair_rounds:
                 break
             print(f"    Cinematic adaptation: semantic correction {attempt + 1}/"
-                  f"{repair_rounds} ({len(issues)} sequences).", flush=True)
-            offset = 0
-            for target, messages in sorted(issues.items()):
-                index = target - 1 + offset
-                item = sequences[index]
-                prompt = json.dumps({
-                    "current_passage": item["source"],
-                    **previous_context(sequences, index),
-                    "target_sequence": index + 1,
-                    "previous_final_state": sequences[index - 1]["final_state"] if index else previous_state,
-                    "rejected_adaptation": _description(item), "defects_to_correct": messages,
-                }, ensure_ascii=False)
-                try:
-                    replacement = rebuild_passage(prompt, item["source"], repair=True)
-                except (_SourceCoverageError, _PassageValidationError, lmstudio_json.StructuredOutputLengthError):
-                    # A failed repair must never replace source-validated work.
-                    print(f"    Cinematic adaptation: retaining sequence {index + 1} after failed repair.", flush=True)
-                    continue
-                sequences[index:index + 1] = replacement
-                offset += len(replacement) - 1
-                checkpoint("corrected_pending_review", sequences)
-        for target, messages in sorted(issues.items()):
+                  f"{repair_rounds} (sequence {len(results) + 1}).", flush=True)
+            item = sequences[0]
+            prompt = json.dumps({
+                "current_passage": item["source"],
+                **previous_context(),
+                "target_sequence": len(results) + 1,
+                "previous_final_state": previous_state,
+                "rejected_adaptation": _description(item), "defects_to_correct": issues[1],
+            }, ensure_ascii=False)
+            try:
+                replacement = rebuild_passage(prompt, item["source"], repair=True)
+            except (_SourceCoverageError, _PassageValidationError, lmstudio_json.StructuredOutputLengthError) as exc:
+                # A failed repair must never replace source-validated work.
+                review_warning(exc, len(results) + 1, "scene_repair", phase="correction")
+                continue
+            except _REVIEW_ERRORS as exc:
+                review_warning(exc, len(results) + 1, "scene_repair", phase="correction")
+                raise _ReviewUnavailable(issues) from None
+            sequences[:1] = replacement
+            checkpoint("corrected_pending_review", sequences)
+        if issues:
+            resolve_current(sequences, issues)
+
+    def resolve_current(sequences, issues):
+        messages = issues[1]
+        sequence_id = len(results) + 1
+        item = sequences[0]
+        # A resumed selected proposal must finish its review before committing.
+        record = next((issue for issue in narrative_issues if issue["sequence"] == sequence_id), None)
+        if "chosen_event" not in item:
             lmstudio_pipeline.comfy_interrupt_check()
-            item = sequences[target - 1]
-            proposals = narrative_choices.propose(
-                request, client, model,
-                {"current_passage": item["source"],
-                 **previous_context(sequences, target - 1), "target_sequence": target,
-                 "previous_final_state": sequences[target - 2]["final_state"] if target > 1 else previous_state,
-                 "defects_to_resolve": messages}, max_tokens,
-            )
-            sequence_id = len(results) + target
+            try:
+                proposals = narrative_choices.propose(
+                    request, client, model,
+                    {"current_passage": item["source"],
+                     **previous_context(), "target_sequence": sequence_id,
+                     "previous_final_state": previous_state,
+                     "defects_to_resolve": messages}, max_tokens,
+                )
+            except _REVIEW_ERRORS as exc:
+                review_warning(exc, sequence_id, "narrative_proposals", phase="correction")
+                raise _ReviewUnavailable(issues) from None
             # A resumed pending scene may already have proposals. Replace their
             # record if a new review requires another choice, rather than duplicate it.
             narrative_issues[:] = [issue for issue in narrative_issues if issue["sequence"] != sequence_id]
-            narrative_issues.append({
+            record = {
                 "id": f"scene_{sequence_id:03d}_issue_01", "sequence": sequence_id,
                 "description": "\n".join(messages), "source_excerpt": item["source"],
                 "proposals": proposals,
-            })
+            }
+            narrative_issues.append(record)
             chosen = proposals[0]["adaptation"]
             item.update(initial_state=chosen["initialState"], events=[chosen["event"]],
                         final_state=chosen["endingState"])
             # Keep the public event text intact rather than numbering it twice.
             item["chosen_event"] = chosen["event"]
             checkpoint("proposal_selected", sequences, issues=issues)
-        # Review each selected alternative once, with the immediately previous scene.
+        # Review the selected alternative once, with the immediately previous scene.
         # Selection is not approval; retain unresolved doubts without an endless retry.
-        for target in sorted(issues):
-            item = sequences[target - 1]
-            payload = {
-                "stage": "adaptation", "sequences": [item],
-                "previous_final_state": sequences[target - 2]["final_state"] if target > 1 else previous_state,
-                "defects_to_recheck": issues[target],
-            }
-            payload.update(previous_context(sequences, target - 1))
-            remaining = review_scene(payload, len(results) + target)
-            record = next(record for record in narrative_issues
-                          if record["sequence"] == len(results) + target)
-            record["proposals"][0]["review"] = {
-                "status": "unresolved" if remaining else "approved",
-                "issues": remaining.get(1, []),
-            }
-            checkpoint("proposal_reviewed", sequences, issues=remaining)
-        return sequences
+        payload = {
+            "stage": "adaptation", "sequences": [item],
+            "previous_final_state": previous_state, "defects_to_recheck": messages,
+            **previous_context(),
+        }
+        try:
+            remaining = review_scene(payload, sequence_id)
+        except _ReviewUnavailable as exc:
+            record["proposals"][0]["review"] = {"status": "incomplete", "issues": exc.issues.get(1, [])}
+            raise
+        record["proposals"][0]["review"] = {
+            "status": "unresolved" if remaining else "approved",
+            "issues": remaining.get(1, []),
+        }
+        checkpoint("proposal_reviewed", sequences, issues=remaining)
 
     def rebuild_passage(prompt: str, chunk: str, *, repair: bool = False, partial: bool = False) -> list[dict]:
         correction = ""
@@ -589,9 +660,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
     cursor = 0
     window_chars = chunk_chars
     resume_pending = []
-    resume_reviewed = False
     if resume_state is not None:
         results, resume_pending, narrative_issues, cursor = _resume_sequences(resume_state, text, chapter_name, duration)
+        review_warnings = deepcopy(resume_state["narrative_review"].get("warnings", []))
+        if not isinstance(review_warnings, list) or any(not isinstance(w, dict) for w in review_warnings):
+            raise ValueError("Invalid cinematic review warnings in resume checkpoint.")
         saved_approvals = resume_state.get("approved_reviews", [])
         saved_window = resume_state.get("window_chars", chunk_chars)
         if (not isinstance(saved_approvals, list) or any(not isinstance(k, str) for k in saved_approvals)
@@ -599,9 +672,6 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             raise ValueError("Invalid cinematic resume review cache or window size.")
         approved_reviews.update(saved_approvals)
         window_chars = saved_window
-        resume_reviewed = (resume_state.get("review_policy") == _REVIEW_POLICY
-                           and (resume_state["stage"] == "scene_committed"
-                                or resume_state["stage"] == "reviewed" and resume_state.get("review_issues") == {}))
         previous_state = results[-1]["adaptation"]["endingState"] if results else ""
         checkpoint("resumed", resume_pending)
         progress.report(cursor / len(text))
@@ -610,7 +680,6 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
     while cursor < len(text):
         chunk = ("".join(s["source"] for s in resume_pending) if resume_pending
                  else source_chunks(text[cursor:], window_chars)[0])
-        reuse_review = False
         print(f"    Cinematic reading: source {cursor + 1}-{cursor + len(chunk)}/{len(text)} chars; "
               f"committed={cursor}, window={len(chunk)}.", flush=True)
         try:
@@ -619,7 +688,6 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                     try:
                         if resume_pending:
                             sequences, consumed = resume_pending, len(chunk)
-                            reuse_review = resume_reviewed
                             resume_pending = []
                         else:
                             sequences, consumed = adapt_passage(chunk, previous_state,
@@ -633,24 +701,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                         continue
                     checkpoint("source_validated_pending_review", sequences)
                 with progress.scope(0.5, 1):
-                    if not reuse_review:
-                        sequences = review_passage(sequences, previous_state)
+                    review_passage(sequences)
         except ValueError as exc:
             raise ValueError(f"Cinematic adaptation at source character {cursor + 1}/{len(text)}: {exc}") from exc
-        for scene_index, item in enumerate(sequences):
-            events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
-            adaptation = {
-                "initialState": item["initial_state"],
-                "event": item.get("chosen_event", events),
-                "endingState": item["final_state"],
-            }
-            results.append({"sequence": len(results) + 1,
-                            "source": item["source"], "adaptation": adaptation})
-            checkpoint("scene_committed", sequences[scene_index + 1:])
-        previous_state = sequences[-1]["final_state"]
-        cursor += consumed
         checkpoint("passage_committed", [])
         print(f"    Cinematic reading: committed={cursor}/{len(text)}, "
               f"deferred={len(chunk) - consumed}, scenes={len(results)}.", flush=True)
     return {"chapter_name": chapter_name, "duration": float(duration), "sequences": results,
-            "narrative_review": {"issues": narrative_issues}}
+            "narrative_review": review_report()}
