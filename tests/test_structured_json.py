@@ -37,6 +37,21 @@ def client_for(*streams):
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), create
 
 
+def test_cinematic_window_schema_and_complete_source_survive_transport_retry(monkeypatch):
+    from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
+
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    scenes = [{"source": f"Action {index}.", "initial_state": "Avant.",
+               "events": [f"Action {index}."], "final_state": "Après."} for index in range(12)]
+    result = {"sequences": scenes, "unprocessed_source": "La suite incomplète"}
+    client, create = client_for(Stream(['{"sequences":']), Stream([json.dumps(result)]))
+    assert lmstudio_json.chat_json(client, "qwen3.5", "system", "source", ca.WINDOW_SCHEMA, 0.1, 8192) == result
+    assert create.call_count == 2
+    for call in create.call_args_list:
+        assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": ca.WINDOW_SCHEMA}
+        assert "maxItems" not in call.kwargs["response_format"]["json_schema"]["schema"]["properties"]["sequences"]
+
+
 @pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA", "MERGE_SCHEMA"])
 def test_compact_retry_preserves_visual_detail_and_entity_capacity(schema_name):
     step = lmstudio_pipeline.load("extract")

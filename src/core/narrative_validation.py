@@ -19,6 +19,8 @@ may identify the same object only with evidence. Do not copy earlier states into
 that does not support them. Speech is phase-local; an addressee is not the speaker.
 For adaptation, target is the 1-based sequence index. Check transitions against previous
 final state and neighboring sequences, respecting explicit temporal/location breaks.
+If previous_sequence or next_sequence is supplied, it is context only, never an issue target. Target
+indices always address only the supplied sequences array, starting at 1.
 For adaptation, also check that initial_state, every events item and final_state
 use the language of the source narration. Report a language mismatch as a concrete
 defect even when the translated meaning is correct. English JSON keys and these

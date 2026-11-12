@@ -21,7 +21,9 @@ class CinematicChapterAdapterNode:
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "out_dir": ("STRING", {"default": "cinematic_chapters"}),
             "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "Target duration per cinematic scene. Use the same duration in Generate H3 Prompts."}),
-            "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000}),
+            "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000,
+                                    "tooltip": "Maximum source characters per reading window. Incomplete trailing scenes "
+                                    "are read again with new source text. Instructions and review text add to request size."}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,

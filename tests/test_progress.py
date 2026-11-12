@@ -114,8 +114,11 @@ def test_cinematic_adaptation_advances_before_review(bars, monkeypatch, passages
         import json
 
         source = json.loads(prompt)["current_passage"]
-        return {"sequences": [{"source": source, "initial_state": "Before.",
-                               "events": ["Action."], "final_state": "After."}]}
+        result = {"sequences": [{"source": source, "initial_state": "Before.",
+                                 "events": ["Action."], "final_state": "After."}]}
+        if args[0] == cinematic_adaptation.WINDOW_SCHEMA:
+            result["unprocessed_source"] = ""
+        return result
 
     def review(*args):
         reviewed.append(bars[0].current)

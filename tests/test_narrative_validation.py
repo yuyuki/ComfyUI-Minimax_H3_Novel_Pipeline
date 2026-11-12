@@ -41,9 +41,10 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
                              temperature=0.15, max_tokens=1000, correction_attempts=1)
     assert len(repairs) == 1 and repairs[0]["current_passage"] == " " + source
     assert repairs[0]["previous_final_state"] == first["final_state"]
-    assert repairs[0]["source_context"] == first["source"] + source
     assert repairs[0]["target_sequence"] == 2
-    assert repairs[0]["context_sequences"] == reviews[0]["sequences"]
+    assert repairs[0]["neighboring_sequences"] == {"previous": reviews[0]["sequences"][0]}
+    assert "source" not in repairs[0]["rejected_adaptation"]
+    assert "source_context" not in repairs[0] and "context_sequences" not in repairs[0]
     assert len(reviews) == 2 and reviews[0]["sequences"][0] == reviews[1]["sequences"][0]
     assert result["sequences"][1]["adaptation"]["endingState"] == good
     assert "".join(s["source"] for s in result["sequences"]) == first["source"] + source
@@ -105,8 +106,11 @@ def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, a
         if data["current_passage"] == following:
             assert data["previous_final_state"] == good["final_state"]
             return {"sequences": [{"source": following, **good}]}
-        return {"sequences": [{"source": "Indy se balance.", **bad},
-                              {"source": "Il lève les yeux.", **bad}]}
+        result = {"sequences": [{"source": "Indy se balance.", **bad},
+                                {"source": "Il lève les yeux.", **bad}]}
+        if schema == ca.WINDOW_SCHEMA:
+            result["unprocessed_source"] = ""
+        return result
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     kwargs = dict(chunk_chars=len(source), temperature=0.15, max_tokens=1000,
@@ -116,7 +120,6 @@ def test_semantic_reconstruction_uses_full_source_and_is_reviewed(monkeypatch, a
         assert result["narrative_review"]["issues"]
         assert not repairs and len(reviews) == 1
         return
-    monkeypatch.setattr(ca, "source_chunks", lambda *a: [source, following])
     result = ca.adapt_chapter(None, "mock", source + following, **kwargs)
     assert len(repairs) == attempts + 1
     assert len(reviews) == attempts + 3  # Initial, targeted, rebuild, following passage.
@@ -148,7 +151,7 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
                      temperature=0.15, max_tokens=1000, correction_attempts=1)
     assert len(repairs) == 2
     assert repairs[1]["previous_final_state"] == "Il se balance."
-    assert repairs[1]["context_sequences"][0]["final_state"] == "Il se balance."
+    assert repairs[1]["neighboring_sequences"]["previous"]["final_state"] == "Il se balance."
 
 
 def test_duration_repair_splits_scene_and_keeps_following_target_and_state(monkeypatch):
@@ -308,9 +311,8 @@ def proposal_response():
 
 
 def test_proposals_keep_global_sequence_ids_and_selected_continuity(monkeypatch):
-    sources = ["First scene.", "Second scene."]
+    sources = ["First scene.", "Next scene."]
     calls = []
-    monkeypatch.setattr(ca, "source_chunks", lambda *a: sources)
 
     def chat(client, model, system, prompt, schema, *args):
         data = json.loads(prompt)
@@ -319,11 +321,14 @@ def test_proposals_keep_global_sequence_ids_and_selected_continuity(monkeypatch)
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
         calls.append(data)
-        return {"sequences": [{"source": data["current_passage"],
-                               "initial_state": "Before.", "events": ["Wait."], "final_state": "Wrong."}]}
+        response = {"sequences": [{"source": data["current_passage"],
+                                   "initial_state": "Before.", "events": ["Wait."], "final_state": "Wrong."}]}
+        if schema == ca.WINDOW_SCHEMA:
+            response["unprocessed_source"] = ""
+        return response
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    result = ca.adapt_chapter(None, "mock", "".join(sources), chunk_chars=1000,
+    result = ca.adapt_chapter(None, "mock", "".join(sources), chunk_chars=len(sources[0]),
                              temperature=0.1, max_tokens=1000, correction_attempts=0)
     assert [i["sequence"] for i in result["narrative_review"]["issues"]] == [1, 2]
     assert calls[1]["previous_final_state"] == "After."

@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Adapt cinematic chapters with a source cursor and deferred incomplete scenes;
+  reduce duplicated repair context, split oversized or output-limited reviews,
+  recover output-limited adaptation windows and log source progress/request sizes.
+
 - Generate reads duration from each cinematic chapter; remove its duplicate widget and record per-chapter duration in execution snapshots.
 
 - 2.6.0: Direct cinematic input for H3, duration-aware adaptation, strict evidence citations, early metadata validation and updated workflow/tests.

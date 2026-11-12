@@ -12,6 +12,10 @@ One supplied sequence produces one H3 scene. Generation never splits, merges, de
 
 Set `duration` (4–15 seconds) in Cinematic Chapter Adapter before adaptation. The model receives this target during initial adaptation, source recovery, semantic review and correction. It must split long passages while preserving action, dialogue, pacing and exact source coverage. This is a planning constraint, not a measured guarantee of rendered video length; inspect dense dialogue and action scenes.
 
+The adapter reads source windows of at most `chunk_chars`. For a window before the chapter's end, the model returns complete scenes and an exact `unprocessed_source` suffix for the last incomplete scene. Only validated, reviewed scenes advance the source cursor; the next window starts at that suffix and adds new text. Python verifies verbatim coverage, without omissions or duplicated committed text. If no complete scene fits, increase `chunk_chars`; the adapter stops rather than inventing a boundary or looping.
+
+Instructions, generated descriptions and review context add to the source window's size. Repairs send the target source once with its immediate neighbors. Reviews are batched by input size and split further after an output-budget failure; an exhausted single-scene review still fails explicitly. Output-limited initial adaptations retry a smaller window without advancing the cursor. `Cinematic reading` logs show committed source characters and deferred text; `Cinematic request` logs show prompt and schema characters. `reasoning_chars` remains a count of model-generated reasoning for one transport attempt, separate from input size. Thinking stays under the node's control.
+
 Generate H3 Prompts reads duration directly from each connected chapter; it has no duration widget. Multiple chapters may carry different durations. Chapters without a duration are rejected. The explicit cinematic sequences must match those used to extract and consolidate references, including IDs, source and selected adaptation phases. Changed adaptation requires updated references and spatial continuity.
 
 ## Execution

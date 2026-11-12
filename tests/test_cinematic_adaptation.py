@@ -19,6 +19,13 @@ def _sequence(source, initial="Before.", final="After."):
     return {"source": source, "initial_state": initial, "events": ["Action."], "final_state": final}
 
 
+def _response(sequences, schema):
+    result = {"sequences": sequences}
+    if schema == adaptation.WINDOW_SCHEMA:
+        result["unprocessed_source"] = ""
+    return result
+
+
 @pytest.mark.parametrize("metadata", [
     "source_excerpt: Il attend.",
     '3. source_excerpt: Il attend.',
@@ -64,10 +71,10 @@ def test_long_passage_recovers_after_corrections_with_lossless_continuity(monkey
         requests.append((payload, prompt))
         passage = payload["current_passage"]
         if len(passage) > 2000:
-            return {"sequences": [_sequence(passage.replace("crie", "parle", 1))]}
+            return _response([_sequence(passage.replace("crie", "parle", 1))], schema)
         final = f"State {len(accepted) + 1}."
         accepted.append((payload, final))
-        return {"sequences": [_sequence(passage, payload["previous_final_state"] or "Before.", final)]}
+        return _response([_sequence(passage, payload["previous_final_state"] or "Before.", final)], schema)
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
@@ -104,13 +111,13 @@ def test_recovery_remains_bounded_and_rejects_invalid_fallback(monkeypatch, inva
 
     def chat(*args):
         requests.append(args[3])
-        return {"sequences": [_sequence(invalid_source)]}
+        return _response([_sequence(invalid_source)], args[4])
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ValueError, match="Cinematic adaptation passage 1/1: Source excerpts"):
+    with pytest.raises(ValueError, match="Cinematic adaptation at source character 1/3300: Source excerpts"):
         adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
                                  temperature=0.15, max_tokens=8192, correction_attempts=1)
-    # Two attempts each for the original, its half, the small child and fallback.
+    # Two attempts for the full passage, each smaller window and bounded rebuild.
     assert len(requests) == 8
 
 
@@ -126,9 +133,9 @@ def test_copy_failure_regenerates_whole_passage_and_preserves_continuity(monkeyp
             assert payload["previous_final_state"] == "Il a crié."
             return {"sequences": [_sequence("Il part.")]}
         if len(requests) > 2:
-            return {"sequences": [{"source": payload["current_passage"], "initial_state": "Il est debout.", "events": ["Il attend.", "Il crie."],
-                    "final_state": "Il a crié."}]}
-        return {"sequences": [_sequence(invalid_source)]}
+            return _response([{"source": payload["current_passage"], "initial_state": "Il est debout.", "events": ["Il attend.", "Il crie."],
+                               "final_state": "Il a crié."}], schema)
+        return _response([_sequence(invalid_source)], schema)
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=20,
@@ -137,12 +144,12 @@ def test_copy_failure_regenerates_whole_passage_and_preserves_continuity(monkeyp
     assert [item["sequence"] for item in result["sequences"]] == [1, 2]
     assert result["sequences"][0]["adaptation"]["event"] == "1. Il attend.\n2. Il crie."
     assert [name for name, _ in requests] == [
-        "cinematic_chapter_adaptation", "cinematic_chapter_adaptation",
-        "cinematic_chapter_adaptation", "cinematic_chapter_adaptation",
+        "cinematic_chapter_window", "cinematic_chapter_window",
+        "cinematic_chapter_window", "cinematic_chapter_adaptation",
     ]
 
 
-@pytest.mark.parametrize("error", [RuntimeError("network failure"), KeyboardInterrupt()])
+@pytest.mark.parametrize("error", [RuntimeError("network failure"), ValueError("invalid client configuration"), KeyboardInterrupt()])
 def test_request_errors_do_not_trigger_subdivision(monkeypatch, error):
     requests = []
 
@@ -165,12 +172,12 @@ def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monk
         payload = json.loads(prompt)
         requests.append(payload)
         if len(requests) == 1:
-            return {"sequences": [
+            return _response([
                 {"source": "Il attend.", "initial_state": "Il est debout.",
                  "events": ["Il attend."], "final_state": "Il reste debout."},
                 {"source": "Il crie.", "initial_state": "Il reste debout.",
                  "events": ["Il inspire.", "Il crie : « À l’aide ! »"], "final_state": "Il a crié."},
-            ]}
+            ], schema)
         return {"sequences": [{"source": "Il part.", "initial_state": "Il a crié.",
                                "events": ["Il part."], "final_state": "Il est parti."}]}
 

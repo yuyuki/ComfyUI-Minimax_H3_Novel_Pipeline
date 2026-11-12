@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 
 from . import lmstudio_json, lmstudio_pipeline, narrative_choices, narrative_validation, progress
 
@@ -73,6 +74,23 @@ SCHEMA = {
     },
 }
 
+# Only complete scenes advance the source cursor. The untouched suffix is read
+# again together with new text, rather than adapted at an artificial boundary.
+WINDOW_SCHEMA = deepcopy(SCHEMA)
+WINDOW_SCHEMA["name"] = "cinematic_chapter_window"
+WINDOW_SCHEMA["schema"]["required"].append("unprocessed_source")
+WINDOW_SCHEMA["schema"]["properties"]["unprocessed_source"] = {"type": "string"}
+_WINDOW_RULES = """
+This is a reading window, not the end of the chapter. Return only COMPLETE
+duration-sized scenes in sequences. If the last scene needs text beyond this
+window, leave its ENTIRE source span in unprocessed_source, copied verbatim as
+the exact suffix of current_passage. Do not adapt that incomplete scene yet.
+The sequence sources followed by unprocessed_source must cover current_passage
+exactly and in order. Use an empty unprocessed_source only when the window ends
+at a complete scene boundary. Do not invent an ending to fit the window.
+You must complete at least one scene; keep each scene within the target duration.
+"""
+
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
 
@@ -80,7 +98,7 @@ _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
 messages and generated states are fallible: resolve contradictions from source,
 not by blindly copying a previous state or obeying a review suggestion.
-When source_context and context_sequences are supplied, target_sequence identifies
+When neighboring_sequences are supplied, they are context only. target_sequence identifies
 the ONLY source span to rebuild into duration-sized scenes. Use surrounding source to establish continuity, but
 include events only from current_passage. Do not anticipate later actions.
 Preserve supported ongoing motion and posture until the source changes them;
@@ -93,6 +111,14 @@ class _SourceCoverageError(ValueError):
     """Valid adaptation fields whose copied source does not cover the passage."""
 
 
+class _WindowProgressError(ValueError):
+    """The window cannot safely advance without more source context."""
+
+
+class _PassageValidationError(ValueError):
+    """Invalid generated fields, distinct from client/configuration errors."""
+
+
 def source_chunks(text: str, max_chars: int) -> list[str]:
     """Bound requests without normalizing, overlapping or losing source text."""
     if max_chars < 1:
@@ -101,7 +127,7 @@ def source_chunks(text: str, max_chars: int) -> list[str]:
     while len(text) > max_chars:
         window = text[:max_chars]
         # Prefer paragraph/sentence boundaries; split a long sentence only as needed.
-        cuts = list(re.finditer(r"\n\s*\n", window)) or list(re.finditer(r"[.!?…][\"»”']?\s+", window))
+        cuts = list(re.finditer(r"\n\s*\n", window)) or list(re.finditer(r"[.!?…][\"»”']?(?:\s+|$)", window))
         if not cuts:
             cuts = list(re.finditer(r"\s+", window))
         cut = cuts[-1].end() if cuts else max_chars
@@ -146,6 +172,29 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
     return validated
 
 
+def _validated_window(result: object, source: str) -> tuple[list[dict], int]:
+    if not isinstance(result, dict) or set(result) != {"sequences", "unprocessed_source"}:
+        raise ValueError("Reading windows require sequences and unprocessed_source.")
+    tail = result["unprocessed_source"]
+    if not isinstance(tail, str) or not source.endswith(tail):
+        raise _SourceCoverageError("unprocessed_source must be an exact suffix of the reading window.")
+    consumed = len(source) - len(tail)
+    if not source[:consumed].strip():
+        raise _WindowProgressError("No complete scene in the reading window; increase chunk_chars.")
+    return _validated_sequences({"sequences": result["sequences"]}, source[:consumed]), consumed
+
+
+def _description(sequence):
+    """Avoid resending a source already supplied as current_passage."""
+    return {key: sequence[key] for key in ("initial_state", "events", "final_state")}
+
+
+def _neighbor_context(sequences, index):
+    # Keep both original neighboring excerpts, once each, to ground continuity.
+    return {name: sequences[position] for name, position in
+            (("previous", index - 1), ("next", index + 1)) if 0 <= position < len(sequences)}
+
+
 def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                   temperature: float, max_tokens: int, correction_attempts: int,
                   chapter_name: str = "", duration: float = 8.0) -> dict:
@@ -161,17 +210,45 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         "to fit the duration. Preserve verbatim source coverage and chronological order. "
         "When reviewing, report sequences whose action or dialogue cannot fit this duration.")
     def request(client, model, system, user, schema, temperature, max_tokens):
-        return lmstudio_json.chat_json(client, model, system + duration_rules, user, schema, temperature, max_tokens)
-    chunks = source_chunks(text, chunk_chars)
+        system += duration_rules
+        print(f"    Cinematic request: stage={schema['name']}, prompt_chars={len(system) + len(user)}, "
+              f"schema_chars={len(json.dumps(schema, ensure_ascii=False))}.", flush=True)
+        return lmstudio_json.chat_json(client, model, system, user, schema, temperature, max_tokens)
     narrative_issues = []
+
+    def review_sequences(sequences, previous_state):
+        def batch(start, end):
+            lmstudio_pipeline.comfy_interrupt_check()
+            payload = {"stage": "adaptation",
+                       "previous_final_state": sequences[start - 1]["final_state"] if start else previous_state,
+                       "sequences": sequences[start:end]}
+            if start:
+                payload["previous_sequence"] = sequences[start - 1]
+            if end < len(sequences):
+                payload["next_sequence"] = sequences[end]
+            # Bound review inputs independently of source size: adaptations can
+            # be substantially larger than the original passage.
+            oversized = len(json.dumps(payload, ensure_ascii=False)) > max(chunk_chars, 2000)
+            try:
+                if oversized and end - start > 1:
+                    raise lmstudio_json.StructuredOutputLengthError("Review input requires smaller batches.")
+                issues = narrative_validation.review(request, client, model, payload, end - start, max_tokens)
+                return {target + start: messages for target, messages in issues.items()}
+            except lmstudio_json.StructuredOutputLengthError as exc:
+                if end - start == 1:
+                    raise lmstudio_json.StructuredOutputLengthError(
+                        f"Cinematic review exhausted its output budget for sequence {len(results) + start + 1}. "
+                        "Disable thinking if supported, or increase max_tokens. " + str(exc)
+                    ) from exc
+                middle = (start + end) // 2
+                print(f"    Cinematic review: splitting sequences {start + 1}-{end} into smaller batches.", flush=True)
+                return {**batch(start, middle), **batch(middle, end)}
+
+        return batch(0, len(sequences))
 
     def review_passage(sequences, previous_state, chunk):
         for attempt in range(correction_attempts + 1):
-            issues = narrative_validation.review(
-                request, client, model,
-                {"stage": "adaptation", "previous_final_state": previous_state,
-                 "sequences": sequences}, len(sequences), max_tokens,
-            )
+            issues = review_sequences(sequences, previous_state)
             if not issues:
                 return sequences
             if attempt == correction_attempts:
@@ -184,11 +261,10 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 item = sequences[index]
                 prompt = json.dumps({
                     "current_passage": item["source"],
-                    "source_context": chunk,
-                    "context_sequences": sequences,
+                    "neighboring_sequences": _neighbor_context(sequences, index),
                     "target_sequence": index + 1,
                     "previous_final_state": sequences[index - 1]["final_state"] if index else previous_state,
-                    "rejected_adaptation": item, "defects_to_correct": messages,
+                    "rejected_adaptation": _description(item), "defects_to_correct": messages,
                 }, ensure_ascii=False)
                 replacement = rebuild_passage(prompt, item["source"], repair=True)
                 sequences[index:index + 1] = replacement
@@ -199,14 +275,10 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             print("    Cinematic adaptation: rebuilding passage from source after semantic corrections.", flush=True)
             prompt = json.dumps({
                 "current_passage": chunk, "previous_final_state": previous_state,
-                "rejected_adaptation": sequences, "defects_to_correct": issues,
+                "rejected_adaptation": [_description(item) for item in sequences], "defects_to_correct": issues,
             }, ensure_ascii=False)
             sequences = rebuild_passage(prompt, chunk, repair=True)
-            issues = narrative_validation.review(
-                request, client, model,
-                {"stage": "adaptation", "previous_final_state": previous_state,
-                 "sequences": sequences}, len(sequences), max_tokens,
-            )
+            issues = review_sequences(sequences, previous_state)
             if not issues:
                 return sequences
         for target, messages in sorted(issues.items()):
@@ -214,8 +286,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             item = sequences[target - 1]
             proposals = narrative_choices.propose(
                 request, client, model,
-                {"source_context": chunk, "current_passage": item["source"],
-                 "context_sequences": sequences, "target_sequence": target,
+                {"current_passage": item["source"],
+                 "neighboring_sequences": _neighbor_context(sequences, target - 1), "target_sequence": target,
                  "previous_final_state": sequences[target - 2]["final_state"] if target > 1 else previous_state,
                  "defects_to_resolve": messages}, max_tokens,
             )
@@ -232,67 +304,79 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             item["chosen_event"] = chosen["event"]
         return sequences
 
-    def rebuild_passage(prompt: str, chunk: str, *, repair: bool = False) -> list[dict]:
+    def rebuild_passage(prompt: str, chunk: str, *, repair: bool = False, partial: bool = False) -> list[dict]:
         correction = ""
         for attempt in range(correction_attempts + 1):
             lmstudio_pipeline.comfy_interrupt_check()
-            system = SYSTEM + (_REPAIR_SYSTEM if repair else "")
+            system = SYSTEM + (_REPAIR_SYSTEM if repair else "") + (_WINDOW_RULES if partial else "")
             result = request(client, model, system, prompt + correction,
-                                            SCHEMA, temperature, max_tokens)
+                             WINDOW_SCHEMA if partial else SCHEMA, temperature, max_tokens)
             try:
+                if partial:
+                    return _validated_window(result, chunk)[0]
                 return _validated_sequences(result, chunk)
             except ValueError as exc:
                 if attempt == correction_attempts:
                     raise
-                correction = f"\nPrevious response rejected: {exc} Regenerate the complete passage."
+                correction = f"\nPrevious response rejected: {exc} Regenerate using the same source window and schema."
         raise AssertionError("Unreachable")
 
-    def adapt_passage(chunk: str, previous_state: str) -> list[dict]:
+    def adapt_passage(chunk: str, previous_state: str, *, partial: bool) -> tuple[list[dict], int]:
         lmstudio_pipeline.comfy_interrupt_check()
         prompt = json.dumps({"adaptation_model": model, "previous_final_state": previous_state,
                              "current_passage": chunk}, ensure_ascii=False)
         correction = ""
         for attempt in range(correction_attempts + 1):
             lmstudio_pipeline.comfy_interrupt_check()
-            result = request(client, model, SYSTEM, prompt + correction,
-                                            SCHEMA, temperature, max_tokens)
+            result = request(client, model, SYSTEM + (_WINDOW_RULES if partial else ""), prompt + correction,
+                             WINDOW_SCHEMA if partial else SCHEMA, temperature, max_tokens)
             try:
+                if partial:
+                    return _validated_window(result, chunk)
                 sequences = _validated_sequences(result, chunk)
-                return sequences
+                return sequences, len(chunk)
             except ValueError as exc:
                 if attempt == correction_attempts:
                     if len(chunk) <= _MIN_RECOVERY_CHARS:
                         if isinstance(exc, _SourceCoverageError):
                             print("    Cinematic adaptation: rebuilding duration-sized scenes from the original source.", flush=True)
-                            return rebuild_passage(prompt, chunk)
+                            try:
+                                recovered = rebuild_passage(prompt, chunk, partial=partial)
+                            except _WindowProgressError:
+                                raise
+                            except ValueError as rebuild_error:
+                                raise _PassageValidationError(str(rebuild_error)) from rebuild_error
+                            return recovered, sum(len(item["source"]) for item in recovered)
+                    if isinstance(exc, _WindowProgressError):
                         raise
-                    parts = source_chunks(chunk, len(chunk) // 2)
-                    print(
-                        f"    Cinematic adaptation: invalid passage ({len(chunk)} chars); "
-                        f"retrying as {len(parts)} smaller passages.", flush=True,
-                    )
-                    recovered = []
-                    state = previous_state
-                    for part_index, part in enumerate(parts):
-                        with progress.scope(part_index / len(parts), (part_index + 1) / len(parts)):
-                            child = adapt_passage(part, state)
-                        recovered.extend(child)
-                        state = child[-1]["final_state"]
-                    return recovered
-                correction = f"\nPrevious response rejected: {exc} Regenerate the complete passage."
+                    raise _PassageValidationError(str(exc)) from exc
+                correction = f"\nPrevious response rejected: {exc} Regenerate using the same source window and schema."
         raise AssertionError("Unreachable")
 
     results = []
     previous_state = ""
-    for index, chunk in enumerate(chunks, start=1):
+    cursor = 0
+    window_chars = chunk_chars
+    while cursor < len(text):
+        chunk = source_chunks(text[cursor:], window_chars)[0]
+        print(f"    Cinematic reading: source {cursor + 1}-{cursor + len(chunk)}/{len(text)} chars; "
+              f"committed={cursor}, window={len(chunk)}.", flush=True)
         try:
-            with progress.scope((index - 1) / len(chunks), index / len(chunks)):
+            with progress.scope(cursor / len(text), (cursor + len(chunk)) / len(text)):
                 with progress.scope(0, 0.5):
-                    sequences = adapt_passage(chunk, previous_state)
+                    try:
+                        sequences, consumed = adapt_passage(chunk, previous_state,
+                                                            partial=cursor + len(chunk) < len(text))
+                    except (_PassageValidationError, lmstudio_json.StructuredOutputLengthError):
+                        if len(chunk) <= _MIN_RECOVERY_CHARS:
+                            raise
+                        window_chars = max(_MIN_RECOVERY_CHARS, len(chunk) // 2)
+                        print(f"    Cinematic adaptation: retrying unread source with window={window_chars} chars.", flush=True)
+                        continue
                 with progress.scope(0.5, 1):
-                    sequences = review_passage(sequences, previous_state, chunk)
+                    sequences = review_passage(sequences, previous_state, chunk[:consumed])
         except ValueError as exc:
-            raise ValueError(f"Cinematic adaptation passage {index}/{len(chunks)}: {exc}") from exc
+            raise ValueError(f"Cinematic adaptation at source character {cursor + 1}/{len(text)}: {exc}") from exc
         for item in sequences:
             events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
             adaptation = {
@@ -303,5 +387,9 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             results.append({"sequence": len(results) + 1,
                             "source": item["source"], "adaptation": adaptation})
         previous_state = sequences[-1]["final_state"]
+        cursor += consumed
+        window_chars = chunk_chars
+        print(f"    Cinematic reading: committed={cursor}/{len(text)}, "
+              f"deferred={len(chunk) - consumed}, scenes={len(results)}.", flush=True)
     return {"chapter_name": chapter_name, "duration": float(duration), "sequences": results,
             "narrative_review": {"issues": narrative_issues}}
