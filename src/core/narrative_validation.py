@@ -19,6 +19,15 @@ may identify the same object only with evidence. Do not copy earlier states into
 that does not support them. Speech is phase-local; an addressee is not the speaker.
 For adaptation, target is the 1-based sequence index. Check transitions against previous
 final state and neighboring sequences, respecting explicit temporal/location breaks.
+Compare each source fact with the adaptation, not merely the copied source field:
+ongoing motion and interruptions; posture and physical constraints; spatial relations
+and actual light sources; audible qualities and intelligibility; dialogue and causal
+order. Check both omissions and unsupported additions. A state need not be static.
+Retain a metaphor's supported physical meaning without importing literal objects or
+all properties of its comparison. For each defect, quote the relevant short source
+fragment and identify the missing or altered fact and affected adaptation field.
+If defects_to_recheck is supplied, verify those doubts against source as well as
+checking for newly introduced defects; do not assume earlier criticism was correct.
 If previous_sequence or next_sequence is supplied, it is context only, never an issue target. Target
 indices always address only the supplied sequences array, starting at 1.
 For adaptation, also check that initial_state, every events item and final_state

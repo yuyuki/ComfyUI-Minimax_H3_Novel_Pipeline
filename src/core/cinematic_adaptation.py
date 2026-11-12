@@ -18,7 +18,11 @@ order, without omissions, overlaps, translation or rewriting (boundary whitespac
 may be omitted). Never copy previous context into source.
 Preserve story meaning, dialogue verbatim, character identities, important props,
 locations, atmosphere, visual details and cause/effect. Remove only nonvisual
-metaphors and unfilmable abstractions. Express implied physical relationships as
+metaphors and unfilmable abstractions, retaining their supported physical meaning.
+Keep the actual source of light or sound; do not transfer every property of a
+comparison to it or create a new object. Preserve physical constraints and audible
+qualities (such as unintelligible cries), without inventing injuries or words.
+Express implied physical relationships as
 explicit positions and visible actions without inventing unsupported facts.
 Omit inner thoughts unless a source-supported visible action conveys them.
 Do not excessively condense, skip dialogue, or invent gestures to explain thoughts.
@@ -32,6 +36,9 @@ verbatim, including dialogue in a different language from the narration.
 
 For EACH sequence return initial_state, events (an ordered list), and final_state.
 initial_state describes ONLY what is already true BEFORE the first event.
+A state can include ongoing motion: suspended does not mean motionless. Preserve
+established continuous activity through compatible actions until the source changes
+or interrupts it; do not invent a stop. Distinguish it from a completed one-off action.
 events contains ALL actions and dialogue in strict causal, chronological order.
 Keep verbatim source excerpts only in source. Never insert source_excerpt:
 metadata into initial_state, events or final_state, even as a numbered event.
@@ -49,7 +56,7 @@ excerpts in their original order and events chronological within each scene.
 Use previous context only for continuity, never as an event to repeat.
 Final states are snapshots of results, never summaries replaying completed actions.
 Update illumination, attachments and possession after each relevant event. Do not
-carry transient cries or movement forward without support. Preserve explicit gaze,
+repeat completed actions or prolong transient cries without support. Preserve explicit gaze,
 faint light, age descriptions and names used in address with their correct identity.
 Distinguish objects by function and attachment, even when both are called a rope.
 Translate metaphors into supported physical descriptions, never literal new assets.
@@ -423,6 +430,25 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             # Keep the public event text intact rather than numbering it twice.
             item["chosen_event"] = chosen["event"]
             checkpoint("proposal_selected", sequences, issues=issues)
+        # Review each selected alternative once, with the final neighboring choices.
+        # Selection is not approval; retain unresolved doubts without an endless retry.
+        for target in sorted(issues):
+            item = sequences[target - 1]
+            payload = {
+                "stage": "adaptation", "sequences": [item],
+                "previous_final_state": sequences[target - 2]["final_state"] if target > 1 else previous_state,
+                "defects_to_recheck": issues[target],
+            }
+            neighbors = _neighbor_context(sequences, target - 1)
+            payload.update({f"{name}_sequence": value for name, value in neighbors.items()})
+            remaining = narrative_validation.review(request, client, model, payload, 1, max_tokens)
+            record = next(record for record in narrative_issues
+                          if record["sequence"] == len(results) + target)
+            record["proposals"][0]["review"] = {
+                "status": "unresolved" if remaining else "approved",
+                "issues": remaining.get(1, []),
+            }
+            checkpoint("proposal_reviewed", sequences, issues=remaining)
         return sequences
 
     def rebuild_passage(prompt: str, chunk: str, *, repair: bool = False, partial: bool = False) -> list[dict]:

@@ -70,7 +70,7 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
     assert issue["sequence"] == 1
     assert [p["selected"] for p in issue["proposals"]] == [True, False]
     assert result["sequences"][0]["adaptation"] == issue["proposals"][0]["adaptation"]
-    assert calls.count(nv.SCHEMA["name"]) == 3
+    assert calls.count(nv.SCHEMA["name"]) == 4
     assert calls.count(ca.SCHEMA["name"]) == 5
 
 
@@ -116,7 +116,7 @@ def test_final_semantic_recovery_stays_local_and_is_reviewed(monkeypatch, attemp
     if not attempts:
         result = ca.adapt_chapter(None, "mock", source, **kwargs)
         assert result["narrative_review"]["issues"]
-        assert not repairs and len(reviews) == 1
+        assert not repairs and len(reviews) == 2
         return
     result = ca.adapt_chapter(None, "mock", source + following, **kwargs)
     assert len(repairs) == attempts + 1
@@ -228,7 +228,8 @@ def test_malformed_reviews_reach_resolvable_proposals(monkeypatch, attempts):
     assert "Missing bell." in issue["description"]
     assert len(issue["proposals"]) == 2
     assert nc.resolve_chapter(result) == result
-    assert calls.count(nv.SCHEMA["name"]) == (3 if attempts else 1)
+    assert calls.count(nv.SCHEMA["name"]) == (4 if attempts else 2)
+    assert issue["proposals"][0]["review"]["status"] == "unresolved"
 
 
 @pytest.mark.parametrize("error", [ConnectionError("Offline"), RuntimeError("Invalid structured JSON"),
@@ -307,6 +308,43 @@ def proposal_response():
         {"reason": "Clear staging.", "adaptation": {"initialState": "Before.", "event": "1. A bell rings.", "endingState": "After."}},
         {"reason": "Closer framing.", "adaptation": {"initialState": "Close view.", "event": "1. A bell rings in close view.", "endingState": "After, close view."}},
     ]}
+
+
+@pytest.mark.parametrize("remaining", [[], [{"target": 1, "message": "Motion still omitted."}]])
+def test_selected_proposals_are_reviewed_once_with_final_neighbors(monkeypatch, remaining):
+    checked = []
+    snapshots = []
+
+    def chat(client, model, system, prompt, schema, *args):
+        data = json.loads(prompt)
+        if schema == nc.PROPOSAL_SCHEMA:
+            return proposal_response()
+        if schema == nv.SCHEMA:
+            if "defects_to_recheck" in data:
+                checked.append(data)
+                assert data["sequences"][0]["final_state"] == "After."
+                assert data["defects_to_recheck"] == ["Motion omitted."]
+                return {"issues": remaining}
+            return {"issues": [{"target": i, "message": "Motion omitted."} for i in (1, 2)]}
+        return {"sequences": [
+            {"source": source, "initial_state": "Before.", "events": [], "final_state": "Wrong."}
+            for source in ("He swings.", " He looks up.")
+        ]}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    result = ca.adapt_chapter(None, "mock", "He swings. He looks up.", chunk_chars=4000,
+                             temperature=0.1, max_tokens=1000, correction_attempts=0,
+                             on_checkpoint=lambda state: snapshots.append(deepcopy(state)))
+    assert len(checked) == 2
+    assert checked[0]["next_sequence"]["final_state"] == "After."
+    assert checked[1]["previous_sequence"]["final_state"] == "After."
+    assert checked[1]["previous_final_state"] == "After."
+    for issue in result["narrative_review"]["issues"]:
+        assert issue["proposals"][0]["review"] == {
+            "status": "unresolved" if remaining else "approved",
+            "issues": ["Motion still omitted."] if remaining else [],
+        }
+    assert sum(s["stage"] == "proposal_reviewed" for s in snapshots) == 2
 
 
 def test_proposals_keep_global_sequence_ids_and_selected_continuity(monkeypatch):
