@@ -1609,8 +1609,8 @@
         true,
         "cinematic_chapters",
         8,
-        4000,
-        0.15,
+        2000,
+        0,
         16384,
         2,
         ""
@@ -1619,8 +1619,8 @@
         "thinking": true,
         "out_dir": "cinematic_chapters",
         "duration": 8,
-        "chunk_chars": 4000,
-        "temperature": 0.15,
+        "chunk_chars": 2000,
+        "temperature": 0,
         "max_tokens": 16384,
         "correction_attempts": 2,
         "resume_run": ""
@@ -1930,10 +1930,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.9387755072046209,
+      "scale": 1.032653057925083,
       "offset": [
-        2959.751523409001,
-        -1553.244593495968
+        2228.0441412211358,
+        -1543.5414184064878
       ]
     },
     "frontendVersion": "1.57.6"

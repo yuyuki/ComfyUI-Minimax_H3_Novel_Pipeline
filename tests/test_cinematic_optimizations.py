@@ -16,7 +16,37 @@ def run(source, **kwargs):
                             max_tokens=2000, correction_attempts=kwargs.pop("correction_attempts", 1), **kwargs)
 
 
-def test_local_correction_reuses_distant_approvals_and_rechecks_both_neighbors(monkeypatch):
+@pytest.mark.parametrize("budget,expected", [(32768, 4096), (2000, 2000)])
+def test_review_budget_is_scoped_and_previous_scene_crosses_windows(monkeypatch, budget, expected):
+    source = "Il attend. Il part."
+    reviews = []
+
+    def chat(client, model, system, prompt, schema, temperature, max_tokens):
+        data = json.loads(prompt)
+        if schema == nv.SCHEMA:
+            assert max_tokens == expected
+            assert ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == expected
+            assert "at most 8 seconds" in system
+            reviews.append(data)
+            return {"issues": []}
+        assert max_tokens == budget
+        assert ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == budget
+        result = {"sequences": [scene(data["current_passage"])]}
+        if schema == ca.WINDOW_SCHEMA:
+            result["unprocessed_source"] = ""
+        return result
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    result = ca.adapt_chapter(None, "mock", source, chunk_chars=11, temperature=0.1,
+                              max_tokens=budget, correction_attempts=0)
+    assert len(reviews) == 2
+    assert "previous_sequence" not in reviews[0]
+    assert reviews[1]["previous_sequence"]["source"] == result["sequences"][0]["source"]
+    assert all(len(r["sequences"]) == 1 and "next_sequence" not in r for r in reviews)
+    assert ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() is None
+
+
+def test_local_correction_rechecks_only_changed_scene_and_successor(monkeypatch):
     fields = [scene(f"Scene {i}. ") for i in range(7)]
     fields = ca._validated_sequences({"sequences": fields}, "".join(s["source"] for s in fields))
     fields = ca._validated_sequences({"sequences": fields}, "".join(s["source"] for s in fields))
@@ -33,18 +63,18 @@ def test_local_correction_reuses_distant_approvals_and_rechecks_both_neighbors(m
         if "rejected_adaptation" in data:
             repairs.append(data)
             assert data["current_passage"] == fields[3]["source"]
-            assert data["neighboring_sequences"]["previous"] == fields[2]
-            assert data["neighboring_sequences"]["next"] == fields[4]
+            assert data["previous_sequence"] == fields[2]
+            assert "neighboring_sequences" not in data
+            assert "next_sequence" not in data
             return {"sequences": [scene(data["current_passage"], "Correct.")]}
         return {"sequences": deepcopy(fields)}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     result = run("".join(s["source"] for s in fields))
     assert len(repairs) == 1
-    assert [len(r["sequences"]) for r in reviews] == [7, 3]
-    assert reviews[1]["sequences"][0]["source"] == fields[2]["source"]
-    assert reviews[1]["previous_sequence"] == fields[1]
-    assert reviews[1]["next_sequence"] == fields[5]
+    assert [len(r["sequences"]) for r in reviews] == [1] * 9
+    assert [r["sequences"][0]["source"] for r in reviews[7:]] == [fields[i]["source"] for i in (3, 4)]
+    assert all("next_sequence" not in r for r in reviews)
     assert result["sequences"][3]["adaptation"]["endingState"] == "Correct."
     assert "".join(s["source"] for s in result["sequences"]) == "".join(s["source"] for s in fields)
 
@@ -58,7 +88,8 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
 
     def chat(client, model, system, prompt, schema, *args):
         if schema == nv.SCHEMA:
-            return {"issues": [{"target": 4, "message": "Check scene four."}]}
+            return {"issues": [{"target": 1, "message": "Check scene four."}]
+                    if json.loads(prompt)["sequences"][0]["source"] == fields[3]["source"] else []}
         return {"sequences": deepcopy(fields)}
 
     def stop_after_review(state):
@@ -83,7 +114,7 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
     monkeypatch.setattr(ca.narrative_validation, "review", review)
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No generation expected"))
     result = run(source, resume_state=saved)
-    assert [s["source"] for r in reviews for s in r["sequences"]] == [s["source"] for s in fields[0 if change_context else 3:]]
+    assert [s["source"] for r in reviews for s in r["sequences"]] == [s["source"] for s in fields[1 if change_context else 3:]]
     assert len(result["sequences"]) == 4
 
 

@@ -20,6 +20,7 @@ QWEN35_MIN_P = lmstudio_model_qwen.DEFAULTS["min_p"]
 QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
 COMPACT_SCHEMA_VERSION = 3
 REQUEST_THINKING = ContextVar("lmstudio_request_thinking", default=None)
+REQUEST_OUTPUT_LIMIT = ContextVar("lmstudio_request_output_limit", default=None)
 REQUEST_METRICS = ContextVar("lmstudio_request_metrics", default=None)
 REQUEST_USAGE = ContextVar("lmstudio_report_usage", default=False)
 
@@ -182,7 +183,8 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
     raw_chatml = allow_chatml and backend_key in successful_chatml
     attempt = 0
     correction = ""
-    request_max_tokens = max_tokens
+    output_limit = REQUEST_OUTPUT_LIMIT.get()
+    request_max_tokens = min(max_tokens, output_limit) if output_limit is not None else max_tokens
     while attempt <= retries:
         comfy_interrupt_check()
         request_schema = _qwen35_compact_schema(schema) if attempt else schema
@@ -319,7 +321,9 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 settings["thinking"]
                 and reasoning_chars > content_chars and finish_reason == "length"
             )
-            if attempt == retries:
+            # A caller with a fixed budget owns length recovery (smaller input
+            # or narrower task). Do not spend another identical-sized request.
+            if attempt == retries or output_limit is not None and finish_reason == "length":
                 hint = (
                     " Thinking exhausted the output budget. Increase max_tokens, reduce passage size, "
                     "or disable thinking in the node/configuration if the model supports it."
@@ -339,5 +343,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                 request_max_tokens = min(
                     max(max_tokens, 32768), max(16384, request_max_tokens * 2),
                 )
+                if output_limit is not None:
+                    request_max_tokens = min(request_max_tokens, output_limit)
             attempt += 1
     raise AssertionError("Unreachable")

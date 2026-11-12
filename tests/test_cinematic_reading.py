@@ -110,7 +110,7 @@ def test_output_limited_adaptation_retries_unread_source_with_smaller_windows(mo
 
 
 @pytest.mark.parametrize("oversized", [False, True])
-def test_review_batches_preserve_coverage_target_indices_and_boundary_context(monkeypatch, oversized):
+def test_scene_reviews_preserve_coverage_and_only_previous_context(monkeypatch, oversized):
     sequences = [scene(f"Scène {index}. ", f"État {index}.") for index in range(4)]
     if oversized:
         for sequence in sequences:
@@ -122,15 +122,13 @@ def test_review_batches_preserve_coverage_target_indices_and_boundary_context(mo
         if schema == nv.SCHEMA:
             reviews.append(data)
             batch = data["sequences"]
-            if len(batch) > 1:
-                raise ca.lmstudio_json.StructuredOutputLengthError("Output limit")
+            assert len(batch) == 1
             index = int(batch[0]["source"].strip().split()[1].rstrip("."))
             assert data["previous_final_state"] in (
                 sequences[index - 1]["final_state"] if index else "", "Corrigé." if index == 3 else "")
             if index:
                 assert data["previous_sequence"]["source"].strip() == sequences[index - 1]["source"].strip()
-            if index < 3:
-                assert data["next_sequence"]["source"].strip() == sequences[index + 1]["source"].strip()
+            assert "next_sequence" not in data
             return {"issues": [{"target": 1, "message": "Corriger la scène."}]
                     if batch[0]["final_state"] == "État 2." else []}
         if "rejected_adaptation" in data:
@@ -143,7 +141,7 @@ def test_review_batches_preserve_coverage_target_indices_and_boundary_context(mo
     result = run("".join(s["source"] for s in sequences), chunk_chars=4000, correction_attempts=1)
     assert len(repairs) == 1
     if oversized:
-        assert len(reviews[0]["sequences"]) == 1  # Split before the first network call.
+        assert len(reviews[0]["sequences"]) == 1
     assert result["sequences"][2]["adaptation"]["endingState"] == "Corrigé."
     assert result["narrative_review"] == {"issues": []}
     assert {r["sequences"][0]["source"].strip() for r in reviews if len(r["sequences"]) == 1} == {
@@ -153,28 +151,26 @@ def test_review_batches_preserve_coverage_target_indices_and_boundary_context(mo
 def test_local_repair_keeps_unchanged_approval_and_rechecks_rejected_scene(monkeypatch):
     source = "Il attend. Il part."
     fields = [scene("Il attend."), scene(" Il part.")]
-    full_reviews = 0
     singleton_reviews = []
 
     def chat(client, model, system, prompt, schema, *args):
-        nonlocal full_reviews
         data = json.loads(prompt)
         if schema != nv.SCHEMA:
             if "rejected_adaptation" in data:
                 assert data["target_sequence"] == 1
                 return {"sequences": [scene(data["current_passage"])]}
             return {"sequences": deepcopy(fields)}
-        if len(data["sequences"]) == 2:
-            full_reviews += 1
-            return {"issues": [{"target": 1, "message": "Vérifier la posture."}]}
+        assert len(data["sequences"]) == 1
         singleton_reviews.append(data)
+        if len(singleton_reviews) == 1:
+            return {"issues": [{"target": 1, "message": "Vérifier la posture."}]}
         return {"issues": []}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     result = run(source, chunk_chars=4000, correction_attempts=1)
-    assert full_reviews == 1 and len(singleton_reviews) == 1
+    assert len(singleton_reviews) == 3
     assert singleton_reviews[0]["sequences"][0]["source"] == "Il attend."
-    assert singleton_reviews[0]["next_sequence"]["source"] == " Il part."
+    assert all("next_sequence" not in r for r in singleton_reviews)
     assert "".join(s["source"] for s in result["sequences"]) == source
     assert result["narrative_review"] == {"issues": []}
 
@@ -189,6 +185,6 @@ def test_single_scene_review_exhaustion_remains_explicit_and_bounded(monkeypatch
         return {"sequences": [scene("Il attend.")]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ca.lmstudio_json.StructuredOutputLengthError, match="sequence 1.*Disable thinking"):
+    with pytest.raises(ca.lmstudio_json.StructuredOutputLengthError, match="sequence 1.*source_fidelity"):
         run("Il attend.", chunk_chars=4000)
-    assert calls == [ca.SCHEMA["name"], nv.SCHEMA["name"]]
+    assert calls == [ca.SCHEMA["name"], nv.SCHEMA["name"], nv.SCHEMA["name"]]

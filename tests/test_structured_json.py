@@ -330,6 +330,33 @@ def test_thinking_budget_growth_and_retries_are_bounded(monkeypatch, budget, exp
     assert all(stream.closed for stream in streams)
 
 
+@pytest.mark.parametrize("budget,limit", [(32768, 4096), (2000, 2000)])
+@pytest.mark.parametrize("finish", ["stop", "length"])
+def test_request_output_limit_delegates_length_recovery_and_preserves_schema(monkeypatch, budget, limit, finish):
+    monkeypatch.setattr(lmstudio_json, "THINKING_ENABLED", True)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    event = SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=None, reasoning_content="reasoning"), finish_reason=finish,
+    )])
+    streams = [Stream([event]), Stream(['{"value":"ok"}'])]
+    client, create = client_for(*streams)
+    token = lmstudio_json.REQUEST_OUTPUT_LIMIT.set(limit)
+    try:
+        if finish == "length":
+            with pytest.raises(lmstudio_json.StructuredOutputLengthError):
+                lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.1, budget)
+        else:
+            assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", SCHEMA, 0.1, budget) == {"value": "ok"}
+    finally:
+        lmstudio_json.REQUEST_OUTPUT_LIMIT.reset(token)
+    assert [call.kwargs["max_tokens"] for call in create.call_args_list] == [limit] * (1 if finish == "length" else 2)
+    for call in create.call_args_list:
+        assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": SCHEMA}
+        assert call.kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
+    assert streams[0].closed
+    assert streams[1].closed is (finish != "length")
+
+
 @pytest.mark.parametrize("thinking,reasoning,finish", [
     (False, "private reasoning", "length"), (True, None, "length"),
     (True, "private reasoning", "stop"),

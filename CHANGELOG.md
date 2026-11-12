@@ -8,6 +8,23 @@ by later entries.
 
 ## Unreleased
 
+- Adapt cinematic length recovery immediately: reduce generation reading windows
+  without token-budget escalation, and replace an exhausted scene review with
+  bounded fidelity, pacing and previous-scene transition checks. Preserve complete
+  source/actions, strict schemas and thinking; never approve incomplete checks.
+
+- Review cinematic adaptations one scene at a time with only the immediately
+  previous scene, including across reading windows and resume. Recheck changed
+  scenes and their successors; preserve source fidelity and maximum scene duration.
+  Cap semantic reviews and transport retries at 4096 tokens (or the lower node
+  budget), without disabling thinking or changing generation budgets.
+
+- Repair persistent cinematic source-copy failures through ordered segment IDs,
+  reconstruct excerpts from the source before semantic review, and retain bounded
+  expected/received context in final errors. Normalize curly double quotes and
+  Unicode line/paragraph separators consistently in source and generated text.
+  Add regression coverage for lossless recovery, retries and strict boundaries.
+
 - Replace H3 runtime source-file hashing and AST inspection with explicit
   per-stage cache contracts. Preserve exact inputs, model settings, integrity,
   validation and chapter-local resume; invalidate affected request/artifact caches

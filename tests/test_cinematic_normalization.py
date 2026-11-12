@@ -25,6 +25,25 @@ def test_normalization_preserves_content_and_paragraphs():
     assert ca._normalize_text(expected) == expected
 
 
+def test_unicode_quotes_and_line_separators_share_source_output_normalization():
+    original = '“Oui”\u2028Il parle.\u2029« Non… » — Fin.'
+    expected = '"Oui"\nIl parle.\n\n« Non… » — Fin.'
+    assert ca._normalize_text(original) == expected
+    assert ca._normalize_text(expected) == expected
+    result = ca._validated_sequences({"sequences": [scene(original)]}, expected)
+    assert result[0]["source"] == expected
+    assert ca._normalized_output({"states": [original]}) == {"states": [expected]}
+
+
+def test_unicode_paragraph_suffix_advances_normalized_cursor():
+    source = ca._normalize_text('“Oui”.\u2029Il part.')
+    sequences, consumed = ca._validated_window({
+        "sequences": [scene('“Oui”.')], "unprocessed_source": '\u2029Il part.',
+    }, source)
+    assert consumed == len('"Oui".')
+    assert "".join(s["source"] for s in sequences) + source[consumed:] == source
+
+
 def test_source_requests_and_generated_descriptions_share_normalization(monkeypatch):
     original = "L’e\u0301te\u0301\u00a0!\r\n\r\nIl s’arrête."
     expected = "L'été !\n\nIl s'arrête."

@@ -36,7 +36,7 @@ never fall back to English. English instructions, JSON keys, reviews and previou
 generated states do not set the output language. Keep JSON keys unchanged and
 preserve quoted dialogue verbatim even when it uses another language.
 Address all reported doubts together so choices do not overwrite one another.
-Use neighboring sequences only for continuity, never import their events.
+Use only the immediately previous sequence for continuity, never import its events.
 Keep source excerpts in their designated JSON fields. Never insert a
 source_excerpt: metadata line into initialState, event or endingState.
 Explain the tradeoff in reason. Return only JSON matching the schema.

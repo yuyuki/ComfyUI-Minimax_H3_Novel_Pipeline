@@ -29,8 +29,8 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
             return proposal_response()
         if schema == nv.SCHEMA:
             reviews.append(deepcopy(data))
-            return {"issues": [{"target": 2, "message": "Final state contradicts or omits source facts."}]
-                    if data["sequences"][1]["final_state"] == bad else []}
+            return {"issues": [{"target": 1, "message": "Final state contradicts or omits source facts."}]
+                    if data["sequences"][0]["final_state"] == bad else []}
         if "rejected_adaptation" in data:
             repairs.append(data)
             return {"sequences": [{"source": data["current_passage"], "initial_state": second["initial_state"], "events": [source], "final_state": good}]}
@@ -42,10 +42,11 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
     assert len(repairs) == 1 and repairs[0]["current_passage"] == " " + source
     assert repairs[0]["previous_final_state"] == first["final_state"]
     assert repairs[0]["target_sequence"] == 2
-    assert repairs[0]["neighboring_sequences"] == {"previous": reviews[0]["sequences"][0]}
+    assert repairs[0]["previous_sequence"] == reviews[0]["sequences"][0]
     assert "source" not in repairs[0]["rejected_adaptation"]
     assert "source_context" not in repairs[0] and "context_sequences" not in repairs[0]
-    assert len(reviews) == 2 and reviews[0]["sequences"][0] == reviews[1]["sequences"][0]
+    assert len(reviews) == 3
+    assert reviews[1]["previous_sequence"] == reviews[2]["previous_sequence"]
     assert result["sequences"][1]["adaptation"]["endingState"] == good
     assert "".join(s["source"] for s in result["sequences"]) == first["source"] + source
 
@@ -92,7 +93,8 @@ def test_final_semantic_recovery_stays_local_and_is_reviewed(monkeypatch, attemp
         if schema == nv.SCHEMA:
             reviews.append(deepcopy(data))
             return {"issues": [{"target": 1, "message": "Preserve the swinging motion."}]
-                    if data["sequences"][0]["initial_state"] == bad["initial_state"] else []}
+                    if data["sequences"][0]["source"].strip() == "Indy se balance."
+                    and data["sequences"][0]["initial_state"] == bad["initial_state"] else []}
         if "rejected_adaptation" in data:
             repairs.append(data)
             assert "Review\nmessages and generated states are fallible" in system
@@ -116,12 +118,12 @@ def test_final_semantic_recovery_stays_local_and_is_reviewed(monkeypatch, attemp
     if not attempts:
         result = ca.adapt_chapter(None, "mock", source, **kwargs)
         assert result["narrative_review"]["issues"]
-        assert not repairs and len(reviews) == 2
+        assert not repairs and len(reviews) == 3
         return
     result = ca.adapt_chapter(None, "mock", source + following, **kwargs)
     assert len(repairs) == attempts + 1
-    assert len(reviews) == attempts + 3  # Initial, targeted, rebuild, following passage.
-    assert len(reviews[-2]["sequences"]) == 2
+    assert len(reviews) == attempts + 5  # Two initial scenes, repairs, successor, following passage.
+    assert all(len(review["sequences"]) == 1 for review in reviews)
     assert result["sequences"][1]["adaptation"]["endingState"] == bad["final_state"]
     assert result["sequences"][0]["adaptation"]["initialState"] == good["initial_state"]
     assert "".join(s["source"] for s in result["sequences"]) == source + following
@@ -150,7 +152,7 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
                      temperature=0.15, max_tokens=1000, correction_attempts=1)
     assert len(repairs) == 2
     assert repairs[1]["previous_final_state"] == "Il se balance."
-    assert repairs[1]["neighboring_sequences"]["previous"]["final_state"] == "Il se balance."
+    assert repairs[1]["previous_sequence"]["final_state"] == "Il se balance."
 
 
 def test_duration_repair_splits_scene_and_keeps_following_target_and_state(monkeypatch):
@@ -311,7 +313,7 @@ def proposal_response():
 
 
 @pytest.mark.parametrize("remaining", [[], [{"target": 1, "message": "Motion still omitted."}]])
-def test_selected_proposals_are_reviewed_once_with_final_neighbors(monkeypatch, remaining):
+def test_selected_proposals_are_reviewed_once_with_previous_scene(monkeypatch, remaining):
     checked = []
     snapshots = []
 
@@ -325,7 +327,7 @@ def test_selected_proposals_are_reviewed_once_with_final_neighbors(monkeypatch, 
                 assert data["sequences"][0]["final_state"] == "After."
                 assert data["defects_to_recheck"] == ["Motion omitted."]
                 return {"issues": remaining}
-            return {"issues": [{"target": i, "message": "Motion omitted."} for i in (1, 2)]}
+            return {"issues": [{"target": 1, "message": "Motion omitted."}]}
         return {"sequences": [
             {"source": source, "initial_state": "Before.", "events": [], "final_state": "Wrong."}
             for source in ("He swings.", " He looks up.")
@@ -336,7 +338,7 @@ def test_selected_proposals_are_reviewed_once_with_final_neighbors(monkeypatch, 
                              temperature=0.1, max_tokens=1000, correction_attempts=0,
                              on_checkpoint=lambda state: snapshots.append(deepcopy(state)))
     assert len(checked) == 2
-    assert checked[0]["next_sequence"]["final_state"] == "After."
+    assert all("next_sequence" not in review for review in checked)
     assert checked[1]["previous_sequence"]["final_state"] == "After."
     assert checked[1]["previous_final_state"] == "After."
     for issue in result["narrative_review"]["issues"]:

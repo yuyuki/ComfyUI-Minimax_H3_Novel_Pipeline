@@ -117,8 +117,8 @@ def test_recovery_remains_bounded_and_rejects_invalid_fallback(monkeypatch, inva
     with pytest.raises(ValueError, match="Cinematic adaptation at source character 1/3300: Source excerpts"):
         adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
                                  temperature=0.15, max_tokens=8192, correction_attempts=1)
-    # Two attempts for the full passage, each smaller window and bounded rebuild.
-    assert len(requests) == 8
+    # Two attempts for each window, bounded span repair and bounded rebuild.
+    assert len(requests) == 10
 
 
 @pytest.mark.parametrize("invalid_source", ["Translated source.", "Il attend."])
@@ -145,6 +145,7 @@ def test_copy_failure_regenerates_whole_passage_and_preserves_continuity(monkeyp
     assert result["sequences"][0]["adaptation"]["event"] == "1. Il attend.\n2. Il crie."
     assert [name for name, _ in requests] == [
         "cinematic_chapter_window", "cinematic_chapter_window",
+        "cinematic_source_spans", "cinematic_source_spans",
         "cinematic_chapter_window", "cinematic_chapter_adaptation",
     ]
 
