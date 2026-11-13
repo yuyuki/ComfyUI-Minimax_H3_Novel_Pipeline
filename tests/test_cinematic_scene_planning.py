@@ -14,8 +14,9 @@ def scene(source, events=None):
 
 def plan(item, seconds=2, updates=None, reset=False, reset_evidence=""):
     count = len(item["events"])
-    return {"timing": {"beats": [{"events": [i], "seconds": seconds / count, "reason": "Action naturelle."}
-                                  for i in range(1, count + 1)],
+    return {"timing": {"beats": [{"events": [{"event_index": i, "text": text}],
+                                  "seconds": seconds / count, "reason": "Action naturelle."}
+                                  for i, text in enumerate(item["events"], 1)],
                        "pause_seconds": 0, "estimated_seconds": seconds, "reason": "Actions successives."},
             "continuity": {"reset": reset, "reset_evidence": reset_evidence, "updates": updates or []}}
 
@@ -164,7 +165,7 @@ def test_estimates_event_coverage_and_source_citations_are_validated(defect):
     if defect == "sum":
         value["timing"]["estimated_seconds"] = 1
     elif defect == "duplicate":
-        value["timing"]["beats"][1]["events"] = [1]
+        value["timing"]["beats"][1]["events"] = [{"event_index": 1, "text": "Il monte."}]
     elif defect == "missing":
         value["timing"]["beats"].pop()
     elif defect in ("nan", "bool"):
@@ -253,7 +254,9 @@ def test_review_can_reject_a_low_estimate_and_require_a_split(monkeypatch):
 def test_simultaneous_events_share_a_beat_and_pauses_are_counted():
     item = scene("Il marche et parle.", ["Il marche.", "Il parle."])
     value = plan(item)
-    value["timing"].update(beats=[{"events": [1, 2], "seconds": 5, "reason": "Parler en marchant."}],
+    value["timing"].update(beats=[{"events": [{"event_index": i, "text": text}
+                                            for i, text in enumerate(item["events"], 1)],
+                                 "seconds": 5, "reason": "Parler en marchant."}],
                            pause_seconds=1, estimated_seconds=6)
     assert planning.validate(value, item)["timing"]["estimated_seconds"] == 6
 
@@ -264,7 +267,9 @@ def test_sequential_allowance_respects_configured_duration_without_penalizing_si
     assert planning.duration_issues(plan(item, duration), duration)
     assert not planning.duration_issues(plan(item, duration / 1.25), duration)
     simultaneous = plan(item, duration)
-    simultaneous["timing"]["beats"] = [{"events": [1, 2], "seconds": duration, "reason": "Simultanées."}]
+    simultaneous["timing"]["beats"] = [{"events": [{"event_index": i, "text": text}
+                                                  for i, text in enumerate(item["events"], 1)],
+                                       "seconds": duration, "reason": "Simultanées."}]
     assert not planning.duration_issues(planning.validate(simultaneous, item), duration)
     assert not planning.duration_issues(plan(scene("Il attend."), duration), duration)
 
@@ -391,7 +396,7 @@ def test_incomplete_held_scene_remains_resumable_when_planning_is_unavailable(mo
     ("schema", "schema_required", "/timing"),
     ("extra", "schema_additionalProperties", "/"),
     ("type", "schema_type", "/timing/beats/0/seconds"),
-    ("coverage", "event_coverage", "/timing/beats"),
+    ("coverage", "event_reference", "/timing/beats/0/events/0/event_index"),
     ("sum", "timing_total_mismatch", "/timing/estimated_seconds"),
     ("finite", "timing_nonfinite", "/timing"),
     ("reset", "reset_quote_mismatch", "/continuity/reset_evidence"),
@@ -410,7 +415,7 @@ def test_planning_validation_exposes_only_safe_codes_and_paths(defect, reason, p
     elif defect == "type":
         value["timing"]["beats"][0]["seconds"] = secret
     elif defect == "coverage":
-        value["timing"]["beats"][0]["events"] = [2]
+        value["timing"]["beats"][0]["events"][0]["event_index"] = 2
     elif defect == "sum":
         value["timing"]["estimated_seconds"] = 5
     elif defect == "finite":
@@ -546,7 +551,7 @@ def test_timing_split_survives_partial_review_interruption_and_failed_replacemen
     assert snapshots[-1]["scene_plans"][0] is None
 
 
-@pytest.mark.parametrize("old_policy", ["timed-source-context-v6", "timed-source-context-v7"])
+@pytest.mark.parametrize("old_policy", ["timed-source-context-v6", "timed-source-context-v7", "timed-source-context-v8"])
 def test_resume_rejects_old_review_policies_before_network_calls(monkeypatch, old_policy):
     snapshots = []
 

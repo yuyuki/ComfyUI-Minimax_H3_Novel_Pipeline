@@ -26,7 +26,15 @@ may share a scene when they fit naturally. Existing workflows retain their saved
 widget values; update `max_tokens` explicitly when using an older node instance.
 
 Before reviewing each scene, the adapter estimates natural action/dialogue timing,
-including sequential or simultaneous beats and pauses. Oversized scenes trigger
+including sequential or simultaneous beats and pauses. A compound event can be
+partitioned into verbatim action fragments, each referencing its original 1-based
+`event_index`. For example, taking out a net and covering a tablet can use two
+successive beats with the same event index. Concatenated fragments must restore
+every original event in order; only boundary whitespace is restored automatically.
+Missing, duplicated, reordered or rewritten fragments are rejected. The planning
+schema uses `{event_index, text}` references; integer-only references are not accepted.
+This validates textual coverage, not the model's semantic choice of action boundaries
+or simultaneity, which independent review still checks. Oversized scenes trigger
 bounded repairs that can split a single source sentence into multiple scenes.
 For two or more successive beats, a 25% uncertainty allowance is applied to the
 total estimate: at an 8-second maximum, such a scene must be estimated at 6.4 seconds
@@ -41,7 +49,8 @@ never enter the approval cache, and do not prevent independent successor scenes.
 Known timing overruns can still trigger splitting when semantic review is unavailable;
 each replacement must undergo its own planning and review.
 Planning validation diagnostics include the scene, stage, check, a bounded reason code
-(for example `event_coverage`, `timing_total_mismatch`, `source_quote_mismatch` or
+(for example `event_coverage`, `event_reference`, `event_order`, `event_text_mismatch`,
+`event_text_incomplete`, `timing_total_mismatch`, `source_quote_mismatch` or
 `schema_type`) and a safe JSON field path. Arbitrary exception messages and rejected
 backend values are not saved. `output_limit` is reserved for an explicit output-limit
 failure; `request_failed` alone does not identify a token limit or a validation cause.
@@ -57,7 +66,7 @@ remain in checkpoints. Category instructions guide the model; structural validat
 cannot certify the meaning of a physical claim or its category.
 Internal timing plans and the bounded physical context are saved in
 `cinematic_chapters/.cache/<chapter_id>/progress.json`, alongside resumable drafts.
-Only v2 checkpoints with review policy `timed-source-context-v8` can be resumed; start a fresh adaptation for older
+Only v2 checkpoints with review policy `timed-source-context-v9` can be resumed; start a fresh adaptation for older
 checkpoints. Completed `.cinematic.json` chapters remain loadable and are not rewritten.
 
 To resume from those saved adaptations, replace the adapter with **Load Cinematic

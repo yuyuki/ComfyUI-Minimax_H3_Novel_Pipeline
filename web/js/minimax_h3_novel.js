@@ -667,7 +667,7 @@ app.registerExtension({
     name: "minimax_h3_novel.provider_settings",
     settings: [{
         id: CONNECTIONS_SETTING, name: " ",
-        category: ["MiniMax H3 Novel", "Providers", "Connections"],
+        category: ["📖 MiniMax H3 Novel", "Providers", "Connections"],
         default: Object.fromEntries(PROVIDERS.map((provider) => [provider.key, provider.defaults])),
         type: (_name, setter, value) => {
             const panel = document.createElement("div");

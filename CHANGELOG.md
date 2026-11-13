@@ -8,6 +8,13 @@ by later entries.
 
 ## Unreleased
 
+- Decompose compound cinematic events into verbatim action fragments, with
+  original event indices reusable across sequential beats. Validate complete
+  ordered text coverage without omissions, duplication or rewriting, preserve
+  timing splits and revalidate cached fragments on resume. Reject old planning
+  references and checkpoints under review policy v9; cover prologue scenes 13/14
+  and strict-schema transport retries with mocked regressions.
+
 - Keep independent cinematic semantic checks running after planning failures,
   retaining partial findings without approval. Report safe planning validation
   codes and field paths, retire stale physical facts across aspect changes, and

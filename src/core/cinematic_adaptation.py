@@ -148,7 +148,7 @@ You must complete at least one scene; keep each scene within the maximum duratio
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_POLICY = "timed-source-context-v8"
+_REVIEW_POLICY = "timed-source-context-v9"
 
 _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
@@ -442,7 +442,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             item["planning_key"] = key
         # Validate cached estimates and citations too; a key is not data validation.
         try:
-            return scene_planning.validate(item["planning"], item)
+            item["planning"] = scene_planning.validate(item["planning"], item)
+            return item["planning"]
         except ValueError:
             item.pop("planning", None)
             item.pop("planning_key", None)
