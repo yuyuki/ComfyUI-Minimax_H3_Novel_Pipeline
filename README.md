@@ -32,6 +32,8 @@ The chapter picker supports TXT, Markdown and searchable PDF files. Review the a
 
 The adapter estimates action and dialogue time before review and can split a sentence into several scenes to fit the configured maximum. Timing remains an estimate; incomplete checks or persistent overruns are recorded for review. Start a fresh adaptation when upgrading older resume checkpoints; completed cinematic chapters remain loadable.
 
+If timing planning fails, independent narrative checks still run. Partial findings remain visible and are never treated as approval; validation failures include safe reason codes and field paths in the saved diagnostics.
+
 Each processing node's `thinking` checkbox controls reasoning requests for Qwen, Gemma and Mistral in LM Studio. Saved configurations and stream logs reflect that setting. The loaded model and its chat template must support switching reasoning off; Gemma/Mistral requests fail if reasoning is returned while disabled. `reasoning_chars` reports the actual returned reasoning. GPT-OSS always reasons and reports `thinking=true`; its effort is set in LM Studio. Hosted OpenAI requests have no thinking control in this plugin. Character evidence auditing uses its separate `audit_thinking` checkbox.
 
 Version 2.6.0 uses one H3 scene per cinematic sequence and validates continuity citations against the supplied evidence. Recreate Adapter and Generate nodes after updating; saved chapters must include the adaptation duration.

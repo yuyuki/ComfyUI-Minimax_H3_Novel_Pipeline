@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 import math
+import re
 
 TEXT = {"type": "string", "minLength": 1}
 ASPECTS = ("location", "support", "attachment", "possession", "motion", "lighting")
@@ -75,6 +76,16 @@ Use the affected object/person as entity and the same entity/aspect names as ear
 source_evidence when they refer to the same fact. Keep independent props distinct.
 Source quotations outrank fact paraphrases and generated scene states, all of which
 are fallible. Unknown is not absent. Do not extract facts solely from the adaptation.
+Use stable names, omitting definite articles only (torche and la torche are the same
+label). Preserve all distinguishing qualifiers: first/second torch, holder, number,
+or location. Never merge distinct props by similarity or erase these qualifiers.
+Each entity's current updates replace its older snapshot, across ALL aspects. Restate
+still-established physical constraints needed for that entity, citing current source;
+do not invent quotations to retain an older fact. Other entities remain available.
+Use location for position, support for what bears weight, attachment for connections,
+possession for holder/storage, motion for ongoing movement and lighting for illumination.
+An inscription or written translation is not a location or lighting fact; omit facts
+outside these physical categories. A hand supporting a person belongs under support.
 Preserve exact spatial relations (above a frayed section differs from at that section),
 attachments, support and possession. A sudden jolt is transient, not continuous motion.
 Update support when a rope breaks and a hand catches the upper part. An attachment
@@ -95,38 +106,63 @@ def cache_key(scene, evidence, duration):
     return hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+class _PlanningValidationError(ValueError):
+    """Locally generated diagnostic codes; never include rejected values or backend text."""
+
+    def __init__(self, reason, field_path):
+        self.reason = reason
+        self.field_path = field_path
+        super().__init__(f"{reason} at {field_path}")
+
+
+def _entity_key(name):
+    """Exact labels modulo case, whitespace and a single definite article; no fuzzy aliases."""
+    name = " ".join(name.casefold().split()).replace("’", "'")
+    return re.sub(r"^(?:(?:le|la|les|the) |l')", "", name)
+
+
 def validate(plan, scene):
     """Reject malformed estimates and unsupported citations; never certify their semantics."""
     from jsonschema import Draft202012Validator
 
     errors = list(Draft202012Validator(SCHEMA["schema"]).iter_errors(plan))
     if errors:
-        raise ValueError("Scene planning does not match its timing/continuity schema.")
+        error = errors[0]
+        # Unknown object keys can contain arbitrary model text. Only schema-owned
+        # names and array indices may enter persisted diagnostic paths.
+        known = {"timing", "continuity", "beats", "events", "seconds", "reason", "pause_seconds",
+                 "estimated_seconds", "reset", "reset_evidence", "updates", "entity", "aspect",
+                 "fact", "source_quote"}
+        path = "/" + "/".join(str(part) if type(part) is int or part in known else "unknown"
+                               for part in error.absolute_path)
+        raise _PlanningValidationError(f"schema_{error.validator}", path)
     timing = plan["timing"]
     seconds = [timing["pause_seconds"], timing["estimated_seconds"],
                *(beat["seconds"] for beat in timing["beats"])]
     if any(type(value) not in (int, float) or not math.isfinite(value) for value in seconds):
-        raise ValueError("Scene timing requires finite numbers.")
+        raise _PlanningValidationError("timing_nonfinite", "/timing")
     indices = [index for beat in timing["beats"] for index in beat["events"]]
     if (any(type(index) is not int for index in indices)
             or indices != list(range(1, len(scene["events"]) + 1))):
-        raise ValueError("Timing beats must cover every event exactly once in order.")
+        raise _PlanningValidationError("event_coverage", "/timing/beats")
     total = round(sum(beat["seconds"] for beat in timing["beats"]) + timing["pause_seconds"], 3)
     if total <= 0 or abs(timing["estimated_seconds"] - total) > 0.05:
-        raise ValueError("estimated_seconds must equal beats plus pauses.")
+        raise _PlanningValidationError("timing_total_mismatch", "/timing/estimated_seconds")
     continuity = plan["continuity"]
     reset_quote = continuity["reset_evidence"]
     if ((continuity["reset"] and (not reset_quote.strip() or reset_quote not in scene["source"]))
             or (not continuity["reset"] and reset_quote)):
-        raise ValueError("A context reset needs an exact current-source quotation.")
+        raise _PlanningValidationError("reset_quote_mismatch", "/continuity/reset_evidence")
     seen = set()
-    for fact in continuity["updates"]:
-        if (any(not fact[key].strip() for key in ("entity", "fact", "source_quote"))
-                or fact["source_quote"] not in scene["source"]):
-            raise ValueError("Continuity facts need exact nonempty current-source quotations.")
-        key = (fact["entity"].casefold().strip(), fact["aspect"])
+    for index, fact in enumerate(continuity["updates"]):
+        for field in ("entity", "fact", "source_quote"):
+            if not fact[field].strip() or (field == "entity" and not _entity_key(fact[field])):
+                raise _PlanningValidationError("blank_fact_field", f"/continuity/updates/{index}/{field}")
+        if fact["source_quote"] not in scene["source"]:
+            raise _PlanningValidationError("source_quote_mismatch", f"/continuity/updates/{index}/source_quote")
+        key = (_entity_key(fact["entity"]), fact["aspect"])
         if key in seen:
-            raise ValueError("Combine updates for the same physical entity/aspect.")
+            raise _PlanningValidationError("duplicate_entity_aspect", f"/continuity/updates/{index}")
         seen.add(key)
     result = deepcopy(plan)
     result["timing"]["estimated_seconds"] = total
@@ -163,10 +199,15 @@ def duration_issues(plan, duration):
 
 
 def advance(evidence, plan, sequence):
-    """Keep bounded latest source-cited facts; no generated state enters the ledger."""
+    """Keep latest entity snapshots; retire stale facets without guessing contradictions.
+
+    Categories and paraphrases are fallible, so a new observation conservatively
+    retires ALL older facets for that exact entity. Unmentioned entities persist.
+    Quotes and original plans remain intact in checkpoints for inspection.
+    """
     result = [] if plan["continuity"]["reset"] else deepcopy(evidence)
+    changed = {_entity_key(fact["entity"]) for fact in plan["continuity"]["updates"]}
+    result = [old for old in result if _entity_key(old["entity"]) not in changed]
     for fact in plan["continuity"]["updates"]:
-        key = (fact["entity"].casefold().strip(), fact["aspect"])
-        result = [old for old in result if (old["entity"].casefold().strip(), old["aspect"]) != key]
         result.append({**deepcopy(fact), "sequence": sequence})
     return result[-MAX_FACTS:]

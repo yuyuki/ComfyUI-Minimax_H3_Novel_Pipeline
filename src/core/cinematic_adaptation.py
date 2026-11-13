@@ -148,7 +148,7 @@ You must complete at least one scene; keep each scene within the maximum duratio
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_POLICY = "timed-source-context-v7"
+_REVIEW_POLICY = "timed-source-context-v8"
 
 _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
@@ -450,7 +450,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
 
     def review_payload(item):
         return {"stage": "adaptation", "sequences": [scene_planning.description(item)],
-                "scene_plan": item["planning"], "maximum_seconds": duration,
+                "scene_plan": item.get("planning"), "maximum_seconds": duration,
+                "planning_status": "available" if item.get("planning") else "incomplete",
                 "previous_final_state": previous_state, **previous_context()}
 
     def review_warning(error, sequence_id, check, *, phase="adaptation"):
@@ -462,9 +463,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         warning = {"sequence": sequence_id, "stage": phase, "check": check,
                    "status": "incomplete", "reason": reason, "error_type": type(error).__name__,
                    "message": "Check failed; valid scene data retained without review approval."}
+        if isinstance(error, scene_planning._PlanningValidationError):
+            warning.update(reason=error.reason, field_path=error.field_path)
         review_warnings.append(warning)
         logger.warning("Cinematic sequence %s: %s/%s failed (%s); continuing with JSON diagnostics.",
-                       sequence_id, phase, check, reason)
+                       sequence_id, phase, check, warning["reason"])
         return warning
 
     def review_scene(payload, sequence_id):
@@ -504,20 +507,21 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
 
     def review_current(sequences):
         lmstudio_pipeline.comfy_interrupt_check()
+        plan = None
         try:
             plan = planning_for(sequences[0])
         except _REVIEW_ERRORS as exc:
             review_warning(exc, len(results) + 1, "scene_planning")
-            raise _ReviewUnavailable() from None
-        checkpoint("scene_planned", sequences)
+        else:
+            checkpoint("scene_planned", sequences)
         payload = review_payload(sequences[0])
         context = [_REVIEW_POLICY, model, duration_rules, narrative_validation.SYSTEM,
                    narrative_validation.SCHEMA, narrative_validation.ADAPTATION_REVIEW_BASE,
                    narrative_validation.ADAPTATION_REVIEW_FOCUSES, max_tokens, payload]
         key = hashlib.sha256(json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
-        if key in approved_reviews:
+        if plan is not None and key in approved_reviews:
             return {}
-        timing_issues = scene_planning.duration_issues(plan, duration)
+        timing_issues = scene_planning.duration_issues(plan, duration) if plan is not None else []
         if not sequences[0]["events"]:
             timing_issues.append("events is empty: describe supported ongoing activity or regroup this held moment.")
         try:
@@ -528,6 +532,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             raise
         for message in timing_issues:
             issues.setdefault(1, []).append(message)
+        if plan is None:
+            raise _ReviewUnavailable(issues)
         if not issues:
             approved_reviews.add(key)
         checkpoint("reviewing", sequences)
@@ -549,7 +555,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         if incomplete is not None:
             results[-1]["review"] = {
                 "status": "incomplete", "issues": incomplete.issues.get(1, []),
-                "failed_checks": [{key: warning[key] for key in ("stage", "check", "reason")}
+                "failed_checks": [{key: warning[key] for key in ("stage", "check", "reason", "field_path")
+                                   if key in warning}
                                   for warning in review_warnings
                                   if warning["sequence"] == len(results) and warning["status"] == "incomplete"],
             }
@@ -578,9 +585,15 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             resolve_current(sequences, {1: [record["description"]]})
             return
         for attempt in range(repair_rounds + 1):
-            issues = review_current(sequences)
+            incomplete = None
+            try:
+                issues = review_current(sequences)
+            except _ReviewUnavailable as exc:
+                incomplete, issues = exc, exc.issues
             checkpoint("reviewed", sequences, issues=issues)
             if not issues or attempt == repair_rounds:
+                if incomplete is not None:
+                    raise incomplete
                 break
             print(f"    Cinematic adaptation: semantic correction {attempt + 1}/"
                   f"{repair_rounds} (sequence {len(results) + 1}).", flush=True)
@@ -606,6 +619,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 review_warning(exc, len(results) + 1, "scene_repair", phase="correction")
                 raise _ReviewUnavailable(issues) from None
             sequences[:1] = replacement
+            # Failures belong to the rejected description, not its replacements.
+            # Each replacement must earn its own complete review and timing plan.
+            for warning in review_warnings:
+                if warning["sequence"] == len(results) + 1 and warning["status"] == "incomplete":
+                    warning["status"] = "superseded_by_replacement"
             checkpoint("corrected_pending_review", sequences)
         if issues:
             plan = sequences[0].get("planning")
@@ -654,15 +672,22 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         # Review the selected alternative once, with the immediately previous scene.
         # Selection is not approval; retain unresolved doubts without an endless retry.
         try:
+            plan = None
             try:
                 plan = planning_for(item)
             except _REVIEW_ERRORS as exc:
                 review_warning(exc, sequence_id, "scene_planning", phase="proposal_review")
-                raise _ReviewUnavailable() from None
             payload = {**review_payload(item), "defects_to_recheck": messages}
-            remaining = review_scene(payload, sequence_id)
-            for message in scene_planning.duration_issues(plan, duration):
+            try:
+                remaining = review_scene(payload, sequence_id)
+            except _ReviewUnavailable as exc:
+                for message in scene_planning.duration_issues(plan, duration) if plan is not None else []:
+                    exc.issues.setdefault(1, []).append(message)
+                raise
+            for message in scene_planning.duration_issues(plan, duration) if plan is not None else []:
                 remaining.setdefault(1, []).append(message)
+            if plan is None:
+                raise _ReviewUnavailable(remaining)
         except _ReviewUnavailable as exc:
             record["proposals"][0]["review"] = {"status": "incomplete", "issues": exc.issues.get(1, [])}
             raise

@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Keep independent cinematic semantic checks running after planning failures,
+  retaining partial findings without approval. Report safe planning validation
+  codes and field paths, retire stale physical facts across aspect changes, and
+  normalize definite articles without merging qualified prop names. Preserve
+  timing splits through partial reviews and resume under review policy v8.
+
 - Reserve a 25% timing allowance for successive cinematic beats and require an
   actual source-preserving split on timing repair. Recheck every replacement;
   cover prologue scene 14's optimistic eight-second estimate with a regression.

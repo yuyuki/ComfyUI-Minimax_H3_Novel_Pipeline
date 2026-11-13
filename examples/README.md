@@ -35,11 +35,29 @@ beat. Timing repairs must produce at least two replacement scenes, each planned 
 reviewed separately; shortening the wording alone is rejected.
 These are estimates, not measured video durations. Persistent overruns or unavailable
 planning/reviews retain valid scene data with explicit incomplete-review diagnostics.
+An unavailable plan does not skip semantic checks: source fidelity, pacing and local
+continuity are still reviewed against the source. Partial reviews retain findings,
+never enter the approval cache, and do not prevent independent successor scenes.
+Known timing overruns can still trigger splitting when semantic review is unavailable;
+each replacement must undergo its own planning and review.
+Planning validation diagnostics include the scene, stage, check, a bounded reason code
+(for example `event_coverage`, `timing_total_mismatch`, `source_quote_mismatch` or
+`schema_type`) and a safe JSON field path. Arbitrary exception messages and rejected
+backend values are not saved. `output_limit` is reserved for an explicit output-limit
+failure; `request_failed` alone does not identify a token limit or a validation cause.
 Source-cited physical facts help track earlier objects and support changes even when
 recent state descriptions omit them; generated paraphrases never outrank the book.
+Identity matching ignores case, whitespace and one definite article only; qualifiers,
+numbers and distinct prop names remain distinct. A new source-cited observation
+conservatively replaces that entity's whole earlier context snapshot, across aspects,
+to prevent stale contradictions when generated categories are wrong. Other entities
+persist, within the 24-fact bound. This can forget an unchanged older facet; it does
+not assert that the facet ceased to exist. Full source quotations and historical plans
+remain in checkpoints. Category instructions guide the model; structural validation
+cannot certify the meaning of a physical claim or its category.
 Internal timing plans and the bounded physical context are saved in
 `cinematic_chapters/.cache/<chapter_id>/progress.json`, alongside resumable drafts.
-Only v2 checkpoints with the current review policy can be resumed; start a fresh adaptation for older
+Only v2 checkpoints with review policy `timed-source-context-v8` can be resumed; start a fresh adaptation for older
 checkpoints. Completed `.cinematic.json` chapters remain loadable and are not rewritten.
 
 To resume from those saved adaptations, replace the adapter with **Load Cinematic

@@ -20,7 +20,10 @@ that does not support them. Speech is phase-local; an addressee is not the speak
 For adaptation, review only the current scene against its source and the immediately
 previous scene plus supplied source_evidence, respecting explicit temporal/location breaks. Follow the book's order;
 do not reconstruct chapter-wide continuity or speculate about later scenes.
-For adaptation only, when scene_plan is supplied, apply these checks:
+For adaptation, source fidelity and local continuity checks always run, even when
+planning_status is incomplete and scene_plan is null. Independently assess pacing
+from source/actions in that case; never interpret an unavailable plan as approval.
+When scene_plan is supplied, also apply these checks:
 source_evidence contains older physical claims with exact source quotations and sequence
 addresses. Quotations outrank fallible fact paraphrases and generated states. Use only
 still-applicable earlier evidence; verify context resets and physical updates in scene_plan
@@ -126,7 +129,9 @@ not free an embedded object; preparing an action does not complete it. Do not in
 hand assignments or handling actions to reconcile states. Verify initial_state precedes
 the first event and final_state follows the last without performing an additional action.
 Source quotations outrank fallible evidence paraphrases and generated states. Check the
-meaning of scene_plan continuity updates and resets against source. Preserve ABOVE versus
+meaning of scene_plan continuity updates and resets against source when available.
+Without a plan, still check source fidelity, pacing and transitions independently.
+Preserve ABOVE versus
 AT a damaged section; distinguish a transient jolt from continuous motion and make changes
 of support explicit. Accept concise states without full repeated object inventories.
 """,

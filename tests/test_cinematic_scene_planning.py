@@ -194,14 +194,16 @@ def test_ledger_is_bounded_replaces_matching_aspects_and_resets_at_explicit_brea
     assert planning.advance(evidence, reset, 33) == []
 
 
-def test_planning_cancellation_is_not_converted_to_a_warning(monkeypatch):
+@pytest.mark.parametrize("error", [KeyboardInterrupt(), PermissionError("storage"), OSError("filesystem"),
+                                 type("InterruptProcessingException", (RuntimeError,), {})("Stop")])
+def test_planning_cancellation_is_not_converted_to_a_warning(monkeypatch, error):
     def chat(client, model, system, user, schema, *args):
         if schema == planning.SCHEMA:
-            raise KeyboardInterrupt()
+            raise error
         return {"sequences": [scene("Il attend.")]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(type(error)):
         run("Il attend.")
 
 
@@ -347,6 +349,8 @@ def test_corrupt_pending_estimate_is_discarded_and_never_committed_to_context(mo
     def chat(client, model, system, user, schema, *args):
         if schema == planning.SCHEMA:
             return plan(item)
+        if schema == nv.SCHEMA:
+            return {"issues": []}
         return {"sequences": [deepcopy(item)]}
 
     def checkpoint(state):
@@ -381,3 +385,242 @@ def test_incomplete_held_scene_remains_resumable_when_planning_is_unavailable(mo
     assert result["sequences"][0]["review"]["status"] == "incomplete"
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No completed scene regeneration"))
     assert run(item["source"], resume_state=snapshots[-1]) == result
+
+
+@pytest.mark.parametrize("defect,reason,path", [
+    ("schema", "schema_required", "/timing"),
+    ("extra", "schema_additionalProperties", "/"),
+    ("type", "schema_type", "/timing/beats/0/seconds"),
+    ("coverage", "event_coverage", "/timing/beats"),
+    ("sum", "timing_total_mismatch", "/timing/estimated_seconds"),
+    ("finite", "timing_nonfinite", "/timing"),
+    ("reset", "reset_quote_mismatch", "/continuity/reset_evidence"),
+    ("quote", "source_quote_mismatch", "/continuity/updates/0/source_quote"),
+    ("blank", "blank_fact_field", "/continuity/updates/0/entity"),
+    ("duplicate", "duplicate_entity_aspect", "/continuity/updates/1"),
+])
+def test_planning_validation_exposes_only_safe_codes_and_paths(defect, reason, path):
+    item = scene("Il attend.")
+    value = plan(item)
+    secret = "sensitive-backend-body"
+    if defect == "schema":
+        value["timing"] = {}
+    elif defect == "extra":
+        value[secret] = secret
+    elif defect == "type":
+        value["timing"]["beats"][0]["seconds"] = secret
+    elif defect == "coverage":
+        value["timing"]["beats"][0]["events"] = [2]
+    elif defect == "sum":
+        value["timing"]["estimated_seconds"] = 5
+    elif defect == "finite":
+        value["timing"]["estimated_seconds"] = float("nan")
+    elif defect == "reset":
+        value["continuity"].update(reset=True, reset_evidence=secret)
+    elif defect == "quote":
+        value["continuity"]["updates"] = [fact(secret)]
+    elif defect == "blank":
+        value["continuity"]["updates"] = [fact(item["source"], entity=" ")]
+    else:
+        value["continuity"]["updates"] = [fact(item["source"], entity=name) for name in ("torche", "La torche")]
+    with pytest.raises(planning._PlanningValidationError) as caught:
+        planning.validate(value, item)
+    assert (caught.value.reason, caught.value.field_path) == (reason, path)
+    assert secret not in str(caught.value)
+
+
+def test_missing_planning_still_reviews_source_and_retains_semantic_findings(monkeypatch, caplog):
+    spans = ["Il tend la main au-dessus de la corde effilochée.", " Il attend."]
+    calls, snapshots = [], []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == planning.SCHEMA:
+            item = payload["current_scene"]
+            if item["source"] == spans[0]:
+                return plan(item, updates=[fact("secret invalid quotation")])
+            return plan(item)
+        if schema == nv.SCHEMA:
+            calls.append(payload)
+            if payload["sequences"][0]["source"] == spans[0]:
+                assert payload["scene_plan"] is None and payload["planning_status"] == "incomplete"
+                return {"issues": [{"target": 1, "message": "endingState loses ABOVE the frayed section."}]}
+            return {"issues": []}
+        return {"sequences": [scene(span) for span in spans]}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    result = run("".join(spans), correction_attempts=0, on_checkpoint=lambda s: snapshots.append(deepcopy(s)))
+    assert [call["sequences"][0]["source"] for call in calls] == spans
+    review = result["sequences"][0]["review"]
+    assert review["status"] == "incomplete" and "ABOVE" in review["issues"][0]
+    assert review["failed_checks"] == [{"stage": "adaptation", "check": "scene_planning",
+                                        "reason": "source_quote_mismatch",
+                                        "field_path": "/continuity/updates/0/source_quote"}]
+    assert len(snapshots[-1]["approved_reviews"]) == 1
+    assert "secret invalid quotation" not in json.dumps(result) + caplog.text
+    assert snapshots[-1]["scene_plans"][0] is None
+
+
+def test_latest_entity_snapshot_retires_cross_aspect_conflicts_and_keeps_distinct_props():
+    old = scene("La torche est fixée dans son support. La première torche est tombée.")
+    evidence = planning.advance([], planning.validate(plan(old, updates=[
+        fact("La torche est fixée dans son support.", entity="torche", aspect="location"),
+        fact("La première torche est tombée.", entity="première torche", aspect="location"),
+        fact("La torche est fixée dans son support.", entity="torchère", aspect="attachment"),
+    ]), old), 13)
+    before = deepcopy(evidence)
+    current = scene("Il récupéra la torche et la brandit.")
+    updates = [fact("Il récupéra la torche", entity="la torche", aspect="possession", value="Il la tient."),
+               fact("et la brandit.", entity="La torche", aspect="motion", value="Il la lève.")]
+    value = planning.validate(plan(current, updates=updates), current)
+    latest = planning.advance(evidence, value, 18)
+    assert evidence == before and value["continuity"]["updates"] == updates
+    assert latest == [*before[1:], *[{**item, "sequence": 18} for item in updates]]
+    assert not any(item["aspect"] == "location" and planning._entity_key(item["entity"]) == "torche" for item in latest)
+    assert planning.advance(latest, value, 18) == latest
+
+
+@pytest.mark.parametrize("left,right", [("première torche", "seconde torche"),
+                                        ("corde d'Indy", "corde de la torche"),
+                                        ("torche", "torchère"), ("torche 1", "torche 2")])
+def test_identity_normalization_preserves_distinguishing_qualifiers(left, right):
+    assert planning._entity_key(left) != planning._entity_key(right)
+    assert planning._entity_key("La " + left) == planning._entity_key(left)
+
+
+def test_timing_split_survives_partial_review_interruption_and_failed_replacement_planning(monkeypatch):
+    spans = ["Il range le carnet et sort un filet", " puis le noue au crochet."]
+    original = scene("".join(spans), ["Ranger.", "Sortir.", "Nouer."])
+    snapshots, reviewed, planned = [], [], []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == planning.SCHEMA:
+            item = payload["current_scene"]
+            planned.append(item["source"])
+            if item["source"] == spans[0]:
+                raise RuntimeError("private backend body")
+            return plan(item, 8 if item["source"] == original["source"] else 4)
+        if schema == nv.SCHEMA:
+            source = payload["sequences"][0]["source"]
+            reviewed.append(source)
+            if source == original["source"]:
+                raise RuntimeError("review unavailable")
+            return {"issues": []}
+        if "rejected_adaptation" in payload:
+            assert payload["minimum_replacement_scenes"] == 2
+            assert "25%" in payload["defects_to_correct"][0]
+            return {"sequences": [scene(span) for span in spans]}
+        pytest.fail("No generation after pending split")
+
+    def checkpoint(state):
+        snapshots.append(deepcopy(state))
+        if state["stage"] == "corrected_pending_review":
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    # Start from a real source-validated checkpoint, before any planning.
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [deepcopy(original)]})
+
+    def initial(state):
+        if state["stage"] == "source_validated_pending_review":
+            snapshots.append(deepcopy(state))
+            raise KeyboardInterrupt()
+
+    with pytest.raises(KeyboardInterrupt):
+        run(original["source"], on_checkpoint=initial)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    with pytest.raises(KeyboardInterrupt):
+        run(original["source"], resume_state=snapshots[-1], on_checkpoint=checkpoint)
+    saved = snapshots[-1]
+    assert saved["approved_reviews"] == []
+    assert saved["narrative_review"]["warnings"][0]["status"] == "superseded_by_replacement"
+    result = run(original["source"], resume_state=saved, on_checkpoint=lambda s: snapshots.append(deepcopy(s)))
+    assert planned == [original["source"], *spans]
+    assert reviewed == [original["source"], *spans]
+    assert [item["source"] for item in result["sequences"]] == spans
+    assert "".join(item["source"] for item in result["sequences"]) == original["source"]
+    assert result["sequences"][0]["review"]["status"] == "incomplete"
+    assert "review" not in result["sequences"][1]
+    assert len(snapshots[-1]["approved_reviews"]) == 1
+    assert snapshots[-1]["scene_plans"][0] is None
+
+
+@pytest.mark.parametrize("old_policy", ["timed-source-context-v6", "timed-source-context-v7"])
+def test_resume_rejects_old_review_policies_before_network_calls(monkeypatch, old_policy):
+    snapshots = []
+
+    def checkpoint(state):
+        snapshots.append(deepcopy(state))
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene("Il attend.")]})
+    with pytest.raises(KeyboardInterrupt):
+        run("Il attend.", on_checkpoint=checkpoint)
+    saved = snapshots[-1]
+    saved["review_policy"] = old_policy
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("Reject before requesting"))
+    with pytest.raises(ValueError, match="Invalid cinematic resume checkpoint"):
+        run("Il attend.", resume_state=saved)
+
+
+def test_unplanned_pending_scene_is_reviewed_again_after_resume(monkeypatch):
+    snapshots, reviews = [], []
+    source = "Il attend."
+
+    def chat(client, model, system, user, schema, *args):
+        if schema == planning.SCHEMA:
+            raise RuntimeError("private backend text")
+        if schema == nv.SCHEMA:
+            reviews.append(json.loads(user))
+            return {"issues": []}
+        return {"sequences": [scene(source)]}
+
+    def checkpoint(state):
+        if state["stage"] == "reviewed":
+            snapshots.append(deepcopy(state))
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    with pytest.raises(KeyboardInterrupt):
+        run(source, on_checkpoint=checkpoint)
+    assert snapshots[-1]["approved_reviews"] == []
+    result = run(source, resume_state=snapshots[-1])
+    assert len(reviews) == 2
+    assert all(payload["planning_status"] == "incomplete" for payload in reviews)
+    assert result["sequences"][0]["review"]["status"] == "incomplete"
+
+
+def test_replaced_physical_snapshot_is_reconstructed_identically_on_resume(monkeypatch):
+    spans = ["La torche est dans son support.", " Il récupéra la torche.", " Il attend."]
+    snapshots, contexts = [], []
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema == planning.SCHEMA:
+            item = payload["current_scene"]
+            contexts.append(deepcopy(payload["source_evidence"]))
+            updates = []
+            if item["source"] == spans[0]:
+                updates = [fact(spans[0], entity="torche", aspect="location", value="Dans le support.")]
+            elif item["source"] == spans[1]:
+                updates = [fact("Il récupéra la torche.", entity="La torche", aspect="possession", value="Indy la tient.")]
+            return plan(item, updates=updates)
+        if schema == nv.SCHEMA:
+            return {"issues": []}
+        return {"sequences": [scene(span) for span in spans]}
+
+    def checkpoint(state):
+        snapshots.append(deepcopy(state))
+        if state["stage"] == "scene_committed" and len(state["sequences"]) == 2:
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    with pytest.raises(KeyboardInterrupt):
+        run("".join(spans), on_checkpoint=checkpoint)
+    saved = snapshots[-1]
+    assert len(saved["source_evidence"]) == 1
+    assert saved["source_evidence"][0]["source_quote"] == "Il récupéra la torche."
+    result = run("".join(spans), resume_state=saved)
+    assert contexts[-1] == saved["source_evidence"]
+    assert "".join(item["source"] for item in result["sequences"]) == "".join(spans)

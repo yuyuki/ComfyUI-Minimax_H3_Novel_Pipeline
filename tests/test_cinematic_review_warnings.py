@@ -21,8 +21,17 @@ def run(**kwargs):
                             temperature=0.1, max_tokens=16384, correction_attempts=0, **kwargs)
 
 
-def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors(monkeypatch, caplog):
+@pytest.mark.parametrize("missing_planning", [False, True])
+def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors(monkeypatch, caplog, missing_planning):
     calls, snapshots = [], []
+    assess = ca.scene_planning.assess
+
+    def planning(*args):
+        if missing_planning and args[3]["source"] == " B.":
+            raise RuntimeError("secret-backend-text")
+        return assess(*args)
+
+    monkeypatch.setattr(ca.scene_planning, "assess", planning)
 
     def chat(client, model, system, user, schema, *args):
         payload = json.loads(user)
@@ -33,6 +42,7 @@ def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors
         calls.append((source, focus))
         if source != " B.":
             return {"issues": []}
+        assert (payload["scene_plan"] is None) == missing_planning
         if focus is None or focus == "source_fidelity":
             raise ca.lmstudio_json.StructuredOutputLengthError("secret-backend-text")
         return {"issues": [{"target": 1, "message": "Pacing concern."}] if focus == "cinematic_pacing" else []}
@@ -57,6 +67,37 @@ def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors
                "narrative_review": {**result["narrative_review"], "extraction_issues": []},
                "characters": [], "locations": [], "objects": []}
     Draft202012Validator(cr.CATALOG_SCHEMA).validate(catalog)
+
+
+def test_selected_proposal_with_failed_planning_still_receives_semantic_review(monkeypatch):
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene("A. B. C.")]})
+    assess = ca.scene_planning.assess
+    reviews = []
+
+    def planning(*args):
+        if args[3].get("chosen_event"):
+            raise RuntimeError("private backend text")
+        return assess(*args)
+
+    def review(chat, client, model, payload, *args):
+        reviews.append(deepcopy(payload))
+        return {1: ["Check source-supported posture."]}
+
+    def propose(*args):
+        return [{"id": name, "selected": name == "A", "reason": "Source interpretation.", "adaptation": {
+            "initialState": "Before.", "event": "Wait.", "endingState": "After.",
+        }} for name in ("A", "B")]
+
+    monkeypatch.setattr(ca.scene_planning, "assess", planning)
+    monkeypatch.setattr(ca.narrative_validation, "review", review)
+    monkeypatch.setattr(ca.narrative_choices, "propose", propose)
+    result = run()
+    assert len(reviews) == 2 and reviews[-1]["scene_plan"] is None
+    assert "defects_to_recheck" in reviews[-1]
+    selected = result["narrative_review"]["issues"][0]["proposals"][0]
+    assert selected["review"] == {"status": "incomplete", "issues": ["Check source-supported posture."]}
+    assert result["sequences"][0]["review"]["issues"] == selected["review"]["issues"]
+    assert "private backend text" not in json.dumps(result)
 
 
 def test_partial_resume_preserves_warnings_and_does_not_approve_failed_review(monkeypatch):
