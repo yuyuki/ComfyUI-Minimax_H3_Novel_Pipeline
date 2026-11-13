@@ -28,14 +28,15 @@ widget values; update `max_tokens` explicitly when using an older node instance.
 Before reviewing each scene, the adapter estimates natural action/dialogue timing,
 including sequential or simultaneous beats and pauses. A compound event can be
 partitioned into verbatim action fragments, each referencing its original 1-based
-`event_index`. For example, taking out a net and covering a tablet can use two
-successive beats with the same event index. Concatenated fragments must restore
+`event_index`. Distinct successive operations within one event can use separate
+beats with the same event index. Concatenated fragments must restore
 every original event in order; only boundary whitespace is restored automatically.
 Missing, duplicated, reordered or rewritten fragments are rejected. The planning
 schema uses `{event_index, text}` references; integer-only references are not accepted.
-Planning instructions keep a simple physical action whole, including its tool,
-destination and spatial qualifiers: using a mallet or tying directly to a hook does
-not by itself introduce another operation. For a text mismatch or incomplete event,
+Planning instructions are independent of the book and contain no fixed story excerpts.
+They keep a simple physical action whole, including its tool, destination and spatial
+qualifiers; these complements do not by themselves introduce another operation.
+For a text mismatch or incomplete event,
 the bounded correction request identifies the affected field and original event index,
 and supplies the original event, validated prefix and exact remaining text. This
 correction context comes only from the supplied events; rejected model text is not

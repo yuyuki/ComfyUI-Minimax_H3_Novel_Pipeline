@@ -11,7 +11,8 @@ by later entries.
 - Target cinematic fragment retries with the original event, validated prefix
   and exact remaining text, keeping correction context out of warning diagnostics.
   Clarify that simple actions retain tool/destination complements in one beat;
-  cover scene 10 punctuation, paraphrase and partial-fragment correction cases.
+  keep planning instructions book-independent and cover scene 10 punctuation,
+  paraphrase, partial-fragment correction and multilingual retry cases.
 
 - Decompose compound cinematic events into verbatim action fragments, with
   original event indices reusable across sequential beats. Validate complete
