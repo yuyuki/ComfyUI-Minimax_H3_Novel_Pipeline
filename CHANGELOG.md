@@ -8,6 +8,10 @@ by later entries.
 
 ## Unreleased
 
+- Clarify cinematic scene grouping, evidence preservation and source-supported
+  physical transitions in generation, repair and review prompts. Avoid premature
+  actions and numbered event items; default the adapter token budget to 16384.
+
 - Align Generate H3 Prompts reasoning-control tests with its enabled-by-default
   thinking setting, retaining coverage of explicit enable/disable overrides.
 

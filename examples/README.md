@@ -18,6 +18,13 @@ and separated by newlines. Its `saved_files` output lists the files;
 Review the generated adaptations, then connect `cinematic_chapters` to
 **Extract Chapter References** (replacing its former `chapter_selection` input).
 
+Adapter defaults are `duration=8.0` (maximum seconds per scene), `chunk_chars=4000`,
+`temperature=0.15`, `max_tokens=16384`, `correction_attempts=2` and `thinking=True`.
+The token budget applies to each generation, repair or review request; reasoning
+and JSON share it, so even 16384 tokens can be exhausted. Consecutive gestures
+may share a scene when they fit naturally. Existing workflows retain their saved
+widget values; update `max_tokens` explicitly when using an older node instance.
+
 To resume from those saved adaptations, replace the adapter with **Load Cinematic
 Chapters**. Set `cinematic_path=20260911153042/cinematic_chapters` (using your
 previous run's timestamp), or select a single `*.cinematic.json` file in that

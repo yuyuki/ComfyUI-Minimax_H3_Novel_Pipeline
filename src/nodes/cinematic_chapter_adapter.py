@@ -20,12 +20,12 @@ class CinematicChapterAdapterNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "out_dir": ("STRING", {"default": "cinematic_chapters"}),
-            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "Maximum duration per cinematic scene. Use the same duration in Generate H3 Prompts."}),
+            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "Maximum duration per cinematic scene, not a target to fill. Use the same duration in Generate H3 Prompts."}),
             "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000,
                                     "tooltip": "Maximum source characters per reading window. Incomplete trailing scenes "
                                     "are read again with new source text. Instructions and review text add to request size."}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
-            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768,
+            "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 32768,
                                    "tooltip": "Output budget per request for generation, scene validation and focused checks. "
                                    "Reasoning and JSON share this budget; retries cannot exceed it."}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
@@ -50,7 +50,7 @@ class CinematicChapterAdapterNode:
 
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="cinematic_chapters",
-            chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=2, thinking: bool = True, duration=8.0,
+            chunk_chars=4000, temperature=0.15, max_tokens=16384, correction_attempts=2, thinking: bool = True, duration=8.0,
             resume_run=""):
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")

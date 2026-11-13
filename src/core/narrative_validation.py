@@ -20,6 +20,14 @@ that does not support them. Speech is phase-local; an addressee is not the speak
 For adaptation, review only the current scene against its source and the immediately
 previous scene, respecting explicit temporal/location breaks. Follow the book's order;
 do not reconstruct chapter-wide continuity or speculate about later scenes.
+For adaptation, check both source facts missing or altered in the descriptions and
+description claims unsupported by source. For each changed physical fact, identify
+the source-supported transition: location, support, attachment, possession and motion
+are separate. Attaching a lifting device does not detach or suspend an embedded object;
+preparing an action does not complete it. Do not invent handling actions or hand assignments.
+Verify initial_state precedes the first event and final_state follows the last event
+without performing an additional action. Omitted thoughts must not erase their
+observable evidence or meaningful source-supported condition and damage qualifiers.
 Compare each source fact with the adaptation, not merely the copied source field:
 ongoing motion and interruptions; posture and physical constraints; spatial relations
 and actual light sources; audible qualities and intelligibility; dialogue and causal
@@ -78,6 +86,8 @@ speakers from addressees and aliases from coexisting objects. Check the source l
 of every description, preserving foreign-language quotations and proper names.
 Accept filmable equivalents of metaphors and omit unfilmable inner thoughts without
 inventing literal objects, injuries or plot facts. Preserve the supported physical meaning.
+Check both missing source facts and unsupported adaptation claims. Preserve observable
+evidence behind omitted interpretations, including meaningful condition/damage qualifiers.
 """,
     "cinematic_pacing": """Check that the current scene's actions and verbatim dialogue can fit the
 maximum duration at natural speed, including pauses and reactions. Report a need to
@@ -85,6 +95,8 @@ split into shorter scenes rather than omit actions or rush dialogue. Check filma
 ongoing motion, interruptions, posture, gaze, spatial/physical constraints, actual light
 and sound sources, and intelligibility. Accept compatible body orientation and gaze;
 preserve background darkness with local illumination. Do not invent staging details.
+The duration is a maximum, not a target to fill. Individual gestures or sentence
+boundaries alone do not require a split; accept coherent continuous interactions.
 """,
     "local_transition": """Check current initial/final states and changes in possession, lighting,
 location and motion against the current source and ONLY the immediately previous scene.
@@ -92,6 +104,11 @@ Do not replay completed actions or prolong transient sounds. Unknown is not abse
 Respect explicit temporal/location breaks and do not carry unsupported facts forward.
 Do not demand continuity with an erroneous earlier generated state or speculate about
 later scenes. The previous scene is context only and never an issue target.
+For each changed physical fact, identify its source-supported transition. Check location,
+support, attachment, possession and motion separately. Attaching lifting equipment does
+not free an embedded object; preparing an action does not complete it. Do not invent
+hand assignments or handling actions to reconcile states. Verify initial_state precedes
+the first event and final_state follows the last without performing an additional action.
 """,
 }
 

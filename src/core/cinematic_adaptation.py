@@ -36,9 +36,12 @@ metaphors and unfilmable abstractions, retaining their supported physical meanin
 Keep the actual source of light or sound; do not transfer every property of a
 comparison to it or create a new object. Preserve physical constraints and audible
 qualities (such as unintelligible cries), without inventing injuries or words.
-Express implied physical relationships as
-explicit positions and visible actions without inventing unsupported facts.
+Express source-supported physical relationships explicitly; leave unspecified
+staging details unspecified rather than completing them by invention.
 Omit inner thoughts unless a source-supported visible action conveys them.
+Preserve the observable evidence behind an omitted interpretation: condition,
+markings, damage, arrangement or sound, including meaningful source-supported
+qualifiers such as unexpectedly clean, clearly legible or previously worked.
 Do not excessively condense, skip dialogue, or invent gestures to explain thoughts.
 LANGUAGE REQUIREMENT: Write initial_state, every events item and final_state in
 the same language as the narration of current_passage. Never fall back to English
@@ -54,12 +57,23 @@ A state can include ongoing motion: suspended does not mean motionless. Preserve
 established continuous activity through compatible actions until the source changes
 or interrupts it; do not invent a stop. Distinguish it from a completed one-off action.
 events contains ALL actions and dialogue in strict causal, chronological order.
+Each events item is plain text, without numbering or bullet prefixes; numbering
+is added by the application.
 Keep verbatim source excerpts only in source. Never insert source_excerpt:
 metadata into initial_state, events or final_state, even as a numbered event.
 final_state describes what is true AFTER those events, with enough continuity
 information for the next passage: characters, positions, held/lost objects,
 distinct instances of similar props and relevant offscreen facts. Preserve
 unchanged relevant facts; distinguish unknown facts from explicit absence.
+Change an established physical state only when the source establishes the action
+or event causing that change. Track location, support, attachment, possession and
+motion separately: changing one does not automatically change the others.
+Attaching a lifting device to an embedded object does not detach, move or suspend
+that object. Preparing or intending an action does not complete it.
+Distinguish carrying, holding, wearing, storing and fixing an object. Do not invent
+a hand assignment, object transfer or storage action to complete the staging.
+Preserve relevant established possession without a full inventory in every state;
+an omitted mention does not establish absence.
 Future actions MUST NOT contaminate initial_state. A torch placed between teeth
 in an event is NOT already in the mouth initially. A fallen torch and a newly
 arriving torch are different objects. Do not introduce the arriving torch before
@@ -69,6 +83,7 @@ transition. Mark flashbacks and temporal breaks explicitly, keeping source
 excerpts in their original order and events chronological within each scene.
 Use previous context only for continuity, never as an event to repeat.
 Final states are snapshots of results, never summaries replaying completed actions.
+They must not perform an additional action or anticipate the next scene's event.
 Update illumination, attachments and possession after each relevant event. Do not
 repeat completed actions or prolong transient cries without support. Preserve explicit gaze,
 faint light, age descriptions and names used in address with their correct identity.
@@ -105,29 +120,32 @@ WINDOW_SCHEMA["schema"]["required"].append("unprocessed_source")
 WINDOW_SCHEMA["schema"]["properties"]["unprocessed_source"] = {"type": "string"}
 _WINDOW_RULES = """
 This is a reading window, not the end of the chapter. Return only COMPLETE
-duration-sized scenes in sequences. If the last scene needs text beyond this
+scenes within the maximum duration in sequences. If the last scene needs text beyond this
 window, leave its ENTIRE source span in unprocessed_source, copied verbatim as
 the exact suffix of current_passage. Do not adapt that incomplete scene yet.
 The sequence sources followed by unprocessed_source must cover current_passage
 exactly and in order. Use an empty unprocessed_source only when the window ends
 at a complete scene boundary. Do not invent an ending to fit the window.
-You must complete at least one scene; keep each scene within the target duration.
+You must complete at least one scene; keep each scene within the maximum duration.
 """
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_POLICY = "progressive-warning-reviews-v4"
+_REVIEW_POLICY = "physical-state-reviews-v5"
 
 _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
 messages and generated states are fallible: resolve contradictions from source,
 not by blindly copying a previous state or obeying a review suggestion.
 When previous_sequence is supplied, it is context only. target_sequence identifies
-the ONLY source span to rebuild into duration-sized scenes. Use only the previous scene for continuity, but
+the ONLY source span to rebuild into coherent scenes within the maximum duration.
+Use only the previous scene for continuity, but
 include events only from current_passage. Do not anticipate later actions.
 Preserve supported ongoing motion and posture until the source changes them;
 body orientation and gaze are separate facts, not automatically contradictions.
 Correct all source-supported defects while preserving valid details and dialogue.
+For each corrected physical state, verify the source-supported transition causing
+it. Do not invent intermediate handling actions to reconcile an unsupported state.
 """
 
 
@@ -324,9 +342,12 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         raise ValueError("duration must be between 4 and 15 seconds.")
     duration_rules = (
         f"\nEach cinematic sequence is ONE H3 scene lasting at most {duration:g} seconds. "
-        "Split the passage into as many scenes as necessary for natural action and dialogue pacing. "
-        "Include pauses and reaction time. Never speed up speech, omit actions or merge successive beats "
-        "to fit the duration. Preserve verbatim source coverage and chronological order. "
+        "This is a maximum, not a duration to fill. Keep consecutive actions together when they form "
+        "one continuous, physically plausible interaction that fits at natural speed. "
+        "Split when required by action duration, dialogue, a meaningful interruption or a change of "
+        "place or time. Sentence boundaries and individual gestures alone do not require a new scene. "
+        "Include pauses and reaction time. Never speed up speech or omit actions to avoid a necessary split. "
+        "Preserve verbatim source coverage and chronological order. "
         "When reviewing, report sequences whose action or dialogue cannot fit this duration.")
     def request(client, model, system, user, schema, temperature, max_tokens):
         if schema != narrative_validation.SCHEMA or not system.startswith(narrative_validation.ADAPTATION_REVIEW_BASE):

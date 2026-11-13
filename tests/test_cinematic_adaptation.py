@@ -221,6 +221,8 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
         {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(chapter)]},
     )
     chapters, saved_files = response["result"]
+    assert adapter.CinematicChapterAdapterNode.INPUT_TYPES()["required"]["max_tokens"][1]["default"] == 16384
+    assert all(call[6] == 16384 for call in calls)
     assert json.loads(response["ui"]["text"][0]) == chapters
     assert "Il est parti." in response["ui"]["text"][0]
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
