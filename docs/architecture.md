@@ -55,6 +55,7 @@ H3 caches use exact inputs, prompts, schemas, effective model settings and expli
 H3 repairs request strict JSON patches for affected section bodies, grouping related errors in the same section. Exact assigned image IDs can be translated locally to Picture labels. Each proposed merge must resolve its targeted format errors without introducing new ones; rejected patches retain the previous wording and provide feedback for bounded retries. Continuity evidence routes semantic patches to cited prompt sections, and the complete continuity review must run again before approval.
 `character_profile_batches` separates bounded identity and precise-trait requests with resumable per-request caches. `character_profile_document` validates editable profiles, selections, sources and direct identity links against the bundled schema. `character_visual_profiles` deterministically projects permanent physical facts for source-selected chapters. The visual generator then uses `character_visual_review` for a source-grounded identity pass, caching requests under its own output directory and reprojecting confirmed links into the same design and companion files without editing upstream profiles. `character_visual_integration` maps independent profile and registry identities during consolidation and computes scene-local presence, temporary states and chronological variants through `character_chapter_enrichment`. H3 reference metadata and prompts consume those local decisions; visual bindings exclude mapped mentions and offscreen voices.
 The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM Studio JSON transport. Its duration-aware ordered scenes feed extraction and H3 generation directly; generation preserves one scene per sequence. Catalogs and registries retain temporal observations.
+`cinematic_scene_planning` estimates sequential/simultaneous event beats and pauses before independent semantic review. Estimated overruns trigger bounded multi-scene repairs, including cuts within sentences. Its bounded physical-context ledger contains exact source quotations and fallible fact paraphrases, with explicit source-cited temporal/location resets. Current v2 checkpoints preserve validated plans, context and exact review identities; persistent timing/planning failures retain valid scenes with incomplete diagnostics rather than approval.
 `narrative_validation` reviews adaptation source fidelity and transitions before targeted sequence repairs, and reviews extracted phases using only earlier identity context. Rejected phase results are not cached; persistent semantic defects stop the stage.
 Adaptation repairs regenerate only rejected scene source spans, including one final targeted recovery round when enabled. Changed scenes and their immediate neighbors are reviewed again; unchanged scene/context approvals are reused and checkpointed. Persistent doubts retain editable narrative proposals. Source/output failures reduce the reading-window size for the remaining chapter. Node-local per-chapter checkpoints preserve drafts, accepted scenes, approvals and learned window sizes for resume_run into a new timestamped run.
 
@@ -79,6 +80,7 @@ flowchart TD
     m_core_character_visual_selection["core.character_visual_selection"]
     m_core_cinematic_adaptation["core.cinematic_adaptation"]
     m_core_cinematic_references["core.cinematic_references"]
+    m_core_cinematic_scene_planning["core.cinematic_scene_planning"]
     m_core_configuration_snapshot["core.configuration_snapshot"]
     m_core_continuity_context["core.continuity_context"]
     m_core_continuity_issues["core.continuity_issues"]
@@ -177,6 +179,7 @@ flowchart TD
     m_core_character_visual_review --> m_core_character_profiles
     m_core_character_visual_review --> m_core_util
     m_core_character_visual_selection --> m_core_character_profile_document
+    m_core_cinematic_adaptation --> m_core_cinematic_scene_planning
     m_core_cinematic_adaptation --> m_core_lmstudio_json
     m_core_cinematic_adaptation --> m_core_lmstudio_pipeline
     m_core_cinematic_adaptation --> m_core_narrative_choices
@@ -400,8 +403,9 @@ flowchart TD
 | `src/core/character_visual_profiles.py` | `core.character_chapter_enrichment`, `core.character_profiles`, `core.character_visual_selection`, `core.editable_schemas`, `core.lmstudio_pipeline`, `core.util`, `core.visual_designs` | `generate`, `prepare_profiles`, `select_profiles`, `source_facts` |
 | `src/core/character_visual_review.py` | `core.character_profile_batches`, `core.character_profile_document`, `core.character_profiles`, `core.util` | `candidates`, `repair` |
 | `src/core/character_visual_selection.py` | `core.character_profile_document` | `field_for`, `project` |
-| `src/core/cinematic_adaptation.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.progress` | `adapt_chapter`, `source_chunks` |
+| `src/core/cinematic_adaptation.py` | `core.cinematic_scene_planning`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.progress` | `adapt_chapter`, `source_chunks` |
 | `src/core/cinematic_references.py` | `core.editable_schemas`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.temporal_context`, `core.util` | `assign_local_links`, `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
+| `src/core/cinematic_scene_planning.py` | — | `advance`, `assess`, `cache_key`, `description`, `duration_issues`, `validate` |
 | `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_model_openai`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/core/continuity_context.py` | — | `batches`, `budget_details`, `fits`, `pack` |
 | `src/core/continuity_issues.py` | `core.continuity_context`, `core.generation_requests` | `UnresolvedEvidenceError`, `metadata_schema`, `repair_metadata`, `resolve`, `review_schema`, `unique`, `validate` |
@@ -453,4 +457,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.configuration_snapshot`, `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.character_visual_integration`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **63**. Internal dependency edges: **254**.
+Modules: **64**. Internal dependency edges: **255**.

@@ -26,12 +26,13 @@ class CinematicChapterAdapterNode:
                                     "are read again with new source text. Instructions and review text add to request size."}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 32768,
-                                   "tooltip": "Output budget per request for generation, scene validation and focused checks. "
+                                   "tooltip": "Output budget per request for generation, timing/context planning, scene validation and focused checks. "
                                    "Reasoning and JSON share this budget; retries cannot exceed it."}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
                                           "tooltip": "Retries for invalid fields, source coverage or semantic defects. "
                                           "When nonzero, persistent semantic defects trigger one final targeted repair round. "
-                                          "Remaining doubts become editable proposals; the first is selected automatically."}),
+                                          "Remaining narrative doubts become editable proposals; the first is selected automatically. "
+                                          "Persistent timing overruns retain the scene with incomplete-review diagnostics."}),
         }, "optional": {
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Previous timestamped run folder, e.g. 20261112124902. Resume matching scenes and drafts "
@@ -102,7 +103,7 @@ class CinematicChapterAdapterNode:
                     previous_checkpoint = resume_cache / cache_dir.name / "progress.json"
                     if previous_checkpoint.is_file():
                         resume_state = util.load_json(previous_checkpoint)
-                        if (resume_state.get("schema_version") != "minimax-cinematic-checkpoint.v1"
+                        if (resume_state.get("schema_version") != "minimax-cinematic-checkpoint.v2"
                                 or resume_state.get("source_file") != str(path)
                                 or resume_state.get("model") != model
                                 or resume_state.get("settings") != {**settings, "thinking": bool(thinking)}):
@@ -112,7 +113,7 @@ class CinematicChapterAdapterNode:
                     nonlocal persisted_scenes
                     # Replace atomically so interruption leaves the last complete
                     # checkpoint readable. Drafts never masquerade as final output.
-                    data = {"schema_version": "minimax-cinematic-checkpoint.v1",
+                    data = {"schema_version": "minimax-cinematic-checkpoint.v2",
                             "source_file": str(path), "model": model,
                             "settings": {**settings, "thinking": bool(thinking)}, **state}
                     pending = cache_dir / "progress.json.tmp"

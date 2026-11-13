@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("mock_scene_planning")
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, path_access
 from minimax_h3_novel_pipeline.nodes import cinematic_chapter_adapter as adapter
 
@@ -39,7 +41,8 @@ def test_draft_persisted_before_review_cancellation(setup_node, monkeypatch):
 
     def review(*args):
         state = read_state(output)
-        assert state["stage"] == "source_validated_pending_review"
+        assert state["stage"] == "scene_planned"
+        assert state["pending_sequences"][0]["planning"]["timing"]["estimated_seconds"] > 0
         assert state["pending_sequences"][0]["source"] == source
         assert state["sequences"] == []
         assert not list(output.glob("*.cinematic.json"))
@@ -65,7 +68,7 @@ def test_correction_persisted_before_next_review_fails(setup_node, monkeypatch):
         if calls == 1:
             return {1: ["Correct the ending."]}
         state = read_state(output)
-        assert state["stage"] == "corrected_pending_review"
+        assert state["stage"] == "scene_planned"
         assert state["pending_sequences"][0]["final_state"] == "Corrected."
         raise RuntimeError("review unavailable")
 

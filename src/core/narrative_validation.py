@@ -18,8 +18,20 @@ location. Distinct coexisting objects must have distinct canonical names; contex
 may identify the same object only with evidence. Do not copy earlier states into a phase
 that does not support them. Speech is phase-local; an addressee is not the speaker.
 For adaptation, review only the current scene against its source and the immediately
-previous scene, respecting explicit temporal/location breaks. Follow the book's order;
+previous scene plus supplied source_evidence, respecting explicit temporal/location breaks. Follow the book's order;
 do not reconstruct chapter-wide continuity or speculate about later scenes.
+For adaptation only, when scene_plan is supplied, apply these checks:
+source_evidence contains older physical claims with exact source quotations and sequence
+addresses. Quotations outrank fallible fact paraphrases and generated states. Use only
+still-applicable earlier evidence; verify context resets and physical updates in scene_plan
+against current source, including their meaning, not just the presence of a quotation.
+Preserve precise spatial relations: above a frayed section differs from at that section.
+A sudden jolt does not imply continuous shaking; verify the transition to hand support.
+Check scene_plan timing independently: realistic manipulation and speech durations,
+dependencies, justified simultaneity and pauses. Do not accept a low estimate merely
+because it fits the maximum. If too long, request multiple scenes, including cuts
+inside a sentence. Report empty events for a held moment whose ongoing activity is omitted.
+Accept compact state snapshots without repeated full inventories of unchanged objects.
 For adaptation, check both source facts missing or altered in the descriptions and
 description claims unsupported by source. For each changed physical fact, identify
 the source-supported transition: location, support, attachment, possession and motion
@@ -97,9 +109,13 @@ and sound sources, and intelligibility. Accept compatible body orientation and g
 preserve background darkness with local illumination. Do not invent staging details.
 The duration is a maximum, not a target to fill. Individual gestures or sentence
 boundaries alone do not require a split; accept coherent continuous interactions.
+Independently assess scene_plan timing: successive manipulations require time; speech,
+pauses and reactions count. Reject unjustified simultaneity and artificially low estimates.
+If necessary request multiple scenes cut between actions even inside a sentence.
+An empty event list should describe supported ongoing activity, without invented gestures.
 """,
     "local_transition": """Check current initial/final states and changes in possession, lighting,
-location and motion against the current source and ONLY the immediately previous scene.
+location and motion against the current source, immediately previous scene and source_evidence.
 Do not replay completed actions or prolong transient sounds. Unknown is not absent.
 Respect explicit temporal/location breaks and do not carry unsupported facts forward.
 Do not demand continuity with an erroneous earlier generated state or speculate about
@@ -109,6 +125,10 @@ support, attachment, possession and motion separately. Attaching lifting equipme
 not free an embedded object; preparing an action does not complete it. Do not invent
 hand assignments or handling actions to reconcile states. Verify initial_state precedes
 the first event and final_state follows the last without performing an additional action.
+Source quotations outrank fallible evidence paraphrases and generated states. Check the
+meaning of scene_plan continuity updates and resets against source. Preserve ABOVE versus
+AT a damaged section; distinguish a transient jolt from continuous motion and make changes
+of support explicit. Accept concise states without full repeated object inventories.
 """,
 }
 

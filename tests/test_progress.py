@@ -4,6 +4,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("mock_scene_planning")
+
 from minimax_h3_novel_pipeline.core import progress
 from minimax_h3_novel_pipeline.core import lmstudio_pipeline
 from minimax_h3_novel_pipeline.nodes import NODE_CLASS_MAPPINGS

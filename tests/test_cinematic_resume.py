@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("mock_scene_planning")
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, path_access
 from minimax_h3_novel_pipeline.nodes import cinematic_chapter_adapter as adapter
 
@@ -194,7 +196,7 @@ def test_split_repair_commits_each_replacement_before_reviewing_the_next(monkeyp
             return {1: ["Split the scene."]}
         if source == " B.":
             saved = snapshots[-1]
-            assert saved["stage"] == "scene_committed"
+            assert saved["stage"] == "scene_planned"
             assert saved["source_cursor"] == 2
             assert [s["source"] for s in saved["sequences"]] == ["A."]
             assert [s["source"] for s in saved["pending_sequences"]] == [" B.", " C."]

@@ -11,6 +11,7 @@ from copy import deepcopy
 import httpx
 from openai import OpenAIError
 
+from . import cinematic_scene_planning as scene_planning
 from . import lmstudio_json, lmstudio_pipeline, narrative_choices, narrative_validation, progress
 
 logger = logging.getLogger(__name__)
@@ -52,11 +53,20 @@ language. Keep JSON keys unchanged. Preserve source excerpts and quoted dialogue
 verbatim, including dialogue in a different language from the narration.
 
 For EACH sequence return initial_state, events (an ordered list), and final_state.
+Plan natural action timing before choosing scene boundaries. Consecutive handling
+operations are successive; overlap only source-supported simultaneous activity.
+Split BETWEEN actions even inside a single sentence when necessary. Source excerpts
+may be sentence fragments; their adaptation descriptions must be self-contained.
+For example, putting away a notebook, taking out a net, carefully covering an object
+and tying the net may require several scenes although narrated in one sentence.
 initial_state describes ONLY what is already true BEFORE the first event.
 A state can include ongoing motion: suspended does not mean motionless. Preserve
 established continuous activity through compatible actions until the source changes
 or interrupts it; do not invent a stop. Distinguish it from a completed one-off action.
 events contains ALL actions and dialogue in strict causal, chronological order.
+For a held moment, describe the supported ongoing movement or waiting in events;
+do not return an empty event list or invent a gesture. Avoid isolating a held moment
+when it can naturally share a scene with its neighboring actions within the maximum.
 Each events item is plain text, without numbering or bullet prefixes; numbering
 is added by the application.
 Keep verbatim source excerpts only in source. Never insert source_excerpt:
@@ -74,6 +84,13 @@ Distinguish carrying, holding, wearing, storing and fixing an object. Do not inv
 a hand assignment, object transfer or storage action to complete the staging.
 Preserve relevant established possession without a full inventory in every state;
 an omitted mention does not establish absence.
+Use source_evidence to recover earlier physical facts omitted from recent states.
+It contains source-cited candidate facts, not approved generated states: quotations
+outrank their paraphrases. Apply only facts still relevant to the current place/time;
+the current source can supersede them. Never copy earlier events into the current scene.
+Keep precise spatial relations such as ABOVE a damaged section rather than AT it.
+A sudden jolt does not establish continuous shaking. Make support transitions explicit
+when a rope breaks and a hand becomes the character's only support.
 Future actions MUST NOT contaminate initial_state. A torch placed between teeth
 in an event is NOT already in the mouth initially. A fallen torch and a newly
 arriving torch are different objects. Do not introduce the arriving torch before
@@ -131,7 +148,7 @@ You must complete at least one scene; keep each scene within the maximum duratio
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_POLICY = "physical-state-reviews-v5"
+_REVIEW_POLICY = "timed-source-context-v7"
 
 _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
@@ -139,11 +156,14 @@ messages and generated states are fallible: resolve contradictions from source,
 not by blindly copying a previous state or obeying a review suggestion.
 When previous_sequence is supplied, it is context only. target_sequence identifies
 the ONLY source span to rebuild into coherent scenes within the maximum duration.
-Use only the previous scene for continuity, but
+Use the previous scene and source_evidence for continuity, but
 include events only from current_passage. Do not anticipate later actions.
 Preserve supported ongoing motion and posture until the source changes them;
 body orientation and gaze are separate facts, not automatically contradictions.
 Correct all source-supported defects while preserving valid details and dialogue.
+If timing including its uncertainty allowance exceeds the maximum, return multiple replacement sequences; do not merely
+shorten wording, rush actions or claim a lower estimate. Cut source spans between
+actions inside a sentence as needed, maintaining exact concatenated coverage.
 For each corrected physical state, verify the source-supported transition causing
 it. Do not invent intermediate handling actions to reconcile an unsupported state.
 """
@@ -297,7 +317,8 @@ def _description(sequence):
 def _resume_sequences(state, text, chapter_name, duration):
     """Validate saved coverage before trusting accepted scenes or pending drafts."""
     try:
-        if (state["chapter_name"] != chapter_name or state["duration"] != duration
+        if (state["review_policy"] != _REVIEW_POLICY
+                or state["chapter_name"] != chapter_name or state["duration"] != duration
                 or state["source_chars"] != len(text)):
             raise ValueError("Chapter identity or length changed.")
         results = deepcopy(state["sequences"])
@@ -312,20 +333,35 @@ def _resume_sequences(state, text, chapter_name, duration):
                 raise ValueError("Invalid scene numbering.")
             _validated_sequences({"sequences": [
                 {"source": s["source"], "initial_state": s["adaptation"]["initialState"],
-                 "events": [s["adaptation"]["event"]], "final_state": s["adaptation"]["endingState"]}
+                 "events": [s["adaptation"]["event"]] if s["adaptation"]["event"].strip() else [],
+                 "final_state": s["adaptation"]["endingState"]}
                 for s in results]}, committed)
         cursor = len(committed)
         if pending:
             source = "".join(s["source"] for s in pending)
             if not text[cursor:].startswith(source):
                 raise ValueError("Pending source no longer matches.")
-            _validated_sequences({"sequences": [{k: v for k, v in s.items() if k != "chosen_event"}
+            _validated_sequences({"sequences": [{k: v for k, v in s.items()
+                                                 if k not in ("chosen_event", "planning", "planning_key")}
                                                 for s in pending]}, source)
             if any("chosen_event" in s and s["events"] != [s["chosen_event"]] for s in pending):
                 raise ValueError("Chosen event does not match validated events.")
         issues = deepcopy(state["narrative_review"]["issues"])
         if not isinstance(issues, list) or any(not 1 <= i["sequence"] <= len(results) + len(pending) for i in issues):
             raise ValueError("Invalid narrative issue target.")
+        plans = state["scene_plans"]
+        if not isinstance(plans, list) or len(plans) != len(results):
+            raise ValueError("Scene plans must align with committed scenes.")
+        evidence = []
+        for scene, record in zip(results, plans):
+            if record is None:  # An explicitly incomplete planning request retained valid source.
+                continue
+            if record["event_text"] != scene["adaptation"]["event"]:
+                raise ValueError("Saved timing events no longer match the committed scene.")
+            plan = scene_planning.validate(record["plan"], {"source": scene["source"], "events": record["events"]})
+            evidence = scene_planning.advance(evidence, plan, scene["sequence"])
+        if state["source_evidence"] != evidence:
+            raise ValueError("Saved physical context does not match source-cited scene plans.")
         return results, pending, issues, cursor
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise ValueError(f"Invalid cinematic resume checkpoint: {exc}") from exc
@@ -350,10 +386,12 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         "Preserve verbatim source coverage and chronological order. "
         "When reviewing, report sequences whose action or dialogue cannot fit this duration.")
     def request(client, model, system, user, schema, temperature, max_tokens):
-        if schema != narrative_validation.SCHEMA or not system.startswith(narrative_validation.ADAPTATION_REVIEW_BASE):
-            system += duration_rules
-        else:
+        if (schema == scene_planning.SCHEMA
+                or (schema == narrative_validation.SCHEMA
+                    and system.startswith(narrative_validation.ADAPTATION_REVIEW_BASE))):
             system += f"\nMaximum scene duration: {duration:g} seconds."
+        else:
+            system += duration_rules
         print(f"    Cinematic request: stage={schema['name']}, prompt_chars={len(system) + len(user)}, "
               f"schema_chars={len(json.dumps(schema, ensure_ascii=False))}.", flush=True)
         token = lmstudio_json.REQUEST_OUTPUT_LIMIT.set(max_tokens)
@@ -380,6 +418,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 "review_issues": issues,
                 "approved_reviews": sorted(approved_reviews), "window_chars": window_chars,
                 "review_policy": _REVIEW_POLICY,
+                "scene_plans": scene_plans, "source_evidence": source_evidence,
                 "narrative_review": review_report(),
             })
 
@@ -387,11 +426,32 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         if results:
             previous = results[-1]
             adaptation = previous["adaptation"]
-            return {"previous_sequence": {
+            return {"source_evidence": deepcopy(source_evidence), "previous_sequence": {
                 "source": previous["source"], "initial_state": adaptation["initialState"],
                 "events": [adaptation["event"]], "final_state": adaptation["endingState"],
             }}
-        return {}
+        return {"source_evidence": deepcopy(source_evidence)}
+
+    def planning_for(item):
+        key = scene_planning.cache_key(item, source_evidence, duration)
+        if item.get("planning_key") != key:
+            item.pop("planning", None)
+            item.pop("planning_key", None)
+            item["planning"] = scene_planning.assess(
+                request, client, model, item, source_evidence, duration, max_tokens, correction_attempts)
+            item["planning_key"] = key
+        # Validate cached estimates and citations too; a key is not data validation.
+        try:
+            return scene_planning.validate(item["planning"], item)
+        except ValueError:
+            item.pop("planning", None)
+            item.pop("planning_key", None)
+            raise
+
+    def review_payload(item):
+        return {"stage": "adaptation", "sequences": [scene_planning.description(item)],
+                "scene_plan": item["planning"], "maximum_seconds": duration,
+                "previous_final_state": previous_state, **previous_context()}
 
     def review_warning(error, sequence_id, check, *, phase="adaptation"):
         if lmstudio_json._is_comfy_interrupt(error):
@@ -424,6 +484,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             if focus != "local_transition":
                 focused.pop("previous_sequence", None)
                 focused.pop("previous_final_state", None)
+                focused.pop("source_evidence", None)
             try:
                 issues = narrative_validation.review(
                     request, client, model, focused, 1, max_tokens,
@@ -443,28 +504,48 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
 
     def review_current(sequences):
         lmstudio_pipeline.comfy_interrupt_check()
-        payload = {"stage": "adaptation", "sequences": [sequences[0]],
-                   "previous_final_state": previous_state, **previous_context()}
+        try:
+            plan = planning_for(sequences[0])
+        except _REVIEW_ERRORS as exc:
+            review_warning(exc, len(results) + 1, "scene_planning")
+            raise _ReviewUnavailable() from None
+        checkpoint("scene_planned", sequences)
+        payload = review_payload(sequences[0])
         context = [_REVIEW_POLICY, model, duration_rules, narrative_validation.SYSTEM,
                    narrative_validation.SCHEMA, narrative_validation.ADAPTATION_REVIEW_BASE,
                    narrative_validation.ADAPTATION_REVIEW_FOCUSES, max_tokens, payload]
         key = hashlib.sha256(json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
         if key in approved_reviews:
             return {}
-        issues = review_scene(payload, len(results) + 1)
+        timing_issues = scene_planning.duration_issues(plan, duration)
+        if not sequences[0]["events"]:
+            timing_issues.append("events is empty: describe supported ongoing activity or regroup this held moment.")
+        try:
+            issues = review_scene(payload, len(results) + 1)
+        except _ReviewUnavailable as exc:
+            for message in timing_issues:
+                exc.issues.setdefault(1, []).append(message)
+            raise
+        for message in timing_issues:
+            issues.setdefault(1, []).append(message)
         if not issues:
             approved_reviews.add(key)
         checkpoint("reviewing", sequences)
         return issues
 
     def commit_scene(sequences, *, incomplete=None):
-        nonlocal cursor, previous_state
+        nonlocal cursor, previous_state, source_evidence
         item = sequences.pop(0)
         events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
         results.append({"sequence": len(results) + 1, "source": item["source"], "adaptation": {
             "initialState": item["initial_state"], "event": item.get("chosen_event", events),
             "endingState": item["final_state"],
         }})
+        plan = item.get("planning")
+        scene_plans.append({"plan": deepcopy(plan), "events": deepcopy(item["events"]),
+                            "event_text": results[-1]["adaptation"]["event"]} if plan else None)
+        if plan:
+            source_evidence = scene_planning.advance(source_evidence, plan, len(results))
         if incomplete is not None:
             results[-1]["review"] = {
                 "status": "incomplete", "issues": incomplete.issues.get(1, []),
@@ -504,15 +585,19 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             print(f"    Cinematic adaptation: semantic correction {attempt + 1}/"
                   f"{repair_rounds} (sequence {len(results) + 1}).", flush=True)
             item = sequences[0]
+            split_required = bool(item.get("planning") and scene_planning.duration_issues(item["planning"], duration))
             prompt = json.dumps({
                 "current_passage": item["source"],
                 **previous_context(),
                 "target_sequence": len(results) + 1,
                 "previous_final_state": previous_state,
                 "rejected_adaptation": _description(item), "defects_to_correct": issues[1],
+                "minimum_replacement_scenes": 2 if split_required else 1,
+                "rejected_scene_plan": item.get("planning"),
             }, ensure_ascii=False)
             try:
-                replacement = rebuild_passage(prompt, item["source"], repair=True)
+                replacement = rebuild_passage(prompt, item["source"], repair=True,
+                                              min_sequences=2 if split_required else 1)
             except (_SourceCoverageError, _PassageValidationError, lmstudio_json.StructuredOutputLengthError) as exc:
                 # A failed repair must never replace source-validated work.
                 review_warning(exc, len(results) + 1, "scene_repair", phase="correction")
@@ -523,6 +608,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             sequences[:1] = replacement
             checkpoint("corrected_pending_review", sequences)
         if issues:
+            plan = sequences[0].get("planning")
+            if plan and scene_planning.duration_issues(plan, duration):
+                warning = review_warning(ValueError(), len(results) + 1, "cinematic_timing", phase="correction")
+                warning["reason"] = "duration_exceeded"
+                raise _ReviewUnavailable(issues)
             resolve_current(sequences, issues)
 
     def resolve_current(sequences, issues):
@@ -558,16 +648,21 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                         final_state=chosen["endingState"])
             # Keep the public event text intact rather than numbering it twice.
             item["chosen_event"] = chosen["event"]
+            item.pop("planning", None)
+            item.pop("planning_key", None)
             checkpoint("proposal_selected", sequences, issues=issues)
         # Review the selected alternative once, with the immediately previous scene.
         # Selection is not approval; retain unresolved doubts without an endless retry.
-        payload = {
-            "stage": "adaptation", "sequences": [item],
-            "previous_final_state": previous_state, "defects_to_recheck": messages,
-            **previous_context(),
-        }
         try:
+            try:
+                plan = planning_for(item)
+            except _REVIEW_ERRORS as exc:
+                review_warning(exc, sequence_id, "scene_planning", phase="proposal_review")
+                raise _ReviewUnavailable() from None
+            payload = {**review_payload(item), "defects_to_recheck": messages}
             remaining = review_scene(payload, sequence_id)
+            for message in scene_planning.duration_issues(plan, duration):
+                remaining.setdefault(1, []).append(message)
         except _ReviewUnavailable as exc:
             record["proposals"][0]["review"] = {"status": "incomplete", "issues": exc.issues.get(1, [])}
             raise
@@ -577,7 +672,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         }
         checkpoint("proposal_reviewed", sequences, issues=remaining)
 
-    def rebuild_passage(prompt: str, chunk: str, *, repair: bool = False, partial: bool = False) -> list[dict]:
+    def rebuild_passage(prompt: str, chunk: str, *, repair: bool = False, partial: bool = False,
+                        min_sequences: int = 1) -> list[dict]:
         correction = ""
         for attempt in range(correction_attempts + 1):
             lmstudio_pipeline.comfy_interrupt_check()
@@ -587,7 +683,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             try:
                 if partial:
                     return _validated_window(result, chunk)[0]
-                return _validated_sequences(result, chunk)
+                validated = _validated_sequences(result, chunk)
+                if len(validated) < min_sequences:
+                    raise ValueError(f"Timing repair requires at least {min_sequences} replacement scenes; "
+                                     "split the original source between actions, even inside a single sentence.")
+                return validated
             except ValueError as exc:
                 if attempt == correction_attempts:
                     if isinstance(exc, (_SourceCoverageError, _WindowProgressError)):
@@ -637,7 +737,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
 
     def adapt_passage(chunk: str, previous_state: str, *, partial: bool) -> tuple[list[dict], int]:
         lmstudio_pipeline.comfy_interrupt_check()
-        prompt = json.dumps({"adaptation_model": model, "previous_final_state": previous_state,
+        prompt = json.dumps({"adaptation_model": model, **previous_context(), "previous_final_state": previous_state,
                              "current_passage": chunk}, ensure_ascii=False)
         correction = ""
         for attempt in range(correction_attempts + 1):
@@ -677,12 +777,16 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         raise AssertionError("Unreachable")
 
     results = []
+    scene_plans = []
+    source_evidence = []
     previous_state = ""
     cursor = 0
     window_chars = chunk_chars
     resume_pending = []
     if resume_state is not None:
         results, resume_pending, narrative_issues, cursor = _resume_sequences(resume_state, text, chapter_name, duration)
+        scene_plans = deepcopy(resume_state["scene_plans"])
+        source_evidence = deepcopy(resume_state["source_evidence"])
         review_warnings = deepcopy(resume_state["narrative_review"].get("warnings", []))
         if not isinstance(review_warnings, list) or any(not isinstance(w, dict) for w in review_warnings):
             raise ValueError("Invalid cinematic review warnings in resume checkpoint.")

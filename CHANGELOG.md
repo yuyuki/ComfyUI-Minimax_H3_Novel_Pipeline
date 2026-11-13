@@ -8,6 +8,18 @@ by later entries.
 
 ## Unreleased
 
+- Reserve a 25% timing allowance for successive cinematic beats and require an
+  actual source-preserving split on timing repair. Recheck every replacement;
+  cover prologue scene 14's optimistic eight-second estimate with a regression.
+
+- Add structured cinematic timing estimates with sequential/simultaneous action
+  beats and pauses. Split oversized scenes inside sentences without losing source,
+  independently review estimates and retain persistent overruns as incomplete.
+  Carry bounded source-cited physical context across scenes and reading windows;
+  validate citations and preserve planning/context in v2 resume checkpoints.
+  Strengthen support/spatial/transient-motion prompts and held-scene handling.
+  Add regression coverage, refresh architecture and bump package to 2.7.1.
+
 - Clarify cinematic scene grouping, evidence preservation and source-supported
   physical transitions in generation, repair and review prompts. Avoid premature
   actions and numbered event items; default the adapter token budget to 16384.

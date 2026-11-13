@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("mock_scene_planning")
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
 from minimax_h3_novel_pipeline.core import cinematic_references as cr
 from minimax_h3_novel_pipeline.core import narrative_validation as nv, narrative_choices as nc, path_access, util
@@ -327,7 +329,10 @@ def test_selected_proposals_are_reviewed_once_with_previous_scene(monkeypatch, r
             if "defects_to_recheck" in data:
                 checked.append(data)
                 assert data["sequences"][0]["final_state"] == "After."
-                assert data["defects_to_recheck"] == ["Motion omitted."]
+                assert data["defects_to_recheck"] == [
+                    "Motion omitted.",
+                    "events is empty: describe supported ongoing activity or regroup this held moment.",
+                ]
                 return {"issues": remaining}
             return {"issues": [{"target": 1, "message": "Motion omitted."}]}
         return {"sequences": [

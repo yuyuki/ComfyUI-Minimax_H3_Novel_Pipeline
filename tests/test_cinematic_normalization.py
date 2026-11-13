@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("mock_scene_planning")
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
 from minimax_h3_novel_pipeline.core import narrative_choices as choices
 from minimax_h3_novel_pipeline.core import narrative_validation as nv

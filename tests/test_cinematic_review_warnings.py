@@ -4,6 +4,8 @@ import json
 import logging
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 from jsonschema import Draft202012Validator
 
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, cinematic_references as cr

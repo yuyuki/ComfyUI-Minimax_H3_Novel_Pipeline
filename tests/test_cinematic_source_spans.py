@@ -3,6 +3,8 @@ import json
 from copy import deepcopy
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 from jsonschema import validate
 
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca

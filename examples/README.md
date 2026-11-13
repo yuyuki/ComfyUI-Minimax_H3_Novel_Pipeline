@@ -25,6 +25,23 @@ and JSON share it, so even 16384 tokens can be exhausted. Consecutive gestures
 may share a scene when they fit naturally. Existing workflows retain their saved
 widget values; update `max_tokens` explicitly when using an older node instance.
 
+Before reviewing each scene, the adapter estimates natural action/dialogue timing,
+including sequential or simultaneous beats and pauses. Oversized scenes trigger
+bounded repairs that can split a single source sentence into multiple scenes.
+For two or more successive beats, a 25% uncertainty allowance is applied to the
+total estimate: at an 8-second maximum, such a scene must be estimated at 6.4 seconds
+or less. This editorial allowance does not apply to a single ongoing/simultaneous
+beat. Timing repairs must produce at least two replacement scenes, each planned and
+reviewed separately; shortening the wording alone is rejected.
+These are estimates, not measured video durations. Persistent overruns or unavailable
+planning/reviews retain valid scene data with explicit incomplete-review diagnostics.
+Source-cited physical facts help track earlier objects and support changes even when
+recent state descriptions omit them; generated paraphrases never outrank the book.
+Internal timing plans and the bounded physical context are saved in
+`cinematic_chapters/.cache/<chapter_id>/progress.json`, alongside resumable drafts.
+Only v2 checkpoints with the current review policy can be resumed; start a fresh adaptation for older
+checkpoints. Completed `.cinematic.json` chapters remain loadable and are not rewritten.
+
 To resume from those saved adaptations, replace the adapter with **Load Cinematic
 Chapters**. Set `cinematic_path=20260911153042/cinematic_chapters` (using your
 previous run's timestamp), or select a single `*.cinematic.json` file in that
