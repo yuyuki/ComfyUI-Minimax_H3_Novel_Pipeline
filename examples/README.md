@@ -33,6 +33,13 @@ successive beats with the same event index. Concatenated fragments must restore
 every original event in order; only boundary whitespace is restored automatically.
 Missing, duplicated, reordered or rewritten fragments are rejected. The planning
 schema uses `{event_index, text}` references; integer-only references are not accepted.
+Planning instructions keep a simple physical action whole, including its tool,
+destination and spatial qualifiers: using a mallet or tying directly to a hook does
+not by itself introduce another operation. For a text mismatch or incomplete event,
+the bounded correction request identifies the affected field and original event index,
+and supplies the original event, validated prefix and exact remaining text. This
+correction context comes only from the supplied events; rejected model text is not
+echoed into it, and it is not added to persisted warning diagnostics.
 This validates textual coverage, not the model's semantic choice of action boundaries
 or simultaneity, which independent review still checks. Oversized scenes trigger
 bounded repairs that can split a single source sentence into multiple scenes.
