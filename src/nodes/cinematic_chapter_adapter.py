@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from ..core import cinematic_adaptation, configuration_snapshot, lmstudio_pipeline, progress, util
+from ..core import cinematic_adaptation, cinematic_diagnostics, configuration_snapshot, lmstudio_pipeline, progress, util
 from .chapter_selection import chapter_path_list
 from ..core.run_output import stage_output
 
@@ -80,7 +80,7 @@ class CinematicChapterAdapterNode:
         client, model = lmstudio_pipeline.make_client_and_model(pipeline, lmstudio_config["api_url"], lmstudio_config)
         settings = dict(duration=float(duration), chunk_chars=int(chunk_chars), temperature=float(temperature),
                         max_tokens=int(max_tokens), correction_attempts=int(correction_attempts))
-        chapters, artifacts = [], []
+        chapters, artifacts, diagnostic_artifacts = [], [], []
         with client:
             snapshot = configuration_snapshot.start(
                 output, "cinematic_adapter", lmstudio_config, model, argparse.Namespace(**settings, thinking=bool(thinking)), out_dir=out_dir,
@@ -98,6 +98,8 @@ class CinematicChapterAdapterNode:
                 lmstudio_pipeline.comfy_interrupt_check()
                 cache_dir = output / ".cache" / f"{index + 1:03d}_{path.stem}"
                 persisted_scenes = 0
+                latest_state = None
+                diagnostics_path = output / f"{index + 1:03d}_{path.stem}.cinematic.diagnostics.json"
                 resume_state = None
                 if resume_cache is not None:
                     previous_checkpoint = resume_cache / cache_dir.name / "progress.json"
@@ -110,7 +112,7 @@ class CinematicChapterAdapterNode:
                             raise ValueError(f"Invalid or mismatched cinematic checkpoint for {path.name}.")
 
                 def checkpoint(state):
-                    nonlocal persisted_scenes
+                    nonlocal persisted_scenes, latest_state
                     # Replace atomically so interruption leaves the last complete
                     # checkpoint readable. Drafts never masquerade as final output.
                     data = {"schema_version": "minimax-cinematic-checkpoint.v2",
@@ -125,6 +127,12 @@ class CinematicChapterAdapterNode:
                         util.save_json(pending, scene)
                         pending.replace(target)
                         persisted_scenes += 1
+                    latest_state = state
+                    diagnostics = cinematic_diagnostics.report(
+                        state, chapter_name=path.stem, source_file=str(path), maximum_seconds=float(duration))
+                    pending = diagnostics_path.with_suffix(".json.tmp")
+                    util.save_json(pending, diagnostics)
+                    pending.replace(diagnostics_path)
                     print(f"    Cinematic checkpoint: {state['stage']}; "
                           f"saved_scenes={persisted_scenes}, pending_scenes={len(state['pending_sequences'])}.", flush=True)
 
@@ -138,10 +146,18 @@ class CinematicChapterAdapterNode:
                     # The index distinguishes identically named chapters from separate folders.
                     saved = output / f"{index + 1:03d}_{path.stem}.cinematic.json"
                     chapter = {**chapter, "source_file": str(path)}
+                    diagnostics = cinematic_diagnostics.report(
+                        latest_state or chapter, chapter_name=path.stem, source_file=str(path),
+                        maximum_seconds=float(duration), completed=True)
+                    chapter = cinematic_diagnostics.downstream_chapter(chapter)
                     util.save_json(saved, chapter)
+                    pending = diagnostics_path.with_suffix(".json.tmp")
+                    util.save_json(pending, diagnostics)
+                    pending.replace(diagnostics_path)
                 artifacts.append(saved)
+                diagnostic_artifacts.append(diagnostics_path)
                 chapters.append({"source_file": str(path), "saved_file": str(saved), **chapter})
                 lmstudio_pipeline.comfy_interrupt_check()
-            configuration_snapshot.complete(snapshot, artifacts)
+            configuration_snapshot.complete(snapshot, artifacts + diagnostic_artifacts)
         return {"ui": {"text": [json.dumps(chapters, ensure_ascii=False, indent=2)]},
                 "result": (chapters, "\n".join(str(path) for path in artifacts))}

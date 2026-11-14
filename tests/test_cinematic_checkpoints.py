@@ -76,8 +76,12 @@ def test_correction_persisted_before_next_review_fails(setup_node, monkeypatch):
     monkeypatch.setattr(ca.narrative_validation, "review", review)
     result = run(correction_attempts=1)["result"][0][0]
     assert result["sequences"][0]["adaptation"]["endingState"] == "Corrected."
-    assert result["sequences"][0]["review"]["status"] == "incomplete"
-    assert read_state(output)["narrative_review"]["warnings"] == result["narrative_review"]["warnings"]
+    diagnostics = json.loads((output / "001_chapter.cinematic.diagnostics.json").read_text(encoding="utf-8"))
+    assert "review" not in result["sequences"][0]
+    assert "warnings" not in result["narrative_review"]
+    assert diagnostics["sequences"][0]["status"] == "incomplete"
+    assert diagnostics["sequences"][0]["failed_checks"][0]["explanation"]
+    assert diagnostics["warnings"][0]["reason"] == read_state(output)["narrative_review"]["warnings"][0]["reason"]
 
 
 @pytest.mark.parametrize("fail_next_window", [False, True])

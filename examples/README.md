@@ -15,6 +15,12 @@ and an `adaptation` object containing `initialState`,
 `event`, and `endingState` strings. `event` preserves all ordered events, numbered
 and separated by newlines. Its `saved_files` output lists the files;
 `cinematic_chapters` exposes the chapter records and sequence arrays in memory.
+Execution diagnostics are saved separately in `NNN_<chapter>.cinematic.diagnostics.json`,
+beside the chapter. This sidecar is updated atomically at each checkpoint, so failed
+attempts remain inspectable after interruption. It is not included in `saved_files`
+or passed to downstream nodes. The main chapter retains the source, adaptation,
+chapter metadata and editable narrative proposals; review execution metadata lives
+only in the diagnostics sidecar and internal resume cache.
 Review the generated adaptations, then connect `cinematic_chapters` to
 **Extract Chapter References** (replacing its former `chapter_selection` input).
 
@@ -40,7 +46,13 @@ For a text mismatch or incomplete event,
 the bounded correction request identifies the affected field and original event index,
 and supplies the original event, validated prefix and exact remaining text. This
 correction context comes only from the supplied events; rejected model text is not
-echoed into it, and it is not added to persisted warning diagnostics.
+echoed into it. Citation retries identify the source and matching source anchor;
+duplicate entity/aspect retries identify both conflicting update indices and require
+one final source-supported fact for that pair. Earlier correction constraints remain
+in subsequent retries. When the same defect persists, the next retry explicitly
+rebuilds the affected section from original data. Retry requests therefore change
+instead of repeating an identical deterministic request. The retry budget is unchanged;
+exhaustion retains valid scene data without approval.
 This validates textual coverage, not the model's semantic choice of action boundaries
 or simultaneity, which independent review still checks. Oversized scenes trigger
 bounded repairs that can split a single source sentence into multiple scenes.
@@ -63,23 +75,32 @@ Planning validation diagnostics include the scene, stage, check, a bounded reaso
 backend values are not saved. `output_limit` is reserved for an explicit output-limit
 failure; `request_failed` alone does not identify a token limit or a validation cause.
 Each logical planning attempt is checkpointed at `planning_attempt` and retained in
-`narrative_review.planning_diagnostics` in both `progress.json` and the completed
-chapter. Records include the scene (`sequence`), stage, `assessment_id`, 1-based
+`narrative_review.planning_diagnostics` in internal `progress.json` and as
+`planning_attempts` in the diagnostics sidecar, never in the completed chapter.
+Records include the scene (`sequence`), stage, `assessment_id`, 1-based
 `attempt`, and `status` (`failed` or `completed`). A later completed attempt in the
 same assessment resolves the request failure; a failed attempt remains in the history
 even when the final scene is reviewed successfully. These statuses describe planning
 requests, not narrative review approval. Failed requests also carry a safe reason;
-validation failures include a field path.
+validation failures include a field path. Sidecar records include English explanations
+and suggested actions. They identify repeated failures and identical rejected responses
+using fingerprints, record the retry strategy, and link recovered failures to their
+successful attempt with `resolved_by_attempt`. A changed first validation error alone
+does not prove that all earlier defects were fixed.
 For text mismatches, `event_index` is 1-based; `beat_index` and `reference_index` are
 0-based. `validated_prefix_length` counts original-event characters before the failing
 fragment (including restored boundary whitespace). `matched_chars` counts matching
 characters within that fragment; `mismatch_offset` is the 0-based position of the first
 difference in the original event. `expected_remaining_length` and `received_length`
 describe the remaining original text and stripped received fragment. Incomplete tails
-have a zero received length. Counts use Unicode characters, not bytes; diagnostics
-never contain the actual characters, story excerpts, correction context or raw model
-responses. Where an event reference cannot be validated, an original event index is
-not guessed.
+have a zero received length. Counts use Unicode characters, not bytes. The first
+mismatching expected/received characters are recorded as Unicode code points (null
+means end of text), with a readable difference in the sidecar. Raw rejected model
+responses and arbitrary exception messages are never saved. The sidecar also contains
+the source and events of committed scenes, available timing beats/pauses, the estimate
+with any sequential allowance, and incomplete checks. Generation completion and
+review completion are reported separately; unavailable timing is null, never zero.
+Where an event reference cannot be validated, an original event index is not guessed.
 Each record includes SHA-256 fingerprints of the effective system prompt (including
 the configured duration), strict schema and complete logical request prompt. These
 identify planning inputs before model-specific shared-transport transformations;

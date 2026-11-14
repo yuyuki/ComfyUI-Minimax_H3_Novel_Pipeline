@@ -8,6 +8,7 @@ from jsonschema import Draft202012Validator
 
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, cinematic_scene_planning as planning, cinematic_references as cr
 from minimax_h3_novel_pipeline.core import narrative_validation as nv
+from minimax_h3_novel_pipeline.core.cinematic_diagnostics import downstream_chapter
 
 
 def scene():
@@ -46,6 +47,7 @@ def test_mismatch_metrics_identify_original_event_separately_from_fourth_beat():
         "validated_prefix_length": event.index("then"), "matched_chars": len("then "),
         "expected_remaining_length": len("then wait"), "received_length": len("then stop"),
         "mismatch_offset": event.index("wait"),
+        "expected_codepoint": ord("w"), "received_codepoint": ord("s"),
     }
 
 
@@ -106,10 +108,11 @@ def test_every_validation_attempt_is_recorded_even_when_retry_recovers(monkeypat
     serialized = json.dumps(records)
     assert item["events"][0] not in serialized and "private rejected model body" not in serialized
     assert cr.parse_chapters([result])[0] == result
+    exported = downstream_chapter(result)
     catalog = {"schema_version": "minimax-h3-novel-refs.chapter.v4", "timeline_version": cr.TEMPORAL_VERSION,
                "cache_key": "test", "chapter_id": "chapter", "chapter_name": "Chapter",
                "source": {"file": "chapter.txt", "sha256": "test"}, "sequences": result["sequences"],
-               "narrative_review": {**result["narrative_review"], "extraction_issues": []},
+               "narrative_review": {**exported["narrative_review"], "extraction_issues": []},
                "characters": [], "locations": [], "objects": []}
     Draft202012Validator(cr.CATALOG_SCHEMA).validate(catalog)
     saved = snapshots[-1]

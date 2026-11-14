@@ -157,8 +157,12 @@ def test_third_scene_failure_preserves_files_and_resumes_only_pending_scenes(nod
     monkeypatch.setattr(ca.narrative_validation, "review", review)
     result = run()["result"][0][0]
     assert len(result["sequences"]) == 4
-    assert result["sequences"][2]["review"]["status"] == "incomplete"
-    warnings = result["narrative_review"]["warnings"]
+    diagnostics_path = cache(root).parent.parent.parent / "001_chapter.cinematic.diagnostics.json"
+    diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+    assert "review" not in result["sequences"][2]
+    assert "warnings" not in result["narrative_review"]
+    assert diagnostics["sequences"][2]["status"] == "incomplete"
+    warnings = diagnostics["warnings"]
     assert all(w["sequence"] == 3 for w in warnings)
     assert warnings[0]["reason"] == ("output_limit" if length_error else "request_failed")
     previous = cache(root).read_bytes()
@@ -173,7 +177,10 @@ def test_third_scene_failure_preserves_files_and_resumes_only_pending_scenes(nod
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No regeneration expected"))
     result = run(NEW, resume_run=OLD)["result"][0][0]
     assert not reviewed
-    assert result["narrative_review"]["warnings"] == warnings
+    diagnostics_path = cache(root, NEW).parent.parent.parent / "001_chapter.cinematic.diagnostics.json"
+    resumed_diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+    assert resumed_diagnostics["warnings"] == warnings
+    assert resumed_diagnostics["sequences"][2]["status"] == "incomplete"
     assert [s["sequence"] for s in result["sequences"]] == [1, 2, 3, 4]
     assert "".join(s["source"] for s in result["sequences"]) == source
     assert cache(root).read_bytes() == previous

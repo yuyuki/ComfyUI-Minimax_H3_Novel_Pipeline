@@ -15,6 +15,15 @@
   independent work. Mark incomplete reviews as incomplete, never approved. Preserve
   cancellation, security checks, source/schema integrity and filesystem errors;
   stop when no valid result can be retained safely.
+- For every node, save diagnostics in a separate, clearly associated JSON file
+  beside its main output. Keep only data required by downstream nodes in the
+  main output file and in-memory values passed between nodes. Do not include
+  diagnostic reports, warnings, retry histories, validation details or execution
+  metadata in those payloads. Preserve any functional data required downstream,
+  including editable narrative choices. Record incomplete checks explicitly in
+  the diagnostic file; never present them as approved.
+  Write diagnostic explanations, suggested actions and technical messages in
+  English; preserve quoted source text in its original language.
 - Before researching or changing code in a repository with .codegraph/, use CodeGraph to locate relevant symbols and trace dependencies and callers. Check its source, freshness, and coverage before relying on it. Use text search for exact strings, logs, configuration keys, and prose. Skip CodeGraph if .codegraph/ is absent.
 - Follow [README.md](.github/README.md) when updating the root README.
 - running Python tests and validation commands outside the sandbox.

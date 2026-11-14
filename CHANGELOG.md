@@ -8,6 +8,15 @@ by later entries.
 
 ## Unreleased
 
+- Target cinematic planning retries at duplicate entity/aspect pairs and invalid
+  source citations, retain earlier correction constraints, and rebuild the affected
+  section after a repeated defect. Diagnose first differing Unicode characters and
+  repeated response fingerprints. Save English human-readable review/timing diagnostics in
+  a separate atomic per-chapter sidecar, including interrupted runs and recovered
+  attempts; keep execution diagnostics out of downstream chapter data while
+  preserving editable narrative choices. Add mocked retry/export regressions.
+  Bump to 2.7.1 and regenerate the architecture map for the diagnostics module.
+
 - Persist text-free cinematic planning attempt diagnostics with scene/stage,
   retry grouping, exact event/beat addresses, coverage counts and mismatch offsets.
   Fingerprint logical system prompts, schemas and request prompts; retain failed
