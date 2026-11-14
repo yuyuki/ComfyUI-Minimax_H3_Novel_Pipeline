@@ -44,14 +44,16 @@ def test_cinematic_fragment_schema_and_all_actions_survive_compact_transport_ret
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     fragments = [{"event_index": 1, "text": f"Action {i}. "} for i in range(12)]
     item = {"source": "Source intacte.", "initial_state": "Avant.",
-            "events": ["".join(ref["text"] for ref in fragments)], "final_state": "Après."}
+            "events": ["".join(ref["text"] for ref in fragments), "la corde se resserre sous ses bras"], "final_state": "Après."}
+    fragments.append({"event_index": 2, "text": None})
     result = {"timing": {"beats": [{"events": [ref], "seconds": 1, "reason": "Action successive."}
                                    for ref in fragments],
-                         "pause_seconds": 0, "estimated_seconds": 12, "reason": "Douze actions."},
+                         "pause_seconds": 0, "estimated_seconds": 13, "reason": "Thirteen actions."},
               "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
     client, create = client_for(Stream(['{"timing":']), Stream([json.dumps(result)]))
     validated = planning.assess(lmstudio_json.chat_json, client, model, item, [], 8, 16384, 0)
-    assert len(validated["timing"]["beats"]) == 12 and create.call_count == 2
+    assert len(validated["timing"]["beats"]) == 13 and create.call_count == 2
+    assert validated["timing"]["beats"][-1]["events"] == [{"event_index": 2, "text": None}]
     for call in create.call_args_list:
         request = call.kwargs
         assert request["response_format"] == {"type": "json_schema", "json_schema": planning.SCHEMA}

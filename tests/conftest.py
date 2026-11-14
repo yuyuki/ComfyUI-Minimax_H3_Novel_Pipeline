@@ -8,9 +8,9 @@ def mock_scene_planning(monkeypatch):
     from minimax_h3_novel_pipeline.core import cinematic_scene_planning as planning
 
     def assess(chat, client, model, scene, evidence, duration, max_tokens, correction_attempts, *, on_diagnostic=None):
-        return {"timing": {"beats": [{"events": [{"event_index": i, "text": text}],
+        return {"timing": {"beats": [{"events": [{"event_index": i, "text": None}],
                                       "seconds": 0.1, "reason": "Mock activity."}
-                                      for i, text in enumerate(scene["events"], 1)],
+                                      for i in range(1, len(scene["events"]) + 1)],
                            "pause_seconds": 0.1,
                            "estimated_seconds": round(0.1 * (len(scene["events"]) + 1), 3),
                            "reason": "Timing is isolated in this test."},

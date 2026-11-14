@@ -17,7 +17,7 @@ def scene():
 
 
 def plan(item, text=None):
-    return {"timing": {"beats": [{"events": [{"event_index": 1, "text": text or item["events"][0]}],
+    return {"timing": {"beats": [{"events": [{"event_index": 1, "text": text}],
                                   "seconds": 2, "reason": "Natural activity."}],
                        "pause_seconds": 0, "estimated_seconds": 2, "reason": "Natural activity."},
             "continuity": {"reset": False, "reset_evidence": "", "updates": []}}

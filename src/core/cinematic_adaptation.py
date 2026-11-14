@@ -156,7 +156,7 @@ You must complete at least one scene; keep each scene within the maximum duratio
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_POLICY = "timed-source-context-v9"
+_REVIEW_POLICY = "timed-source-context-v10"
 
 _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
@@ -479,7 +479,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
 
     def review_payload(item):
         return {"stage": "adaptation", "sequences": [scene_planning.description(item)],
-                "scene_plan": item.get("planning"), "maximum_seconds": duration,
+                "scene_plan": scene_planning._describe_plan(item.get("planning"), item["events"]), "maximum_seconds": duration,
                 "planning_status": "available" if item.get("planning") else "incomplete",
                 "previous_final_state": previous_state, **previous_context()}
 
@@ -635,7 +635,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 "previous_final_state": previous_state,
                 "rejected_adaptation": _description(item), "defects_to_correct": issues[1],
                 "minimum_replacement_scenes": 2 if split_required else 1,
-                "rejected_scene_plan": item.get("planning"),
+                "rejected_scene_plan": scene_planning._describe_plan(item.get("planning"), item["events"]),
             }, ensure_ascii=False)
             try:
                 replacement = rebuild_passage(prompt, item["source"], repair=True,

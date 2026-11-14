@@ -23,6 +23,95 @@ def plan(fragments, seconds):
 FRAGMENTS = [(1, "Il sort le filet"), (1, "et recouvre la tablette."), (2, "Il noue les lacets.")]
 
 
+def test_whole_event_identifiers_preserve_scene_8_without_copying_any_text():
+    events = ["Indy prépare son pic", "une secousse le frappe au torse",
+              "il descend de quelques centimètres", "la corde se resserre sous ses bras"]
+    item = scene("Sous ses bras, la corde se resserra.", events)
+    value = plan([(index, None) for index in range(1, 5)], [1, 1, 1, 1])
+    before = deepcopy(value)
+    validated = planning.validate(value, item)
+    assert validated == before and value == before
+    assert planning.validate(validated, item) == validated
+    resolved = planning._describe_plan(validated, events)
+    assert [beat["events"][0]["text"] for beat in resolved["timing"]["beats"]] == events
+    assert validated == before and item["events"] == events
+    assert resolved["timing"]["estimated_seconds"] == 4
+
+
+def test_whole_event_and_compound_fragments_can_share_a_plan():
+    item = scene("Texte original.", ["  Il sort le filet et recouvre la tablette.\n", "Il noue les lacets. "])
+    value = plan([*FRAGMENTS[:2], (2, None)], [1, 2, 3])
+    validated = planning.validate(value, item)
+    resolved = planning._describe_plan(validated, item["events"])
+    refs = [ref for beat in resolved["timing"]["beats"] for ref in beat["events"]]
+    assert ["".join(ref["text"] for ref in refs if ref["event_index"] == i) for i in (1, 2)] == item["events"]
+    assert validated["timing"]["beats"][-1]["events"][0]["text"] is None
+
+
+@pytest.mark.parametrize("references", [
+    [(1, None), (1, None)],
+    [(1, None), (1, "Il attend.")],
+    [(1, "Il attend."), (1, None)],
+])
+def test_whole_event_cannot_overlap_another_reference(references):
+    with pytest.raises(planning._PlanningValidationError) as caught:
+        planning.validate(plan(references, [1, 1]), scene("Il attend.", ["Il attend."]))
+    assert caught.value.reason == "whole_event_overlap"
+    assert caught.value.metrics["event_index"] == 1
+
+
+def test_overlap_retry_uses_one_identifier_without_removing_other_events():
+    item = scene("Il attend puis part.", ["Il attend.", "Il part."])
+    requests, records = [], []
+
+    def chat(client, model, system, user, schema, temperature, tokens):
+        requests.append(user)
+        assert schema == planning.SCHEMA and schema["strict"] and tokens == 16384
+        assert "without copying or rewriting" in system
+        if len(requests) == 1:
+            return plan([(1, None), (1, None), (2, None)], [1, 1, 2])
+        assert "Never mix the two modes" in user
+        return plan([(1, None), (2, None)], [2, 2])
+
+    validated = planning.assess(chat, None, "mock", item, [], 8, 16384, 1, on_diagnostic=records.append)
+    assert validated["timing"]["estimated_seconds"] == 4
+    assert [r["status"] for r in records] == ["failed", "completed"]
+    assert [beat["events"][0]["event_index"] for beat in validated["timing"]["beats"]] == [1, 2]
+
+
+@pytest.mark.parametrize("stage", ["scene_planned", "scene_committed"])
+def test_whole_event_references_survive_review_and_resume(monkeypatch, stage):
+    item = scene("Sous ses bras, la corde se resserra.", ["la corde se resserre sous ses bras"])
+    snapshots, planning_calls, reviews = [], [], []
+    options = dict(chunk_chars=4000, temperature=0.15, max_tokens=16384, correction_attempts=0)
+
+    def chat(client, model, system, user, schema, *args):
+        if schema == planning.SCHEMA:
+            planning_calls.append(user)
+            return plan([(1, None)], [2])
+        if schema == nv.SCHEMA:
+            payload = json.loads(user)
+            reviews.append(payload)
+            assert payload["scene_plan"]["timing"]["beats"][0]["events"][0]["text"] == item["events"][0]
+            return {"issues": []}
+        return {"sequences": [deepcopy(item)]}
+
+    def checkpoint(state):
+        snapshots.append(deepcopy(state))
+        if state["stage"] == stage:
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    with pytest.raises(KeyboardInterrupt):
+        ca.adapt_chapter(None, "mock", item["source"], on_checkpoint=checkpoint, **options)
+    saved = snapshots[-1]
+    cached = saved["pending_sequences"][0]["planning"] if stage == "scene_planned" else saved["scene_plans"][0]["plan"]
+    assert cached["timing"]["beats"][0]["events"] == [{"event_index": 1, "text": None}]
+    result = ca.adapt_chapter(None, "mock", item["source"], resume_state=saved, **options)
+    assert result["sequences"][0]["adaptation"]["event"] == "1. " + item["events"][0]
+    assert len(planning_calls) == 1 and len(reviews) == 1
+
+
 def test_compound_event_coverage_restores_exact_text_without_mutating_inputs():
     item = scene("Texte original.", ["  Il sort le filet et recouvre la tablette.\n", "Il noue les lacets. "])
     value = plan(FRAGMENTS, [1, 2, 3])

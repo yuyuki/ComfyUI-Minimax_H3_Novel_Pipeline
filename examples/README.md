@@ -38,12 +38,20 @@ partitioned into verbatim action fragments, each referencing its original 1-base
 beats with the same event index. Concatenated fragments must restore
 every original event in order; only boundary whitespace is restored automatically.
 Missing, duplicated, reordered or rewritten fragments are rejected. The planning
-schema uses `{event_index, text}` references; integer-only references are not accepted.
+schema uses `{event_index, text}` references. For a whole event, the model sets
+`text: null` and refers only to its identifier: it does not copy the event text.
+Python resolves that identifier to the original adaptation text for semantic reviews,
+repairs and readable diagnostics. Cached plans retain the identifier and null marker;
+resolution does not rewrite the source or adaptation. A whole-event reference cannot
+coexist with any other reference to the same event. Non-null text is reserved for
+verbatim portions when a compound event needs separate action beats. Integer-only
+references are not accepted.
 Planning instructions are independent of the book and contain no fixed story excerpts.
 They keep a simple physical action whole, including its tool, destination and spatial
 qualifiers; these complements do not by themselves introduce another operation.
 For a text mismatch or incomplete event,
-the bounded correction request identifies the affected field and original event index,
+the bounded correction request first offers a single whole-event identifier without
+recopying text, or identifies the affected field and original event index for a split,
 and supplies the original event, validated prefix and exact remaining text. This
 correction context comes only from the supplied events; rejected model text is not
 echoed into it. Citation retries identify the source and matching source anchor;
@@ -119,7 +127,7 @@ remain in checkpoints. Category instructions guide the model; structural validat
 cannot certify the meaning of a physical claim or its category.
 Internal timing plans and the bounded physical context are saved in
 `cinematic_chapters/.cache/<chapter_id>/progress.json`, alongside resumable drafts.
-Only v2 checkpoints with review policy `timed-source-context-v9` can be resumed; start a fresh adaptation for older
+Only v2 checkpoints with review policy `timed-source-context-v10` can be resumed; start a fresh adaptation for older
 checkpoints. Completed `.cinematic.json` chapters remain loadable and are not rewritten.
 
 To resume from those saved adaptations, replace the adapter with **Load Cinematic

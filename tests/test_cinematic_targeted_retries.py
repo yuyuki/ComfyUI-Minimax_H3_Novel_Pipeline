@@ -15,7 +15,7 @@ def scene():
 
 
 def plan():
-    return {"timing": {"beats": [{"events": [{"event_index": 1, "text": scene()["events"][0]}],
+    return {"timing": {"beats": [{"events": [{"event_index": 1, "text": None}],
                                   "seconds": 2, "reason": "Action."}],
                        "pause_seconds": 0, "estimated_seconds": 2, "reason": "Action."},
             "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
@@ -81,7 +81,7 @@ def test_repetition_budget_remains_bounded_and_does_not_approve():
 
     def chat(*args):
         value = plan()
-        value["timing"]["beats"][0]["events"][0]["text"] += "."
+        value["timing"]["beats"][0]["events"][0]["text"] = scene()["events"][0] + "."
         return value
 
     with pytest.raises(planning._PlanningValidationError):
@@ -142,7 +142,7 @@ def test_node_persists_sidecar_during_retry_and_exports_only_chapter_data(tmp_pa
             calls += 1
             value = plan()
             if calls == 1:
-                value["timing"]["beats"][0]["events"][0]["text"] += "."
+                value["timing"]["beats"][0]["events"][0]["text"] = scene()["events"][0] + "."
             else:
                 saved = json.loads(sidecar_path.read_text(encoding="utf-8"))
                 assert saved["summary"]["failed_planning_attempts"] == 1
@@ -177,4 +177,5 @@ def test_node_persists_sidecar_during_retry_and_exports_only_chapter_data(tmp_pa
         assert saved["status"] == saved["generation_status"] == "completed"
         assert saved["summary"]["planning_attempts"] == 2
         assert saved["sequences"][0]["timing"]["estimated_seconds"] == 2
+        assert saved["sequences"][0]["timing"]["beats"][0]["events"][0]["text"] == scene()["events"][0]
     assert not list(output.rglob("*.tmp"))

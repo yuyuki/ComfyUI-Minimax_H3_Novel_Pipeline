@@ -25,6 +25,8 @@ _EXPLANATIONS = {
     "event_coverage": ("The plan does not cover all events.", "Reference every original event."),
     "event_order": ("Fragments do not follow the event order.", "Preserve the original order without returning to earlier events."),
     "event_reference": ("An event identifier is invalid.", "Use the original event identifiers, starting at 1."),
+    "whole_event_overlap": ("A whole-event reference overlaps another reference to the same event.",
+                            "Use one whole-event reference, or only ordered fragments if separate actions need splitting."),
     "timing_total_mismatch": ("The reported total differs from the sum of beat durations and pauses.", "Recalculate the total without shortening actions."),
     "timing_nonfinite": ("A duration is not a finite number.", "Return finite numeric durations."),
     "reset_quote_mismatch": ("The context reset has no valid source quotation.", "Support the reset with the current source or retain the context."),
@@ -106,7 +108,7 @@ def report(state, *, chapter_name, source_file, maximum_seconds, completed=False
                        "seconds_with_allowance": (round(plan["timing"]["estimated_seconds"] * (
                            planning.SEQUENTIAL_TIMING_FACTOR if len(plan["timing"]["beats"]) > 1 else 1), 3)
                            if plan else None),
-                       "beats": deepcopy(plan["timing"]["beats"]) if plan else [],
+                       "beats": planning._describe_plan(plan, saved_plan["events"])["timing"]["beats"] if plan else [],
                        "pause_seconds": plan["timing"]["pause_seconds"] if plan else None},
             "review": deepcopy(scene.get("review", {"status": status})),
             "failed_checks": [w for w in warnings if w["sequence"] == scene["sequence"] and w["status"] == "incomplete"],

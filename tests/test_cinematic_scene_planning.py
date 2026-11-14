@@ -14,7 +14,7 @@ def scene(source, events=None):
 
 def plan(item, seconds=2, updates=None, reset=False, reset_evidence=""):
     count = len(item["events"])
-    return {"timing": {"beats": [{"events": [{"event_index": i, "text": text}],
+    return {"timing": {"beats": [{"events": [{"event_index": i, "text": None}],
                                   "seconds": seconds / count, "reason": "Action naturelle."}
                                   for i, text in enumerate(item["events"], 1)],
                        "pause_seconds": 0, "estimated_seconds": seconds, "reason": "Actions successives."},
@@ -552,7 +552,7 @@ def test_timing_split_survives_partial_review_interruption_and_failed_replacemen
     assert snapshots[-1]["scene_plans"][0] is None
 
 
-@pytest.mark.parametrize("old_policy", ["timed-source-context-v6", "timed-source-context-v7", "timed-source-context-v8"])
+@pytest.mark.parametrize("old_policy", ["timed-source-context-v6", "timed-source-context-v7", "timed-source-context-v8", "timed-source-context-v9"])
 def test_resume_rejects_old_review_policies_before_network_calls(monkeypatch, old_policy):
     snapshots = []
 

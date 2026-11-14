@@ -8,6 +8,13 @@ by later entries.
 
 ## Unreleased
 
+- Reference whole cinematic events by identifier with a null text marker instead
+  of asking the planner to copy their wording. Resolve original text in Python
+  for reviews, repairs and diagnostics; retain exact coverage checks for compound
+  fragments and reject overlaps with whole-event references. Invalidate older
+  resume approvals under review policy v10 and cover strict-schema transport,
+  mixed plans, recovery and unchanged scene text with mocked regressions.
+
 - Target cinematic planning retries at duplicate entity/aspect pairs and invalid
   source citations, retain earlier correction constraints, and rebuild the affected
   section after a repeated defect. Diagnose first differing Unicode characters and
