@@ -129,11 +129,12 @@ def cache_key(scene, evidence, duration):
 class _PlanningValidationError(ValueError):
     """Locally generated diagnostic codes; never include rejected values or backend text."""
 
-    def __init__(self, reason, field_path, *, retry_context=None):
+    def __init__(self, reason, field_path, *, retry_context=None, metrics=None):
         self.reason = reason
         self.field_path = field_path
         # Only source-derived correction data, kept out of exception text and diagnostics.
         self.retry_context = retry_context
+        self.metrics = metrics or {}
         super().__init__(f"{reason} at {field_path}")
 
 
@@ -153,7 +154,9 @@ def _validate_event_fragments(timing, scene):
     for beat_index, item_index, item in fragments:
         index = item["event_index"]
         if type(index) is not int or not 1 <= index <= count:
-            raise _PlanningValidationError("event_reference", f"/timing/beats/{beat_index}/events/{item_index}/event_index")
+            raise _PlanningValidationError("event_reference", f"/timing/beats/{beat_index}/events/{item_index}/event_index",
+                                           metrics={"beat_index": beat_index, "reference_index": item_index,
+                                                    "event_count": count})
     if indices != sorted(indices):
         raise _PlanningValidationError("event_order", "/timing/beats")
     if sorted(set(indices)) != list(range(1, count + 1)):
@@ -168,9 +171,17 @@ def _validate_event_fragments(timing, scene):
         excerpt = item["text"].strip()
         if not excerpt or not event.startswith(excerpt, cursor):
             path = f"/timing/beats/{beat_index}/events/{item_index}/text"
+            common = 0
+            while common < len(excerpt) and cursor + common < len(event) and excerpt[common] == event[cursor + common]:
+                common += 1
             raise _PlanningValidationError("event_text_mismatch", path, retry_context={
                 "field_path": path, "event_index": index + 1, "original_event": event,
                 "validated_prefix": event[:start], "remaining_event_text": event[start:],
+            }, metrics={
+                "event_index": index + 1, "beat_index": beat_index, "reference_index": item_index,
+                "validated_prefix_length": cursor, "matched_chars": common,
+                "expected_remaining_length": len(event) - cursor,
+                "received_length": len(excerpt), "mismatch_offset": cursor + common,
             })
         cursor += len(excerpt)
         item["text"] = event[start:cursor]
@@ -180,6 +191,10 @@ def _validate_event_fragments(timing, scene):
             raise _PlanningValidationError("event_text_incomplete", "/timing/beats", retry_context={
                 "field_path": "/timing/beats", "event_index": index, "original_event": event,
                 "validated_prefix": event[:cursor], "remaining_event_text": event[cursor:],
+            }, metrics={
+                "event_index": index, "validated_prefix_length": cursor, "matched_chars": 0,
+                "expected_remaining_length": len(event) - cursor,
+                "received_length": 0, "mismatch_offset": cursor,
             })
     # Assign trailing whitespace to the last fragment, preserving exact originals.
     for _, _, item in reversed(fragments):
@@ -233,16 +248,36 @@ def validate(plan, scene):
     return result
 
 
-def assess(chat, client, model, scene, evidence, duration, max_tokens, correction_attempts):
+def _request_fingerprints(system, user):
+    """Hash logical planning messages before model-specific transport transformations."""
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+    return {"system_prompt_sha256": digest(system), "schema_sha256": digest(SCHEMA),
+            "request_prompt_sha256": digest({"system": system, "user": user})}
+
+
+def assess(chat, client, model, scene, evidence, duration, max_tokens, correction_attempts, *, on_diagnostic=None):
     payload = {"current_scene": description(scene), "source_evidence": evidence,
                "maximum_seconds": duration}
     prompt = json.dumps(payload, ensure_ascii=False)
+    system = SYSTEM + f"\nMaximum scene duration: {duration:g} seconds."
     correction = ""
     for attempt in range(correction_attempts + 1):
-        result = chat(client, model, SYSTEM, prompt + correction, SCHEMA, 0.0, max_tokens)
+        user = prompt + correction
+        record = {"attempt": attempt + 1, **_request_fingerprints(system, user)}
         try:
-            return validate(result, scene)
+            result = chat(client, model, system, user, SCHEMA, 0.0, max_tokens)
+        except Exception as error:
+            if on_diagnostic is not None:
+                on_diagnostic({**record, "status": "failed", "reason": "request_failed"}, error)
+            raise
+        try:
+            validated = validate(result, scene)
         except _PlanningValidationError as error:
+            if on_diagnostic is not None:
+                on_diagnostic({**record, "status": "failed", "reason": error.reason,
+                               "field_path": error.field_path, **error.metrics})
             if attempt == correction_attempts:
                 raise
             correction = f"\nPrevious planning rejected: {error} Return corrected JSON using the same source."
@@ -256,6 +291,10 @@ def assess(chat, client, model, scene, evidence, duration, max_tokens, correctio
                     "redundant reference. Return the complete corrected plan using the same strict schema, "
                     "covering every original event; leave already correct fragments intact."
                 )
+        else:
+            if on_diagnostic is not None:
+                on_diagnostic({**record, "status": "completed"})
+            return validated
     raise AssertionError("Unreachable")
 
 

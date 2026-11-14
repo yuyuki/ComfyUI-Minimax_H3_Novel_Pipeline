@@ -73,7 +73,8 @@ def test_one_sentence_is_split_into_three_reviewed_scenes_and_resumes_without_re
     assert "".join(s["source"] for s in result["sequences"]) == source
     assert len(reviews) == 4
     assert all(r["scene_plan"]["timing"]["estimated_seconds"] <= 8 for r in reviews[1:])
-    assert result["narrative_review"] == {"issues": []}
+    assert result["narrative_review"]["issues"] == []
+    assert "warnings" not in result["narrative_review"]
 
 
 def test_context_survives_omitted_generated_states_and_is_rebuilt_on_resume(monkeypatch):

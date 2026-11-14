@@ -26,10 +26,10 @@ def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors
     calls, snapshots = [], []
     assess = ca.scene_planning.assess
 
-    def planning(*args):
+    def planning(*args, **kwargs):
         if missing_planning and args[3]["source"] == " B.":
             raise RuntimeError("secret-backend-text")
-        return assess(*args)
+        return assess(*args, **kwargs)
 
     monkeypatch.setattr(ca.scene_planning, "assess", planning)
 
@@ -74,10 +74,10 @@ def test_selected_proposal_with_failed_planning_still_receives_semantic_review(m
     assess = ca.scene_planning.assess
     reviews = []
 
-    def planning(*args):
+    def planning(*args, **kwargs):
         if args[3].get("chosen_event"):
             raise RuntimeError("private backend text")
-        return assess(*args)
+        return assess(*args, **kwargs)
 
     def review(chat, client, model, payload, *args):
         reviews.append(deepcopy(payload))

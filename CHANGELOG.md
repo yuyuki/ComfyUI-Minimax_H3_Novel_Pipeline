@@ -8,6 +8,12 @@ by later entries.
 
 ## Unreleased
 
+- Persist text-free cinematic planning attempt diagnostics with scene/stage,
+  retry grouping, exact event/beat addresses, coverage counts and mismatch offsets.
+  Fingerprint logical system prompts, schemas and request prompts; retain failed
+  attempts after recovery and across interruption/resume, preserving fatal checkpoint
+  errors. Cover privacy, request failures and fingerprint changes with mocked tests.
+
 - Target cinematic fragment retries with the original event, validated prefix
   and exact remaining text, keeping correction context out of warning diagnostics.
   Clarify that simple actions retain tool/destination complements in one beat;

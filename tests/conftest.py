@@ -7,7 +7,7 @@ def mock_scene_planning(monkeypatch):
     """Isolate existing generation/review tests from the separately tested planning stage."""
     from minimax_h3_novel_pipeline.core import cinematic_scene_planning as planning
 
-    def assess(chat, client, model, scene, evidence, duration, max_tokens, correction_attempts):
+    def assess(chat, client, model, scene, evidence, duration, max_tokens, correction_attempts, *, on_diagnostic=None):
         return {"timing": {"beats": [{"events": [{"event_index": i, "text": text}],
                                       "seconds": 0.1, "reason": "Mock activity."}
                                       for i, text in enumerate(scene["events"], 1)],

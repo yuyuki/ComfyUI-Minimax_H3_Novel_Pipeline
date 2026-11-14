@@ -62,6 +62,30 @@ Planning validation diagnostics include the scene, stage, check, a bounded reaso
 `schema_type`) and a safe JSON field path. Arbitrary exception messages and rejected
 backend values are not saved. `output_limit` is reserved for an explicit output-limit
 failure; `request_failed` alone does not identify a token limit or a validation cause.
+Each logical planning attempt is checkpointed at `planning_attempt` and retained in
+`narrative_review.planning_diagnostics` in both `progress.json` and the completed
+chapter. Records include the scene (`sequence`), stage, `assessment_id`, 1-based
+`attempt`, and `status` (`failed` or `completed`). A later completed attempt in the
+same assessment resolves the request failure; a failed attempt remains in the history
+even when the final scene is reviewed successfully. These statuses describe planning
+requests, not narrative review approval. Failed requests also carry a safe reason;
+validation failures include a field path.
+For text mismatches, `event_index` is 1-based; `beat_index` and `reference_index` are
+0-based. `validated_prefix_length` counts original-event characters before the failing
+fragment (including restored boundary whitespace). `matched_chars` counts matching
+characters within that fragment; `mismatch_offset` is the 0-based position of the first
+difference in the original event. `expected_remaining_length` and `received_length`
+describe the remaining original text and stripped received fragment. Incomplete tails
+have a zero received length. Counts use Unicode characters, not bytes; diagnostics
+never contain the actual characters, story excerpts, correction context or raw model
+responses. Where an event reference cannot be validated, an original event index is
+not guessed.
+Each record includes SHA-256 fingerprints of the effective system prompt (including
+the configured duration), strict schema and complete logical request prompt. These
+identify planning inputs before model-specific shared-transport transformations;
+internal transport retries are not counted as separate planning attempts. Resume
+preserves existing records and assigns a new assessment ID to new requests. Cache hits
+do not fabricate attempt history or fingerprints for requests from earlier runs.
 Source-cited physical facts help track earlier objects and support changes even when
 recent state descriptions omit them; generated paraphrases never outrank the book.
 Identity matching ignores case, whitespace and one definite article only; qualifiers,

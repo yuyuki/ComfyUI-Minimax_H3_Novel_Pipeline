@@ -24,6 +24,7 @@
       "properties": {
         "issues": {"type": "array", "items": {"type": "object"}},
         "warnings": {"type": "array", "items": {"type": "object"}},
+        "planning_diagnostics": {"type": "array", "items": {"type": "object"}},
         "extraction_issues": {"type": "array", "items": {"type": "object"}}
       },
       "required": ["issues"],

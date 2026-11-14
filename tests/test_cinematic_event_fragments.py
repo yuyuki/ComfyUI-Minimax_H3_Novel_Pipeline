@@ -169,7 +169,7 @@ def test_planning_instructions_are_generic_and_retry_text_comes_from_current_sce
     prompts = []
 
     def chat(client, model, system, user, schema, temperature, tokens):
-        assert system == planning.SYSTEM and event not in system
+        assert system == planning.SYSTEM + "\nMaximum scene duration: 8 seconds." and event not in system
         for book_specific_text in ("Indy", "torchère", "La corde se resserre", "Il sort un filet",
                                    "torche and la torche", "frayed section", "rope breaks"):
             assert book_specific_text not in system
