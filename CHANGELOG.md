@@ -8,6 +8,11 @@ by later entries.
 
 ## Unreleased
 
+- Verify current cinematic chapter output across loading, extraction,
+  consolidation, spatial continuity and H3 input preparation with offline
+  integration tests for direct and saved inputs, including incomplete reviews
+  and independent diagnostic sidecars.
+
 - Reference whole cinematic events by identifier with a null text marker instead
   of asking the planner to copy their wording. Resolve original text in Python
   for reviews, repairs and diagnostics; retain exact coverage checks for compound
