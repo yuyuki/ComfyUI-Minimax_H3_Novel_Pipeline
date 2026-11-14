@@ -34,27 +34,28 @@ class ConsolidateReferencesNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "chapter_catalogs": ("MINIMAX_CHAPTERS",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
+            "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",), "chapter_catalogs": ("MINIMAX_CHAPTERS",),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000}),
+            "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "candidate_count": ("INT", {"default": 12, "min": 1, "max": 1000}), "include_all_below": ("INT", {"default": 35, "min": 0, "max": 100000}),
             "audio_threshold": (["optional", "recommended", "required"], {"default": "recommended"}),
             "max_character_base_views": ("INT", {"default": 4, "min": 1, "max": 7}), "max_location_base_views": ("INT", {"default": 3, "min": 1, "max": 6}), "max_object_base_views": ("INT", {"default": 2, "min": 1, "max": 4}), "asset_batch_size": ("INT", {"default": 4, "min": 1, "max": 1000}),
             "no_audit": ("BOOLEAN", {"default": False}), "audit_max_entities": ("INT", {"default": 120, "min": 0, "max": 100000}),
-            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}), "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000}),
-            "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "audit_similarity": ("FLOAT", {"default": 0.68, "min": 0.0, "max": 1.0, "step": 0.01}),
             "audit_cluster_size": ("INT", {"default": 24, "min": 2, "max": 120}),
             "max_attempts": ("INT", {"default": 3, "min": 1, "max": 20, "tooltip": "Maximum validation attempts per consolidation decision, including the first response. 1 disables correction attempts. JSON transport retries use the LM Studio configuration."}),
+            "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
         }, "optional": {
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Reuse validated requests from a previous timestamped run with the same out_dir. "
                 "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
-            "force": ("BOOLEAN", {"default": False}),
             "character_visual_profiles": ("MINIMAX_CHARACTER_VISUAL_PROFILES",),
             "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional chapter or global visual_designs.json inside output/minimax_h3_novel; only matching chapter entities are imported. Leave empty on the first run; consolidation saves this file automatically."}),
             "context_tokens": ("INT", {"default": 65536, "min": 16384, "max": 1048576,
                 "tooltip": "Context budget for character evidence enrichment, including response tokens. Set no higher than the context loaded in LM Studio. Oversized identity evidence is batched without dropping observations."}),
+            "force": ("BOOLEAN", {"default": False}),
         }}
 
     RETURN_TYPES = ("MINIMAX_REGISTRY", "STRING")

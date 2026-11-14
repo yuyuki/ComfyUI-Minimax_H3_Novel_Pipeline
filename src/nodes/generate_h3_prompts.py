@@ -21,22 +21,25 @@ class GenerateH3PromptsNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
+            "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for reference metadata, prompt generation and format repairs. Camera and continuity review have separate controls. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "consolidated_references": ("MINIMAX_REGISTRY",), "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
+            "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning. Reasoning-limit retries use at least 16384 tokens."}),
+            "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
+            "consolidated_references": ("MINIMAX_REGISTRY",),
             "cinematic_chapter": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Cinematic Chapter Adapter or Load Cinematic Chapters; one H3 scene per supplied sequence."}),
             "max_shots": ("INT", {"default": 1, "min": 1, "max": 6, "tooltip": "Maximum camera shots per scene. Qwen may use fewer; a shot needs at least 2.5 seconds. Default 1 preserves existing workflows."}),
             "max_scenes": ("INT", {"default": 0, "min": 0, "max": 10000, "tooltip": "Maximum scenes per chapter; 0 generates all scenes."}),
-            "max_pictures": ("INT", {"default": 8, "min": 1, "max": 9}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 9}), "max_audio": ("INT", {"default": 3, "min": 0, "max": 3}), "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}), "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning. Reasoning-limit retries use at least 16384 tokens."}),
+            "max_pictures": ("INT", {"default": 8, "min": 1, "max": 9}), "max_pictures_per_subject": ("INT", {"default": 4, "min": 1, "max": 9}), "max_audio": ("INT", {"default": 3, "min": 0, "max": 3}),
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "refine_camera": ("BOOLEAN", {"default": True, "tooltip": "After prompt validation, ask LM Studio for camera-only descriptions for each shot. Adds one request per scene."}),
         }, "optional": {
             "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY", {"tooltip": "Connect Spatial Continuity or Load Spatial Continuity to use its staging plan and review final prompts for consistency."}),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
+            "camera_thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for the optional camera-only pass. Independent of generation thinking. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "review_thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for continuity reviews and their repairs. Off avoids spending the review budget on reasoning. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Reuse matching prompts and completed request checkpoints from a previous timestamped run with the same out_dir. "
                 "Example: 20261031202452. Changed requests are recomputed; force ignores caches."}),
-            "camera_thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for the optional camera-only pass. Independent of generation thinking. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "review_thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for continuity reviews and their repairs. Off avoids spending the review budget on reasoning. GPT-OSS always reasons; OpenAI has no thinking control."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_PROMPTS", "STRING", "STRING")

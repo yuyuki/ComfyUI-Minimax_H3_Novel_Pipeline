@@ -119,11 +119,11 @@ class SpatialContinuityNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "consolidated_references": ("MINIMAX_REGISTRY",),
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "temperature": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "max_tokens": ("INT", {"default": 8192, "min": 1024, "max": 100000}),
+            "temperature": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
+            "consolidated_references": ("MINIMAX_REGISTRY",),
             "out_dir": ("STRING", {"default": "spatial_continuity",
                                    "tooltip": "Relative folder inside the current timestamped run."}),
         }}

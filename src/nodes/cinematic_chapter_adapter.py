@@ -16,23 +16,23 @@ class CinematicChapterAdapterNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
-            "out_dir": ("STRING", {"default": "cinematic_chapters"}),
-            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "Maximum duration per cinematic scene, not a target to fill. Use the same duration in Generate H3 Prompts."}),
+            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 32768,
+                                   "tooltip": "Output budget per request for generation, timing/context planning, scene validation and focused checks. "
+                                   "Reasoning and JSON share this budget; retries cannot exceed it."}),
             "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000,
                                     "tooltip": "Maximum source characters per reading window. Incomplete trailing scenes "
                                     "are read again with new source text. Instructions and review text add to request size."}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
-            "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 32768,
-                                   "tooltip": "Output budget per request for generation, timing/context planning, scene validation and focused checks. "
-                                   "Reasoning and JSON share this budget; retries cannot exceed it."}),
+            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "Maximum duration per cinematic scene, not a target to fill. Use the same duration in Generate H3 Prompts."}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
                                           "tooltip": "Retries for invalid fields, source coverage or semantic defects. "
                                           "When nonzero, persistent semantic defects trigger one final targeted repair round. "
                                           "Remaining narrative doubts become editable proposals; the first is selected automatically. "
                                           "Persistent timing overruns retain the scene with incomplete-review diagnostics."}),
+            "out_dir": ("STRING", {"default": "cinematic_chapters"}),
         }, "optional": {
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Previous timestamped run folder, e.g. 20261112124902. Resume matching scenes and drafts "

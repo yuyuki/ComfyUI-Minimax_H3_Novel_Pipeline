@@ -42,6 +42,18 @@ def test_root_registration_and_frontend(plugin):
         assert "required" in cls.INPUT_TYPES()
 
 
+def test_lmstudio_config_is_first_input(plugin):
+    for name, cls in plugin.NODE_CLASS_MAPPINGS.items():
+        inputs = [
+            (key, spec)
+            for group in cls.INPUT_TYPES().values()
+            for key, spec in group.items()
+        ]
+        for key, spec in inputs:
+            if spec[0] == "MINIMAX_LMSTUDIO_CONFIG":
+                assert inputs[0][0] == key, name
+
+
 @pytest.mark.parametrize("name", ["NovelCinematicSimplifierNode", "NarrativeContinuityNode"])
 def test_removed_nodes_are_not_registered_or_exported(plugin, name):
     from minimax_h3_novel_pipeline import nodes

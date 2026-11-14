@@ -18,19 +18,19 @@ class ConsolidateCharacterProfilesNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "character_evidence": ("MINIMAX_CHARACTER_EVIDENCE",),
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
-            "out_dir": ("STRING", {"default": "character_profiles"}),
+            "character_evidence": ("MINIMAX_CHARACTER_EVIDENCE",),
             "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000}),
+            "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "context_tokens": ("INT", {"default": 65536, "min": 8192, "max": 2000000,
                 "tooltip": "Must not exceed the loaded LM Studio context. Includes output and retry reserves."}),
             "correction_attempts": ("INT", {"default": 0, "min": 0, "max": 10,
                 "tooltip": "0 skips invalid decisions immediately, without correction or subdivision requests."}),
-            "force": ("BOOLEAN", {"default": False}),
             "persistence_filter": (["persistent", "everything"], {"default": "persistent",
                 "tooltip": "Consolidate only persistent observations, or include temporary and unknown observations too."}),
+            "force": ("BOOLEAN", {"default": False}),
+            "out_dir": ("STRING", {"default": "character_profiles"}),
         }, "optional": {
             "resume_run": ("STRING", {"default": "", "tooltip":
                 "Reuse validated decisions from a previous timestamped run with the same out_dir. "

@@ -19,14 +19,14 @@ class CharacterEvidenceExtractorNode:
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
-            "out_dir": ("STRING", {"default": "character_evidence"}),
-            "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 30000}),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
+            "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 30000}),
+            "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
-            "force": ("BOOLEAN", {"default": False}),
             "character_scope": (list(character_evidence.SCOPES), {"default": "proper_names"}),
+            "force": ("BOOLEAN", {"default": False}),
+            "out_dir": ("STRING", {"default": "character_evidence"}),
         }, "optional": {
             "audit_thinking": ("BOOLEAN", {"default": False, "tooltip":
                 "Enable reasoning for the semantic audit too. Slower; extraction keeps its own thinking setting."}),
