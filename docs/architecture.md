@@ -57,7 +57,7 @@ The standalone cinematic adapter uses `cinematic_adaptation` and the shared LM S
 `narrative_validation` reviews adaptation fidelity and transitions before targeted sequence repairs. Reference extraction reads `initialState` followed by `event`, using their resolved names and excluding original `source` and `endingState`. Reviews check the supplied passage's language and entity categories. `chapter_reference_identity` then consolidates identities from these same passages in bounded ordered windows with the preceding passage and a local registry. Passage-quoted merge groups are validated and cached separately; sequence observations remain unchanged. Recoverable advisory failures retain unconfirmed identities separately with incomplete diagnostics. Cross-chapter reconciliation remains in consolidation.
 Adaptation repairs regenerate only rejected scene source spans, including one final targeted recovery round when enabled. Changed scenes and their immediate neighbors are reviewed again; unchanged scene/context approvals are reused and checkpointed. Persistent doubts retain editable narrative proposals. Source/output failures reduce the reading-window size for the remaining chapter. Node-local per-chapter checkpoints preserve drafts, accepted scenes, approvals and learned window sizes for resume_run into a new timestamped run.
 
-`reference_timeline` validates cinematic catalogs, merges observations without rewriting them, computes first sequence occurrences and provides exact source-observation lookup. Identity reconciliation and duplicate audits preserve temporal observations separately. `reference_visuals` compiles common intrinsic appearance and scene-local visual traits with explicit presence. Conflicting descriptions remain local with incomplete diagnostics; local states are never carried through unobserved scenes.
+`reference_timeline` validates cinematic catalogs, merges observations without rewriting them, computes first sequence occurrences and provides exact source-observation lookup. Identity reconciliation and duplicate audits preserve temporal observations separately. `reference_visuals` compiles common intrinsic appearance and scene-local visual traits with explicit presence. A cached structured review groups confirmed equivalent intrinsic wording without rewriting source observations. Conflicting descriptions remain local with incomplete diagnostics; local states are never carried through unobserved scenes.
 Chapter reference catalogs store combined initialState/event observations in `state_by_sequence[sequence].source`, with no local identity-link or individual phase-timing fields. Every local ID maps to the consolidated entity, retaining all observations and unchanged cinematic sequences. Neutral image briefs cover visually present, source-described entities; character identity can be enriched from independent profiles. Equal resolved appearances share assets with explicit `scene_bindings`, and H3 selects only the assets applicable to its exact sequence. Actions and narrative orientation remain in adaptation, not reference appearance. Chapter and consolidated contracts are v5; older outputs require regeneration without conversion. See [neutral visual references](neutral_visual_references.md) for the contract and validation cases. `editable_schemas` validates and exports the visual design schema; extraction exports the chapter catalog schema.
 
 ## Internal module dependencies
@@ -243,12 +243,7 @@ flowchart TD
     m_core_lmstudio_settings --> m_core_lmstudio_models
     m_core_narrative_validation --> m_core_lmstudio_pipeline
     m_core_pipeline_step1_extract --> m_core_lmstudio_json
-    m_core_pipeline_step1_extract --> m_core_lmstudio_pipeline
-    m_core_pipeline_step1_extract --> m_core_path_access
-    m_core_pipeline_step1_extract --> m_core_progress
-    m_core_pipeline_step1_extract --> m_core_prompt_cache
     m_core_pipeline_step1_extract --> m_core_reference_visuals
-    m_core_pipeline_step1_extract --> m_core_util
     m_core_pipeline_step2_consolidate --> m_core_lmstudio_json
     m_core_pipeline_step2_consolidate --> m_core_lmstudio_pipeline
     m_core_pipeline_step2_consolidate --> m_core_progress
@@ -280,6 +275,11 @@ flowchart TD
     m_core_reference_timeline --> m_core_cinematic_references
     m_core_reference_timeline --> m_core_reference_visuals
     m_core_reference_timeline --> m_core_util
+    m_core_reference_visuals --> m_core_continuity_context
+    m_core_reference_visuals --> m_core_editable_schemas
+    m_core_reference_visuals --> m_core_lmstudio_json
+    m_core_reference_visuals --> m_core_lmstudio_pipeline
+    m_core_reference_visuals --> m_core_reference_requests
     m_core_run_output --> m_core_path_access
     m_core_util --> m_core_path_access
     m_core_visual_designs --> m_core_character_visual_selection
@@ -453,14 +453,14 @@ flowchart TD
 | `src/core/narrative_choices.py` | — | `propose`, `resolve_chapter`, `validate_scene_text` |
 | `src/core/narrative_validation.py` | `core.lmstudio_pipeline` | `review` |
 | `src/core/path_access.py` | — | `confined_path`, `input_path`, `output_path`, `storage_root` |
-| `src/core/pipeline_step1_extract.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.reference_visuals`, `core.util` | `assign_local_ids`, `clean_entity`, `combine_candidates`, `compact_strings`, `entity_schema`, `extract_chunk`, `hierarchical_merge_candidates`, `make_client`, `merge_candidates`, `merge_entity_schema`, `natural_key`, `process_chapter`, `sha256_file`, `slug` |
+| `src/core/pipeline_step1_extract.py` | `core.lmstudio_json`, `core.reference_visuals` | `clean_entity`, `compact_strings`, `entity_schema`, `make_client`, `natural_key`, `slug` |
 | `src/core/pipeline_step2_consolidate.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_requests`, `core.reference_timeline`, `core.reference_visuals`, `core.temporal_context` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `request_appearance`, `similarity`, `stronger`, `threshold`, `write_asset_prompts` |
 | `src/core/pipeline_step3_generate.py` | `core.character_visual_integration`, `core.cinematic_references`, `core.continuity_context`, `core.continuity_issues`, `core.generation_artifacts`, `core.generation_evidence`, `core.generation_requests`, `core.lmstudio_json`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.reference_timeline`, `core.reference_visuals`, `core.temporal_context`, `core.util` | `Scene`, `Validation`, `ViewRequest`, `allowed_shots`, `artifact_dependencies`, `audio_asset_for`, `available_assets_for_entity`, `best_asset_for_view`, `build_bindings`, `chapter_catalog`, `check_prompt_continuity`, `constrain_character_presence`, `default_view_order`, `entity_index`, `format_error_sections`, `format_prompt`, `generate_prompt`, `make_client`, `natural_key`, `normalize_prompt`, `pacing_instruction`, `picture_assets_by_entity`, `prepare_cinematic_scene`, `process_chapter`, `prominence_score`, `prompt_is_fully_sectioned`, `refine_camera_prompt`, `repair_binding_notation`, `repair_prompt`, `repair_scene_inputs`, `replace_prompt_sections`, `request_map`, `resume_scene_files`, `review_and_repair_continuity`, `save_scene`, `scene_asset_sheet`, `scene_from_dict`, `scene_to_dict`, `section_body`, `selected_timeline`, `sequence_catalog`, `slug`, `timestamp_seconds`, `validate_prompt` |
 | `src/core/progress.py` | — | `node_progress`, `report`, `scope`, `steps` |
 | `src/core/prompt_cache.py` | `core.lmstudio_json` | `fingerprint` |
 | `src/core/reference_requests.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.prompt_cache`, `core.util` | `InvalidResponse`, `validate_assets`, `validated_request` |
 | `src/core/reference_timeline.py` | `core.cinematic_references`, `core.reference_visuals`, `core.util` | `merge_timeline`, `refresh_first_occurrence`, `source_observations_at`, `validate_catalogs` |
-| `src/core/reference_visuals.py` | — | `appearance_at`, `attribute_key`, `compile_reference`, `descriptions`, `scene_assets`, `signature`, `traits_at`, `validate_evidence`, `validate_observation`, `validate_reference`, `validate_registry`, `variant_id` |
+| `src/core/reference_visuals.py` | `core.continuity_context`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.reference_requests` | `appearance_at`, `attribute_key`, `build_reference`, `compile_reference`, `descriptions`, `scene_assets`, `signature`, `traits_at`, `validate_evidence`, `validate_observation`, `validate_reference`, `validate_registry`, `variant_id` |
 | `src/core/route_access.py` | — | `require_local_request` |
 | `src/core/run_output.py` | `core.path_access` | `execution_id`, `reserve_run`, `stage_output` |
 | `src/core/temporal_context.py` | — | `normalize`, `prompt` |

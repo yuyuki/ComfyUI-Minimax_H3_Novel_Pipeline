@@ -837,24 +837,23 @@ def test_new_design_conflict_regenerates_within_retry_budget(output_root, monkey
 
 
 def test_completed_extraction_invalidates_when_prompt_changes(output_root, monkeypatch):
+    from minimax_h3_novel_pipeline.core import cinematic_references as cr
+    from tests.test_cinematic_references import chapter
     step = lmstudio_pipeline.load("extract")
-    chapter = output_root / "chapter.txt"
-    chapter.write_text("A long enough novel paragraph. " * 10, encoding="utf-8")
-    args = SimpleNamespace(force=False, chunk_chars=5500, overlap_paragraphs=0, merge_batch_size=4,
-                           temperature=0.12, max_tokens=2200, base_url="http://127.0.0.1:1234/v1")
+    args = SimpleNamespace(force=False, chunk_chars=5500, temperature=0.12, max_tokens=2200)
     calls = []
-    def extract(*unused):
-        calls.append(1)
+    def extract(client, model, system, user, schema, *unused):
+        if schema["name"] == "narrative_semantic_review":
+            return {"issues": []}
+        calls.append(json.loads(user))
         return {"characters": [], "locations": [], "objects": [], "chunk_summary": "A passage."}
-    monkeypatch.setattr(step, "extract_chunk", extract)
-    monkeypatch.setattr(step, "hierarchical_merge_candidates", lambda *a: ({}, {}))
-    monkeypatch.setattr(step, "assign_local_ids", lambda *a: {"characters": [], "locations": [], "objects": []})
-    step.process_chapter(chapter, output_root, None, "qwen", args)
-    step.process_chapter(chapter, output_root, None, "qwen", args)
-    assert len(calls) == 1
+    monkeypatch.setattr(step, "chat_json", extract)
+    cr.process_chapter(chapter(), output_root, None, "qwen", args, "chapter")
+    cr.process_chapter(chapter(), output_root, None, "qwen", args, "chapter")
+    assert len(calls) == 3
     monkeypatch.setattr(step, "EXTRACT_SYSTEM", step.EXTRACT_SYSTEM + "\nNew extraction instruction.")
-    step.process_chapter(chapter, output_root, None, "qwen", args)
-    assert len(calls) == 2
+    cr.process_chapter(chapter(), output_root, None, "qwen", args, "chapter")
+    assert len(calls) == 6
 
 
 

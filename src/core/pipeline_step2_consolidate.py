@@ -601,10 +601,12 @@ def desired_base_views(entity: dict[str, Any], args: argparse.Namespace) -> list
             base = ["wide_establishing"]
         limit = args.max_location_base_views
     else:
+        hints = ordered_valid_views(typ, entity.get("reference_view_hints", []))
+        whole_view = next((v for v in hints if v in {"front_view", "hero_three_quarter", "side_profile"}), "front_view")
         if importance == "major" or priority == "required":
-            base = ["front_view", "detail_closeup"]
+            base = [whole_view, "detail_closeup"]
         else:
-            base = ["front_view"]
+            base = [whole_view]
         limit = args.max_object_base_views
 
     merged = list(dict.fromkeys(base + ordered_valid_views(typ, entity.get("reference_view_hints", []))))

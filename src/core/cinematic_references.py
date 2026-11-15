@@ -1,7 +1,7 @@
 """Extract sequence-source observations and consolidate chapter-local identities."""
 from __future__ import annotations
 
-from copy import deepcopy
+from copy import deepcopy, copy
 import hashlib
 import json
 from shutil import copyfile
@@ -40,7 +40,9 @@ Provide presence: visible, offscreen or mentioned. A name or an audible voice do
 not establish visibility. Preserve supported speech independently for audio needs.
 visual_traits is authoritative neutral appearance, with one fact per attribute.
 Use consistent concise English attribute keys for the same entity; descriptions
-remain in the narration's source language. Evidence must quote the local passage.
+remain in the narration's source language. Qualify keys by physical part so independent
+properties do not collide; reuse one key rather than synonyms for the same property.
+Evidence must quote the local passage.
 Intrinsic scope is unchanged material, construction, shape, markings or physical
 identity. Scene scope is applicable wardrobe or visible condition established when
 the entity is depicted. It may be described in text even if the entity first appears
@@ -164,6 +166,7 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION,
                       system, narrative_validation.SYSTEM, narrative_validation.SCHEMA,
                       step.CHUNK_SCHEMA, chapter_reference_identity.VERSION,
+                      reference_visuals.VERSION, reference_visuals.EQUIVALENCE_SYSTEM, reference_visuals.EQUIVALENCE_SCHEMA,
                       chapter_reference_identity.SYSTEM, chapter_reference_identity.SCHEMA, chapter, client=client)
     saved = confined_path(output / f"{chapter_id}_references.json", output)
     diagnostic_path = confined_path(output / f"{chapter_id}_references.diagnostics.json", output)
@@ -232,8 +235,11 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     for kind in ("characters", "locations", "objects"):
         retained = []
         for entity in catalog[kind]:
-            reference = reference_visuals.compile_reference(
-                {chapter_id: entity["state_by_sequence"]}, diagnostics["checks"], entity["local_id"])
+            visual_args = copy(args)
+            visual_args.cache_dir = cache_dir
+            reference = reference_visuals.build_reference(
+                {chapter_id: entity["state_by_sequence"]}, diagnostics["checks"], entity["local_id"],
+                step.chat_json, client, model, visual_args)
             entity["visual_reference"] = reference
             entity["stable_visual_description"] = reference_visuals.descriptions(reference["common_traits"])
             entity["distinguishing_features"] = []

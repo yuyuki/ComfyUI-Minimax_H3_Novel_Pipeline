@@ -272,12 +272,14 @@ def test_even_well_spaced_cuts_require_single_shot_repair():
 
 
 def test_extraction_requests_attributed_speech_from_original_prose(monkeypatch):
-    from minimax_h3_novel_pipeline.core import pipeline_step1_extract as extract
+    from minimax_h3_novel_pipeline.core import pipeline_step1_extract as extract, cinematic_references as cr
 
     excerpt = "— Doriane ! hurla-t-il. Envoyez une autre torche !\n— Jones ! cria Doriane."
 
     def chat(client, model, system, user, schema, *unused):
-        assert excerpt in user
+        if schema["name"] == "narrative_semantic_review":
+            return {"issues": []}
+        assert json.loads(user)["text"] == excerpt
         assert "Off-screen" in system
         assert "actual words and attribution" in system
         assert "Summaries follow source event order" in system
@@ -285,6 +287,7 @@ def test_extraction_requests_attributed_speech_from_original_prose(monkeypatch):
                 "characters": [], "locations": [], "objects": []}
 
     monkeypatch.setattr(extract, "chat_json", chat)
-    result = extract.extract_chunk(None, "model", "chapter", excerpt, 1, 1,
-                                   SimpleNamespace(temperature=0.12, max_tokens=8000))
+    result, _, _ = cr._extract_source(extract, None, "model", extract.EXTRACT_SYSTEM + cr.SOURCE_SYSTEM,
+                                      json.dumps({"text": excerpt, "reference_state": ""}),
+                                      SimpleNamespace(temperature=0.12, max_tokens=8000))
     assert "Doriane calls back" in result["chunk_summary"]

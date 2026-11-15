@@ -1,5 +1,4 @@
 """Offline regression coverage for the adapted v3 scalability changes."""
-import copy
 import json
 from types import SimpleNamespace
 
@@ -8,39 +7,27 @@ import pytest
 from minimax_h3_novel_pipeline.core import lmstudio_pipeline
 
 
-def test_hierarchical_merge_resumes_and_preserves_order(tmp_path, monkeypatch):
-    step = lmstudio_pipeline.load("extract")
-    args = SimpleNamespace(merge_batch_size=2, force=False, delay=0, temperature=0.1, max_tokens=3000)
-    chunks = [{"chunk_summary": str(i), "characters": [{"canonical_name": str(i)}]} for i in range(5)]
+def test_chapter_identity_batches_resume_and_preserve_order(tmp_path, monkeypatch):
+    from tests.test_chapter_reference_identity import job, run
+    jobs = [job(i, f"Person {i} waits.", f"Person {i}") for i in range(1, 10)]
     calls = []
-
-    def merge(client, model, chapter, combined, options):
-        calls.append(copy.deepcopy(combined))
-        return {"chapter_summary": "summary", "characters": [
-            {**e, "source_candidate_ids": [e["candidate_id"]]}
-            for e in reversed(combined["characters"])
-        ]}
-
-    monkeypatch.setattr(step, "merge_candidates", merge)
-    merged, combined = step.hierarchical_merge_candidates(None, "model", "chapter", chunks, args, tmp_path)
-    assert all(len(c["chunk_summaries"]) <= 2 for c in calls)
-    catalog = step.assign_local_ids(merged, combined)
-    assert [e["canonical_name"] for e in catalog["characters"]] == list(map(str, range(5)))
-    count = len(calls)
-    step.hierarchical_merge_candidates(None, "model", "chapter", chunks, args, tmp_path)
-    assert len(calls) == count
-    args.force = True
-    step.hierarchical_merge_candidates(None, "model", "chapter", chunks, args, tmp_path)
-    assert len(calls) == count * 2
+    def reply(payload, count):
+        calls.append(payload)
+        return {"groups": []}
+    catalog, _, _ = run(tmp_path, monkeypatch, jobs, reply)
+    assert [e["canonical_name"] for e in catalog["characters"]] == [f"Person {i}" for i in range(1, 10)]
+    assert len(calls) == 2
+    cached, _, _ = run(tmp_path, monkeypatch, jobs, lambda *a: pytest.fail("Identity cache should be reused"))
+    assert cached == catalog
 
 
-def test_cached_merge_checks_cancellation(tmp_path, monkeypatch):
-    step = lmstudio_pipeline.load("extract")
+def test_chapter_identity_checks_cancellation(tmp_path, monkeypatch):
+    from tests.test_chapter_reference_identity import job, run
     def stop():
         raise RuntimeError("interrupted")
     monkeypatch.setattr(lmstudio_pipeline, "comfy_interrupt_check", stop)
     with pytest.raises(RuntimeError, match="interrupted"):
-        step.hierarchical_merge_candidates(None, "model", "chapter", [{}], SimpleNamespace(merge_batch_size=2), tmp_path)
+        run(tmp_path, monkeypatch, [job(1, "A person waits.", "A person")], lambda *a: {"groups": []})
 
 
 def entity(gid, name, kind="character"):
@@ -86,21 +73,19 @@ def test_cluster_matching_respects_aliases_and_types():
 @pytest.mark.parametrize("model", ["qwen3.5-9b", "other-model"])
 @pytest.mark.parametrize("chunk_chars,expected_count", [(1000, 6), (5500, 1)])
 def test_extraction_uses_node_chunk_size(tmp_path, monkeypatch, model, chunk_chars, expected_count):
-    from minimax_h3_novel_pipeline.core import path_access
+    from minimax_h3_novel_pipeline.core import cinematic_references as cr, path_access
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
-    step = lmstudio_pipeline.load("extract")
-    chapter = tmp_path / "chapter.txt"
-    chapter.write_text("\n\n".join(str(i) * 800 for i in range(6)), encoding="utf-8")
     extracted = []
-
-    def extract(client, model, chapter_id, chunk, *unused):
-        extracted.append(chunk)
+    text = "\n\n".join(str(i) * 800 for i in range(6))
+    chapter = {"chapter_name": "chapter", "sequences": [{"sequence": 1, "source": "Unused.",
+        "adaptation": {"initialState": text, "event": "The scene continues.", "endingState": "Unused."}}]}
+    def extract(client, model, system, user, schema, *unused):
+        if schema["name"] == "narrative_semantic_review":
+            return {"issues": []}
+        extracted.append(json.loads(user)["text"])
         return {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
-
-    monkeypatch.setattr(step, "extract_chunk", extract)
-    monkeypatch.setattr(step, "hierarchical_merge_candidates",
-                        lambda *args: ({"chapter_summary": ""}, {"characters": [], "locations": [], "objects": []}))
-    args = SimpleNamespace(force=False, chunk_chars=chunk_chars, overlap_paragraphs=0, base_url="http://127.0.0.1:1234/v1")
-    step.process_chapter(chapter, tmp_path, None, model, args)
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", extract)
+    args = SimpleNamespace(force=False, chunk_chars=chunk_chars, temperature=0.1, max_tokens=3000)
+    cr.process_chapter(chapter, tmp_path, None, model, args, "chapter")
     assert len(extracted) == expected_count
     assert all(len(chunk) <= chunk_chars for chunk in extracted)

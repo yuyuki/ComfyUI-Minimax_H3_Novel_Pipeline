@@ -177,19 +177,23 @@ def test_discovery_rejects_external_file_links(roots, tmp_path):
         util.discover_inputs([source])
 
 
-def test_extraction_existing_cache_still_loads(roots):
-    source, output = roots
-    chapter = source / "chapter.txt"
-    chapter.write_text("Chapter text. " * 20, encoding="utf-8")
-    step = lmstudio_pipeline.load("extract")
-    payload = {"schema_version": step.SCHEMA_VERSION, "source": {"sha256": step.sha256_file(chapter)}}
-    args = SimpleNamespace(force=False)
-    payload["cache_key"] = step.cache_fingerprint("mock", args, step.SCHEMA_VERSION,
-                                                step.EXTRACT_SYSTEM, step.MERGE_SYSTEM,
-                                                step.CHUNK_SCHEMA, step.MERGE_SCHEMA, step.sha256_file(chapter))
-    util.save_json(output / "chapter_references.json", payload)
-    saved = step.process_chapter(chapter, output, None, "mock", args)
-    assert util.load_json(saved) == payload
+def test_extraction_existing_cache_still_loads(roots, monkeypatch):
+    from minimax_h3_novel_pipeline.core import cinematic_references as cr
+    from tests.test_cinematic_references import chapter
+    _, output = roots
+    output.mkdir()
+    calls = []
+    def extract(client, model, system, user, schema, *unused):
+        if schema["name"] == "narrative_semantic_review":
+            return {"issues": []}
+        calls.append(1)
+        return {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", extract)
+    args = SimpleNamespace(force=False, chunk_chars=5500, max_tokens=2000, temperature=0.1)
+    saved = cr.process_chapter(chapter(), output, None, "mock", args, "chapter")
+    expected = util.load_json(saved)
+    cr.process_chapter(chapter(), output, None, "mock", args, "chapter")
+    assert len(calls) == 3 and util.load_json(saved) == expected
 
 
 @pytest.mark.parametrize("step_name,linked_dir", [
@@ -209,7 +213,9 @@ def test_bundled_steps_reject_nested_directory_escape(roots, tmp_path, step_name
     args = SimpleNamespace(force=True, chunk_chars=5500, overlap_paragraphs=0, out_dir=output)
     with pytest.raises(ValueError, match="inside"):
         if step_name == "extract":
-            step.process_chapter(chapter, output, None, "mock", args)
+            from minimax_h3_novel_pipeline.core import cinematic_references
+            value = chapter_input(cinematic_registry(chapter))
+            cinematic_references.process_chapter(value, output, None, "mock", args, "chapter")
         else:
             step.process_chapter(chapter_input(cinematic_registry(chapter)), cinematic_registry(chapter), None, "mock", args)
     assert list(outside.iterdir()) == []

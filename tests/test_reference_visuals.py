@@ -74,6 +74,13 @@ def test_distinct_entities_do_not_share_material_and_name_only_objects_have_no_i
     assert visual.appearance_at(second, "chapter", 1) == ""
 
 
+def test_object_view_hints_can_expose_geometry_without_narrative_staging():
+    item, _ = reference({1: [observation(trait("construction", "A hollow sculpted form."))]})
+    item["reference_view_hints"] = ["hero_three_quarter"]
+    specs = lmstudio_pipeline.load("consolidate").build_picture_specs([item], options())
+    assert specs[0]["view_type"] == "hero_three_quarter"
+
+
 def test_local_override_keeps_other_intrinsic_traits_and_is_reused():
     common = [trait("color", "Blue surface."), trait("material", "Oak construction.")]
     change = trait("color", "Red surface.", "scene")
@@ -160,7 +167,10 @@ def test_extraction_retries_with_structured_schema_and_full_evidence(monkeypatch
 
 def test_reference_prompts_are_generic_and_have_no_story_specific_examples():
     step = lmstudio_pipeline.load("consolidate")
-    prompts = [extraction.SOURCE_SYSTEM, lmstudio_pipeline.load("extract").EXTRACT_SYSTEM, step.APPEARANCE_SYSTEM]
+    from minimax_h3_novel_pipeline.core import chapter_reference_identity, narrative_validation
+    prompts = [extraction.SOURCE_SYSTEM, lmstudio_pipeline.load("extract").EXTRACT_SYSTEM,
+               step.APPEARANCE_SYSTEM, step.PICTURE_BRIEF_SYSTEM, visual.EQUIVALENCE_SYSTEM,
+               chapter_reference_identity.SYSTEM, narrative_validation.SYSTEM]
     assert all(not any(word in p.casefold() for word in ("indy", "doriane", "torch", "linen", "tablet", "crevasse"))
                for p in prompts)
 
@@ -174,3 +184,62 @@ def test_inputs_unchanged_and_obsolete_outputs_rejected():
         util.require_schema({"schema_version": "minimax-h3-novel-refs.chapter.v4"}, util.CHAPTER_SCHEMA)
     with pytest.raises(ValueError, match="re-extract"):
         visual.validate_registry({"entities": [{"global_id": "old"}]})
+
+
+def test_equivalent_intrinsic_wording_is_shared_without_rewriting_observations():
+    item, _ = reference({1: [observation(trait("material", "Linen fibers."))],
+                         2: [observation()], 3: [observation(trait("material", "Made of linen fibers."))]})
+    original = deepcopy(item["timeline"])
+    calls = []
+    def chat(client, model, system, user, schema, *args):
+        calls.append((json.loads(user), schema))
+        return {"groups": [{"attribute": "material", "descriptions": ["Linen fibers.", "Made of linen fibers."],
+                            "selected_description": "Made of linen fibers."}]}
+    checks = []
+    item["visual_reference"] = visual.build_reference(item["timeline"], checks, "OBJ_001", chat, None, "mock",
+                                                      SimpleNamespace(temperature=0.1, max_tokens=2000, max_attempts=2))
+    assert not checks and len(calls) == 1
+    assert calls[0][1] == visual.EQUIVALENCE_SCHEMA and calls[0][1]["strict"]
+    assert len(calls[0][0]["attributes"]["material"]) == 2
+    assert visual.appearance_at(item, "chapter", 2) == "Made of linen fibers."
+    assert item["timeline"] == original
+
+
+def test_intrinsic_review_cannot_invent_descriptions_and_retries_all_alternatives():
+    item, _ = reference({1: [observation(trait("material", "Oak."))],
+                         2: [observation(trait("material", "Oak construction."))]})
+    calls = []
+    def chat(client, model, system, user, schema, *args):
+        calls.append(user)
+        return {"groups": [{"attribute": "material", "descriptions": ["Oak.", "Oak construction."],
+                            "selected_description": "Invented material." if len(calls) == 1 else "Oak construction."}]}
+    checks = []
+    result = visual.build_reference(item["timeline"], checks, "OBJ_001", chat, None, "mock",
+                                    SimpleNamespace(temperature=0.1, max_tokens=2000, max_attempts=2))
+    assert not checks and len(calls) == 2
+    assert all("Oak." in user and "Oak construction." in user for user in calls)
+    assert result["common_traits"][0]["description"] == "Oak construction."
+
+
+@pytest.mark.parametrize("error", [PermissionError("storage"), KeyboardInterrupt()])
+def test_intrinsic_review_preserves_filesystem_errors_and_cancellation(error):
+    item, _ = reference({1: [observation(trait("material", "A."))], 2: [observation(trait("material", "B."))]})
+    def chat(*args):
+        raise error
+    with pytest.raises(type(error)):
+        visual.build_reference(item["timeline"], [], "OBJ_001", chat, None, "mock",
+                               SimpleNamespace(temperature=0.1, max_tokens=2000, max_attempts=2))
+
+
+def test_failed_intrinsic_review_keeps_valid_local_data_and_incomplete_diagnostics():
+    item, _ = reference({1: [observation(trait("material", "A."))], 2: [observation()],
+                         3: [observation(trait("material", "B."))]})
+    checks = []
+    def chat(*args):
+        raise RuntimeError("Model unavailable")
+    item["visual_reference"] = visual.build_reference(item["timeline"], checks, "OBJ_001", chat, None, "mock",
+                                                      SimpleNamespace(temperature=0.1, max_tokens=2000, max_attempts=2))
+    assert checks and all(c["status"] == "incomplete" for c in checks)
+    assert visual.appearance_at(item, "chapter", 1) == "A."
+    assert visual.appearance_at(item, "chapter", 2) == ""
+    assert visual.appearance_at(item, "chapter", 3) == "B."

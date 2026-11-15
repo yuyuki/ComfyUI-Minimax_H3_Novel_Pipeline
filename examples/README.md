@@ -190,16 +190,18 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    Consolidate's `consolidated_references` to Generate. Each of these four processing
    nodes can terminate the workflow and displays its own text preview after execution;
    no separate Preview Text node is required.
-4. In Consolidate, choose `image_style` (default **realistic photographic**) and
-   reference image prompts include every consolidated character, place and object.
+4. In Consolidate, choose `image_style` (default **cinematic photographic**).
+   Image prompts cover visually present entities with usable appearance details;
+   characters can be enriched from their independent visual profiles.
    Use `asset_batch_size=4` as the initial setting for the Qwen3.5 9B model.
 5. Queue the workflow. Open the new timestamp folder shown in configuration status.
    Copy each view's prompt from `references/image_prompts/` into your Qwen-Image-2512
    workflow, or use Generate's `image_prompt_text` output. The same export is saved
    under `h3_prompts/image_prompts/`. Generate and review one image per view.
-   Consolidate merges repeated facts into shared English appearance prose before
-   assembling the views. To fix prompts from an older run, use Load Chapter Catalogs
-   and rerun Consolidate, then Generate with the new registry.
+   Consolidate merges repeated facts into shared appearance prose in the source
+   language, with separate variants for actual visual changes. For current-format
+   catalogs, use Load Chapter Catalogs to rerun Consolidate and Generate.
+   Older reference formats require extraction again.
 6. Use the desired chapter and scene entry from Generate's `prompts` payload
    with your MiniMax H3 Reference to Video node. Generate/load the media from
    the registry's briefs and attach it in the entry's image/audio asset-ID order.
@@ -281,18 +283,20 @@ Edit names, aliases and source-supported descriptions in the chapter catalog usi
 `chapter_references.schema.json`, then reload it with Load Chapter Catalogs.
 Consolidation reconciles identities and aliases; keep its duplicate audit enabled
 for variants found within one chapter. Source observations retain their sequence
-addresses. Base image prompts use stable identity facts only. Regenerate visual
+addresses. Neutral image prompts combine shared intrinsic traits with the applicable
+scene state. Equal resolved appearances share assets with explicit `scene_bindings`;
+a new scene or action alone does not require another reference. Regenerate visual
 designs when identity edits change global IDs.
 
 For each entity, the text export labels source description and added design details
-separately, followed by individual copy-paste prompts for each base-reference view.
+separately, followed by individual copy-paste prompts for each neutral reference view and applicable appearance variant.
 `image_prompts.json` contains asset IDs, descriptions and prompts for automation.
 Style/design choices do not modify extracted novel facts. Review generated images
 for consistency before using them as H3 references.
 
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 
-Only current v4 chapter catalogs and registries are accepted; consolidation requires source-only reference timelines. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
+Only current v5 chapter catalogs and registries are accepted; consolidation requires neutral visual observations and scene-addressed image applicability. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
 
 The adapter uses `duration` to split the chapter into naturally paced scenes.
 Generate preserves exactly one scene per supplied sequence. Generate reads duration
@@ -309,15 +313,16 @@ old widget layouts, narrative bundles and absolute output paths are unsupported.
 ### Extraction timeline contract
 
 Each chapter is independent. Sequence IDs must be positive and strictly increasing.
-Extract Chapter References reads only `sequences[].source`, splitting long source
-passages by `chunk_chars`. It never extracts from adaptation phases. Full cinematic
+Extract Chapter References reads resolved `adaptation.initialState` followed by
+`adaptation.event`, splitting long passages by `chunk_chars`. Original `source` and
+`endingState` are not extraction evidence. Full cinematic
 sequences and editable narrative choices remain available to downstream nodes.
 
 Catalog references contain `first_sequence` and
 `state_by_sequence[sequence].source`, a list of source observations. Extraction
 then consolidates identities in ordered source windows (up to eight chunks,
 12,000 source characters and 32 incoming occurrences per batch; a single larger
-chunk remains indivisible). The model receives original passages, the preceding
+chunk remains indivisible). The model receives these adaptation passages, the preceding
 passage and the local identity registry. It proposes source-quoted merge groups;
 code validates IDs, entity types, names and verbatim quotations before merging.
 Identical generic names alone never force a merge. Distinct physical instances
@@ -326,8 +331,10 @@ incomplete diagnostics. Requests exceeding the safe context budget are not sent.
 Identity decisions have their own cache under `.cache/<chapter_id>/identity_*.json`;
 source extraction caches remain reusable. All original observations retain their
 sequence addresses. Cross-chapter consolidation and its duplicate audit still run.
-Locations are places/spaces; object/person positions and orientations remain on
-those entities. Summaries and descriptions use the source narration's language.
+Locations are places/spaces. Narrative positions, poses, handling and orientations
+remain in adaptation, not neutral appearance. `visual_traits` carry source-quoted
+intrinsic or scene-local facts; `presence` distinguishes visible entities, offscreen
+voices and mentions. Summaries and descriptions use the source narration's language.
 
 Consolidation retains `timeline[chapter_id][sequence].source` observations losslessly,
 including conflicts and repeated evidence. Identity reconciliation and duplicate
@@ -345,8 +352,8 @@ adaptation; it never invents phase timing for a source observation.
 Each uncached source chunk gets extraction and semantic review, with at most two
 corrections. Persistent defects and incomplete reviews retain valid data and are
 recorded in `<chapter_id>_references.diagnostics.json`, outside the catalog.
-Technical diagnostics are English. `force` bypasses caches; completed source chunks
-can be reused when only adaptation choices change.
+Technical diagnostics are English. `force` bypasses caches. Changes to the resolved
+adaptation invalidate dependent extraction results and identity decisions.
 
 Adapter reviews also check source detail
 coverage and transitions; `correction_attempts` bounds targeted sequence repairs.
@@ -365,8 +372,10 @@ but only the resolved adaptation is sent to downstream narrative model calls.
 Malformed data or technical failures still stop the workflow.
 Reviews use additional LM Studio requests and remain model judgments, not a proof
 of narrative fidelity. Regenerate adaptations and catalogs from previous runs.
-Original-source Generate inputs remain unchanged; this change provides temporal
-reference metadata, not a replacement for Generate's narrative continuity input.
+Generate still receives the matching cinematic adaptation. Neutral reference
+appearance does not replace its narrative actions or continuity input.
+See [the neutral reference contract](../docs/neutral_visual_references.md) for
+shared traits, conflict diagnostics and exact scene/image applicability.
 
 ### Generation from cinematic chapters
 

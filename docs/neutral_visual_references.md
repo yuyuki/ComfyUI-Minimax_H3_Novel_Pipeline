@@ -48,8 +48,11 @@ description. Damage, replacement and other transformations cannot be backdated.
 Resolved appearance combines shared traits with applicable local overrides by
 attribute. Unchanged attributes remain available. Local states apply only to their
 attested scenes; the code does not guess persistence through omitted observations.
-Conflicting intrinsic values are not propagated globally. They remain source-local
-and generate incomplete diagnostics. Ambiguous local values and their conflicting baseline fallback are omitted from image
+Alternative intrinsic wording is reviewed through a cached structured request when
+one attribute has multiple descriptions. Only confirmed equivalent supplied strings
+can share a representative; the model cannot invent replacement prose. Actual
+conflicts or failed reviews remain source-local with incomplete diagnostics.
+Ambiguous local values and their conflicting baseline fallback are omitted from image
 appearance through functional `excluded_attributes`. Attribute keys and semantic classification are model decisions, so
 source-grounded review remains necessary.
 
@@ -67,8 +70,9 @@ Profile-derived presence can further restrict character image applicability.
 Image specs group identical resolved appearances across scenes. A distinct
 appearance receives a content-based state variant; a new scene number or action
 alone does not create a new image. Multiple useful views are not duplicate identities.
-Objects default to a clear straight-on view of their defining surface; additional
-views expose supported geometry or details. Source narrative orientation does not
+Objects default to a clear straight-on view of their defining surface; supported
+view hints can select a more informative geometry view. Additional views expose
+supported geometry or details. Source narrative orientation does not
 prescribe the reference camera. Appearance normalization preserves distinct useful
 facts, with a 12,000-character response ceiling instead of a fixed word target.
 
@@ -81,6 +85,10 @@ become visible because its shared description exists.
 
 Chapter and consolidated contracts are v5. Old catalogs and registries must be
 regenerated; there are no conversion readers. The project version is unchanged.
+The former standalone source-only extraction and hierarchical catalog merge path
+have been removed. Extraction uses the cinematic sequence path and source-grounded
+chapter identity consolidation; their cache, cancellation and progress tests cover
+the current implementation.
 Loaders validate current visual observations and reference applicability. Technical
 conflicts and incomplete checks stay in associated diagnostic sidecars, including
 `consolidated_references.diagnostics.json`.

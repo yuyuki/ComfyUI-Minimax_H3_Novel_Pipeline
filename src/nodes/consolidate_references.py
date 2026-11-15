@@ -152,15 +152,18 @@ class ConsolidateReferencesNode:
             for entity in registry:
                 refresh_first_occurrence(entity, [c["chapter_id"] for c in chapters])
             visual_checks = []
+            runtime_info = {"base_url": lmstudio_config["api_url"], "model": resolved_model,
+                            "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}
             args.reference_diagnostics = visual_checks
             for entity in registry:
-                entity["visual_reference"] = reference_visuals.compile_reference(
-                    entity["timeline"], visual_checks, entity["global_id"])
+                entity["visual_reference"] = reference_visuals.build_reference(
+                    entity["timeline"], visual_checks, entity["global_id"],
+                    pipeline.chat_json, client, resolved_model, args)
                 entity["stable_visual_description"] = reference_visuals.descriptions(
                     entity["visual_reference"]["common_traits"])
                 entity["distinguishing_features"] = []
             util.save_json(output / "consolidated_references.diagnostics.json", {
-                "status": "incomplete" if visual_checks else "passed", "checks": visual_checks})
+                "status": "incomplete" if visual_checks else "passed", "checks": visual_checks, "llm": runtime_info})
             registry.sort(key=lambda item: ({"character": 0, "location": 1, "object": 2}[item["entity_type"]], pipeline.natural_key(item["global_id"])))
             args.temporal_context_by_chapter = {
                 c["chapter_id"]: {"default_temporal_context": c.get("default_temporal_context", ""),
@@ -201,9 +204,9 @@ class ConsolidateReferencesNode:
                 audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
             _log("Saving consolidated references and prompt files")
             util.save_json(output / "consolidated_references.diagnostics.json", {
-                "status": "incomplete" if visual_checks else "passed", "checks": visual_checks})
+                "status": "incomplete" if visual_checks else "passed", "checks": visual_checks, "llm": runtime_info})
             digest = configuration_snapshot.content_digest(chapters)
-            payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
+            payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
             payload["chapter_timelines"] = {c["chapter_id"]: {
                 "default_temporal_context": c.get("default_temporal_context", ""),
                 "sequences": c["sequences"],

@@ -78,7 +78,7 @@ def test_cinematic_window_schema_and_complete_source_survive_transport_retry(mon
         assert "maxItems" not in call.kwargs["response_format"]["json_schema"]["schema"]["properties"]["sequences"]
 
 
-@pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA", "MERGE_SCHEMA"])
+@pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA"])
 def test_compact_retry_preserves_visual_detail_and_entity_capacity(schema_name):
     step = lmstudio_pipeline.load("extract")
     schema = getattr(step, schema_name)
@@ -111,19 +111,19 @@ def test_compact_retry_leaves_unrelated_fields_and_stricter_limits_intact():
     assert lmstudio_json._qwen35_compact_schema(schema) == schema
 
 
-def test_merge_retry_can_return_more_than_three_entities(monkeypatch):
+def test_extraction_retry_can_return_more_than_three_entities(monkeypatch):
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     step = lmstudio_pipeline.load("extract")
     result = {"chapter_summary": "A gathering.", "characters": [
         {"canonical_name": f"Person {i}"} for i in range(8)
     ], "locations": [], "objects": []}
     client, create = client_for(Stream(['{"characters":']), Stream([json.dumps(result)]))
-    assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", step.MERGE_SCHEMA, 0.2, 8192) == result
+    assert lmstudio_json.chat_json(client, "qwen3.5", "system", "user", step.CHUNK_SCHEMA, 0.2, 8192) == result
     retry = create.call_args.kwargs["response_format"]["json_schema"]
     assert "maxItems" not in retry["schema"]["properties"]["characters"]
 
 
-@pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA", "MERGE_SCHEMA"])
+@pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA"])
 @pytest.mark.parametrize("kind", ["characters", "locations", "objects"])
 @pytest.mark.parametrize("invalid", [{}, {"canonical_name": ""}, {"canonical_name": " \t\n"}, {"canonical_name": None}])
 def test_blank_name_requests_correction(monkeypatch, schema_name, kind, invalid):

@@ -161,26 +161,21 @@ def test_standalone_without_comfy(monkeypatch):
     assert run() == [1, 2]
 
 
-def test_merge_batches_report_progress_on_fresh_and_cached_runs(bars, tmp_path, monkeypatch):
-    step = lmstudio_pipeline.load("extract")
-    args = SimpleNamespace(merge_batch_size=2, force=False, temperature=0.1, max_tokens=3000)
+def test_identity_batches_report_progress_on_fresh_and_cached_runs(bars, tmp_path, monkeypatch):
+    from tests.test_chapter_reference_identity import job, run as consolidate
+    jobs = [job(i, f"Person {i} waits.", f"Person {i}") for i in range(1, 10)]
     calls = []
-
-    def merge(*unused):
+    def reply(*unused):
         calls.append(True)
-        return {"chapter_summary": "summary", "characters": [], "locations": [], "objects": []}
-
-    monkeypatch.setattr(step, "merge_candidates", merge)
-
+        return {"groups": []}
     @progress.node_progress
     def run():
-        return step.hierarchical_merge_candidates(None, "model", "chapter", [{}] * 5, args, tmp_path)
-
+        return consolidate(tmp_path, monkeypatch, jobs, reply)[0]
     first = run()
-    assert len(calls) == 6  # Three batches, then two, then one final merge.
-    assert bars[0].values == [0, 16, 33, 50, 66, 83, 99, 100]
-    assert run() == first
-    assert len(calls) == 6
+    assert len(calls) == 2
+    assert bars[0].values[0] == 0 and bars[0].values[-1] == 100
+    assert len(bars[0].values) >= 4 and bars[0].values == sorted(bars[0].values)
+    assert run() == first and len(calls) == 2
     assert bars[1].values == bars[0].values
 
 
