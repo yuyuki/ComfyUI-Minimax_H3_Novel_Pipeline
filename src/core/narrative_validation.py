@@ -65,8 +65,14 @@ Do not report mutually contradictory requirements; check each criticism against 
 Original source outranks generated states: do not demand continuity with an erroneous
 earlier state. Distinguish body orientation from head position and gaze; compatible
 descriptions are not contradictions. Preserve source-supported ongoing motion.
-For extraction, target is always 1. Review only the supplied phase and earlier identity
-context; never infer future events. Check observations against that phase, not prior facts.
+For extraction, target is always 1. Review only source_input.text, never infer future
+events or require adaptation phase states. Check the extraction against that source.
+Check chunk_summary and every generated description use the source narration's language;
+English JSON keys never justify English prose for French source. Preserve proper names
+and quoted foreign-language dialogue. Report language mismatches as concrete defects.
+Locations must be places/spaces, not positions or orientations of objects or people.
+Spatial properties belong to the relevant entity's chapter_state/chapter_appearance.
+Write review messages in English, preserving source quotations in their original language.
 Return issues as target/message pairs, or an empty list when no supported defect remains.
 """
 

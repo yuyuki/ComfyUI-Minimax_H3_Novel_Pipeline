@@ -44,7 +44,7 @@ screen-space (dependent on camera). Camera movements or cuts can change screen
 placement without moving an actor. Preserve immutable location geometry,
 object anchoring, possession, facing and interactions; do not teleport actors.
 The target sequence's source and adaptation are authoritative for actions and
-visibility. first_sequence/first_phase mark the first source observation, not
+visibility. first_sequence marks the first source observation, not
 physical creation. Earlier placement inferred from later evidence must remain
 inferred and offscreen until the source reveals it. Never label future evidence
 as an explicit current fact. Keep distinct instances (such as a lost torch and

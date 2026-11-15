@@ -66,7 +66,8 @@ def test_node_uses_selection_without_model_or_cache(tmp_path, monkeypatch):
     assert json.loads(open(saved, encoding='utf-8').read()) == result
     assert not list((tmp_path / 'output').rglob('.cache'))
     assert 'cinematic_chapters' not in inspect.signature(Generator.run).parameters
-    assert set(Generator.INPUT_TYPES()['required']) == {'character_profiles', 'chapter_selection', 'lmstudio_config', 'out_dir'}
+    assert set(Generator.INPUT_TYPES()['required']) == {'character_profiles', 'chapter_selection', 'lmstudio_config'}
+    assert Generator.INPUT_TYPES()['optional']['out_dir'][1]['default'] == 'character_visual_profiles'
 
 
 def test_cross_chapter_traits_and_temporary_exclusion(tmp_path, monkeypatch):

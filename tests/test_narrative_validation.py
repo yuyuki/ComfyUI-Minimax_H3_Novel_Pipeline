@@ -257,56 +257,50 @@ def test_cancellation_before_review_prevents_request(monkeypatch):
 
 
 @pytest.mark.parametrize("persistent_defect", [False, True])
-def test_phase_repair_identity_speech_and_cache(tmp_path, monkeypatch, persistent_defect):
+def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persistent_defect):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     output = tmp_path / "catalogs"
     output.mkdir()
-    chapter = {"chapter_name": "scene", "sequences": [{"sequence": 1, "source": "Not sent to extraction.",
-               "adaptation": {"initialState": "Mara hangs from her rope.",
-                              "event": "Mara, called Vale, shouts. A basket descends on another rope.",
-                              "endingState": "Mara holds the basket beside her own rope."}}]}
+    chapter = {"chapter_name": "scene", "sequences": [{"sequence": 1,
+               "source": "Mara, called Vale, shouts. A basket descends on another rope.",
+               "adaptation": {"initialState": "NOT EXTRACTION INPUT", "event": "NOT EXTRACTION INPUT",
+                              "endingState": "NOT EXTRACTION INPUT"}}]}
     args = SimpleNamespace(chunk_chars=4000, temperature=0.1, max_tokens=2000, force=False)
     calls, reviews = [], []
 
     def chat(client, model, system, prompt, schema, *rest):
         data = json.loads(prompt)
-        if schema == nc.PROPOSAL_SCHEMA:
-            return proposal_response()
+        assert "NOT EXTRACTION INPUT" not in prompt
         if schema == nv.SCHEMA:
             reviews.append(data)
-            assert "Not sent" not in prompt
+            assert data["source_input"]["text"] == chapter["sequences"][0]["source"]
             rejected = data["extraction"]["chunk_summary"] == "bad"
             return {"issues": [{"target": 1, "message": "Separate the basket rope from the support rope."}]
                     if rejected else []}
-        if schema == cr.LOCAL_LINK_SCHEMA:
-            return {"links": []}
+        if schema == cr.chapter_reference_identity.SCHEMA:
+            assert data["source_passages"][0]["text"] == chapter["sequences"][0]["source"]
+            return {"groups": []}
+        assert schema == cr.lmstudio_pipeline.load("extract").CHUNK_SCHEMA
         calls.append(data)
-        phase_input = data.get("phase_input", data)
-        phase = phase_input["phase"]
-        bad = phase == "event" and (persistent_defect or "defects_to_correct" not in data)
+        bad = persistent_defect or "defects_to_correct" not in data
         return {"chunk_summary": "bad" if bad else "", "locations": [],
-                "characters": [{"canonical_name": "Mara", "aliases": ["Vale"] if phase == "event" else [],
-                                "speaks": phase == "event"}],
-                "objects": [{"canonical_name": "support rope" if phase == "initialState" else "basket rope",
-                             "aliases": ["rope"], "chapter_state": phase_input["text"]}]}
+                "characters": [{"canonical_name": "Mara", "aliases": ["Vale"], "speaks": True}],
+                "objects": [{"canonical_name": name, "aliases": ["rope"]}
+                            for name in ("support rope", "basket rope")]}
 
     monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json", chat)
     saved = cr.process_chapter(chapter, output, None, "mock", args, "scene")
     catalog = util.load_json(saved)
-    assert len(catalog["objects"]) == 2  # Shared alias must not merge physical objects.
+    assert len(catalog["objects"]) == 2
     person = catalog["characters"][0]
     assert person["speaks"] is True and person["aliases"] == ["Vale"]
-    states = person["state_by_sequence"]["1"]
-    assert states["initialState"][0]["speaks"] is False
-    assert states["endingState"][0]["speaks"] is False
-    assert bool(catalog["narrative_review"]["extraction_issues"]) == persistent_defect
-    assert len(calls) == (5 if persistent_defect else 4)
-    assert len(reviews) == (5 if persistent_defect else 4)
-    assert "basket" not in json.dumps(reviews[0])
+    assert list(person["state_by_sequence"]["1"]) == ["source"]
+    assert "extraction_issues" not in catalog["narrative_review"]
+    diagnostics = util.load_json(output / "scene_references.diagnostics.json")
+    assert diagnostics["status"] == ("issues" if persistent_defect else "passed")
+    assert len(calls) == len(reviews) == (3 if persistent_defect else 2)
     cr.process_chapter(chapter, output, None, "mock", args, "scene")
-    assert bool(catalog["narrative_review"]["extraction_issues"]) == persistent_defect
-    assert len(calls) == (5 if persistent_defect else 4)
-    assert len(reviews) == (5 if persistent_defect else 4)
+    assert len(calls) == len(reviews) == (3 if persistent_defect else 2)
 
 
 def proposal_response():

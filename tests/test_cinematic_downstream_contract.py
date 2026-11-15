@@ -81,18 +81,18 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
     loaded, _ = LoadCinematicChaptersNode().run(str(saved.parent))
     assert loaded == direct
     chapters = loaded if reload_file else direct
-    phase_inputs = []
+    source_inputs = []
 
     def extract_chat(client, model, system, user, schema, *args):
-        phase_inputs.append(json.loads(user))
+        source_inputs.append(json.loads(user))
         return {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
 
     monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", extract_chat)
     catalogs, _ = ExtractChapterReferencesNode().run(config, chapters, **defaults(ExtractChapterReferencesNode))["result"]
     sequences = chapters[0]["sequences"]
-    assert [(p["sequence"], p["phase"], p["text"]) for p in phase_inputs] == [
-        (seq["sequence"], phase, seq["adaptation"][phase])
-        for seq in sequences for phase in ("initialState", "event", "endingState")]
+    assert [(p["sequence"], p["text"]) for p in source_inputs] == [
+        (seq["sequence"], seq["source"].strip()) for seq in sequences]
+    assert all("phase" not in p for p in source_inputs)
     assert catalogs[0]["sequences"] == sequences
     registry, _ = ConsolidateReferencesNode().run(catalogs, config, **defaults(ConsolidateReferencesNode))["result"]
     assert registry["chapter_timelines"]["chapter"]["sequences"] == sequences

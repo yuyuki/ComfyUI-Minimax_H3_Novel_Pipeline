@@ -1,7 +1,6 @@
 """Timeline boundaries are enforced before mocked model extraction."""
 from copy import deepcopy
 from contextlib import nullcontext
-import argparse
 import json
 
 import pytest
@@ -13,15 +12,26 @@ from minimax_h3_novel_pipeline.nodes.load_cinematic_chapters import LoadCinemati
 
 def chapter(name="chapter"):
     return {"chapter_name": name, "source_file": "/not/read.txt", "sequences": [
-        {"sequence": 1, "source": "Original supporting text mentions a torch later.", "adaptation": {
+        {"sequence": 1, "source": "Indy hangs from a rope.", "adaptation": {
             "initialState": "Indy hangs from a rope.", "event": "Indy waits.", "endingState": "Indy hangs."}},
-        {"sequence": 2, "source": "Throwing.", "adaptation": {
+        {"sequence": 2, "source": "Doriane throws a torch toward Indy.", "adaptation": {
             "initialState": "Indy hangs.", "event": "Doriane throws a torch toward Indy.",
             "endingState": "The torch is in flight."}},
-        {"sequence": 3, "source": "Catching.", "adaptation": {
+        {"sequence": 3, "source": "Indy catches the torch.", "adaptation": {
             "initialState": "The torch is in flight.", "event": "Indy catches the torch.",
             "endingState": "Indy holds the torch."}},
     ]}
+
+
+def identity_reply(data):
+    grouped = {}
+    for entity in data["entities"]:
+        key = (entity["entity_type"], " ".join(entity["canonical_name"].split()).casefold())
+        grouped.setdefault(key, []).append(entity)
+    return {"groups": [{"member_ids": [e["id"] for e in entries],
+                        "canonical_name": entries[0]["canonical_name"], "aliases": [],
+                        "source_quotes": [data["source_passages"][0]["text"]]}
+                       for entries in grouped.values() if len(entries) > 1]}
 
 
 @pytest.fixture
@@ -34,9 +44,9 @@ def execution(tmp_path, monkeypatch):
         data = json.loads(user)
         if schema["name"] == "narrative_semantic_review":
             return {"issues": []}
-        if "sequence" not in data:
-            return {"links": [{"local_id": entity["local_id"], "link_to_local_id": None}
-                              for entities in data.values() for entity in entities]}
+        if schema["name"] == "chapter_reference_identity":
+            return identity_reply(data)
+        assert schema == lmstudio_pipeline.load("extract").CHUNK_SCHEMA
         calls.append(data)
         result = {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
         for name, kind in (("Indy", "characters"), ("Doriane", "characters"), ("torch", "objects")):
@@ -50,7 +60,7 @@ def execution(tmp_path, monkeypatch):
     return calls, params, {"api_url": "http://localhost:1234/v1", "run_folder": "20261003120000"}
 
 
-def test_multiple_chapters_ordered_phases_and_identity(execution):
+def test_multiple_chapters_ordered_sources_and_identity(execution):
     calls, params, config = execution
     chapters = [chapter(), chapter("second")]
     original = deepcopy(chapters)
@@ -60,23 +70,22 @@ def test_multiple_chapters_ordered_phases_and_identity(execution):
     assert chapters == original
     assert len(result) == 2
     assert [c["chapter_id"] for c in result] == ["chapter", "second"]
-    assert [(c["sequence"], c["phase"]) for c in calls[:9]] == [
-        (i, p) for i in (1, 2, 3) for p in cr.PHASES]
+    assert [c["sequence"] for c in calls] == [1, 2, 3, 1, 2, 3]
+    assert [c["text"] for c in calls] == [s["source"] for c in chapters for s in c["sequences"]]
+    assert all("phase" not in c and "known_references" not in c for c in calls)
     assert all("torch" not in c["text"] for c in calls if c["sequence"] == 1)
     for catalog in result:
         assert "chapter_summary" not in catalog
         assert catalog["sequences"] == chapters[0]["sequences"]
         torch = catalog["objects"][0]
         assert torch["first_sequence"] == 2
-        assert torch["first_phase"] == "event"
+        assert "first_phase" not in torch
         states = torch["state_by_sequence"]
-        assert "1" not in states and "initialState" not in states["2"]
-        assert "throws" in states["2"]["event"][0]["chapter_state"]
-        assert "in flight" in states["3"]["initialState"][0]["chapter_state"]
-        assert "catches" in states["3"]["event"][0]["chapter_state"]
-        assert "holds" in states["3"]["endingState"][0]["chapter_state"]
+        assert "1" not in states and list(states["2"]) == ["source"]
+        assert "throws" in states["2"]["source"][0]["chapter_state"]
+        assert "catches" in states["3"]["source"][0]["chapter_state"]
         assert torch["chapter_state"] == ""
-        assert torch["link_to_local_id"] is None
+        assert "link_to_local_id" not in torch
         indy = [e for e in catalog["characters"] if e["canonical_name"] == "Indy"]
         assert len(indy) == 1
         assert list(indy[0]["state_by_sequence"]) == ["1", "2", "3"]
@@ -86,7 +95,10 @@ def test_multiple_chapters_ordered_phases_and_identity(execution):
     assert len(calls) == count
     chapters[0]["sequences"][0]["adaptation"]["event"] = "Indy shouts."
     ExtractChapterReferencesNode().run(config, chapters, **params)
-    assert len(calls) > count
+    assert len(calls) == count
+    chapters[0]["sequences"][0]["source"] = "Indy shouts."
+    ExtractChapterReferencesNode().run(config, chapters, **params)
+    assert len(calls) == count + 1
 
 
 @pytest.mark.parametrize("mutate", [
@@ -126,8 +138,7 @@ def test_extraction_resumes_from_saved_cinematic_chapter(execution, tmp_path):
     loaded, _ = LoadCinematicChaptersNode().run("previous")
     results, _ = ExtractChapterReferencesNode().run(config, loaded, **params)["result"]
     assert results[0]["sequences"] == value["sequences"]
-    assert [(c["sequence"], c["phase"]) for c in calls] == [
-        (i, phase) for i in (1, 2, 3) for phase in cr.PHASES]
+    assert [c["sequence"] for c in calls] == [1, 2, 3]
 
 
 def test_old_completed_catalog_cache_is_regenerated(execution, tmp_path):
@@ -142,28 +153,21 @@ def test_old_completed_catalog_cache_is_regenerated(execution, tmp_path):
     assert regenerated[0]["characters"] == result[0]["characters"]
 
 
-def test_catalog_without_summary_reuses_phase_cache(execution, tmp_path):
+def test_old_catalog_reuses_source_chunk_cache(execution, tmp_path):
     calls, params, config = execution
     node = ExtractChapterReferencesNode()
     result, _ = node.run(config, [chapter()], **params)["result"]
     saved, = list(tmp_path.rglob("chapter_references.json"))
-    step = lmstudio_pipeline.load("extract")
-    args = argparse.Namespace(
-        chunk_chars=params["chunk_chars"], temperature=params["temperature"],
-        max_tokens=params["max_tokens"], force=params["force"], base_url=config["api_url"],
-    )
-    old_key = cr.fingerprint(
-        "mock", args, cr.TEMPORAL_VERSION, step.EXTRACT_SYSTEM + "\n" + cr.PHASE_SYSTEM,
-        step.CHUNK_SCHEMA, chapter(), client=None,
-    )
-    util.save_json(saved, {**result[0], "cache_key": old_key, "chapter_summary": ""})
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    diagnostic.unlink()
+    util.save_json(saved, {**result[0], "cache_key": "obsolete-phase-cache", "chapter_summary": ""})
     count = len(calls)
 
     regenerated, _ = node.run(config, [chapter()], **params)["result"]
 
     assert regenerated == result
     assert "chapter_summary" not in util.load_json(saved)
-    assert regenerated[0]["cache_key"] != old_key
+    assert "cache_key" not in regenerated[0]
     assert len(calls) == count
 
 
@@ -176,71 +180,12 @@ def test_catalog_schema_is_copied_and_validates_local_links(execution, tmp_path)
     cr.validate_document(results[0], schema, "chapter_references.json")
 
 
-def test_local_link_review_connects_descriptive_reference(monkeypatch):
-    catalog = {
-        "characters": [
-            {"local_id": "CHAR_001", "canonical_name": "Doriane", "aliases": [],
-             "stable_visual_description": "", "evidence": ["Doriane cries."], "state_by_sequence": {"1": {}}},
-            {"local_id": "CHAR_002", "canonical_name": "someone screaming", "aliases": [],
-             "stable_visual_description": "", "evidence": ["Someone screams; it is Doriane."], "state_by_sequence": {"1": {}}},
-        ],
-        "locations": [],
-        "objects": [],
-    }
-    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", lambda *args: {"links": [
-        {"local_id": "CHAR_001", "link_to_local_id": None},
-        {"local_id": "CHAR_002", "link_to_local_id": "CHAR_001"},
-    ]})
-
-    cr.assign_local_links(catalog, None, "mock", argparse.Namespace(temperature=0.18, max_tokens=8192))
-
-    assert catalog["characters"][0]["link_to_local_id"] is None
-    assert catalog["characters"][1]["link_to_local_id"] == "CHAR_001"
-
-
-def test_local_link_review_defaults_omitted_entities_to_null(monkeypatch):
-    catalog = {
-        "characters": [
-            {"local_id": "CHAR_001", "canonical_name": "Doriane", "aliases": [],
-             "stable_visual_description": "", "evidence": [], "state_by_sequence": {"1": {}}},
-            {"local_id": "CHAR_002", "canonical_name": "someone screaming", "aliases": [],
-             "stable_visual_description": "", "evidence": [], "state_by_sequence": {"1": {}}},
-        ],
-        "locations": [],
-        "objects": [],
-    }
-    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", lambda *args: {"links": [
-        {"local_id": "CHAR_002", "link_to_local_id": "CHAR_001"},
-    ]})
-
-    cr.assign_local_links(catalog, None, "mock", argparse.Namespace(temperature=0.18, max_tokens=8192))
-
-    assert catalog["characters"][0]["link_to_local_id"] is None
-    assert catalog["characters"][1]["link_to_local_id"] == "CHAR_001"
-
-
-def test_identity_context_contains_only_prior_observations(execution):
-    calls, params, config = execution
-    ExtractChapterReferencesNode().run(config, [chapter()], **params)
-    assert all(not entities for entities in calls[0]["known_references"].values())
-    for call in calls:
-        context = call["known_references"]
-        if call["sequence"] == 1:
-            assert "torch" not in json.dumps(context)
-        if call["sequence"] == 2 and call["phase"] == "event":
-            assert context["objects"] == []
-            assert context["characters"][0]["canonical_name"] == "Indy"
-        if call["sequence"] == 3 and call["phase"] == "event":
-            assert context["objects"][0]["canonical_name"] == "torch"
-            assert "catches" not in json.dumps(context)
-
-
 @pytest.mark.parametrize("period", ["", "  1925  ", "France, fin du XIXe siècle"])
 def test_default_temporal_context_persistence_and_cache(execution, tmp_path, period):
     calls, params, config = execution
     node = ExtractChapterReferencesNode()
     source = chapter()
-    source["sequences"][0]["adaptation"]["initialState"] = "In 1810, Indy hangs from a rope."
+    source["sequences"][0]["source"] = "In 1810, Indy hangs from a rope."
     original = deepcopy(source)
     results, _ = node.run(config, [source], default_temporal_context=period, **params)["result"]
     assert results[0]["default_temporal_context"] == period.strip()
@@ -254,7 +199,7 @@ def test_default_temporal_context_persistence_and_cache(execution, tmp_path, per
     assert len(calls) == count
     changed, _ = node.run(config, [source], default_temporal_context="2040", **params)["result"]
     assert len(calls) > count
-    assert changed[0]["cache_key"] != results[0]["cache_key"]
+    assert "cache_key" not in changed[0]
     assert changed[0]["source"] == results[0]["source"]
 
 
@@ -263,3 +208,107 @@ def test_invalid_temporal_context_rejected_before_model_work(execution):
     with pytest.raises(ValueError, match="must be a string"):
         ExtractChapterReferencesNode().run(config, [chapter()], default_temporal_context=1925, **params)
     assert calls == []
+
+
+def test_type_name_index_preserves_alias_variants(execution, monkeypatch):
+    _, params, config = execution
+    responses = iter([
+        {"characters": [{"canonical_name": "Indy", "aliases": ["Henry"]}], "locations": [],
+         "objects": [{"canonical_name": "la torche", "aliases": ["flambeau"], "evidence": ["first"]}]},
+        {"characters": [{"canonical_name": "Henry", "aliases": ["Indy"]}], "locations": [],
+         "objects": [{"canonical_name": " LA  TORCHE ", "aliases": [], "evidence": ["second"]}]},
+        {"characters": [], "locations": [{"canonical_name": "la torche", "aliases": []}],
+         "objects": [{"canonical_name": "flambeau", "aliases": ["la torche"]}]},
+    ])
+    def chat(client, model, system, user, schema, *args):
+        if schema["name"] == "narrative_semantic_review":
+            return {"issues": []}
+        if schema["name"] == "chapter_reference_identity":
+            return identity_reply(json.loads(user))
+        assert schema == lmstudio_pipeline.load("extract").CHUNK_SCHEMA
+        return {"chunk_summary": "", **next(responses)}
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", chat)
+    results, _ = ExtractChapterReferencesNode().run(config, [chapter()], **params)["result"]
+    result, = results
+    assert len(result["characters"]) == 2 and len(result["objects"]) == 2 and len(result["locations"]) == 1
+    assert result["objects"][0]["evidence"] == ["first", "second"]
+    assert all("link_to_local_id" not in e for k in ("characters", "locations", "objects") for e in result[k])
+
+
+@pytest.mark.parametrize("failure", [ValueError("private response"), RuntimeError("private response"), {"issues": "broken"}])
+def test_advisory_failure_keeps_extraction_and_retries(execution, monkeypatch, tmp_path, failure):
+    _, params, config = execution
+    original = lmstudio_pipeline.load("extract").chat_json
+    count = []
+    def chat(client, model, system, user, schema, *args):
+        if schema["name"] == "narrative_semantic_review":
+            count.append(1)
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+        return original(client, model, system, user, schema, *args)
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", chat)
+    node = ExtractChapterReferencesNode()
+    result, _ = node.run(config, [chapter()], **params)["result"]
+    assert result[0]["characters"] and "cache_key" not in result[0]
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    data = util.load_json(diagnostic)
+    assert data["status"] == "incomplete" and all(c["status"] == "incomplete" for c in data["checks"])
+    assert "private response" not in diagnostic.read_text(encoding="utf-8")
+    node.run(config, [chapter()], **params)
+    assert len(count) == 6
+
+
+@pytest.mark.parametrize("failure", [OSError("disk"), KeyboardInterrupt()])
+def test_integrity_and_cancellation_propagate(execution, monkeypatch, failure):
+    _, params, config = execution
+    original = lmstudio_pipeline.load("extract").chat_json
+    def chat(client, model, system, user, schema, *args):
+        if schema["name"] == "narrative_semantic_review":
+            raise failure
+        return original(client, model, system, user, schema, *args)
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", chat)
+    with pytest.raises(type(failure)):
+        ExtractChapterReferencesNode().run(config, [chapter()], **params)
+
+
+def test_diagnostics_preserve_editable_choices(execution, narrative_review, tmp_path):
+    _, params, config = execution
+    value = chapter()
+    value["narrative_review"] = {**narrative_review, "warnings": [{"reason": "incomplete"}]}
+    value["sequences"][0]["review"] = {"status": "incomplete"}
+    results, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
+    assert results[0]["narrative_review"]["issues"] == narrative_review["issues"]
+    assert "warnings" not in results[0]["narrative_review"]
+    assert "review" not in results[0]["sequences"][0]
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    assert util.load_json(diagnostic)["sequence_reviews"][0]["review"]["status"] == "incomplete"
+
+
+def test_language_and_spatial_defects_are_corrected(execution, monkeypatch, tmp_path):
+    _, params, config = execution
+    value = chapter()
+    value["sequences"] = value["sequences"][:1]
+    value["sequences"][0]["source"] = "Indy tient une torche inclinee vers le bas."
+    calls = []
+    def chat(client, model, system, user, schema, *args):
+        data = json.loads(user)
+        if schema["name"] == "narrative_semantic_review":
+            assert "chunk_summary" in system and "source narration" in system
+            bad = data["extraction"]["chunk_summary"] == "English summary."
+            return {"issues": [{"target": 1, "message": "Use French prose; orientation is an object property."}] if bad else []}
+        calls.append(data)
+        assert "Locations are actual places" in system and "exclusively" in system
+        corrected = "defects_to_correct" in data
+        entity = {"canonical_name": "la torche", "aliases": [], "chapter_state": "inclinee vers le bas"}
+        return {"chunk_summary": "La torche est inclinee." if corrected else "English summary.",
+                "characters": [], "locations": [] if corrected else [entity],
+                "objects": [entity] if corrected else []}
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", chat)
+    results, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
+    assert len(calls) == 2
+    assert results[0]["locations"] == [] and len(results[0]["objects"]) == 1
+    cache, = tmp_path.rglob(".cache/*/*.json")
+    assert util.load_json(cache)["extraction"]["chunk_summary"] == "La torche est inclinee."
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    assert util.load_json(diagnostic)["status"] == "passed"

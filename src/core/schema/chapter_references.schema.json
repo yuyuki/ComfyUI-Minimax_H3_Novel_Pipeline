@@ -5,8 +5,7 @@
   "properties": {
     "default_temporal_context": {"type": "string", "description": "User-supplied date or era fallback; explicit narrative timing takes precedence. Not source evidence."},
     "schema_version": {"const": "minimax-h3-novel-refs.chapter.v4"},
-    "timeline_version": {"const": "cinematic-reference-timeline.v1"},
-    "cache_key": {"type": "string", "minLength": 1},
+    "timeline_version": {"const": "cinematic-reference-source.v1"},
     "chapter_id": {"type": "string", "minLength": 1},
     "chapter_name": {"type": "string", "minLength": 1},
     "source": {
@@ -22,9 +21,7 @@
     "narrative_review": {
       "type": "object",
       "properties": {
-        "issues": {"type": "array", "items": {"type": "object"}},
-        "warnings": {"type": "array", "items": {"type": "object"}},
-        "extraction_issues": {"type": "array", "items": {"type": "object"}}
+        "issues": {"type": "array", "items": {"type": "object"}}
       },
       "required": ["issues"],
       "additionalProperties": false
@@ -33,14 +30,14 @@
     "locations": {"type": "array", "items": {"$ref": "#/$defs/location"}},
     "objects": {"type": "array", "items": {"$ref": "#/$defs/object"}}
   },
-  "required": ["schema_version", "timeline_version", "cache_key", "chapter_id", "chapter_name", "source", "sequences", "characters", "locations", "objects"],
+  "required": ["schema_version", "timeline_version", "chapter_id", "chapter_name", "source", "sequences", "characters", "locations", "objects"],
   "additionalProperties": false,
   "$defs": {
     "entity": {
       "type": "object",
+      "not": {"anyOf": [{"required": ["link_to_local_id"]}, {"required": ["first_phase"]}]},
       "properties": {
         "local_id": {"type": "string", "minLength": 1},
-        "link_to_local_id": {"type": ["string", "null"], "default": null},
         "canonical_name": {"type": "string", "minLength": 1},
         "aliases": {"type": "array", "items": {"type": "string"}},
         "stable_visual_description": {"type": "string"},
@@ -50,10 +47,16 @@
         "reference_view_hints": {"type": "array", "items": {"type": "string"}},
         "evidence": {"type": "array", "items": {"type": "string"}},
         "first_sequence": {"type": "integer", "minimum": 1},
-        "first_phase": {"enum": ["initialState", "event", "endingState"]},
-        "state_by_sequence": {"type": "object", "minProperties": 1}
+        "state_by_sequence": {
+          "type": "object", "minProperties": 1,
+          "propertyNames": {"pattern": "^[1-9][0-9]*$"},
+          "additionalProperties": {
+            "type": "object", "required": ["source"], "additionalProperties": false,
+            "properties": {"source": {"type": "array", "minItems": 1, "items": {"type": "object"}}}
+          }
+        }
       },
-      "required": ["local_id", "link_to_local_id", "canonical_name", "aliases", "first_sequence", "first_phase", "state_by_sequence"]
+      "required": ["local_id", "canonical_name", "aliases", "first_sequence", "state_by_sequence"]
     },
     "character": {
       "allOf": [

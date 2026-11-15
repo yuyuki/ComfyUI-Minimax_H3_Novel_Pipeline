@@ -609,7 +609,7 @@ def test_invalid_design_import_fails_before_model_work(output_root, monkeypatch,
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", unexpected)
     params = {**node_defaults(ConsolidateReferencesNode), "visual_designs_path": path}
     chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
-               "source": {}, "timeline_version": "cinematic-reference-timeline.v1",
+               "source": {}, "timeline_version": "cinematic-reference-source.v1",
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
@@ -690,7 +690,7 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
                   qwen35_top_k=20, qwen35_min_p=0, qwen35_repeat_penalty=1.05,
                   run_folder=run_output.reserve_run())
     chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
-               "source": {"file": "chapter.txt"}, "timeline_version": "cinematic-reference-timeline.v1",
+               "source": {"file": "chapter.txt"}, "timeline_version": "cinematic-reference-source.v1",
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}

@@ -8,6 +8,20 @@ by later entries.
 
 ## Unreleased
 
+- Remove obsolete chapter-reference local links, first-phase fields and phase-based
+  readers/tests. Require source-only catalogs through consolidation and H3, reject
+  older outputs without migration, and update associated documentation and agent
+  rules without changing the project version.
+
+- Extract chapter references from sequence source text only, then consolidate local
+  identities using ordered source windows and validated, source-quoted merge groups.
+  Keep generic-name occurrences separate until confirmed, cache identity decisions
+  independently, retain incomplete diagnostics on model failures, and preserve all
+  original observations through consolidation and H3. Remove obsolete local links,
+  strengthen source-language and location classification rules, and save extraction
+  reviews/cache metadata in separate diagnostics. Update agent guidance and offline
+  regressions without changing the project version.
+
 - Verify current cinematic chapter output across loading, extraction,
   consolidation, spatial continuity and H3 input preparation with offline
   integration tests for direct and saved inputs, including incomplete reviews

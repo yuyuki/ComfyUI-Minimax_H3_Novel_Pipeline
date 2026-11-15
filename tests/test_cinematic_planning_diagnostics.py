@@ -110,9 +110,9 @@ def test_every_validation_attempt_is_recorded_even_when_retry_recovers(monkeypat
     assert cr.parse_chapters([result])[0] == result
     exported = downstream_chapter(result)
     catalog = {"schema_version": "minimax-h3-novel-refs.chapter.v4", "timeline_version": cr.TEMPORAL_VERSION,
-               "cache_key": "test", "chapter_id": "chapter", "chapter_name": "Chapter",
+               "chapter_id": "chapter", "chapter_name": "Chapter",
                "source": {"file": "chapter.txt", "sha256": "test"}, "sequences": result["sequences"],
-               "narrative_review": {**exported["narrative_review"], "extraction_issues": []},
+               "narrative_review": {"issues": exported["narrative_review"]["issues"]},
                "characters": [], "locations": [], "objects": []}
     Draft202012Validator(cr.CATALOG_SCHEMA).validate(catalog)
     saved = snapshots[-1]

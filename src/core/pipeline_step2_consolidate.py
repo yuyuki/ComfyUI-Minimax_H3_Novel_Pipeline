@@ -336,26 +336,8 @@ def reconcile_chapter(
     args: argparse.Namespace,
 ) -> list[dict[str, Any]]:
     validate_catalogs([chapter])
-    raw = incoming_entities(chapter)
+    incoming = incoming_entities(chapter)
     sources = {e["local_id"]: e for kind in ("characters", "locations", "objects") for e in chapter[kind]}
-    incoming = [item for item in raw if sources[item["local_id"]]["link_to_local_id"] is None]
-    by_id = {item["local_id"]: item for item in incoming}
-    groups = {lid: [sources[lid]] for lid in by_id}
-    for item in raw:
-        target = sources[item["local_id"]]["link_to_local_id"]
-        if target is None:
-            continue
-        main = by_id[target]
-        groups[target].append(sources[item["local_id"]])
-        main["aliases"] = dedupe(main["aliases"] + [item["canonical_name"]] + item["aliases"], 50)
-        main["stable_observations"].extend(item["stable_observations"])
-        for field in ("distinguishing_features", "reference_view_hints"):
-            main[field] = dedupe(main[field] + item[field], 50)
-        for field in ("stable_visual_description", "voice_description"):
-            main[field] = "\n".join(dict.fromkeys(value for value in (main[field], item[field]) if value))
-        main["speaks"] = main["speaks"] or item["speaks"]
-        main["importance"] = stronger(main["importance"], item["importance"], IMPORTANCE_ORDER)
-        main["reference_priority"] = stronger(main["reference_priority"], item["reference_priority"], PRIORITY_ORDER)
     if not incoming:
         return registry
     candidates = candidate_catalog(incoming, registry, args.candidate_count, args.include_all_below)
@@ -422,11 +404,8 @@ def reconcile_chapter(
             if src not in e["source_entities"]:
                 e["source_entities"].append(src)
 
-        for source in groups[item["local_id"]]:
-            address = {"chapter_id": chapter["chapter_id"], "local_id": source["local_id"]}
-            if address not in e["source_entities"]:
-                e["source_entities"].append(address)
-            merge_timeline(e, {chapter["chapter_id"]: source["state_by_sequence"]})
+        source = sources[item["local_id"]]
+        merge_timeline(e, {chapter["chapter_id"]: source["state_by_sequence"]})
 
     return registry
 

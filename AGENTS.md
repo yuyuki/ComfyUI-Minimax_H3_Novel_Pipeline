@@ -74,7 +74,7 @@ All paths below are relative to `src/`:
 
 | Stage | Node wrapper | Bundled implementation |
 |---|---|---|
-| Extract | `nodes/extract_chapter_references.py` | `core/pipeline_step1_extract.py` |
+| Extract | `nodes/extract_chapter_references.py` | `core/cinematic_references.py` (shared helpers in `core/pipeline_step1_extract.py`) |
 | Consolidate | `nodes/consolidate_references.py` | `core/pipeline_step2_consolidate.py` |
 | Generate | `nodes/generate_h3_prompts.py` | `core/pipeline_step3_generate.py` |
 
@@ -84,6 +84,28 @@ Preserve existing node IDs and socket types for workflow compatibility.
 
 ## Behavior and security constraints
 
+- Reference extraction reads only `sequences[].source`, once per source chunk;
+  never extract references from `adaptation.initialState`, `event` or `endingState`.
+  Preserve source observations under `state_by_sequence[sequence].source` without
+  claiming adaptation phase timing. Keep cinematic adaptation and editable choices
+  available to downstream nodes; move technical reviews to the diagnostic sidecar.
+- Consolidate chapter-local identities after source extraction using ordered source
+  passages and validated, source-quoted LLM merge groups. Keep occurrences separate
+  until confirmed; identical generic names are not identity evidence. Preserve all
+  original observations losslessly at their sequence addresses. Cache identity
+  decisions independently from extraction and record incomplete decisions in diagnostics.
+  Do not emit or accept obsolete `link_to_local_id`, `first_phase` or extracted
+  adaptation-phase observations. Reject old catalogs and registries with a clear
+  re-extraction/reconsolidation message; do not convert them or add fallback readers.
+  Cross-chapter identity and alias reconciliation belong to consolidation; its audit
+  handles remaining duplicates and must stay enabled when that is required.
+- Locations are actual places/spaces, never positions or orientations of objects
+  or people. Spatial properties belong to the relevant entity's observations.
+  Keep distinct physical instances separate using source-supported qualified names.
+- Generate `chunk_summary`, names and descriptive prose in the source narration's
+  language. Review language fidelity as well as category correctness; preserve
+  proper names and verbatim foreign-language quotations. Keep JSON keys/enums fixed
+  and technical diagnostics in English.
 - All language-model work uses LM Studio's OpenAI-compatible API. Never add
   CLIP inputs, model loading or CLIP-dependent execution paths.
 - For every new LLM node, follow the existing stages: create the client through
@@ -130,9 +152,10 @@ Preserve existing node IDs and socket types for workflow compatibility.
 - `MANIFEST.in` must include the root entrypoint, runtime requirements,
   documentation, examples and browser JavaScript in the source distribution.
 - Install development tools with `python -m pip install -e ".[dev]"`.
-- Update `docs/architecture.md` only when incrementing `project.version` in
-  `pyproject.toml`; run `python tools/generate_architecture.py` as part of that
-  version bump.
+- Run `python tools/generate_architecture.py` when incrementing `project.version`
+  in `pyproject.toml`. Also update architecture descriptions and regenerate the map
+  when removing an obsolete contract, without requiring a project version bump;
+  obsolete documentation must not preserve removed behavior.
 - Run `python -m pytest`, `ruff check .`, and `python -m build` for layout or
   packaging changes. Pytest configuration lives only in `pyproject.toml`.
 - Add focused regression coverage for affected behavior; mock network work.

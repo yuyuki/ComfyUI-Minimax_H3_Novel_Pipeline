@@ -24,8 +24,8 @@ from .path_access import confined_path
 from .prompt_cache import fingerprint as cache_fingerprint
 from . import temporal_context
 from .character_visual_integration import sequence_context
-from .cinematic_references import PHASES, parse_chapters
-from .reference_timeline import state_at
+from .cinematic_references import parse_chapters
+from .reference_timeline import source_observations_at
 
 logger = logging.getLogger(__name__)
 
@@ -534,14 +534,14 @@ def selected_timeline(refs, chapter):
 
 
 def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> list[dict[str, Any]]:
-    """Expose only exact phase observations, never future or carried state."""
+    """Expose exact sequence source observations without inventing phase timing."""
     entities = entity_index(refs)
     result = []
     for item in chapter_catalog(refs, chapter_id):
         entity = entities[item["global_id"]]
-        phases = {phase: state_at(entity, chapter_id, sequence, phase) for phase in PHASES}
-        if any(phases.values()):
-            result.append({**item, "state_by_phase": phases})
+        source = source_observations_at(entity, chapter_id, sequence)
+        if source:
+            result.append({**item, "source_observations": source})
     return result
 
 

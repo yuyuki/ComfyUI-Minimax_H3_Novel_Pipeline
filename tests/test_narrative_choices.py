@@ -76,8 +76,10 @@ def test_file_edit_reloads_changes_extraction_cache_and_reaches_h3(tmp_path, mon
     output.mkdir()
     saved = cr.process_chapter(chapters[0], output, None, "mock", args, "chapter")
     first = util.load_json(saved)
-    assert len(calls) == 3
-    assert all(c["text"].startswith("B chosen") for c in calls)
+    assert len(calls) == 1
+    assert calls[0]["text"] == "He waits."
+    diagnostic = output / "chapter_references.diagnostics.json"
+    first_key = util.load_json(diagnostic)["cache_key"]
     assert "A chosen" not in json.dumps(calls)
     proposals = value["narrative_review"]["issues"][0]["proposals"]
     proposals[0]["selected"], proposals[1]["selected"] = True, False
@@ -86,9 +88,9 @@ def test_file_edit_reloads_changes_extraction_cache_and_reaches_h3(tmp_path, mon
     chapters, _ = loader.run(str(path))
     cr.process_chapter(chapters[0], output, None, "mock", args, "chapter")
     second = util.load_json(saved)
-    assert first["cache_key"] != second["cache_key"]
-    assert len(calls) == 6
-    assert all(c["text"].startswith("A chosen") for c in calls[3:])
+    assert first_key != util.load_json(diagnostic)["cache_key"]
+    assert "cache_key" not in first and "cache_key" not in second
+    assert len(calls) == 1  # Adaptation choices do not trigger source re-extraction.
     assert second["narrative_review"]["issues"] == value["narrative_review"]["issues"]
     refs = {"chapters": [{"chapter_id": "chapter", "source_file": str(path)}],
             "chapter_timelines": {"chapter": second}}

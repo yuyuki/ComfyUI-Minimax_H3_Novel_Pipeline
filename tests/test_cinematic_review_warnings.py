@@ -62,9 +62,9 @@ def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors
     assert "".join(s["source"] for s in result["sequences"]) == "A. B. C."
     assert cr.parse_chapters([result])[0] == result
     catalog = {"schema_version": "minimax-h3-novel-refs.chapter.v4", "timeline_version": cr.TEMPORAL_VERSION,
-               "cache_key": "test", "chapter_id": "chapter", "chapter_name": "Chapter",
+               "chapter_id": "chapter", "chapter_name": "Chapter",
                "source": {"file": "chapter.txt", "sha256": "test"}, "sequences": result["sequences"],
-               "narrative_review": {**result["narrative_review"], "extraction_issues": []},
+               "narrative_review": {"issues": result["narrative_review"]["issues"]},
                "characters": [], "locations": [], "objects": []}
     Draft202012Validator(cr.CATALOG_SCHEMA).validate(catalog)
 

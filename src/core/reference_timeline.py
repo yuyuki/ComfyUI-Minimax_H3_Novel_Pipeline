@@ -1,7 +1,7 @@
 """Lossless temporal storage, separate from model-consolidated reference identity."""
 from copy import deepcopy
 
-from .cinematic_references import PHASES, TEMPORAL_VERSION, parse_chapters
+from .cinematic_references import TEMPORAL_VERSION, parse_chapters
 from . import util
 
 
@@ -33,32 +33,18 @@ def validate_catalogs(chapters):
                 if not isinstance(lid, str) or not lid or lid in local_ids:
                     raise ValueError(f"{cid}: local IDs must be non-empty and unique.")
                 local_ids.add(lid)
+                if "link_to_local_id" in entity or "first_phase" in entity:
+                    raise ValueError(f"{cid}/{lid}: obsolete reference fields; re-extract the chapter.")
                 states = entity.get("state_by_sequence")
                 if not isinstance(states, dict) or not states:
                     raise ValueError(f"{cid}/{lid}: state_by_sequence is required.")
-                for sequence, phases in states.items():
-                    if sequence not in sequences or not isinstance(phases, dict) or not phases:
-                        raise ValueError(f"{cid}/{lid}: invalid sequence address.")
-                    for phase, observations in phases.items():
-                        if phase not in PHASES or not isinstance(observations, list) or not observations:
-                            raise ValueError(f"{cid}/{lid}: invalid phase observations.")
-                        if not all(isinstance(o, dict) for o in observations):
-                            raise ValueError(f"{cid}/{lid}: observations must be objects.")
-
-        index = {e["local_id"]: (kind, e) for kind in ("characters", "locations", "objects") for e in chapter[kind]}
-        for lid, (kind, entity) in index.items():
-            if "link_to_local_id" not in entity:
-                raise ValueError(f"{cid}/{lid}: link_to_local_id is required (use null for no link).")
-            target = entity["link_to_local_id"]
-            if target is None:
-                continue
-            if not isinstance(target, str) or target not in index or target == lid:
-                raise ValueError(f"{cid}/{lid}: invalid link_to_local_id target {target!r}.")
-            target_kind, main = index[target]
-            if kind != target_kind:
-                raise ValueError(f"{cid}/{lid}: link_to_local_id must target the same entity type.")
-            if main.get("link_to_local_id") is not None:
-                raise ValueError(f"{cid}/{lid}: link_to_local_id must point directly to a main entry; no chains or cycles.")
+                for sequence, entry in states.items():
+                    if sequence not in sequences or not isinstance(entry, dict) or set(entry) != {"source"}:
+                        raise ValueError(f"{cid}/{lid}: expected source observations at a valid sequence.")
+                    observations = entry["source"]
+                    if (not isinstance(observations, list) or not observations
+                            or not all(isinstance(o, dict) for o in observations)):
+                        raise ValueError(f"{cid}/{lid}: source observations must be a non-empty object list.")
 
 
 def merge_timeline(entity, timeline):
@@ -66,13 +52,11 @@ def merge_timeline(entity, timeline):
     target = entity.setdefault("timeline", {})
     for chapter, sequences in timeline.items():
         destination = target.setdefault(chapter, {})
-        for sequence, phases in sequences.items():
-            for phase, observations in phases.items():
-                destination.setdefault(sequence, {}).setdefault(phase, []).extend(deepcopy(observations))
-        target[chapter] = {
-            sequence: {phase: destination[sequence][phase] for phase in PHASES if phase in destination[sequence]}
-            for sequence in sorted(destination, key=int)
-        }
+        for sequence, entry in sequences.items():
+            if not isinstance(entry, dict) or set(entry) != {"source"}:
+                raise ValueError("Reference timelines require source observations only; reconsolidate references.")
+            destination.setdefault(sequence, {"source": []})["source"].extend(deepcopy(entry["source"]))
+        target[chapter] = {sequence: destination[sequence] for sequence in sorted(destination, key=int)}
     refresh_first_occurrence(entity)
 
 
@@ -82,17 +66,21 @@ def refresh_first_occurrence(entity, chapter_order=None):
         entity["timeline"] = timeline = {cid: timeline[cid] for cid in chapter_order if cid in timeline}
     first = {}
     for cid, sequences in timeline.items():
-        sequence, phase = min((int(s), PHASES.index(p)) for s, phases in sequences.items()
-                              for p, observations in phases.items() if observations)
-        first[cid] = {"first_sequence": sequence, "first_phase": PHASES[phase]}
+        sequence = min(int(s) for s, entry in sequences.items() if entry["source"])
+        first[cid] = {"first_sequence": sequence}
     entity["first_occurrence_by_chapter"] = first
     if first:
         cid = next(iter(first))
         entity.update(first_chapter_id=cid, **first[cid])
 
 
-def state_at(entity, chapter_id, sequence, phase):
-    """Exact observations only; absence is unknown, never future or carried state."""
-    if type(sequence) is not int or sequence < 1 or phase not in PHASES:
-        raise ValueError("State lookup requires a positive sequence and an explicit phase.")
-    return deepcopy(entity["timeline"].get(chapter_id, {}).get(str(sequence), {}).get(phase, []))
+def source_observations_at(entity, chapter_id, sequence):
+    """Exact source observations only; absence is unknown, never carried state."""
+    if type(sequence) is not int or sequence < 1:
+        raise ValueError("Source lookup requires a positive sequence.")
+    entry = entity["timeline"].get(chapter_id, {}).get(str(sequence))
+    if entry is None:
+        return []
+    if not isinstance(entry, dict) or set(entry) != {"source"}:
+        raise ValueError("Reference timelines require source observations only; reconsolidate references.")
+    return deepcopy(entry["source"])

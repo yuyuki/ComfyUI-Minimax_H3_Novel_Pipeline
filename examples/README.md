@@ -277,16 +277,12 @@ An empty object removes all additions for an entity. Omitted entities are design
 anew. The selected style affects all new reference prompts. Loading a consolidated
 registry preserves its already generated style and prompts.
 
-Edit `link_to_local_id` directly in the extracted chapter catalog, using the exported
-`chapter_references.schema.json` for editor completion. Use another entry's `local_id`
-only for the same entity, in the same chapter and category; use `null` for main entries
-or uncertain identity. Targets must exist; self-links, chains and cycles are rejected.
-Load the edited catalogs with Load Chapter Catalogs before running Consolidate.
-Linked entries are grouped before model reconciliation and keep all source addresses
-and phase observations. The model may reconcile these groups across chapters.
-Sequences remain unchanged; no states are propagated between phases. Base image prompts
-are prepared for every consolidated entity using stable identity facts only.
-Regenerate visual designs when identity edits change global IDs.
+Edit names, aliases and source-supported descriptions in the chapter catalog using
+`chapter_references.schema.json`, then reload it with Load Chapter Catalogs.
+Consolidation reconciles identities and aliases; keep its duplicate audit enabled
+for variants found within one chapter. Source observations retain their sequence
+addresses. Base image prompts use stable identity facts only. Regenerate visual
+designs when identity edits change global IDs.
 
 For each entity, the text export labels source description and added design details
 separately, followed by individual copy-paste prompts for each base-reference view.
@@ -296,7 +292,7 @@ for consistency before using them as H3 references.
 
 Consolidation audits registries above `audit_max_entities` using likely-duplicate clusters instead of skipping the audit. `audit_similarity` (0.68) and `audit_cluster_size` (24) control matching and batch size; `no_audit` still disables auditing. Clustering is heuristic and may miss duplicates across groups.
 
-Only current v4 chapter catalogs and registries are accepted; consolidation requires cinematic phase timelines. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
+Only current v4 chapter catalogs and registries are accepted; consolidation requires source-only reference timelines. Regenerate older outputs and recreate configuration nodes: the legacy backend selector was removed. The package contains only the ComfyUI pipeline; standalone CLI and fallback implementations are removed.
 
 The adapter uses `duration` to split the chapter into naturally paced scenes.
 Generate preserves exactly one scene per supplied sequence. Generate reads duration
@@ -312,50 +308,47 @@ old widget layouts, narrative bundles and absolute output paths are unsupported.
 
 ### Extraction timeline contract
 
-Each chapter is independent. Sequence IDs must be positive and strictly increasing
-in the supplied array; extraction never sorts them. `initialState` is true at the
-start, `event` describes changes during the sequence, and `endingState` is true
-only after completion. Each phase is extracted separately without future text.
-`source` is retained as supporting evidence, never used to override adaptation.
+Each chapter is independent. Sequence IDs must be positive and strictly increasing.
+Extract Chapter References reads only `sequences[].source`, splitting long source
+passages by `chunk_chars`. It never extracts from adaptation phases. Full cinematic
+sequences and editable narrative choices remain available to downstream nodes.
 
-Catalogs retain the complete ordered `sequences`, plus each reference's
-`first_sequence`, `first_phase`, and `state_by_sequence`. Each sequence entry maps
-phase names to lists of observations (including descriptions, states and evidence).
-Missing phases mean no observation, not absence or automatic state inheritance.
-Repeated unambiguous names/aliases share a character or location identity; uncertain
-identities stay separate. Objects reuse exact canonical names; shared generic aliases
-never merge distinct physical instances. The local-link review can connect supported
-synonyms. Object names must distinguish functions and attachments when needed.
-Character-level `speaks` is true if any phase contains speech; individual phase
-flags are preserved. Established aliases accumulate without rewriting earlier phases.
-Changing state is never merged into an unqualified chapter appearance/state.
-Consolidation separates global stable identity from each entity's
-`timeline[chapter_id][sequence][phase]` observation lists. Identity reconciliation
-and duplicate audits receive only stable fields; deterministic merges preserve
-all observations and their evidence, even when aliases resolve to one identity.
-`chapter_timelines` retains the original chapter records and ordered sequences.
-Chapter IDs must be unique; sequence numbers are local to their chapter.
+Catalog references contain `first_sequence` and
+`state_by_sequence[sequence].source`, a list of source observations. Extraction
+then consolidates identities in ordered source windows (up to eight chunks,
+12,000 source characters and 32 incoming occurrences per batch; a single larger
+chunk remains indivisible). The model receives original passages, the preceding
+passage and the local identity registry. It proposes source-quoted merge groups;
+code validates IDs, entity types, names and verbatim quotations before merging.
+Identical generic names alone never force a merge. Distinct physical instances
+stay separate; uncertain or failed decisions retain unmerged occurrences and
+incomplete diagnostics. Requests exceeding the safe context budget are not sent.
+Identity decisions have their own cache under `.cache/<chapter_id>/identity_*.json`;
+source extraction caches remain reusable. All original observations retain their
+sequence addresses. Cross-chapter consolidation and its duplicate audit still run.
+Locations are places/spaces; object/person positions and orientations remain on
+those entities. Summaries and descriptions use the source narration's language.
 
-`first_occurrence_by_chapter` records each chapter's `first_sequence` and
-`first_phase`, computed by numeric sequence and phase rank. Entity-level
-`first_chapter_id`, `first_sequence`, and `first_phase` use supplied chapter order.
-The Python `reference_timeline.state_at(entity, chapter_id, sequence, phase)` helper
-returns only observations at that exact address (an empty list means unknown).
-Read the preceding sequence's `endingState` separately for continuity; it never
-overwrites the next explicit `initialState`. No state is propagated automatically.
+Consolidation retains `timeline[chapter_id][sequence].source` observations losslessly,
+including conflicts and repeated evidence. Identity reconciliation and duplicate
+audits use stable facts; image briefs never promote temporary state to identity.
+`first_occurrence_by_chapter` contains each chapter's `first_sequence`; global
+`first_chapter_id` and `first_sequence` follow supplied chapter order and numeric
+sequence order. `reference_timeline.source_observations_at(entity, chapter_id,
+sequence)` returns only observations at that sequence; missing means unknown.
 
-Chapter-wide variations and the `no_variants` control are removed. Reference
-image briefs use stable identity only, so later possession, disguise or damage
-cannot become a chapter-wide image default. Sequence-specific image generation
-requires a consumer that explicitly selects a temporal address. Regenerate old
-catalogs and registries; no legacy format conversion is provided.
+Catalogs reject obsolete local identity links, phase-timing fields and phase
+observations. Re-extract and reconsolidate older outputs; no conversion or fallback
+reader is provided. H3 receives source observations separately from cinematic
+adaptation; it never invents phase timing for a source observation.
 
-Extraction's `chunk_chars` divides paragraphs only within a phase. The obsolete
-`overlap_paragraphs` and `merge_batch_size` controls are removed. Phase calls use
-`max_tokens` and the shared JSON retries; `force` bypasses timeline caches.
-Each uncached extraction is semantically reviewed against its phase and earlier
-identity context, with at most two targeted corrections. Persistent doubts are
-saved in `narrative_review.extraction_issues`; results and warnings are cached. Adapter reviews also check source detail
+Each uncached source chunk gets extraction and semantic review, with at most two
+corrections. Persistent defects and incomplete reviews retain valid data and are
+recorded in `<chapter_id>_references.diagnostics.json`, outside the catalog.
+Technical diagnostics are English. `force` bypasses caches; completed source chunks
+can be reused when only adaptation choices change.
+
+Adapter reviews also check source detail
 coverage and transitions; `correction_attempts` bounds targeted sequence repairs.
 After bounded repairs/reconstruction, persistent doubts produce two or three full
 scene alternatives in `narrative_review.issues[].proposals`, with the first

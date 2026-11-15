@@ -18,8 +18,7 @@ def inputs(tmp_path, monkeypatch, cinematic_registry):
                               picture_assets=[{"asset_id": "pic", "linked_global_id": "hero"}],
                               audio_assets=[], visual_designs={"entities": [{"global_id": "hero"}]})
     sequences = refs["chapter_timelines"]["chapter"]["sequences"]
-    catalog = Mock(return_value=[{"global_id": "hero", "state_by_phase": {
-        "initialState": ["Hanging"], "event": ["Calls for help"], "endingState": []}}])
+    catalog = Mock(return_value=[{"global_id": "hero", "source_observations": [{"state": "Hanging"}, {"state": "Calls for help"}]}])
     context = Mock(return_value={"registry_ids": {"local": "hero"}, "sequence": {
         "sequence": 1, "characters": [{"local_id": "local", "presence": "offscreen"}]}})
     spatial = {"source_digest": "source-v1", "chapters": {"chapter": {"sequences": [
