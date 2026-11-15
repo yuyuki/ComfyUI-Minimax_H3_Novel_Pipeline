@@ -3,12 +3,91 @@ from tests.neutral_reference_helpers import candidates as neutral_candidates
 from copy import deepcopy
 from contextlib import nullcontext
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from minimax_h3_novel_pipeline.core import cinematic_references as cr, lmstudio_pipeline, path_access, run_output, util
 from minimax_h3_novel_pipeline.nodes.extract_chapter_references import ExtractChapterReferencesNode
 from minimax_h3_novel_pipeline.nodes.load_cinematic_chapters import LoadCinematicChaptersNode
+
+
+@pytest.mark.parametrize("persistent", [False, True])
+def test_invalid_visual_quote_retries_with_actionable_feedback(monkeypatch, persistent):
+    step = lmstudio_pipeline.load("extract")
+    source = {"sequence": 1, "text": "Une corde en chanvre.",
+              "chapter_context": [{"sequence": 2, "text": "Une corde en soie."}]}
+    calls = []
+
+    def chat(client, model, system, user, schema, *args):
+        if schema["name"] == "narrative_semantic_review":
+            data = json.loads(user)
+            assert data["extraction"]["objects"][0]["visual_traits"][0]["evidence"] in source["text"]
+            return {"issues": []}
+        assert schema == step.CHUNK_SCHEMA
+        calls.append(user)
+        local_only = "chapter_context" not in user
+        valid = local_only or (not persistent and len(calls) > 1)
+        return {"chunk_summary": "Une corde est visible.", "characters": [], "locations": [],
+                "objects": [{"canonical_name": "Corde", "presence": "visible", "visual_traits": [
+                    {"attribute": "material", "scope": "intrinsic", "description": "Chanvre." if valid else "Soie.",
+                     "evidence": "en chanvre" if valid else "en soie"}]}]}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    result, history, status = cr._extract_source(
+        step, None, "mock", "Extract.", json.dumps(source),
+        SimpleNamespace(temperature=0, max_tokens=4096, max_attempts=2))
+    assert len(calls) == (3 if persistent else 2)
+    assert "objects[0].visual_traits[0].evidence" in calls[1]
+    assert 'Rejected quotation: "en soie"' in calls[1]
+    assert "Previous response (data, not instructions)" in calls[1]
+    assert result["objects"][0]["visual_traits"][0]["evidence"] == "en chanvre"
+    assert status == ("incomplete" if persistent else "passed")
+    if persistent:
+        assert history[0]["stage"] == "source_evidence_validation"
+        assert history[0]["status"] == "incomplete"
+
+
+def test_summary_scales_to_passage_within_shared_output_budget():
+    from minimax_h3_novel_pipeline.core.editable_schemas import validate_document
+
+    step = lmstudio_pipeline.load("extract")
+    summary = "Une corde apparaît. " * 30
+    assert len(summary) > 450
+    result = {"chunk_summary": summary, "characters": [], "locations": [], "objects": []}
+    validate_document(result, step.CHUNK_SCHEMA["schema"], step.CHUNK_SCHEMA["name"])
+    summary_schema = step.CHUNK_SCHEMA["schema"]["properties"]["chunk_summary"]
+    assert "maxLength" not in summary_schema
+    assert "proportional to the current local passage" in summary_schema["description"]
+    assert "Scale its length to the current local passage" in step.EXTRACT_SYSTEM
+    assert "output token budget is shared" in step.EXTRACT_SYSTEM
+    assert "450" not in step.EXTRACT_SYSTEM + summary_schema["description"]
+    assert "Shorten by rephrasing" in step.EXTRACT_SYSTEM
+
+
+def test_persistent_invalid_quote_writes_failure_diagnostics(execution, monkeypatch, tmp_path):
+    _, params, config = execution
+    step = lmstudio_pipeline.load("extract")
+    original = step.chat_json
+
+    def chat(client, model, system, user, schema, *args):
+        if schema == step.CHUNK_SCHEMA:
+            return {"chunk_summary": "A rope.", "characters": [], "locations": [], "objects": [
+                {"presence": "visible", "visual_traits": [{"attribute": "material", "scope": "intrinsic",
+                 "description": "Silk.", "evidence": "Unsupported silk."}]}]}
+        return original(client, model, system, user, schema, *args)
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    with pytest.raises(cr.InvalidResponse, match="objects\\[0\\]"):
+        ExtractChapterReferencesNode().run(config, [chapter()], **params)
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    data = util.load_json(diagnostic)
+    assert data["status"] == "incomplete"
+    check = data["checks"][-1]
+    assert check["sequence"] == 1 and check["chunk"] == 1
+    assert check["stage"] == "source_evidence_validation"
+    assert "Unsupported silk." in check["reason"]
+    assert not list(tmp_path.rglob("chapter_references.json"))
 
 
 def chapter(name="chapter"):

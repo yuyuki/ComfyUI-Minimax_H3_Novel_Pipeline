@@ -27,7 +27,6 @@ REQUEST_USAGE = ContextVar("lmstudio_report_usage", default=False)
 # Character counts, not token counts. Preserve visual identity on retries and
 # leave unrelated schema fields alone (this helper is shared by all stages).
 COMPACT_FIELD_LIMITS = {
-    "chunk_summary": 240,
     "chapter_summary": 400,
     "canonical_name": 80,
     "stable_visual_description": 500,

@@ -96,8 +96,9 @@ def test_compact_retry_preserves_visual_detail_and_entity_capacity(schema_name):
         assert fields["evidence"]["maxItems"] == 2
         assert fields["evidence"]["items"]["maxLength"] == 120
         assert fields["reference_view_hints"] == schema["schema"]["properties"][kind]["items"]["properties"]["reference_view_hints"]
-    summary = "chunk_summary" if schema_name == "CHUNK_SCHEMA" else "chapter_summary"
-    assert props[summary]["maxLength"] == (240 if summary == "chunk_summary" else 400)
+    # Guided decoding must allow a summary to finish its last sentence, including on retries.
+    assert "maxLength" not in props["chunk_summary"]
+    assert props["chunk_summary"] == schema["schema"]["properties"]["chunk_summary"]
     assert schema == original
 
 

@@ -15,7 +15,7 @@ from .cinematic_diagnostics import downstream_chapter
 from .path_access import confined_path
 from .prompt_cache import fingerprint
 from . import reference_visuals
-from .reference_requests import validated_request
+from .reference_requests import InvalidResponse, validated_request
 
 PHASES = ("initialState", "event", "endingState")
 TEMPORAL_VERSION = "cinematic-neutral-references.v1"
@@ -42,7 +42,9 @@ visual_traits is authoritative neutral appearance, with one fact per attribute.
 Use consistent concise English attribute keys for the same entity; descriptions
 remain in the narration's source language. Qualify keys by physical part so independent
 properties do not collide; reuse one key rather than synonyms for the same property.
-Evidence must quote the local passage.
+Evidence must copy an exact contiguous quotation from text, preserving spelling,
+punctuation and whitespace. Do not paraphrase, combine excerpts, or quote
+chapter_context or reference_state when the quotation is absent from text.
 Intrinsic scope is unchanged material, construction, shape, markings or physical
 identity. Scene scope is applicable wardrobe or visible condition established when
 the entity is depicted. It may be described in text even if the entity first appears
@@ -113,9 +115,26 @@ _REVIEW_ERRORS = (ValueError, RuntimeError, APIConnectionError, InternalServerEr
 
 def _extract_source(step, client, model, system, user, args):
     source_input = json.loads(user)
-    result = validated_request(step.chat_json, client, model, system, user, step.CHUNK_SCHEMA,
-                               args, lambda data: reference_visuals.validate_evidence(data, source_input))
     history = []
+    context_incomplete = False
+    try:
+        result = validated_request(step.chat_json, client, model, system, user, step.CHUNK_SCHEMA,
+                                   args, lambda data: reference_visuals.validate_evidence(data, source_input),
+                                   include_previous=True)
+    except InvalidResponse as exc:
+        if lmstudio_json._is_comfy_interrupt(exc) or "chapter_context" not in source_input:
+            raise
+        lmstudio_pipeline.comfy_interrupt_check()
+        # Regenerate against the same local evidence, without distracting other scenes.
+        source_input.pop("chapter_context")
+        user = json.dumps(source_input, ensure_ascii=False)
+        history.append({"stage": "source_evidence_validation", "status": "incomplete",
+                        "reason": str(exc),
+                        "message": "Contextual extraction rejected; retrying with local passage only. Contextual classification remains incomplete."})
+        context_incomplete = True
+        result = validated_request(step.chat_json, client, model, system, user, step.CHUNK_SCHEMA,
+                                   args, lambda data: reference_visuals.validate_evidence(data, source_input),
+                                   include_previous=True)
     for attempt in range(3):
         try:
             issues = narrative_validation.review(
@@ -136,13 +155,14 @@ def _extract_source(step, client, model, system, user, args):
         status = "incomplete" if incomplete else "issues" if issues else "passed"
         history.append({"attempt": attempt + 1, "status": status, "messages": messages})
         if not issues or incomplete or attempt == 2:
-            return result, history, status
+            return result, history, "incomplete" if context_incomplete else status
         lmstudio_pipeline.comfy_interrupt_check()
         correction = json.dumps({"source_input": json.loads(user), "rejected_extraction": result,
                                  "defects_to_correct": messages}, ensure_ascii=False)
         try:
             result = validated_request(step.chat_json, client, model, system, correction, step.CHUNK_SCHEMA,
-                                       args, lambda data: reference_visuals.validate_evidence(data, source_input))
+                                       args, lambda data: reference_visuals.validate_evidence(data, source_input),
+                                       include_previous=True)
         except _REVIEW_ERRORS as exc:
             if lmstudio_json._is_comfy_interrupt(exc):
                 raise
@@ -215,7 +235,17 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
             record = util.load_json(cache)
             result, history, status = record["extraction"], record["history"], record["status"]
         else:
-            result, history, status = _extract_source(step, client, model, system, user, args)
+            try:
+                result, history, status = _extract_source(step, client, model, system, user, args)
+            except InvalidResponse as exc:
+                if lmstudio_json._is_comfy_interrupt(exc):
+                    raise
+                diagnostics["checks"].append({"sequence": seq["sequence"], "chunk": number,
+                                              "stage": "source_evidence_validation", "status": "incomplete",
+                                              "source_excerpt": text, "reason": str(exc)})
+                diagnostics["status"] = "incomplete"
+                util.save_json(diagnostic_path, diagnostics)
+                raise
             if status != "incomplete":
                 util.save_json(cache, {"extraction": result, "history": history, "status": status})
         diagnostics["checks"].append({"sequence": seq["sequence"], "chunk": number,

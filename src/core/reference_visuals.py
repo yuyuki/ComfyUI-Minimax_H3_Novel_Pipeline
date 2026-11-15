@@ -63,11 +63,17 @@ def validate_evidence(result, source_input):
     """Appearance evidence must belong to this scene, never the chapter context."""
     text = source_input["text"]
     for kind in ("characters", "locations", "objects"):
-        for observation in result.get(kind, []):
+        for index, observation in enumerate(result.get(kind, [])):
             validate_observation(observation)
-            for trait in observation["visual_traits"]:
+            for trait_index, trait in enumerate(observation["visual_traits"]):
                 if trait["evidence"] not in text:
-                    raise ValueError("Visual trait evidence must quote the local passage, never another scene.")
+                    raise ValueError(
+                        f"{kind}[{index}].visual_traits[{trait_index}].evidence: "
+                        "Visual trait evidence must quote the local passage, never another scene. "
+                        f"Rejected quotation: {json.dumps(trait['evidence'], ensure_ascii=False)}. "
+                        "Copy an exact contiguous quotation from source_input.text (or text), "
+                        "preserving spelling, punctuation and whitespace. Do not paraphrase or join excerpts. "
+                        "If the trait has no local support, omit that trait; never invent replacement evidence.")
 
 
 def compile_reference(timeline, diagnostics, identity, groups=()):

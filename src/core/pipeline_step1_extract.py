@@ -113,7 +113,9 @@ CHUNK_SCHEMA = {
     "schema": {
         "type": "object",
         "properties": {
-            "chunk_summary": {"type": "string", "maxLength": 450},
+            "chunk_summary": {"type": "string", "description":
+                              "Concise summary proportional to the current local passage, in complete sentences. "
+                              "Share the response output budget with all reference arrays; never cut a word or sentence."},
             "characters": {"type": "array", "items": entity_schema("character")},
             "locations": {"type": "array", "items": entity_schema("location")},
             "objects": {"type": "array", "items": entity_schema("object")},
@@ -203,6 +205,13 @@ continuity depends on it, recommended when useful, optional otherwise.
 Names, chunk_summary and descriptive prose use the source narration's language.
 Keep JSON keys, enums and visual-trait attribute keys fixed. Preserve proper names
 and verbatim foreign-language dialogue. Evidence must quote the local passage.
-Summarize events only in chunk_summary, in source order. Keep all distinct useful
+Summarize events only in chunk_summary, in source order and complete sentences.
+Scale its length to the current local passage, not chapter_context or the full chapter.
+The output token budget is shared by the entire JSON response, including reasoning
+when applicable. Keep the summary concise so reference arrays and their quoted evidence
+can fit; prioritize distinct entities and supported visual facts over summary detail.
+There is no separate fixed character target. Shorten by rephrasing, never
+by cutting a word or sentence. Detailed reference facts belong in the entity arrays.
+Keep all distinct useful
 visual facts without repeated paraphrases. Unknown traits remain unspecified.
 """.strip()
