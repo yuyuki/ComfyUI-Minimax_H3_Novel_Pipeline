@@ -7,6 +7,7 @@ from ..core.cinematic_references import parse_chapters
 from typing import Any
 
 from ..core import util
+from ..core.reference_visuals import validate_registry
 
 
 class LoadConsolidatedReferencesNode:
@@ -73,6 +74,7 @@ class LoadConsolidatedReferencesNode:
 
         registry = util.load_json(json_path)
         util.require_schema(registry, util.REGISTRY_SCHEMA)
+        validate_registry(registry)
         if not isinstance(registry, dict):
             raise ValueError(f"{json_path.name}: expected a JSON object.")
         for cid, timeline in registry.get("chapter_timelines", {}).items():

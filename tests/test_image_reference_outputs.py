@@ -1,3 +1,4 @@
+from tests.neutral_reference_helpers import entity as neutral_entity
 from tests.cinematic_generation_helpers import chapter_input
 """Offline coverage for queued runs, editable designs and copy-paste exports."""
 import copy
@@ -27,10 +28,10 @@ def output_root(tmp_path, monkeypatch):
 
 
 def entity(kind="character", gid="CHAR_001"):
-    return {"global_id": gid, "entity_type": kind, "canonical_name": "Aster",
+    return neutral_entity({"global_id": gid, "entity_type": kind, "canonical_name": "Aster",
             "stable_visual_description": "A silver silhouette.", "distinguishing_features": ["A star marking."],
             "importance": "major", "reference_priority": "optional", "chapters_seen": ["chapter"],
-            "timeline": {}, "source_entities": [], "speaks": False}
+            "timeline": {}, "source_entities": [], "speaks": False})
 
 
 def options():
@@ -158,7 +159,7 @@ def test_stage_paths_require_current_config_and_relative_subfolder(output_root):
 @pytest.mark.parametrize("kind,gid,expected", [
     ("character", "CHAR_001", ["face_front", "full_body_front", "three_quarter", "back_view"]),
     ("location", "LOC_001", ["wide_establishing", "secondary_angle", "key_detail"]),
-    ("object", "OBJ_001", ["hero_three_quarter", "detail_closeup"]),
+    ("object", "OBJ_001", ["front_view", "detail_closeup"]),
 ])
 def test_all_entity_coverage_prioritizes_core_views(kind, gid, expected):
     step = lmstudio_pipeline.load("consolidate")
@@ -291,7 +292,7 @@ def test_noisy_source_is_normalized_once_and_exported_without_reappending(output
     assert "COPY-PASTE PROMPT:\n" + assets[0]["generation_prompt"] in exported
 
 
-@pytest.mark.parametrize("appearance", ["", "x" * 1601, "<Picture 1>",
+@pytest.mark.parametrize("appearance", ["", "x" * 12001, "<Picture 1>",
                                          "Hazel eyes and brown hair. HAZEL EYES AND BROWN HAIR!"])
 def test_invalid_normalized_appearance_retries(monkeypatch, appearance):
     step = lmstudio_pipeline.load("consolidate")
@@ -362,7 +363,7 @@ def test_facial_crops_use_filtered_identity_for_composition_and_export(output_ro
     assert [p["generation_prompt"] for p in records[0]["prompts"]] == [a["generation_prompt"] for a in assets]
 
 
-@pytest.mark.parametrize("invalid", ["", "x" * 1601, "<Picture 1>"])
+@pytest.mark.parametrize("invalid", ["", "x" * 12001, "<Picture 1>"])
 def test_facial_projection_retries_invalid_results(monkeypatch, invalid):
     step = lmstudio_pipeline.load("consolidate")
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
@@ -458,7 +459,7 @@ def test_view_projection_keeps_entity_state_and_detail_separate(monkeypatch):
 
 
 @pytest.mark.parametrize("response", [{}, {"appearance": None}, {"appearance": "   "},
-                                      {"appearance": "x" * 1601}])
+                                      {"appearance": "x" * 12001}])
 def test_exhausted_appearance_retries_warn_and_continue(monkeypatch, caplog, response):
     step = lmstudio_pipeline.load("consolidate")
     args = options()
@@ -609,7 +610,7 @@ def test_invalid_design_import_fails_before_model_work(output_root, monkeypatch,
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", unexpected)
     params = {**node_defaults(ConsolidateReferencesNode), "visual_designs_path": path}
     chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
-               "source": {}, "timeline_version": "cinematic-reference-source.v1",
+               "source": {}, "timeline_version": "cinematic-neutral-references.v1",
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}
@@ -690,7 +691,7 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
                   qwen35_top_k=20, qwen35_min_p=0, qwen35_repeat_penalty=1.05,
                   run_folder=run_output.reserve_run())
     chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
-               "source": {"file": "chapter.txt"}, "timeline_version": "cinematic-reference-source.v1",
+               "source": {"file": "chapter.txt"}, "timeline_version": "cinematic-neutral-references.v1",
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}

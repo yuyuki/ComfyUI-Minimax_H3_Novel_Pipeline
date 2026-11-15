@@ -75,8 +75,7 @@ def test_later_batch_can_unify_previously_separate_identities(tmp_path, monkeypa
     def reply(payload, count):
         if count == 1:
             return {"groups": []}
-        assert payload["source_passages"][0]["sequence"] == 8
-        assert payload["source_passages"][1]["sequence"] == 9
+        assert [p["sequence"] for p in payload["source_passages"]] == [8, 9]
         assert {e["canonical_name"] for e in payload["entities"]} == {"Indy", "l'homme", "Jones"}
         return {"groups": [group([e["id"] for e in payload["entities"]], "Indy", jobs[-1]["text"], ["Jones"])]}
     catalog, _, calls = run(tmp_path, monkeypatch, jobs, reply)
@@ -109,6 +108,9 @@ def test_invalid_merge_is_retried_and_preserves_every_occurrence(tmp_path, monke
     assert len(calls) == 2 and calls[0]["entities"] == calls[1]["entities"]
     assert len(catalog["characters"]) == 2 and len(catalog["objects"]) == 1
     assert diagnostics["identity_consolidation"][0]["status"] == "incomplete"
+    assert diagnostics["identity_consolidation"][0]["validation_error"]
+    assert calls[1]["correction"]["validation_error"]
+    assert "rejected_response" in calls[1]["correction"]
     assert "private" not in json.dumps(diagnostics)
     assert not list(tmp_path.glob("identity_*.json"))
 
@@ -123,6 +125,22 @@ def test_retry_can_recover_without_discarding_evidence(tmp_path, monkeypatch):
     catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
     assert len(calls) == 2 and len(catalog["characters"]) == 1
     assert len(catalog["characters"][0]["state_by_sequence"]["1"]["source"]) == 2
+    assert diagnostics["identity_consolidation"][0]["status"] == "passed"
+
+
+def test_invalid_cached_identity_is_corrected_with_all_evidence(tmp_path, monkeypatch):
+    jobs = [job(1, "Indy attend. Il regarde.", "Indy", "l'homme")]
+    _, _, calls = run(tmp_path, monkeypatch, jobs, lambda *a: {"groups": []})
+    cached, = tmp_path.glob("identity_*.json")
+    util.save_json(cached, {"groups": [group(["REF_00001", "missing"], "Indy", jobs[0]["text"])]})
+
+    def reply(payload, count):
+        assert payload["entities"] == calls[0]["entities"]
+        assert "distinct supplied IDs" in payload["correction"]["validation_error"]
+        return {"groups": []}
+
+    catalog, diagnostics, repaired = run(tmp_path, monkeypatch, jobs, reply)
+    assert len(repaired) == 1 and len(catalog["characters"]) == 2
     assert diagnostics["identity_consolidation"][0]["status"] == "passed"
 
 

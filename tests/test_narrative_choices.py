@@ -77,7 +77,7 @@ def test_file_edit_reloads_changes_extraction_cache_and_reaches_h3(tmp_path, mon
     saved = cr.process_chapter(chapters[0], output, None, "mock", args, "chapter")
     first = util.load_json(saved)
     assert len(calls) == 1
-    assert calls[0]["text"] == "He waits."
+    assert calls[0]["text"] == "B chosen initialState\n\nB chosen event"
     diagnostic = output / "chapter_references.diagnostics.json"
     first_key = util.load_json(diagnostic)["cache_key"]
     assert "A chosen" not in json.dumps(calls)
@@ -90,7 +90,7 @@ def test_file_edit_reloads_changes_extraction_cache_and_reaches_h3(tmp_path, mon
     second = util.load_json(saved)
     assert first_key != util.load_json(diagnostic)["cache_key"]
     assert "cache_key" not in first and "cache_key" not in second
-    assert len(calls) == 1  # Adaptation choices do not trigger source re-extraction.
+    assert len(calls) == 2  # Changed adaptation choices require new local reference extraction.
     assert second["narrative_review"]["issues"] == value["narrative_review"]["issues"]
     refs = {"chapters": [{"chapter_id": "chapter", "source_file": str(path)}],
             "chapter_timelines": {"chapter": second}}

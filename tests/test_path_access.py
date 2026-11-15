@@ -113,7 +113,8 @@ def test_cinematic_input_rejects_file_paths(roots, monkeypatch, tmp_path, node, 
 
 def test_loaders_resume_from_confined_outputs(roots, tmp_path):
     _, output = roots
-    catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "one", "characters": [],
+    catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "one", "characters": [], "locations": [], "objects": [],
+               "timeline_version": "cinematic-neutral-references.v1",
                "chapter_name": "one", "sequences": [{"sequence": 1, "source": "Wait.",
                "adaptation": {"initialState": "Here.", "event": "Wait.", "endingState": "Here."}}]}
     util.save_json(Path("chapter_catalogs/one_references.json"), catalog)

@@ -91,8 +91,8 @@ def test_compact_retry_preserves_visual_detail_and_entity_capacity(schema_name):
         assert fields["stable_visual_description"]["maxLength"] == 500
         state = "chapter_appearance" if kind == "characters" else "chapter_state"
         assert fields[state]["maxLength"] == 350
-        assert fields["distinguishing_features"]["maxItems"] == 6
-        assert fields["distinguishing_features"]["items"]["maxLength"] == 120
+        assert "maxItems" not in fields["distinguishing_features"]
+        assert fields["visual_traits"] == schema["schema"]["properties"][kind]["items"]["properties"]["visual_traits"]
         assert fields["evidence"]["maxItems"] == 2
         assert fields["evidence"]["items"]["maxLength"] == 120
         assert fields["reference_view_hints"] == schema["schema"]["properties"][kind]["items"]["properties"]["reference_view_hints"]

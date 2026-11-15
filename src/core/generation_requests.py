@@ -19,8 +19,8 @@ VERSION = 2
 # These versions replace runtime inspection of the package's Python sources.
 CACHE_CONTRACTS = {
     "transport": 1,  # Shared JSON transport and every model profile.
-    "evidence": 3,  # Source observations remain separate from adaptation phases.
-    "metadata": 1,  # Cinematic scene metadata and binding construction.
+    "evidence": 4,  # Neutral source traits and scene-addressed visual states.
+    "metadata": 2,  # Scene-specific image applicability and binding construction.
     "draft": 1,
     "format": 1,
     "camera": 1,

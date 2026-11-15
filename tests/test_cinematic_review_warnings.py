@@ -61,7 +61,7 @@ def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors
     assert "source_fidelity" in caplog.text
     assert "".join(s["source"] for s in result["sequences"]) == "A. B. C."
     assert cr.parse_chapters([result])[0] == result
-    catalog = {"schema_version": "minimax-h3-novel-refs.chapter.v4", "timeline_version": cr.TEMPORAL_VERSION,
+    catalog = {"schema_version": "minimax-h3-novel-refs.chapter.v5", "timeline_version": cr.TEMPORAL_VERSION,
                "chapter_id": "chapter", "chapter_name": "Chapter",
                "source": {"file": "chapter.txt", "sha256": "test"}, "sequences": result["sequences"],
                "narrative_review": {"issues": result["narrative_review"]["issues"]},

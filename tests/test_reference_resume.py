@@ -69,7 +69,7 @@ def test_interrupted_node_resumes_each_stage_and_writes_current_run(setup, monke
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261101000000"}
     params = defaults(node.ConsolidateReferencesNode)
     chapter = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
-               "timeline_version": "cinematic-reference-source.v1", "source": {},
+               "timeline_version": "cinematic-neutral-references.v1", "source": {},
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "Text", "adaptation": {
                    "initialState": "Opening", "event": "Action", "endingState": "Ending"}}]}

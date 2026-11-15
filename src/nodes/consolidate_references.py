@@ -1,6 +1,8 @@
 """LM Studio-backed ComfyUI node for cross-chapter consolidation."""
 from __future__ import annotations
 
+from ..core import reference_visuals
+
 from ..core import progress
 from ..core.reference_timeline import refresh_first_occurrence, validate_catalogs
 from ..core.cinematic_references import parse_chapters
@@ -149,6 +151,16 @@ class ConsolidateReferencesNode:
                 registry = pipeline.audit_registry(client, resolved_model, registry, args)
             for entity in registry:
                 refresh_first_occurrence(entity, [c["chapter_id"] for c in chapters])
+            visual_checks = []
+            args.reference_diagnostics = visual_checks
+            for entity in registry:
+                entity["visual_reference"] = reference_visuals.compile_reference(
+                    entity["timeline"], visual_checks, entity["global_id"])
+                entity["stable_visual_description"] = reference_visuals.descriptions(
+                    entity["visual_reference"]["common_traits"])
+                entity["distinguishing_features"] = []
+            util.save_json(output / "consolidated_references.diagnostics.json", {
+                "status": "incomplete" if visual_checks else "passed", "checks": visual_checks})
             registry.sort(key=lambda item: ({"character": 0, "location": 1, "object": 2}[item["entity_type"]], pipeline.natural_key(item["global_id"])))
             args.temporal_context_by_chapter = {
                 c["chapter_id"]: {"default_temporal_context": c.get("default_temporal_context", ""),
@@ -161,6 +173,15 @@ class ConsolidateReferencesNode:
             with progress.scope(0.15, design_start):
                 character_enrichment, args.character_designs = character_visual_integration.apply(
                     imported_designs, chapters, registry, output, client, resolved_model, args)
+            for chapter_id, local in character_enrichment.items():
+                by_id = {e["global_id"]: e for e in registry}
+                for row in local["sequences"]:
+                    for character in row["characters"]:
+                        gid = local["registry_ids"].get(character["local_id"])
+                        if gid and character["presence"] != "visible":
+                            state = by_id[gid]["visual_reference"]["scenes"].get(chapter_id, {}).get(str(row["sequence"]))
+                            if state is not None:
+                                state["presence"] = "offscreen" if character["presence"] == "offscreen" else "mentioned"
             generic_designs_path = None if path_designs and 'character_profiles' in path_designs else designs_path
             _log(f"Preparing visual designs for {len(registry)} entities")
             with progress.scope(design_start, 0.5):
@@ -179,6 +200,8 @@ class ConsolidateReferencesNode:
             with progress.scope(0.95, 0.99):
                 audio = pipeline.generate_audio_assets(client, resolved_model, pipeline.build_audio_specs(registry, args), args)
             _log("Saving consolidated references and prompt files")
+            util.save_json(output / "consolidated_references.diagnostics.json", {
+                "status": "incomplete" if visual_checks else "passed", "checks": visual_checks})
             digest = configuration_snapshot.content_digest(chapters)
             payload = {"schema_version": util.REGISTRY_SCHEMA, "source_digest": digest, "llm": {"base_url": lmstudio_config["api_url"], "model": resolved_model, "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}, "chapters": [{"chapter_id": c["chapter_id"], "source_file": c.get("source", {}).get("file", ""), "source_sha256": c.get("source", {}).get("sha256", "")} for c in chapters], "entities": registry, "picture_assets": pictures, "audio_assets": audio, "video_assets": [], "chapter_entity_map": pipeline.build_chapter_map(registry), "entity_asset_index": pipeline.build_entity_asset_index(registry, pictures, audio), "label_note": "canonical_label is only a convenient full-registry ordering. MiniMax H3 labels are request-local."}
             payload["chapter_timelines"] = {c["chapter_id"]: {

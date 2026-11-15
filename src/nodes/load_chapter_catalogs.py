@@ -7,6 +7,7 @@ from typing import Any
 
 from ..core import configuration_snapshot, util
 from ..core.cinematic_references import parse_chapters
+from ..core.reference_timeline import validate_catalogs
 
 
 class LoadChapterCatalogsNode:
@@ -85,5 +86,6 @@ class LoadChapterCatalogsNode:
                 )
             catalogs.append(parse_chapters([data])[0])
 
+        validate_catalogs(catalogs)
         print(f"[minimax_h3_novel] Loaded {len(catalogs)} chapter catalog(s) from {path}", flush=True)
         return catalogs, util.catalog_summary(catalogs)

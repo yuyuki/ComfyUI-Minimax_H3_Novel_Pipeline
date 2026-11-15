@@ -1,6 +1,8 @@
 """LM Studio-backed MiniMax H3 prompt-generation ComfyUI node."""
 from __future__ import annotations
 
+from ..core.reference_visuals import validate_registry
+
 from ..core import progress
 
 import argparse
@@ -85,6 +87,7 @@ class GenerateH3PromptsNode:
             if not resume_cache_dir.is_dir():
                 raise ValueError("Previous run cache does not exist; use the same out_dir as that run.")
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
+        validate_registry(consolidated_references)
         if not isinstance(lmstudio_config, dict): raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         chapters = cinematic_references.parse_chapters(cinematic_chapter)
         for chapter in chapters:

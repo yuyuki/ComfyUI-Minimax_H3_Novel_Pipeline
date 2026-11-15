@@ -18,7 +18,7 @@ def _log(message: str) -> None:
 
 
 class ExtractChapterReferencesNode:
-    """Extract source references and consolidate identities within each chapter."""
+    """Extract initialState/event references and consolidate chapter identities."""
 
     @classmethod
     def INPUT_TYPES(cls):

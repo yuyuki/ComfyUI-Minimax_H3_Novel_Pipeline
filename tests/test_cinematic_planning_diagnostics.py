@@ -109,7 +109,7 @@ def test_every_validation_attempt_is_recorded_even_when_retry_recovers(monkeypat
     assert item["events"][0] not in serialized and "private rejected model body" not in serialized
     assert cr.parse_chapters([result])[0] == result
     exported = downstream_chapter(result)
-    catalog = {"schema_version": "minimax-h3-novel-refs.chapter.v4", "timeline_version": cr.TEMPORAL_VERSION,
+    catalog = {"schema_version": "minimax-h3-novel-refs.chapter.v5", "timeline_version": cr.TEMPORAL_VERSION,
                "chapter_id": "chapter", "chapter_name": "Chapter",
                "source": {"file": "chapter.txt", "sha256": "test"}, "sequences": result["sequences"],
                "narrative_review": {"issues": exported["narrative_review"]["issues"]},

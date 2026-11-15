@@ -10,7 +10,7 @@ Return only concrete, source-supported defects, not stylistic preferences or inv
 Check omitted explicit actions, dialogue, visual details and identity aliases; causal order;
 initial versus final states; possession and lighting changes; and distinct physical objects.
 Final states must describe results, not replay completed actions. Transient sounds/actions
-must not persist without support. Preserve background darkness alongside local illumination.
+must not persist without support. Preserve established ambient conditions alongside local changes.
 Distinguish metaphors from literal objects, subjective doubts from objective facts, and
 unknown facts from absence. Never demand unsupported appearance details or visible speakers.
 Similar names do not establish object identity: compare function, attachments, holder and
@@ -28,8 +28,8 @@ source_evidence contains older physical claims with exact source quotations and 
 addresses. Quotations outrank fallible fact paraphrases and generated states. Use only
 still-applicable earlier evidence; verify context resets and physical updates in scene_plan
 against current source, including their meaning, not just the presence of a quotation.
-Preserve precise spatial relations: above a frayed section differs from at that section.
-A sudden jolt does not imply continuous shaking; verify the transition to hand support.
+Preserve precise spatial relations instead of replacing them with coarser positions.
+Do not extend one-off motion into ongoing movement or change support without a transition.
 Check scene_plan timing independently: realistic manipulation and speech durations,
 dependencies, justified simultaneity and pauses. Do not accept a low estimate merely
 because it fits the maximum. If too long, request multiple scenes, including cuts
@@ -38,8 +38,8 @@ Accept compact state snapshots without repeated full inventories of unchanged ob
 For adaptation, check both source facts missing or altered in the descriptions and
 description claims unsupported by source. For each changed physical fact, identify
 the source-supported transition: location, support, attachment, possession and motion
-are separate. Attaching a lifting device does not detach or suspend an embedded object;
-preparing an action does not complete it. Do not invent handling actions or hand assignments.
+are separate. Preparation or attachment does not complete a separate manipulation.
+Do not invent handling actions or hand assignments.
 Verify initial_state precedes the first event and final_state follows the last event
 without performing an additional action. Omitted thoughts must not erase their
 observable evidence or meaningful source-supported condition and damage qualifiers.
@@ -65,13 +65,22 @@ Do not report mutually contradictory requirements; check each criticism against 
 Original source outranks generated states: do not demand continuity with an erroneous
 earlier state. Distinguish body orientation from head position and gaze; compatible
 descriptions are not contradictions. Preserve source-supported ongoing motion.
-For extraction, target is always 1. Review only source_input.text, never infer future
-events or require adaptation phase states. Check the extraction against that source.
-Check chunk_summary and every generated description use the source narration's language;
-English JSON keys never justify English prose for French source. Preserve proper names
-and quoted foreign-language dialogue. Report language mismatches as concrete defects.
-Locations must be places/spaces, not positions or orientations of objects or people.
-Spatial properties belong to the relevant entity's chapter_state/chapter_appearance.
+For extraction, target is always 1. Occurrence evidence is only source_input.text.
+chapter_context may clarify referents and categories, never establish local presence or
+import future traits, possession or actions. Check verbatim local evidence and language.
+Visible characters can have empty local appearance when independent profiles supply it.
+visual_traits must be neutral appearance: intrinsic traits, or scene-specific wardrobe
+and visible condition established when the entity is depicted. An entity first seen
+during an event can have its outfit described there. Evidence must quote the current text.
+Use reference_state to distinguish established conditions from event results; never turn
+a transformation to animate into an already completed appearance. Actions, gestures,
+expressions, poses, handling and narrative orientation
+belong to animation; never require them in appearance. Check useful visual detail without
+inventing traits or requiring name-only environment assets. Settings are actual spaces,
+not positions or effects. Group features unless distinct filming spaces are established.
+Props are concrete physical objects. Keep distinct instances separate and check category
+duplicates. Descriptions use the source narration's language; technical keys do not justify
+translation. Preserve proper names and verbatim foreign-language quotations.
 Write review messages in English, preserving source quotations in their original language.
 Return issues as target/message pairs, or an empty list when no supported defect remains.
 """

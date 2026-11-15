@@ -4,8 +4,8 @@
   "type": "object",
   "properties": {
     "default_temporal_context": {"type": "string", "description": "User-supplied date or era fallback; explicit narrative timing takes precedence. Not source evidence."},
-    "schema_version": {"const": "minimax-h3-novel-refs.chapter.v4"},
-    "timeline_version": {"const": "cinematic-reference-source.v1"},
+    "schema_version": {"const": "minimax-h3-novel-refs.chapter.v5"},
+    "timeline_version": {"const": "cinematic-neutral-references.v1"},
     "chapter_id": {"type": "string", "minLength": 1},
     "chapter_name": {"type": "string", "minLength": 1},
     "source": {
@@ -33,11 +33,114 @@
   "required": ["schema_version", "timeline_version", "chapter_id", "chapter_name", "source", "sequences", "characters", "locations", "objects"],
   "additionalProperties": false,
   "$defs": {
+    "visual_trait": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "attribute": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "enum": [
+            "intrinsic",
+            "scene"
+          ]
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "attribute",
+        "description",
+        "scope",
+        "evidence"
+      ]
+    },
+    "visual_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "common_traits",
+        "scenes"
+      ],
+      "properties": {
+        "common_traits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/visual_trait"
+          }
+        },
+        "scenes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "presence",
+                "traits",
+                "excluded_attributes"
+              ],
+              "properties": {
+                "excluded_attributes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+                "presence": {
+                  "enum": [
+                    "visible",
+                    "offscreen",
+                    "mentioned"
+                  ]
+                },
+                "traits": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/visual_trait"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "required": [
+        "presence",
+        "visual_traits"
+      ],
+      "properties": {
+        "presence": {
+          "enum": [
+            "visible",
+            "offscreen",
+            "mentioned"
+          ]
+        },
+        "visual_traits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/visual_trait"
+          }
+        }
+      }
+    },
     "entity": {
       "type": "object",
       "not": {"anyOf": [{"required": ["link_to_local_id"]}, {"required": ["first_phase"]}]},
       "properties": {
         "local_id": {"type": "string", "minLength": 1},
+        "visual_reference": {"$ref": "#/$defs/visual_reference"},
         "canonical_name": {"type": "string", "minLength": 1},
         "aliases": {"type": "array", "items": {"type": "string"}},
         "stable_visual_description": {"type": "string"},
@@ -52,11 +155,11 @@
           "propertyNames": {"pattern": "^[1-9][0-9]*$"},
           "additionalProperties": {
             "type": "object", "required": ["source"], "additionalProperties": false,
-            "properties": {"source": {"type": "array", "minItems": 1, "items": {"type": "object"}}}
+            "properties": {"source": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/observation"}}}
           }
         }
       },
-      "required": ["local_id", "canonical_name", "aliases", "first_sequence", "state_by_sequence"]
+      "required": ["local_id", "canonical_name", "aliases", "first_sequence", "state_by_sequence", "visual_reference"]
     },
     "character": {
       "allOf": [

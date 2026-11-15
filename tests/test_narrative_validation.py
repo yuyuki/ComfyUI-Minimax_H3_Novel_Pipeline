@@ -1,3 +1,4 @@
+from tests.neutral_reference_helpers import candidates as neutral_candidates
 """Semantic review orchestration with mocked LM Studio responses."""
 from copy import deepcopy
 from types import SimpleNamespace
@@ -262,8 +263,8 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
     output = tmp_path / "catalogs"
     output.mkdir()
     chapter = {"chapter_name": "scene", "sequences": [{"sequence": 1,
-               "source": "Mara, called Vale, shouts. A basket descends on another rope.",
-               "adaptation": {"initialState": "NOT EXTRACTION INPUT", "event": "NOT EXTRACTION INPUT",
+               "source": "NOT EXTRACTION INPUT",
+               "adaptation": {"initialState": "", "event": "Mara, called Vale, shouts. A basket descends on another rope.",
                               "endingState": "NOT EXTRACTION INPUT"}}]}
     args = SimpleNamespace(chunk_chars=4000, temperature=0.1, max_tokens=2000, force=False)
     calls, reviews = [], []
@@ -273,20 +274,20 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
         assert "NOT EXTRACTION INPUT" not in prompt
         if schema == nv.SCHEMA:
             reviews.append(data)
-            assert data["source_input"]["text"] == chapter["sequences"][0]["source"]
+            assert data["source_input"]["text"] == chapter["sequences"][0]["adaptation"]["event"]
             rejected = data["extraction"]["chunk_summary"] == "bad"
             return {"issues": [{"target": 1, "message": "Separate the basket rope from the support rope."}]
                     if rejected else []}
         if schema == cr.chapter_reference_identity.SCHEMA:
-            assert data["source_passages"][0]["text"] == chapter["sequences"][0]["source"]
+            assert data["source_passages"][0]["text"] == chapter["sequences"][0]["adaptation"]["event"]
             return {"groups": []}
         assert schema == cr.lmstudio_pipeline.load("extract").CHUNK_SCHEMA
         calls.append(data)
         bad = persistent_defect or "defects_to_correct" not in data
-        return {"chunk_summary": "bad" if bad else "", "locations": [],
+        return neutral_candidates({"chunk_summary": "bad" if bad else "", "locations": [],
                 "characters": [{"canonical_name": "Mara", "aliases": ["Vale"], "speaks": True}],
                 "objects": [{"canonical_name": name, "aliases": ["rope"]}
-                            for name in ("support rope", "basket rope")]}
+                            for name in ("support rope", "basket rope")]}, data.get("source_input", data)["text"])
 
     monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json", chat)
     saved = cr.process_chapter(chapter, output, None, "mock", args, "scene")

@@ -38,6 +38,10 @@ Each processing node's `thinking` checkbox controls reasoning requests for Qwen,
 
 Version 2.6.0 uses one H3 scene per cinematic sequence and validates continuity citations against the supplied evidence. Recreate Adapter and Generate nodes after updating; saved chapters must include the adaptation duration.
 
+Reference images describe appearance independently from animation: neutral character views, readable objects and consistent environments. Unchanged object and location traits are reused across scenes; local appearance changes select separate references. Actions and narrative poses remain in the H3 scene prompts. Conflicting source descriptions and incomplete checks appear in diagnostic JSON files beside the outputs.
+
+After this reference-contract update, rerun extraction, consolidation and H3 prompt generation. Previously saved reference catalogs and registries require regeneration; they are not converted automatically.
+
 ## Nodes
 
 | Node | What it does |
@@ -46,9 +50,9 @@ Version 2.6.0 uses one H3 scene per cinematic sequence and validates continuity 
 | **Select Chapters** | Picks chapter files or a folder to process. |
 | **Cinematic Chapter Adapter** | Turns chapter text into ordered, reviewable scene outlines. |
 | **Load Cinematic Chapters** | Loads saved scene outlines for another workflow run. |
-| **Extract Chapter References** | Finds characters, places, objects and story details in chapters. |
+| **Extract Chapter References** | Extracts neutral visual details and scene presence from cinematic sequences, then groups confirmed chapter identities. |
 | **Load Chapter Catalogs** | Loads saved chapter-by-chapter reference results. |
-| **Consolidate References** | Combines chapter references into a shared registry and creates image/audio briefs. |
+| **Consolidate References** | Combines identities and character designs into reusable neutral image references, scene-specific appearance variants and audio briefs. |
 | **Load Consolidated References** | Loads a saved registry to continue without repeating consolidation. |
 | **Generate H3 Prompts** | Builds scene prompts and reference instructions for MiniMax H3. |
 | **Spatial Continuity** | Plans character, object, location and camera positions across scenes. |

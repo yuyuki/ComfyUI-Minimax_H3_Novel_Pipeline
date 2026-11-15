@@ -91,7 +91,8 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
     catalogs, _ = ExtractChapterReferencesNode().run(config, chapters, **defaults(ExtractChapterReferencesNode))["result"]
     sequences = chapters[0]["sequences"]
     assert [(p["sequence"], p["text"]) for p in source_inputs] == [
-        (seq["sequence"], seq["source"].strip()) for seq in sequences]
+        (seq["sequence"], "\n\n".join(seq["adaptation"][p] for p in ("initialState", "event")
+                                    if seq["adaptation"][p].strip())) for seq in sequences]
     assert all("phase" not in p for p in source_inputs)
     assert catalogs[0]["sequences"] == sequences
     registry, _ = ConsolidateReferencesNode().run(catalogs, config, **defaults(ConsolidateReferencesNode))["result"]

@@ -84,13 +84,54 @@ Preserve existing node IDs and socket types for workflow compatibility.
 
 ## Behavior and security constraints
 
-- Reference extraction reads only `sequences[].source`, once per source chunk;
-  never extract references from `adaptation.initialState`, `event` or `endingState`.
-  Preserve source observations under `state_by_sequence[sequence].source` without
-  claiming adaptation phase timing. Keep cinematic adaptation and editable choices
+### Neutral visual reference requirements
+
+The reference contract and validation cases are documented in
+[docs/neutral_visual_references.md](docs/neutral_visual_references.md).
+
+- Keep reference prompts generic across books and genres. Never embed names,
+  scene numbers, sample passages or prop examples from a particular book in
+  system instructions. Story-specific details belong only in the input data.
+
+- Reference images describe reusable visual appearance, not an opening frame or
+  a staged action. Leave gestures, poses, expressions, object manipulation and
+  narrative orientation to H3 animation. Choose views that expose visual details
+  clearly, such as a frontal view of an inscribed tablet.
+- Keep one identity per established physical entity and at most one visual
+  association per entity per scene. Only visually present entities belong in
+  that scene's visual references; offscreen speech remains a separate audio need.
+- Use character visual profiles for timeless appearance. Keep scene-specific
+  wardrobe and visible condition separate from global identity, and never import
+  future actions, accessories or states into an earlier scene.
+- Combine intrinsic object and location features into shared descriptions. Reuse
+  unchanged material, construction, markings and proportions wherever the same
+  entity is visible. A later intrinsic clarification may enrich earlier references
+  only when the same entity and unchanged trait are supported; never backdate a
+  transformation or infer presence from description reuse. Flag conflicting or
+  uncertain traits in diagnostics instead of silently combining them.
+  Address damage and other appearance changes chronologically; a later
+  transformation must not contaminate an earlier reference. Distinct physical instances must
+  remain distinct even when they share a generic name.
+- Object and location references require useful visual detail, not just a name.
+  Never invent unsupported traits to fill an empty description. A visible
+  character may be identified without local traits when its visual profile can
+  supply the appearance. Reuse unchanged references; create variants only for
+  actual appearance changes, never merely for actions or new scene numbers.
+- Chapter and consolidated reference contracts are v5. Require regeneration of
+  incompatible saved data; do not convert it or retain compatibility readers.
+  Keep the project version unchanged for this work.
+
+### Current pipeline constraints
+
+- Reference extraction reads `adaptation.initialState` followed by `adaptation.event`
+  for each sequence, using their resolved names; exclude original `source` and
+  `endingState` from extraction and chapter-local identity evidence. Preserve these
+  neutral observations and quoted evidence under `state_by_sequence[sequence].source`.
+  Validate scene-local trait quotations before accepting extraction. Keep actions
+  in cinematic adaptation, not appearance. Keep adaptation and editable choices
   available to downstream nodes; move technical reviews to the diagnostic sidecar.
-- Consolidate chapter-local identities after source extraction using ordered source
-  passages and validated, source-quoted LLM merge groups. Keep occurrences separate
+- Consolidate chapter-local identities after extraction using ordered initialState/event
+  passages and validated, passage-quoted LLM merge groups. Keep occurrences separate
   until confirmed; identical generic names are not identity evidence. Preserve all
   original observations losslessly at their sequence addresses. Cache identity
   decisions independently from extraction and record incomplete decisions in diagnostics.
@@ -99,6 +140,12 @@ Preserve existing node IDs and socket types for workflow compatibility.
   re-extraction/reconsolidation message; do not convert them or add fallback readers.
   Cross-chapter identity and alias reconciliation belong to consolidation; its audit
   handles remaining duplicates and must stay enabled when that is required.
+- Compile `visual_reference.common_traits` and chapter/sequence-addressed presence
+  and local traits from confirmed identities. Unchanged intrinsic traits can be
+  shared; conflicting traits stay local and trigger incomplete diagnostics.
+  Image assets use explicit `scene_bindings`; neither chapter membership nor a
+  base variant alone establishes applicability to a scene. Reuse equal resolved
+  appearances across scenes. Never carry local states through unobserved scenes.
 - Locations are actual places/spaces, never positions or orientations of objects
   or people. Spatial properties belong to the relevant entity's observations.
   Keep distinct physical instances separate using source-supported qualified names.

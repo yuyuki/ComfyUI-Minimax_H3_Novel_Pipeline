@@ -26,6 +26,7 @@ from . import temporal_context
 from .character_visual_integration import sequence_context
 from .cinematic_references import parse_chapters
 from .reference_timeline import source_observations_at
+from . import reference_visuals
 
 logger = logging.getLogger(__name__)
 
@@ -489,7 +490,7 @@ def chapter_catalog(refs: dict[str, Any], chapter_id: str) -> list[dict[str, Any
             continue
         available = []
         for a in assets.get(gid, []):
-            if a.get("variant") in {"base", chapter_id}:
+            if chapter_id in a["scene_bindings"]:
                 available.append(
                     {
                         "view_type": a.get("view_type", ""),
@@ -541,7 +542,14 @@ def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> li
         entity = entities[item["global_id"]]
         source = source_observations_at(entity, chapter_id, sequence)
         if source:
-            result.append({**item, "source_observations": source})
+            state = entity["visual_reference"]["scenes"].get(chapter_id, {}).get(str(sequence))
+            views = reference_visuals.scene_assets(
+                [a for a in refs.get("picture_assets", []) if a["linked_global_id"] == entity["global_id"]],
+                chapter_id, sequence)
+            result.append({**item, "source_observations": source,
+                           "presence": state["presence"] if state else "mentioned",
+                           "neutral_visual_appearance": reference_visuals.appearance_at(entity, chapter_id, sequence),
+                           "available_picture_views": [{k: a[k] for k in ("view_type", "variant", "asset_id")} for a in views]})
     return result
 
 
@@ -593,30 +601,27 @@ def default_view_order(entity_type: str) -> list[str]:
         return ["face_front", "three_quarter", "full_body_front", "back_view", "profile", "expression_closeup", "costume_detail"]
     if entity_type == "location":
         return ["wide_establishing", "secondary_angle", "reverse_angle", "key_detail", "interior_zone", "exterior_approach"]
-    return ["hero_three_quarter", "detail_closeup", "side_profile", "scale_context"]
+    return ["front_view", "hero_three_quarter", "detail_closeup", "side_profile", "scale_context"]
 
 
 def best_asset_for_view(
     assets: list[dict[str, Any]],
     view_type: str,
-    chapter_id: str,
 ) -> dict[str, Any] | None:
     exact = [a for a in assets if a.get("view_type") == view_type]
     if not exact:
         return None
-    return next((a for a in exact if a.get("variant") == chapter_id), None) or next(
-        (a for a in exact if a.get("variant") == "base"), exact[0]
-    )
+    return exact[0]
 
 
 def available_assets_for_entity(
     refs: dict[str, Any],
     global_id: str,
     chapter_id: str,
+    sequence: int,
 ) -> list[dict[str, Any]]:
     assets = [a for a in refs.get("picture_assets", []) if a.get("linked_global_id") == global_id]
-    # Keep only base or chapter-specific variants; if both exist for same view, chapter variant wins later.
-    return [a for a in assets if a.get("variant") in {"base", chapter_id}]
+    return reference_visuals.scene_assets(assets, chapter_id, sequence)
 
 
 def audio_asset_for(refs: dict[str, Any], global_id: str) -> dict[str, Any] | None:
@@ -653,9 +658,9 @@ def build_bindings(
     unreferenced: list[dict[str, Any]] = []
     for order_index, gid in enumerate(ordered_visible):
         entity = entities.get(gid)
-        if not entity:
+        if not entity or reference_visuals.appearance_at(entity, chapter_id, scene.sequence) is None:
             continue
-        available = available_assets_for_entity(refs, gid, chapter_id)
+        available = available_assets_for_entity(refs, gid, chapter_id, scene.sequence)
         if not available:
             unreferenced.append(
                 {
@@ -676,7 +681,7 @@ def build_bindings(
         selected_assets: list[dict[str, Any]] = []
         seen_asset_ids: set[str] = set()
         for view in requested_views:
-            asset = best_asset_for_view(available, view, chapter_id)
+            asset = best_asset_for_view(available, view)
             if asset and asset["asset_id"] not in seen_asset_ids:
                 selected_assets.append(asset)
                 seen_asset_ids.add(asset["asset_id"])
@@ -686,7 +691,6 @@ def build_bindings(
             ordered_available = sorted(
                 available,
                 key=lambda a: (
-                    0 if a.get("variant") == chapter_id else 1,
                     default_view_order(entity["entity_type"]).index(a.get("view_type"))
                     if a.get("view_type") in default_view_order(entity["entity_type"])
                     else 999,

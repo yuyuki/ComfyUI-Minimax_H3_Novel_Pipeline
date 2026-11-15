@@ -1,3 +1,4 @@
+from tests.neutral_reference_helpers import catalog as neutral_catalog
 """Offline chronology regressions through real reconciliation and duplicate merges."""
 from copy import deepcopy
 import json
@@ -20,7 +21,7 @@ def catalog(cid="chapter", kind="characters", name="Indy", alias=None):
                           {state: "eyes closed", "evidence": ["closes eyes"]}]},
         "2": {"source": [{state: "receives a torch"}, {state: "holds the torch"}]},
     }
-    return {"schema_version": util.CHAPTER_SCHEMA, "timeline_version": "cinematic-reference-source.v1",
+    return neutral_catalog({"schema_version": util.CHAPTER_SCHEMA, "timeline_version": "cinematic-neutral-references.v1",
             "chapter_id": cid, "chapter_name": cid, "source": {},
             "sequences": [{"sequence": n, "source": "Evidence", "adaptation": {
                 "initialState": "Opening", "event": "Action", "endingState": "Ending"}} for n in (1, 2, 3)],
@@ -28,7 +29,7 @@ def catalog(cid="chapter", kind="characters", name="Indy", alias=None):
             kind: [{"local_id": "LOCAL_1", "canonical_name": name, "aliases": alias or [],
                     "stable_visual_description": "Brown hair" if kind == "characters" else "Hemp fibers",
                     "distinguishing_features": ["Permanent mark"], "voice_description": "Low voice",
-                    "first_sequence": 3, "state_by_sequence": observations}]}
+                    "first_sequence": 3, "state_by_sequence": observations}]})
 
 
 @pytest.fixture
@@ -94,7 +95,7 @@ def test_object_breaks_later_and_audit_preserves_duplicate_observations(mocked_r
     states = chapter["objects"][0]["state_by_sequence"]
     states["1"] = {"source": [{"chapter_state": "supports Indy", "evidence": ["taut rope"]}]}
     states["3"] = {"source": [{"chapter_state": "breaks", "evidence": ["rope snaps"]}]}
-    first, = run(chapter)
+    first, = run(neutral_catalog(chapter))
     second = deepcopy(first)
     second["global_id"] = "OBJ_002"
     second["source_entities"][0]["local_id"] = "LOCAL_2"
@@ -278,6 +279,7 @@ def test_source_observations_survive_reconciliation_audit_and_generation(mocked_
     other.update(local_id="LOCAL_2", canonical_name="Henry", aliases=["Indy"],
                  state_by_sequence={"2": {"source": [{"chapter_appearance": "waits"}]}})
     chapter["characters"].append(other)
+    chapter = neutral_catalog(chapter)
     registry = run(chapter)
     assert len(registry) == 2
     target, duplicate = [e["global_id"] for e in registry]
@@ -288,7 +290,9 @@ def test_source_observations_survive_reconciliation_audit_and_generation(mocked_
     entity, = [e for e in registry if e["global_id"] not in removed]
     assert set(entity["timeline"]["chapter"]) == {"1", "2"}
     assert "first_phase" not in entity
+    from minimax_h3_novel_pipeline.core import reference_visuals
+    entity["visual_reference"] = reference_visuals.compile_reference(entity["timeline"], [], entity["global_id"])
     projected = sequence_catalog({"entities": [entity]}, "chapter", 1)
-    assert projected[0]["source_observations"] == [{"chapter_appearance": "holds a rope", "evidence": ["rope"]}]
+    assert projected[0]["source_observations"] == entity["timeline"]["chapter"]["1"]["source"]
     assert "state_by_phase" not in projected[0]
     assert sequence_catalog({"entities": [entity]}, "chapter", 3) == []
