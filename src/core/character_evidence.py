@@ -9,18 +9,18 @@ import re
 import time
 from bisect import bisect_left
 from copy import deepcopy
-from pathlib import Path
 
 from openai import APIError
 
 from . import lmstudio_json, lmstudio_pipeline, progress, prompt_cache, util
-from .path_access import confined_path, input_path
+from .path_access import confined_path
+from .source_text import comparison_text, contains, normalize, normalize_data, read_source, source_spans
 
 logger = logging.getLogger(__name__)
 
-VERSION = 1
+VERSION = 2
 SELECTION_VERSION = 2
-REPAIR_VERSION = 4
+REPAIR_VERSION = 5
 SCOPES = ("proper_names", "all_characters")
 # Candidate detection is deliberately permissive: entity type and identity are
 # interpreted during evidence extraction/consolidation, never guessed from case.
@@ -266,23 +266,6 @@ def audit_observations(observations, parts, client, model, args, stats):
     return observations
 
 
-def read_source(path: Path) -> tuple[str, str]:
-    """Keep whitespace and line endings; PDF locations refer to extracted text."""
-    path = input_path(path)
-    if path.suffix.lower() == ".pdf":
-        from pypdf import PdfReader
-
-        text = "\n\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
-        basis = "pdf_extracted_text"
-    else:
-        # Strict decoding avoids silently replacing source characters.
-        text = path.read_bytes().decode("utf-8-sig")
-        basis = "utf8_decoded_text"
-    if not text.strip():
-        raise ValueError(f"Chapter {path.name} has no text; supply UTF-8 text or a searchable PDF.")
-    return text, basis
-
-
 def passages(text: str, size: int):
     """Bound requests, retaining overlap for evidence spanning a chunk boundary."""
     start = 0
@@ -296,6 +279,7 @@ def passages(text: str, size: int):
 
 def validate_result(result, passage: str, *, validate_quotation=True, log_warnings=True) -> list[dict]:
     """Keep every observation and annotate validation problems for manual review."""
+    result = normalize_data(result)
     result_warnings = []
     if not isinstance(result, dict) or set(result) != {"evidence"} or not isinstance(result["evidence"], list):
         result_warnings.append("Return an object containing only an evidence array.")
@@ -325,7 +309,7 @@ def validate_result(result, passage: str, *, validate_quotation=True, log_warnin
             if item.get("attribute") in ("clothing", "accessory") and item.get("persistence") != "temporary":
                 warnings.append("Clothing and accessories must be temporary observations.")
             quotation = item.get("quotation")
-            if validate_quotation and (not isinstance(quotation, str) or not quotation or quotation not in passage):
+            if validate_quotation and (not isinstance(quotation, str) or not contains(passage, quotation)):
                 warnings.append("Quotation is not an exact substring of the supplied passage. Copy it verbatim.")
         observation = dict(item) if isinstance(item, dict) else {"raw_evidence": item}
         if warnings:
@@ -357,48 +341,33 @@ def _batch_observations(raw, parts):
             observations[i].setdefault("warnings", []).append("Semantic review: " + issue)
     for item in observations:
         quote = item.get("quotation")
-        if not isinstance(quote, str) or not quote or not any(quote in part for part in parts):
+        if not isinstance(quote, str) or not any(contains(part, quote) for part in parts):
             item.setdefault("warnings", []).append(
                 "Quotation is not an exact substring of a supplied passage. Copy it verbatim.")
     return observations
 
 
-def _normalized_quote(text):
-    # Map harmless typography only; never fuzzy-match or change words/negation.
-    chars, offsets = [], []
-    translation = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "«": '"', "»": '"'})
-    for i, char in enumerate(text):
-        char = char.translate(translation)
-        if char.isspace():
-            if chars and chars[-1] == " ":
-                continue
-            char = " "
-        chars.append(char)
-        offsets.append(i)
-    return "".join(chars), offsets
-
-
 def repair_observations(raw, parts, stats):
-    """Restore uniquely matching verbatim quotations locally, without model calls."""
+    """Anchor quotations in normalized source passages without model calls."""
+    parts = [normalize(part) for part in parts]
     observations = _batch_observations(raw, parts)
-    normalized = [_normalized_quote(part) for part in parts]
     for index, item in enumerate(observations):
         lmstudio_pipeline.comfy_interrupt_check()
         quote = item.get("quotation")
         if not isinstance(quote, str) or not quote.strip() or any(quote in p for p in parts):
             continue
-        needle = _normalized_quote(quote)[0].strip()
+        needle = comparison_text(quote)
         if len(needle) > 1 and needle[0] == needle[-1] == '"':
             needle = needle[1:-1].strip()
         if not needle:
             continue
         matches = set()
-        for part, (text, offsets) in zip(parts, normalized):
-            pos = text.find(needle)
-            while pos >= 0:
-                matches.add(part[offsets[pos]:offsets[pos + len(needle) - 1] + 1])
-                pos = text.find(needle, pos + 1)
+        for part in parts:
+            for start, end in source_spans(part, needle):
+                matches.add(part[start:end])
         if len(matches) != 1:
+            if len(matches) > 1:
+                item.setdefault("warnings", []).append("Quotation has ambiguous source typography; copy it verbatim.")
             continue
         candidate = {k: v for k, v in item.items() if k != "warnings"}
         candidate["quotation"] = matches.pop()
@@ -446,6 +415,8 @@ def extract_chapter(path, output, client, model, args, index, *, source=None, oc
                     cache_dir=None, resume_cache_dir=None, diagnostics=None, checkpoint=None):
     started = time.perf_counter()
     text, basis = source if source is not None else read_source(path)
+    if text != normalize(text) or basis not in {"normalized_utf8_text", "normalized_pdf_extracted_text"}:
+        raise ValueError("Character extraction requires normalized source text and normalized location_basis.")
     scope = getattr(args, "character_scope", "proper_names")
     if scope not in SCOPES:
         raise ValueError("Invalid character_scope.")
@@ -545,18 +516,17 @@ def extract_chapter(path, output, client, model, args, index, *, source=None, oc
             quotation = item.get("quotation")
             observation_key = json.dumps(item, ensure_ascii=False, sort_keys=True)
             for offset, part in batch:
-                pos = part.find(quotation) if isinstance(quotation, str) and quotation else -1
-                while pos >= 0:
-                    start = offset + pos
-                    end = start + len(quotation)
+                spans = source_spans(part, quotation) if isinstance(quotation, str) else []
+                for local_start, local_end in spans:
+                    start = offset + local_start
+                    end = offset + local_end
                     identity = (observation_key, start, end)
                     if identity not in seen:
                         seen.add(identity)
                         locations.append({"start_char": start, "end_char": end,
                                           "start_line": bisect_left(newlines, start) + 1,
                                           "end_line": bisect_left(newlines, end - 1) + 1})
-                    pos = part.find(quotation, pos + 1)
-            if not locations and isinstance(quotation, str) and any(quotation and quotation in p for _, p in batch):
+            if not locations and isinstance(quotation, str) and any(contains(p, quotation) for _, p in batch):
                 continue
             if not locations and not item.get("warnings"):
                 item = {**item, "warnings": ["Quotation crosses separate source passages."]}
@@ -610,12 +580,18 @@ def validate_document(data) -> None:
     fields(data, {"format_version": int, "location_convention": str, "chapters": list}, "document")
     if data["format_version"] != VERSION:
         raise ValueError(f"Unsupported character evidence format_version {data['format_version']}; "
-                         f"expected {VERSION}. Select output from the current Character Evidence Extractor.")
+                         f"expected {VERSION}. Regenerate evidence with the current Character Evidence Extractor; "
+                         "all locations now refer to normalized source_text.")
     for index, chapter in enumerate(data["chapters"]):
         where = f"chapters[{index}]"
         fields(chapter, {"chapter": int, "chapter_name": str, "source_file": str,
                          "source_text": str, "source_text_sha256": str, "location_basis": str,
                          "evidence": list}, where)
+        if (chapter["location_basis"] not in {"normalized_utf8_text", "normalized_pdf_extracted_text"}
+                or chapter["source_text"] != normalize(chapter["source_text"])):
+            raise ValueError(f"{where}: normalized source_text and location_basis required; regenerate character evidence.")
+        if chapter["source_text_sha256"] != hashlib.sha256(chapter["source_text"].encode("utf-8")).hexdigest():
+            raise ValueError(f"{where}: source_text_sha256 does not match normalized source_text; regenerate character evidence.")
         for item_index, item in enumerate(chapter["evidence"]):
             item_where = f"{where}.evidence[{item_index}]"
             fields(item, {"provenance": dict}, item_where)

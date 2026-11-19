@@ -5,13 +5,14 @@ import json
 import hashlib
 import logging
 import re
-import unicodedata
 from copy import deepcopy
 
 import httpx
 from openai import OpenAIError
 
 from . import cinematic_scene_planning as scene_planning
+from .source_text import normalize as _normalize_text, prefix_span, suffix_span
+from .source_text import normalize_data as _normalized_output
 from . import lmstudio_json, lmstudio_pipeline, narrative_choices, narrative_validation, progress
 
 logger = logging.getLogger(__name__)
@@ -199,24 +200,6 @@ class _PassageValidationError(ValueError):
     """Invalid generated fields, distinct from client/configuration errors."""
 
 
-def _normalize_text(text: str) -> str:
-    """Canonical typography only; preserve paragraph structure and story content."""
-    return unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n").translate(
-        str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
-                       "\u00a0": " ", "\u202f": " ", "\u2028": "\n", "\u2029": "\n\n"})))
-
-
-def _normalized_output(value):
-    """Normalize generated text, including states, reviews and narrative proposals."""
-    if isinstance(value, str):
-        return _normalize_text(value)
-    if isinstance(value, list):
-        return [_normalized_output(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _normalized_output(item) for key, item in value.items()}
-    return value
-
-
 def source_chunks(text: str, max_chars: int) -> list[str]:
     """Bound requests without normalizing, overlapping or losing source text."""
     if max_chars < 1:
@@ -258,7 +241,8 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
         start = cursor
         while cursor < len(source) and source[cursor].isspace():
             cursor += 1
-        if not source.startswith(excerpt, cursor):
+        span = prefix_span(source[cursor:], excerpt)
+        if span is None:
             difference = 0
             while (difference < len(excerpt) and cursor + difference < len(source)
                    and excerpt[difference] == source[cursor + difference]):
@@ -269,7 +253,7 @@ def _validated_sequences(result: object, source: str) -> list[dict]:
                 f"(sequence starts at {cursor + 1}).",
                 expected=source[cursor:], received=excerpt, position=difference,
             )
-        cursor += len(excerpt)
+        cursor += span[1]
         # Restore boundary whitespace from the actual source, never from the LLM.
         validated.append({**item, "source": source[start:cursor]})
     if source[cursor:].strip():
@@ -286,9 +270,15 @@ def _validated_window(result: object, source: str) -> tuple[list[dict], int]:
     if not isinstance(result, dict) or set(result) != {"sequences", "unprocessed_source"}:
         raise ValueError("Reading windows require sequences and unprocessed_source.")
     tail = result["unprocessed_source"]
-    if not isinstance(tail, str) or not source.endswith(tail):
+    if not isinstance(tail, str):
         raise _SourceCoverageError("unprocessed_source must be an exact suffix of the reading window.")
-    consumed = len(source) - len(tail)
+    if source.endswith(tail):
+        consumed = len(source) - len(tail)
+    else:
+        span = suffix_span(source, tail)
+        if span is None:
+            raise _SourceCoverageError("unprocessed_source must be an exact suffix of the reading window.")
+        consumed = span[0]
     if not source[:consumed].strip():
         raise _WindowProgressError("No complete scene in the reading window; increase chunk_chars.")
     return _validated_sequences({"sequences": result["sequences"]}, source[:consumed]), consumed

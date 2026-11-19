@@ -116,7 +116,7 @@ class CharacterEvidenceExtractorNode:
                     chapter_stats["status"] = "interrupted_or_failed"
             checkpoint()
         data = {"format_version": character_evidence.VERSION,
-                "location_convention": "Zero-based Unicode character offsets, exclusive end; one-based lines in source_text.",
+                "location_convention": "Zero-based Unicode character offsets, exclusive end; one-based lines in normalized source_text.",
                 "chapters": chapters}
         saved = output / "character_evidence.json"
         util.save_json(saved, data)

@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 
 from . import character_profiles as cp
+from .source_text import contains
 from .editable_schemas import SCHEMA_DIR, validate_document as validate_schema
 
 SCHEMA = json.loads((SCHEMA_DIR / "character_profiles.schema.json").read_text(encoding="utf-8"))
@@ -95,5 +96,5 @@ def validate_change(row, records, where, references):
     ids = [row[k] for k in ("before_id", "after_id", "support_id")]
     references(list(dict.fromkeys(ids)), "chronological_changes")
     if (ids[0] == ids[1] or any(records[key]["classification"] != "explicit" for key in ids)
-            or row["temporal_quote"] not in records[ids[2]]["quotation"] or not row["temporal_quote"]):
+            or not contains(records[ids[2]]["quotation"], row["temporal_quote"])):
         raise ValueError(f"{where}.chronological_changes: exact explicit temporal evidence required.")

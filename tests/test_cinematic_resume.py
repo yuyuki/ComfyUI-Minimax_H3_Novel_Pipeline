@@ -63,7 +63,7 @@ def test_resume_pending_draft_then_completed_chapter_without_generation(node, mo
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", no_generation)
     result = run(NEW, resume_run=OLD)["result"][0][0]
     assert len(reviews) == 1
-    assert "".join(s["source"] for s in result["sequences"]) == chapter.read_text().strip()
+    assert "".join(s["source"] for s in result["sequences"]) == chapter.read_text()
     assert cache(root).read_bytes() == previous
     assert cache(root, NEW).with_name("scene_001.json").is_file()
     reviews.clear()
@@ -131,7 +131,7 @@ def test_core_resume_after_one_scene_committed_keeps_remaining_scene_and_choices
 @pytest.mark.parametrize("length_error", [False, True])
 def test_third_scene_failure_preserves_files_and_resumes_only_pending_scenes(node, monkeypatch, capsys, length_error):
     run, root, chapter = node
-    source = chapter.read_text().strip()
+    source = chapter.read_text()
     fields = [scene(source[start:end]) for start, end in ((0, 55), (55, 110), (110, 165), (165, len(source)))]
     fields = ca._validated_sequences({"sequences": fields}, source)
     for index, item in enumerate(fields):

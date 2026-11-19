@@ -190,12 +190,12 @@
         "Node name for S&R": "SelectChaptersNode"
       },
       "widgets_values": [
-        "minimax_h3_novel/test.md",
-        "minimax_h3_novel/test.md"
+        "minimax_h3_novel/00_PROLOGUE.md",
+        "minimax_h3_novel/00_PROLOGUE.md"
       ],
       "widgets_values_named": {
-        "chapter_paths": "minimax_h3_novel/test.md",
-        "saved_chapter": "minimax_h3_novel/test.md"
+        "chapter_paths": "minimax_h3_novel/00_PROLOGUE.md",
+        "saved_chapter": "minimax_h3_novel/00_PROLOGUE.md"
       }
     },
     {
@@ -243,12 +243,12 @@
       "id": 96,
       "type": "LoadConsolidatedReferencesNode",
       "pos": [
-        326.87072129565445,
+        327.7228171925685,
         1918.1116498463225
       ],
       "size": [
-        302.625,
-        94
+        301.7729541634917,
+        93.99999409364631
       ],
       "flags": {},
       "order": 5,
@@ -568,10 +568,10 @@
       "title": "Note for Chapter Extraction",
       "properties": {},
       "widgets_values": [
-        "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence source chunk; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input."
+        "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input."
       ],
       "widgets_values_named": {
-        "text": "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence source chunk; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input."
+        "text": "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -1221,7 +1221,7 @@
       },
       "widgets_values": [
         true,
-        8192,
+        16384,
         0.12,
         12,
         35,
@@ -1244,7 +1244,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 8192,
+        "max_tokens": 16384,
         "temperature": 0.12,
         "candidate_count": 12,
         "include_all_below": 35,
@@ -1930,13 +1930,13 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6411963029879247,
+      "scale": 0.9387755072046209,
       "offset": [
-        1851.5786593518,
-        -2161.802269056644
+        1276.627627553609,
+        -1594.2767115263937
       ]
     },
-    "frontendVersion": "1.57.6"
+    "frontendVersion": "1.58.5"
   },
   "version": 0.4
 }

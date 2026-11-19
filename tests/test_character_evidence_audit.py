@@ -86,13 +86,13 @@ def test_repair_audit_and_cache_integration(tmp_path, monkeypatch):
     args = settings(character_scope="all_characters")
     path = tmp_path / "chapter.txt"
     result = evidence.extract_chapter(path, tmp_path, None, "qwen", args, 1,
-                                      source=(quote, "utf8_decoded_text"))
+                                      source=(quote, "normalized_utf8_text"))
     assert result["evidence"][0]["extraction_correction"]
     assert result["evidence"][0]["warnings"]
     assert evidence.extract_chapter(path, tmp_path, None, "qwen", args, 1,
-                                    source=(quote, "utf8_decoded_text")) == result
+                                    source=(quote, "normalized_utf8_text")) == result
     assert chat.call_count == 2
-    assert next(iter(character_profiles.prepare_evidence({"format_version": 1,
+    assert next(iter(character_profiles.prepare_evidence({"format_version": evidence.VERSION,
         "location_convention": "offsets", "chapters": [result]}).values()))["validation_confidence"] == "low"
 
 

@@ -1,5 +1,6 @@
 """Saved evidence interchangeability, fidelity, validation and disk changes."""
 import json
+import hashlib
 import math
 import os
 from unittest.mock import Mock
@@ -122,7 +123,7 @@ def test_invalid_json(saved, contents, message):
 
 
 @pytest.mark.parametrize("change, message", [
-    (lambda d: d.update(format_version=999), "Unsupported.*format_version.*expected 1"),
+    (lambda d: d.update(format_version=999), "Unsupported.*format_version.*expected 2"),
     (lambda d: d.update(format_version=True), "format_version must be int"),
     (lambda d: d.update(chapters={}), "chapters must be list"),
     (lambda d: d["chapters"][0].pop("source_text"), "missing required field 'source_text'"),
@@ -151,7 +152,10 @@ def test_content_hash_and_fresh_load_with_same_size_and_timestamp(saved):
     before = Loader.IS_CHANGED(str(path))
     assert Loader.IS_CHANGED(str(path)) == before
     stat = path.stat()
-    path.write_bytes(path.read_bytes().replace(b"verts", b"bleus"))
+    changed = json.loads(path.read_bytes().replace(b"verts", b"bleus"))
+    for chapter in changed["chapters"]:
+        chapter["source_text_sha256"] = hashlib.sha256(chapter["source_text"].encode("utf-8")).hexdigest()
+    path.write_text(json.dumps(changed, ensure_ascii=False), encoding="utf-8")
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     assert path.stat().st_size == stat.st_size
     assert Loader.IS_CHANGED(str(path)) != before

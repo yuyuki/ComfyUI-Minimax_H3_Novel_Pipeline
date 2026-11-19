@@ -14,6 +14,7 @@ from openai import APIError
 
 from . import character_profiles as cp, lmstudio_json, lmstudio_pipeline, progress, prompt_cache, util
 from .editable_schemas import validate_document
+from .source_text import contains
 
 logger = logging.getLogger(__name__)
 DECISION_VERSION = 7
@@ -687,8 +688,8 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared, compo
                   | {groups[i]["canonical_name"]} for i in (left, right)]
         quotes = [" ".join(identity_text(records[row["evidence_id"]]) for row in signatures[i])
                   for i in (left, right)]
-        if not (labels[0] & labels[1] or any(n in quotes[1] for n in labels[0])
-                or any(n in quotes[0] for n in labels[1])):
+        if not (labels[0] & labels[1] or any(contains(quotes[1], n) for n in labels[0])
+                or any(contains(quotes[0], n) for n in labels[1])):
             continue
         # Mere co-occurrence cannot pass build_profiles' explicit alias checks.
         # Preserve homonyms and every possible transitive name bridge for the LLM.
@@ -1000,7 +1001,7 @@ def compare_values(trait, items, records, requests):
         if decision["relation"] == "change":
             before, after, support = (decision[k] for k in ("before_id", "after_id", "support_id"))
             if (set((before, after)) != allowed or support not in allowed or not decision["temporal_quote"]
-                    or decision["temporal_quote"] not in records[support]["quotation"]):
+                    or not contains(records[support]["quotation"], decision["temporal_quote"])):
                 raise ValueError("Temporal change needs exact explicit supporting quotation and both states.")
         elif any(decision[k] for k in ("before_id", "after_id", "support_id", "temporal_quote")):
             raise ValueError("Only changes may contain chronology references.")

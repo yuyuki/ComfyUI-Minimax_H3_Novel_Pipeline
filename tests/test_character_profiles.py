@@ -12,21 +12,23 @@ import pytest
 
 from minimax_h3_novel_pipeline.core import character_profiles as profiles, path_access
 from minimax_h3_novel_pipeline.core import character_profile_batches as batches
+from minimax_h3_novel_pipeline.core.source_text import normalize_data
 from tests.test_character_evidence import observation
 
 
 def document(*items):
     chapters = []
     for index, item in enumerate(items, 1):
+        item = normalize_data(item)
         text = item["quotation"]
         name = f"chapter{index}"
         chapters.append({"chapter": index, "chapter_name": name, "source_file": name + ".txt",
                          "source_text": text, "source_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
-                         "location_basis": "utf8_decoded_text", "evidence": [{**item, "provenance": {
+                         "location_basis": "normalized_utf8_text", "evidence": [{**item, "provenance": {
                              "chapter": index, "chapter_name": name, "file": name + ".txt", "passage": 1,
                              "locations": [{"start_char": 0, "end_char": len(text), "start_line": 1,
                                             "end_line": text.count("\n", 0, len(text) - 1) + 1}]}}]})
-    return {"format_version": 1, "location_convention": "Original offsets", "chapters": chapters}
+    return {"format_version": profiles.character_evidence.VERSION, "location_convention": "Normalized offsets", "chapters": chapters}
 
 
 def refs(ids):

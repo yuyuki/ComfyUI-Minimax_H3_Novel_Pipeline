@@ -8,6 +8,7 @@ from . import continuity_context, lmstudio_json, lmstudio_pipeline, progress, ut
 from .editable_schemas import validate_document
 from .path_access import confined_path
 from .prompt_cache import fingerprint
+from .source_text import contains
 
 
 VERSION = "chapter-reference-identity.v3"
@@ -87,7 +88,7 @@ def _validate(result, entities, passages):
         names = {name for e in members for name in _names(e)}
         if group["canonical_name"] not in names or any(a not in names for a in group["aliases"]):
             raise ValueError("Identity names must come from the supplied members.")
-        if any(not q.strip() or not any(q in source for source in quotes) for q in group["source_quotes"]):
+        if any(not any(contains(source, q) for source in quotes) for q in group["source_quotes"]):
             raise ValueError("Identity quotations must be verbatim supplied source text.")
         used.update(ids)
 

@@ -7,6 +7,7 @@ import re
 from openai import APIConnectionError, InternalServerError, RateLimitError
 
 from . import lmstudio_pipeline, continuity_context
+from .source_text import restore_quote
 from .editable_schemas import validate_document
 from .reference_requests import validated_request
 
@@ -66,7 +67,8 @@ def validate_evidence(result, source_input):
         for index, observation in enumerate(result.get(kind, [])):
             validate_observation(observation)
             for trait_index, trait in enumerate(observation["visual_traits"]):
-                if trait["evidence"] not in text:
+                restored = restore_quote(text, trait["evidence"])
+                if restored is None:
                     raise ValueError(
                         f"{kind}[{index}].visual_traits[{trait_index}].evidence: "
                         "Visual trait evidence must quote the local passage, never another scene. "
@@ -74,6 +76,7 @@ def validate_evidence(result, source_input):
                         "Copy an exact contiguous quotation from source_input.text (or text), "
                         "preserving spelling, punctuation and whitespace. Do not paraphrase or join excerpts. "
                         "If the trait has no local support, omit that trait; never invent replacement evidence.")
+                trait["evidence"] = restored
 
 
 def compile_reference(timeline, diagnostics, identity, groups=()):

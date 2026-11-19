@@ -11,6 +11,7 @@ from typing import Any
 from openai import OpenAI
 
 from . import lmstudio_model_qwen, lmstudio_models
+from .source_text import normalize_data
 
 THINKING_ENABLED = lmstudio_model_qwen.DEFAULTS["thinking"]
 CHAT_BACKEND = "structured-json"
@@ -297,7 +298,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
         if local_stop == "reasoning_fallback":
             continue
         try:
-            result = parse_json(raw)
+            result = normalize_data(parse_json(raw))
             if not isinstance(result, dict):
                 raise ValueError("Expected a JSON object.")
             try:

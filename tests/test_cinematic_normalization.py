@@ -22,14 +22,14 @@ def run(source, **kwargs):
 
 def test_normalization_preserves_content_and_paragraphs():
     original = "« L’e\u0301te\u0301\u00a0! »\r\n\r\n‘Oui’\u202f: A  B\rFin."
-    expected = "« L'été ! »\n\n'Oui' : A  B\nFin."
+    expected = "\" L'été ! \"\n\n'Oui' : A  B\nFin."
     assert ca._normalize_text(original) == expected
     assert ca._normalize_text(expected) == expected
 
 
 def test_unicode_quotes_and_line_separators_share_source_output_normalization():
     original = '“Oui”\u2028Il parle.\u2029« Non… » — Fin.'
-    expected = '"Oui"\nIl parle.\n\n« Non… » — Fin.'
+    expected = '"Oui"\nIl parle.\n\n" Non… " — Fin.'
     assert ca._normalize_text(original) == expected
     assert ca._normalize_text(expected) == expected
     result = ca._validated_sequences({"sequences": [scene(original)]}, expected)
@@ -84,7 +84,7 @@ def test_normalized_deferred_suffix_uses_normalized_cursor():
 
 
 @pytest.mark.parametrize("excerpt", [
-    "Il part.", "Il attend. Il attend.", "Il attend", "il attend.", "Il  attend.",
+    "Il part.", "Il attend. Il attend.", "Il attend", "il attend.",
 ])
 def test_normalization_still_rejects_content_changes(excerpt):
     with pytest.raises(ca._SourceCoverageError):

@@ -6,12 +6,15 @@ import pytest
 
 from minimax_h3_novel_pipeline.core import character_profiles as cp, character_profile_batches as batches
 from minimax_h3_novel_pipeline.core.character_profile_document import validate_document
+from minimax_h3_novel_pipeline.core.source_text import normalize, normalize_data
 from tests.test_character_evidence import observation
 from tests.test_character_profiles import document, group, settings
 from tests.test_character_profile_batches import fake_model, request_payload
 
 
 def narrative_document(text, *items):
+    text = normalize(text)
+    items = [normalize_data(item) for item in items]
     data = document(*items)
     chapter = data["chapters"][0]
     chapter["source_text"] = text

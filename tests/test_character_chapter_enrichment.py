@@ -10,6 +10,7 @@ from minimax_h3_novel_pipeline.core import character_profile_batches as batches,
 from tests.test_character_visual_profiles import consolidated, cinematic
 from tests.test_character_profiles import settings
 from tests.test_character_evidence import observation
+from minimax_h3_novel_pipeline.core.source_text import normalize
 
 
 def selected_chapter(data, chapters):
@@ -431,7 +432,7 @@ def test_no_candidates_still_detects_unresolved_mentions(output, monkeypatch):
 def test_presence_restores_apostrophes_and_whitespace(source, quote):
     row = {'source_quote': quote}
     ce.presence_quote(row, 'Start. ' + source + ' End.', 'Indy')
-    assert row['source_quote'] == source
+    assert row['source_quote'] == normalize(source)
 
 
 @pytest.mark.parametrize('quote', [
@@ -445,7 +446,7 @@ def test_apostrophe_repair_does_not_accept_changed_evidence(quote):
         ce.presence_quote({'source_quote': quote}, 'Indy se balançait dans l’obscurité.', 'Indy')
 
 
-def test_real_presence_transport_caches_visible_with_original_apostrophe(output):
+def test_real_presence_transport_caches_visible_with_normalized_apostrophe(output):
     from tests.test_structured_json import Stream, client_for
     source = ('Indy se balançait dans l’obscurité, suspendu tel un croissant de lune '
               'à une corde qui lui meurtrissait le torse et les aisselles.')
@@ -460,7 +461,7 @@ def test_real_presence_transport_caches_visible_with_original_apostrophe(output)
     context = {'sequence': {'sequence': 1, 'source': source}, 'previous_context': []}
     for _ in range(2):
         result = list(ce._presence_decisions(requests, context, candidates))
-        assert result[0]['characters'][0]['source_quote'] == source
+        assert result[0]['characters'][0]['source_quote'] == normalize(source)
         assert result[0]['characters'][0]['presence'] == 'visible'
     assert create.call_count == 1
     assert requests.stats['cache_hits'] == 1
@@ -468,7 +469,7 @@ def test_real_presence_transport_caches_visible_with_original_apostrophe(output)
     assert create.call_args.kwargs['response_format'] == {'type': 'json_schema', 'json_schema': ce.PRESENCE}
     cached = util.load_json(next(requests.cache_dir.glob('*.json')))
     assert cached['characters'][0]['presence'] == 'visible'
-    assert cached['characters'][0]['source_quote'] == source
+    assert cached['characters'][0]['source_quote'] == normalize(source)
 
 
 @pytest.mark.parametrize('existing', [False, True])
@@ -494,4 +495,4 @@ def test_temporary_states_restore_source_apostrophes(output, monkeypatch, existi
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
     result = ce.enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=0)))
-    assert result['sequences'][0]['states'][0]['source_quote'] == quote
+    assert result['sequences'][0]['states'][0]['source_quote'] == normalize(quote)

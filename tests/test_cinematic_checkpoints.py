@@ -28,7 +28,7 @@ def setup_node(tmp_path, monkeypatch):
         return adapter.CinematicChapterAdapterNode().run(
             {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(chapter)]}, **kwargs)
 
-    return run, output, source.strip()
+    return run, output, source
 
 
 def read_state(output):

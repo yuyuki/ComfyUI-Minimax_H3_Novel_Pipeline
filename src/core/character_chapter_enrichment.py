@@ -7,6 +7,7 @@ from pathlib import PureWindowsPath
 from . import character_profiles as cp, util, progress
 from .character_profile_batches import schema, TEXT, encoded
 from .editable_schemas import SCHEMA_DIR, export_schema, validate_document
+from .source_text import comparison_text as normalized, source_span, restore_quote
 
 PRESENCE = schema('character_chapter_presence', {'characters': {'type': 'array', 'items': cp._object({
     'local_id': TEXT, 'presence': {'enum': ['visible', 'offscreen', 'mentioned', 'absent', 'uncertain'], 'type': 'string'},
@@ -90,24 +91,6 @@ def timeline_digest(chapter):
                        'sequences': [{k: s[k] for k in ('sequence', 'source', 'adaptation')} for s in chapter['sequences']]})
 
 
-def normalized(text):
-    return re.sub(r'\s+', ' ', text).strip()
-
-
-def source_span(text, passage):
-    """Map whitespace-only formatting changes back to original character offsets."""
-    chars, starts, ends = [], [], []
-    for token in re.finditer(r'\s+|\S', text):
-        chars.append(' ' if token.group().isspace() else token.group())
-        starts.append(token.start())
-        ends.append(token.end())
-    haystack, needle = ''.join(chars), normalized(passage)
-    start = haystack.find(needle)
-    if not needle or start < 0 or haystack.find(needle, start + 1) >= 0:
-        return None
-    return starts[start], ends[start + len(needle) - 1]
-
-
 def request(requests, system, contract, payload, check, *, fallback=None):
     print(f"[minimax_h3_novel] Character enrichment: {contract['name']} starting", flush=True)
     try:
@@ -124,17 +107,9 @@ def request(requests, system, contract, payload, check, *, fallback=None):
 def presence_quote(row, source, location, kind='Presence'):
     """Restore source whitespace/apostrophes without changing evidence wording."""
     quote = row['source_quote']
-    if quote.strip() and quote in source:
-        return
-    # Models routinely replace the French typographic apostrophe with ASCII.
-    # Match only those two spellings (and whitespace), then retain the actual
-    # source substring. Never normalize away punctuation, accents or words.
-    parts = re.split(r'\s+', quote.strip())
-    pattern = r'\s+'.join(''.join("['\u2019]" if char in "'\u2019" else re.escape(char)
-                                 for char in part) for part in parts)
-    match = re.search(pattern, source) if quote.strip() else None
-    if match is not None:
-        row['source_quote'] = match.group()
+    restored = restore_quote(source, quote)
+    if restored is not None:
+        row['source_quote'] = restored
         return
     raise ValueError(
         f'{kind} {location}: source_quote {quote[:160]!r} is not a contiguous quote from sequence.source. '
@@ -314,6 +289,7 @@ def enrich(data, profiles, chapter, requests):
                             fallback={'observations': []})
             for row in local['observations']:
                 span = source_span(chapter['_source_text'], row['source_quote'])
+                row = {**row, 'source_quote': chapter['_source_text'][span[0]:span[1]]}
                 key = 'local_' + cp._digest({'source': chapter['source_file'], 'span': span, 'observation': row})[:24]
                 states.append({'state_id': key, 'local_id': row['local_id'], 'trait': row['trait'], 'value': row['value'],
                                'kind': 'temporary', 'chronology': {}, 'source_quote': row['source_quote'],

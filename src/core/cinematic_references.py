@@ -16,6 +16,7 @@ from .path_access import confined_path
 from .prompt_cache import fingerprint
 from . import reference_visuals
 from .reference_requests import InvalidResponse, validated_request
+from .source_text import normalize_data
 
 PHASES = ("initialState", "event", "endingState")
 TEMPORAL_VERSION = "cinematic-neutral-references.v1"
@@ -96,7 +97,13 @@ def parse_chapters(value):
                 raise ValueError(f"{label} sequence {previous}: adaptation requires initialState, event and endingState strings.")
             if not any(adaptation[p].strip() for p in PHASES):
                 raise ValueError(f"{label} sequence {previous}: adaptation must not be empty.")
-    return [narrative_choices.resolve_chapter(chapter) for chapter in value]
+    normalized = []
+    for chapter in value:
+        chapter = {**chapter, "sequences": normalize_data(chapter["sequences"])}
+        if "narrative_review" in chapter:
+            chapter["narrative_review"] = normalize_data(chapter["narrative_review"])
+        normalized.append(narrative_choices.resolve_chapter(chapter))
+    return normalized
 
 
 def chapter_digest(chapter):

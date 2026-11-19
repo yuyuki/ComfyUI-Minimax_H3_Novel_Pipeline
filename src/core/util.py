@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .path_access import input_path, output_path
+from .source_text import read_source
 
 CHAPTER_SCHEMA = "minimax-h3-novel-refs.chapter.v5"
 REGISTRY_SCHEMA = "minimax-h3-novel-refs.consolidated.v5"
@@ -43,21 +44,7 @@ def discover_inputs(items: list[Path]) -> list[Path]:
 
 
 def read_chapter(path: Path) -> str:
-    path = input_path(path)
-    if path.suffix.lower() in {".txt", ".md", ".markdown"}:
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
-    elif path.suffix.lower() == ".pdf":
-        try:
-            from pypdf import PdfReader
-        except Exception as exc:
-            raise RuntimeError("PDF input requires: pip install pypdf") from exc
-        text = "\n\n".join((page.extract_text() or "") for page in PdfReader(str(path)).pages)
-    else:
-        raise ValueError(f"Unsupported file type: {path.suffix}")
-
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n{4,}", "\n\n\n", text).strip()
+    text, _ = read_source(path)
     if len(text) < 100:
         raise ValueError("Chapter is empty or too short after extraction.")
     return text

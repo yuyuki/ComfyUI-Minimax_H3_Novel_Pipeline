@@ -124,7 +124,7 @@ def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch, famil
     assert [c["chapter_name"] for c in data["chapters"]] == ["chapter2", "chapter10"]
     assert chat.call_count == 2
     for i, chapter in enumerate(data["chapters"], 1):
-        assert chapter["source_text"] == text.removeprefix("\ufeff")
+        assert chapter["source_text"] == evidence.normalize(text.removeprefix("\ufeff"))
         item = chapter["evidence"][0]
         assert item["provenance"]["chapter"] == i
         assert len(item["provenance"]["locations"]) == 2
@@ -378,7 +378,7 @@ def test_pdf_locations_use_extracted_text(workspace, monkeypatch):
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", lambda *a: {"evidence": [
         observation(classification="inferred", confidence=0.4, persistence="unknown")]})
     result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
-    assert result["location_basis"] == "pdf_extracted_text"
+    assert result["location_basis"] == "normalized_pdf_extracted_text"
     assert result["source_text"] == "Page one.\n\n" + quote
     assert result["evidence"][0]["classification"] == "inferred"
     assert result["evidence"][0]["provenance"]["locations"][0]["start_line"] == 3
@@ -613,11 +613,11 @@ def test_local_repair_preserves_facts_provenance_and_cache(workspace, monkeypatc
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
     result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
     fixed = result["evidence"][0]
-    assert fixed["quotation"] == quote
-    assert fixed["extraction_correction"]["original_quotation"] == invalid["quotation"]
+    assert fixed["quotation"] == evidence.normalize(quote)
+    assert fixed["extraction_correction"]["original_quotation"] == evidence.normalize(invalid["quotation"])
     assert all(fixed[k] == invalid[k] for k in evidence.FIELDS - {"quotation"})
     loc = fixed["provenance"]["locations"][0]
-    assert result["source_text"][loc["start_char"]:loc["end_char"]] == quote
+    assert result["source_text"][loc["start_char"]:loc["end_char"]] == evidence.normalize(quote)
     assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
     assert chat.call_count == 1
     assert evidence.review_report({"chapters": [result]})["corrected_observations"] == 1
@@ -631,13 +631,13 @@ def test_local_repair_preserves_facts_provenance_and_cache(workspace, monkeypatc
     ("left right", ["left", "right"], None),
     ("Elle avait les yeux verts.", ["Élise avait les yeux verts."], None),
     ("Elle était là.", ["Elle n’était pas là."], None),
-    ("L'homme est grand.", ["L’homme est grand.", "L‘homme est grand."], None),
+    ("L'homme est grand.", ["L’homme est grand.", "L‘homme est grand."], "L'homme est grand."),
 ])
 def test_local_repair_only_maps_unambiguous_typography(quote, parts, expected):
     original = observation(quote)
     stats = {"llm_calls": 0}
     result = evidence.repair_observations({"evidence": [original]}, parts, stats)[0]
-    assert result["quotation"] == (expected or quote)
+    assert result["quotation"] == evidence.normalize(expected or quote)
     assert bool(result.get("warnings")) == (expected is None)
     assert stats["llm_calls"] == 0
     assert result["value"] == original["value"]
@@ -661,6 +661,6 @@ def test_shannon_typography_repair_preserves_all_enduring_traits():
     values = ["corps dégingandé", "pieds démesurés", "long cou à la pomme d’Adam proéminente"]
     items = [observation(quote, character="Shannon", value=value) for value in values]
     result = evidence.repair_observations({"evidence": items}, [source], {})
-    assert [item["value"] for item in result] == values
-    assert all(item["quotation"] == source and item["persistence"] == "persistent" for item in result)
+    assert [item["value"] for item in result] == [evidence.normalize(value) for value in values]
+    assert all(item["quotation"] == evidence.normalize(source) and item["persistence"] == "persistent" for item in result)
     assert all(not item.get("warnings") for item in result)

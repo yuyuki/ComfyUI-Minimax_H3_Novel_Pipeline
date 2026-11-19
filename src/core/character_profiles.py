@@ -7,9 +7,9 @@ import hashlib
 import json
 import logging
 import re
-import unicodedata
 
 from . import character_evidence, util
+from .source_text import comparison_text as _normalized, normalize
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +66,6 @@ SCHEMA = {"name": "character_profile_plan", "strict": True, "schema": _object({
 
 def _digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-
-
-def _normalized(text):
-    """Canonical Unicode and whitespace only; never repair wording or punctuation."""
-    return " ".join(unicodedata.normalize("NFC", text).split())
 
 
 def prepare_evidence(data):
@@ -231,7 +226,7 @@ def _alias_link(left, right, contexts):
     if left != right and all(name.isalpha() and name.istitle() for name in (left, right)):
         for first, second in ((left, right), (right, left)):
             full_name = r"(?<![\w’'-])" + re.escape(first) + r"[ \t\u00a0]+" + re.escape(second) + r"(?![\w’'-])"
-            if any(re.search(full_name, unicodedata.normalize("NFC", text)) for text in contexts):
+            if any(re.search(full_name, normalize(text)) for text in contexts):
                 return True
     for first, second in ((left, right), (right, left)):
         name = r"(?<!\w)" + re.escape(first) + r"(?!\w)"

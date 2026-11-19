@@ -18,7 +18,7 @@ VERSION = 2
 # changes cache semantics without changing the serialized inputs/prompts/schema.
 # These versions replace runtime inspection of the package's Python sources.
 CACHE_CONTRACTS = {
-    "transport": 1,  # Shared JSON transport and every model profile.
+    "transport": 2,  # Shared JSON transport, model profiles and normalized text output.
     "evidence": 4,  # Neutral source traits and scene-addressed visual states.
     "metadata": 2,  # Scene-specific image applicability and binding construction.
     "draft": 1,

@@ -13,6 +13,7 @@ from minimax_h3_novel_pipeline.core import narrative_validation as nv
 @pytest.mark.parametrize("recovery", [False, True])
 def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
     source = 'Indy tire une torche de son sac. Il crie : « Help! »'
+    normalized_source = ca._normalize_text(source)
     english = {"initial_state": "Indy carries a bag.",
                "events": ['Indy pulls out a torch and shouts: "Help!"'],
                "final_state": "Indy holds the torch."}
@@ -27,13 +28,13 @@ def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
         assert schema["strict"] is True
         if schema == nv.SCHEMA:
             assert "Report a language mismatch as a concrete" in system
-            assert data["sequences"][0]["source"] == source
+            assert data["sequences"][0]["source"] == normalized_source
             return {"issues": [{"target": 1, "message": "Descriptions must remain in French."}]
                     if data["sequences"][0]["initial_state"] == english["initial_state"] else []}
         assert "LANGUAGE REQUIREMENT" in system
         assert "Never fall back to English" in system
         assert "when you support it" not in system
-        assert data["current_passage"] == source
+        assert data["current_passage"] == normalized_source
         if "rejected_adaptation" in data or calls.count(ca.SCHEMA["name"]) > 2:
             if "rejected_adaptation" in data:
                 assert data["rejected_adaptation"]["events"] == english["events"]
@@ -45,10 +46,10 @@ def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
     result = ca.adapt_chapter(None, "gemma-4-26B_q4_0-it.gguf", source,
                              chunk_chars=4000, temperature=0.15, max_tokens=1000,
                              correction_attempts=1)
-    assert result["sequences"][0]["source"] == source
+    assert result["sequences"][0]["source"] == normalized_source
     assert result["sequences"][0]["adaptation"] == {
         "initialState": french["initial_state"],
-        "event": '1. Indy tire une torche de son sac.\n2. Il crie : « Help! »',
+        "event": '1. Indy tire une torche de son sac.\n2. Il crie : " Help! "',
         "endingState": french["final_state"],
     }
     assert result["narrative_review"] == {"issues": []}

@@ -5,6 +5,7 @@ import json
 import math
 import re
 from difflib import SequenceMatcher
+from .source_text import normalize_data, prefix_span, restore_quote
 
 TEXT = {"type": "string", "minLength": 1}
 ASPECTS = ("location", "support", "attachment", "possession", "motion", "lighting")
@@ -188,7 +189,8 @@ def _validate_event_fragments(timing, scene):
         while cursor < len(event) and event[cursor].isspace():
             cursor += 1
         excerpt = item["text"].strip()
-        if not excerpt or not event.startswith(excerpt, cursor):
+        span = prefix_span(event[cursor:], excerpt)
+        if span is None:
             path = f"/timing/beats/{beat_index}/events/{item_index}/text"
             common = 0
             while common < len(excerpt) and cursor + common < len(event) and excerpt[common] == event[cursor + common]:
@@ -204,7 +206,7 @@ def _validate_event_fragments(timing, scene):
                 "expected_codepoint": ord(event[cursor + common]) if cursor + common < len(event) else None,
                 "received_codepoint": ord(excerpt[common]) if common < len(excerpt) else None,
             })
-        cursor += len(excerpt)
+        cursor += span[1]
         item["text"] = event[start:cursor]
         cursors[index] = cursor
     for index, (event, cursor) in enumerate(zip(scene["events"], cursors), 1):
@@ -229,6 +231,9 @@ def validate(plan, scene):
     """Reject malformed estimates and unsupported citations; never certify their semantics."""
     from jsonschema import Draft202012Validator
 
+    scene = normalize_data(scene)
+    plan = normalize_data(plan)
+
     errors = list(Draft202012Validator(SCHEMA["schema"]).iter_errors(plan))
     if errors:
         error = errors[0]
@@ -250,17 +255,21 @@ def validate(plan, scene):
     total = round(sum(beat["seconds"] for beat in timing["beats"]) + timing["pause_seconds"], 3)
     if total <= 0 or abs(timing["estimated_seconds"] - total) > 0.05:
         raise _PlanningValidationError("timing_total_mismatch", "/timing/estimated_seconds")
-    continuity = plan["continuity"]
+    continuity = result["continuity"]
     reset_quote = continuity["reset_evidence"]
-    if ((continuity["reset"] and (not reset_quote.strip() or reset_quote not in scene["source"]))
+    restored_reset = restore_quote(scene["source"], reset_quote)
+    if ((continuity["reset"] and restored_reset is None)
             or (not continuity["reset"] and reset_quote)):
         raise _PlanningValidationError("reset_quote_mismatch", "/continuity/reset_evidence")
+    if continuity["reset"]:
+        continuity["reset_evidence"] = restored_reset
     seen = {}
     for index, fact in enumerate(continuity["updates"]):
         for field in ("entity", "fact", "source_quote"):
             if not fact[field].strip() or (field == "entity" and not _entity_key(fact[field])):
                 raise _PlanningValidationError("blank_fact_field", f"/continuity/updates/{index}/{field}")
-        if fact["source_quote"] not in scene["source"]:
+        restored = restore_quote(scene["source"], fact["source_quote"])
+        if restored is None:
             path = f"/continuity/updates/{index}/source_quote"
             match = SequenceMatcher(None, scene["source"], fact["source_quote"], autojunk=False).find_longest_match()
             raise _PlanningValidationError("source_quote_mismatch", path, retry_context={
@@ -268,6 +277,7 @@ def validate(plan, scene):
                 "matching_source_excerpt": scene["source"][match.a:match.a + match.size],
             }, metrics={"update_index": index, "received_quote_length": len(fact["source_quote"]),
                         "longest_source_match_length": match.size, "source_match_offset": match.a})
+        fact["source_quote"] = restored
         key = (_entity_key(fact["entity"]), fact["aspect"])
         if key in seen:
             path = f"/continuity/updates/{index}"
