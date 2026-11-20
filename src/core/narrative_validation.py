@@ -74,7 +74,15 @@ trait individually; use target 1 only when there is no trait to point to.
 Occurrence evidence is only source_input.text.
 chapter_context may clarify referents and categories, never establish local presence or
 import future traits, possession or actions. Check verbatim local evidence and language.
-Visible characters can have empty local appearance when independent profiles supply it.
+Check character coverage directly against source_input.text before reviewing appearance.
+Every character shown on camera in the local initialState or event must appear in
+extraction.characters with presence "visible", including unnamed, silent, briefly
+shown and partly visible characters. A depicted action or physical state can support
+visibility without appearance details, including in low light. Respect explicit
+offscreen framing and full concealment. Report each missing or wrongly classified
+visible character as a target 1 issue with a short exact local quote, even when the
+character appears in chunk_summary. Empty visual_traits is valid when the passage
+supports no neutral appearance details.
 Use reference_state to distinguish established appearance from event results.
 Evidence must quote the current text. Check useful visual detail without
 inventing traits or requiring name-only environment assets. Settings are actual spaces,

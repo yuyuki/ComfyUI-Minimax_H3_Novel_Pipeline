@@ -65,6 +65,40 @@ def test_summary_scales_to_passage_within_shared_output_budget():
     assert "Shorten by rephrasing" in step.EXTRACT_SYSTEM
 
 
+def test_review_recovers_omitted_visible_character_without_appearance(execution, monkeypatch):
+    _, params, config = execution
+    opening = "Mina traverse le couloir faiblement éclairé."
+    chapter_input = {"chapter_name": "Passage", "sequences": [
+        {"sequence": 1, "source": opening,
+         "adaptation": {"initialState": opening, "event": "Elle avance en silence.", "endingState": ""}},
+    ]}
+    step = lmstudio_pipeline.load("extract")
+    omission = f'Visible character Mina is missing. Evidence: "{opening}"'
+
+    def chat(client, model, system, user, schema, *args):
+        data = json.loads(user)
+        if schema["name"] == "narrative_semantic_review":
+            if data["extraction"]["characters"]:
+                return {"issues": []}
+            return {"issues": [{"target": 1, "message": omission}]}
+        assert schema == step.CHUNK_SCHEMA
+        extraction = {"chunk_summary": opening, "characters": [], "locations": [], "objects": []}
+        if "defects_to_correct" in data:
+            assert data["defects_to_correct"] == [omission]
+            assert opening in data["source_input"]["text"]
+            extraction["characters"].append({"canonical_name": "Mina", "presence": "visible",
+                                             "evidence": [opening], "visual_traits": []})
+        return extraction
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    catalogs, _ = ExtractChapterReferencesNode().run(config, [chapter_input], **params)["result"]
+    character, = catalogs[0]["characters"]
+    assert character["canonical_name"] == "Mina"
+    observation, = character["state_by_sequence"]["1"]["source"]
+    assert observation["presence"] == "visible"
+    assert observation["visual_traits"] == []
+
+
 def test_persistent_invalid_quote_writes_failure_diagnostics(execution, monkeypatch, tmp_path):
     _, params, config = execution
     step = lmstudio_pipeline.load("extract")

@@ -37,8 +37,15 @@ environmental features unless a distinct filming space is established. Orientati
 attachment and possession are not places. Effects, sensations, sounds and metaphors
 are not physical props. Preserve uncertainty without inventing identities or traits.
 
-Provide presence: visible, offscreen or mentioned. A name or an audible voice does
-not establish visibility. Preserve supported speech independently for audio needs.
+Provide presence: visible, offscreen or mentioned. Include every character shown
+on camera at any point in the local initialState or event in the characters array
+with presence "visible". Include unnamed, silent, briefly shown and partly visible
+characters. A depicted action or physical state can establish on-camera presence
+even in low light and without a description of the character's appearance. Use
+visual_traits: [] when no appearance detail is supported. Check that each shown
+character has an entry before returning, even if already named in chunk_summary.
+A name or an audible voice alone does not establish visibility. Respect explicit
+offscreen framing and full concealment. Preserve speech independently for audio.
 visual_traits is authoritative neutral appearance, with one fact per attribute.
 Use consistent concise English attribute keys for the same entity; descriptions
 remain in the narration's source language. Qualify keys by physical part so independent
