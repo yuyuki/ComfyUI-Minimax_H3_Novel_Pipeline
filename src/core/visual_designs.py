@@ -171,6 +171,9 @@ def prepare_designs(chat, client, model, entities, args, path=""):
         if entity.get("aliases"):
             base["aliases"] = list(entity["aliases"])
         base["source_facts"] = source_facts(entity)
+        if entity["entity_type"] != "character":
+            designs.append({**base, "added_details": {}})
+            continue
         blocked = {field_for(t) for t in entity.get('ignored_character_traits', [])}
         context = {**base, "image_style": args.image_style,
                    "ignored_traits": entity.get('ignored_character_traits', []),

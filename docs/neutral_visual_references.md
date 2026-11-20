@@ -23,9 +23,20 @@ Each source observation records `presence` (`visible`, `offscreen`, `mentioned`)
 and `visual_traits`. Every trait has a consistent attribute key, a source-language
 description, `intrinsic` or `scene` scope, and a verbatim local evidence quotation.
 Quotations are checked against the current passage before extraction is accepted;
-shared semantic review checks relevance, neutrality, language and chronology.
+semantic review checks relevance, neutrality, language and chronology. An individual
+trait rejected by the review is dropped if correction cannot resolve the issue.
 Chapter context disambiguates referents and categories only; it cannot establish
 local presence or import changing traits. Actions remain in adaptation.
+
+- Objects record intrinsic design such as shape, construction, color, texture,
+  markings and explicitly stated material. Damage, tension and handling stay in
+  the cinematic adaptation.
+- Characters record only neutral wardrobe and footwear at the sequence address.
+  Character visual profiles supply timeless physical appearance. Injuries, marks
+  from interactions, dirt and torn or perforated garments stay in the adaptation.
+- Locations record durable setting details and the visible conditions established
+  for each sequence, including light, weather, fog and already visible changes to
+  the backdrop. Ongoing transformations remain in the adaptation.
 
 Chapter identity decisions group confirmed physical identities and retain their
 observations at `state_by_sequence[sequence].source`. Generic labels do not prove
@@ -41,9 +52,9 @@ enrich an earlier appearance of the same confirmed entity when it describes an
 unchanged intrinsic property. Description reuse never establishes scene presence.
 
 For example, a material established for one rope is retained wherever that same
-rope is visible even if later scenes do not repeat it. Fraying changes its local
-condition without losing its material. Another rope retains its own identity and
-description. Damage, replacement and other transformations cannot be backdated.
+rope is visible even if later scenes do not repeat it. Another rope retains its
+own identity and material. A misty backdrop and a clear view of the same location
+can use different images with the same durable setting details.
 
 Resolved appearance combines shared traits with applicable local overrides by
 attribute. Unchanged attributes remain available. Local states apply only to their
@@ -83,8 +94,9 @@ become visible because its shared description exists.
 
 ## Persistence and validation
 
-Chapter and consolidated contracts are v5. Old catalogs and registries must be
-regenerated; there are no conversion readers. The project version is unchanged.
+Chapter and consolidated contracts are v5 with the current
+`cinematic-neutral-references.v2` timeline revision. Old catalogs and registries
+must be regenerated. The project version is unchanged.
 The former standalone source-only extraction and hierarchical catalog merge path
 have been removed. Extraction uses the cinematic sequence path and source-grounded
 chapter identity consolidation; their cache, cancellation and progress tests cover
@@ -94,7 +106,7 @@ conflicts and incomplete checks stay in associated diagnostic sidecars, includin
 `consolidated_references.diagnostics.json`.
 
 Offline coverage includes unchanged material reuse, supported later clarification,
-local damage, conflicting traits, distinct physical instances, name-only objects,
+local backdrop conditions, conflicting traits, distinct physical instances, name-only objects,
 neutral frontal views, state-specific image selection, local evidence validation,
 structured retries and generic prompts. The full pipeline tests also cover saved
 outputs, character-profile integration, speech, cancellation, caches and access rules.

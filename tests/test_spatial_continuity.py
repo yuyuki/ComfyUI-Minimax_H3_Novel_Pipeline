@@ -225,7 +225,7 @@ def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, 
     from contextlib import nullcontext
     from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
     from minimax_h3_novel_pipeline.core import util
-    registry = {'schema_version': util.REGISTRY_SCHEMA, 'source_digest': 'source',
+    registry = {'schema_version': util.REGISTRY_SCHEMA, 'timeline_version': util.REFERENCE_TIMELINE_VERSION, 'source_digest': 'source',
                 'entities': ([{'global_id': 'hero', 'canonical_name': canonical_name}]
                              if canonical_name is not None else []),
                 'chapter_timelines': {'chapter': {'sequences': [

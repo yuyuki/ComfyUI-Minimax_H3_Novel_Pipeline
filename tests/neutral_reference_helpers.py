@@ -36,7 +36,7 @@ def catalog(value):
     for kind in ("characters", "locations", "objects"):
         for item in result[kind]:
             first = next(iter(item["state_by_sequence"].values()))["source"]
-            if first and item.get("stable_visual_description"):
+            if first and kind != "characters" and item.get("stable_visual_description"):
                 first[0].setdefault("visual_traits", [{"attribute": "appearance",
                     "description": item["stable_visual_description"], "scope": "intrinsic", "evidence": "Fixture evidence."}])
             for entry in item["state_by_sequence"].values():

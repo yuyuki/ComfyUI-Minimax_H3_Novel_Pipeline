@@ -13,15 +13,12 @@ from minimax_h3_novel_pipeline.core.reference_timeline import (
 
 
 def catalog(cid="chapter", kind="characters", name="Indy", alias=None):
-    state = "chapter_appearance" if kind == "characters" else "chapter_state"
     observations = {
-        "3": {"source": [{state: "holds the torch", "evidence": ["torch held"]}]},
-        "1": {"source": [{state: "has no torch", "evidence": ["empty hands"]},
-                          {state: "looks upward", "evidence": ["looks"]},
-                          {state: "eyes closed", "evidence": ["closes eyes"]}]},
-        "2": {"source": [{state: "receives a torch"}, {state: "holds the torch"}]},
+        "3": {"source": [{"evidence": ["torch held"]}]},
+        "1": {"source": [{"evidence": ["empty hands"]}, {"evidence": ["looks"]}, {"evidence": ["closes eyes"]}]},
+        "2": {"source": [{"evidence": ["receives a torch"]}, {"evidence": ["holds the torch"]}]},
     }
-    return neutral_catalog({"schema_version": util.CHAPTER_SCHEMA, "timeline_version": "cinematic-neutral-references.v1",
+    return neutral_catalog({"schema_version": util.CHAPTER_SCHEMA, "timeline_version": util.REFERENCE_TIMELINE_VERSION,
             "chapter_id": cid, "chapter_name": cid, "source": {},
             "sequences": [{"sequence": n, "source": "Evidence", "adaptation": {
                 "initialState": "Opening", "event": "Action", "endingState": "Ending"}} for n in (1, 2, 3)],
@@ -54,14 +51,13 @@ def test_identity_and_exact_states_never_flatten(mocked_reconcile, kind):
     source = catalog(kind=kind)
     original = deepcopy(source)
     entity, = run(source)
-    state = "chapter_appearance" if kind == "characters" else "chapter_state"
     assert source == original
     assert list(entity["timeline"]["chapter"]) == ["1", "2", "3"]
     assert list(entity["timeline"]["chapter"]["1"]) == ["source"]
     assert entity["first_sequence"] == 1 and "first_phase" not in entity
     assert source_observations_at(entity, "chapter", 1) == source[kind][0]["state_by_sequence"]["1"]["source"]
-    assert source_observations_at(entity, "chapter", 2)[0][state] == "receives a torch"
-    assert source_observations_at(entity, "chapter", 3)[0][state] == "holds the torch"
+    assert source_observations_at(entity, "chapter", 2)[0]["evidence"] == ["receives a torch"]
+    assert source_observations_at(entity, "chapter", 3)[0]["evidence"] == ["torch held"]
     assert source_observations_at(entity, "missing", 1) == []
     assert entity["stable_visual_description"] == source[kind][0]["stable_visual_description"]
     assert entity["distinguishing_features"] == ["Permanent mark"]
@@ -76,15 +72,15 @@ def test_aliases_across_chapters_and_stable_observations(mocked_reconcile):
     run, calls = mocked_reconcile
     first = catalog("chapter-Z")
     second = catalog("chapter-A", name="Henry Jones", alias=["Indy"])
-    second["characters"][0]["state_by_sequence"]["1"]["source"][0]["chapter_appearance"] = "wears a disguise"
+    second["characters"][0]["state_by_sequence"]["1"]["source"][0]["evidence"] = ["wears a disguise"]
     second["characters"][0]["state_by_sequence"]["3"]["source"][0]["voice_description"] = "Low voice"
     registry = run(second, run(first))
     entity, = registry
     assert {"Henry Jones", "Indy"} <= set(entity["aliases"])
     assert list(entity["timeline"]) == ["chapter-Z", "chapter-A"]
     assert entity["first_chapter_id"] == "chapter-Z"
-    assert source_observations_at(entity, "chapter-A", 1)[0]["chapter_appearance"] == "wears a disguise"
-    assert source_observations_at(entity, "chapter-Z", 1)[0]["chapter_appearance"] == "has no torch"
+    assert source_observations_at(entity, "chapter-A", 1)[0]["evidence"] == ["wears a disguise"]
+    assert source_observations_at(entity, "chapter-Z", 1)[0]["evidence"] == ["empty hands"]
     assert "Low voice" in calls[1] and "wears a disguise" not in calls[1]
     assert step.build_chapter_map(registry) == {"chapter-Z": {"LOCAL_1": "CHAR_001"}, "chapter-A": {"LOCAL_1": "CHAR_001"}}
 
@@ -93,18 +89,18 @@ def test_object_breaks_later_and_audit_preserves_duplicate_observations(mocked_r
     run, _ = mocked_reconcile
     chapter = catalog(kind="objects", name="rope")
     states = chapter["objects"][0]["state_by_sequence"]
-    states["1"] = {"source": [{"chapter_state": "supports Indy", "evidence": ["taut rope"]}]}
-    states["3"] = {"source": [{"chapter_state": "breaks", "evidence": ["rope snaps"]}]}
+    states["1"] = {"source": [{"evidence": ["taut rope"]}]}
+    states["3"] = {"source": [{"evidence": ["rope snaps"]}]}
     first, = run(neutral_catalog(chapter))
     second = deepcopy(first)
     second["global_id"] = "OBJ_002"
     second["source_entities"][0]["local_id"] = "LOCAL_2"
-    second["timeline"]["chapter"]["1"]["source"].append({"chapter_state": "swings"})
+    second["timeline"]["chapter"]["1"]["source"].append({"evidence": ["swings"]})
     removed = step._apply_audit_result([first, second], {"merge_groups": [{
         "keep_global_id": "OBJ_001", "merge_global_ids": ["OBJ_002"]}]})
     assert removed == {"OBJ_002"}
     assert len(source_observations_at(first, "chapter", 1)) == 3  # Even identical observations remain.
-    assert all("breaks" not in json.dumps(o) for o in source_observations_at(first, "chapter", 1))
+    assert all("rope snaps" not in json.dumps(o) for o in source_observations_at(first, "chapter", 1))
     assert len(source_observations_at(first, "chapter", 3)) == 2
     assert step.build_chapter_map([first])["chapter"]["LOCAL_2"] == "OBJ_001"
 
@@ -180,7 +176,7 @@ def test_node_persistence_and_loader_preserve_canonical_timeline(mocked_reconcil
     assert timeline["narrative_review"] == narrative_review
     assert timeline["sequences"][0]["adaptation"]["event"] == "B chosen event"
     assert chapters[0]["sequences"][0]["adaptation"]["event"] == "Action"
-    assert source_observations_at(entity, "Z", 1)[0]["chapter_appearance"] == "has no torch"
+    assert source_observations_at(entity, "Z", 1)[0]["evidence"] == ["empty hands"]
 
 
 @pytest.mark.parametrize("mode", ["missing", "duplicate", "wrong_type", "unknown_match"])
@@ -264,7 +260,7 @@ def test_node_global_designs_only_import_selected_catalog_characters(mocked_reco
     assert character["timeline"]["selected-chapter"] == current["characters"][0]["state_by_sequence"]
     imported, = result["visual_designs"]["entities"]
     assert imported["added_details"] == {"eyes": "Edited brown eyes."}
-    assert imported["source_facts"]["stable_visual_description"] == "Brown hair"
+    assert imported["source_facts"]["stable_visual_description"] == ""
     assert len(calls) == 2  # Existing reconciliation and conflict check only.
     assert len(util.load_json(path)["entities"]) == 2
 
@@ -274,10 +270,10 @@ def test_source_observations_survive_reconciliation_audit_and_generation(mocked_
     run, _ = mocked_reconcile
     chapter = catalog()
     chapter["characters"][0].update(first_sequence=1,
-        state_by_sequence={"1": {"source": [{"chapter_appearance": "holds a rope", "evidence": ["rope"]}]}})
+        state_by_sequence={"1": {"source": [{"evidence": ["rope"]}]}})
     other = deepcopy(chapter["characters"][0])
     other.update(local_id="LOCAL_2", canonical_name="Henry", aliases=["Indy"],
-                 state_by_sequence={"2": {"source": [{"chapter_appearance": "waits"}]}})
+                 state_by_sequence={"2": {"source": [{"evidence": ["waits"]}]}})
     chapter["characters"].append(other)
     chapter = neutral_catalog(chapter)
     registry = run(chapter)

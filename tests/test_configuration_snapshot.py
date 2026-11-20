@@ -43,7 +43,7 @@ def test_each_node_records_all_controls_and_result_hashes(setup, monkeypatch, st
     root, config, chapter = setup
     pipeline = lmstudio_pipeline.load(stage)
     catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter", "chapter_name": "chapter",
-               "source": {}, "timeline_version": "cinematic-neutral-references.v1",
+               "source": {}, "timeline_version": util.REFERENCE_TIMELINE_VERSION,
                "characters": [], "locations": [], "objects": [],
                "sequences": [{"sequence": 1, "source": "text", "adaptation": {
                    "initialState": "Aster waits.", "event": "Aster moves.", "endingState": "Aster stops."}}]}

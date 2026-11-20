@@ -17,10 +17,10 @@ from .prompt_cache import fingerprint
 from . import reference_visuals
 from .reference_requests import InvalidResponse, validated_request
 from .source_text import normalize_data
+from .util import REFERENCE_TIMELINE_VERSION as TEMPORAL_VERSION
 
 PHASES = ("initialState", "event", "endingState")
-TEMPORAL_VERSION = "cinematic-neutral-references.v1"
-CATALOG_CACHE_VERSION = "cinematic-neutral-catalog.v1"
+CATALOG_CACHE_VERSION = "cinematic-neutral-catalog.v2"
 CATALOG_SCHEMA_FILENAME = "chapter_references.schema.json"
 CATALOG_SCHEMA = json.loads(
     (Path(__file__).resolve().parent / "schema" / CATALOG_SCHEMA_FILENAME).read_text(encoding="utf-8")
@@ -59,8 +59,6 @@ surfaces and details clearly regardless of narrative orientation.
 Keep all distinct useful visual facts without repeated paraphrases. Unknown traits
 stay empty. Do not invent traits or copy later traits into local observations.
 The caller reuses confirmed unchanged intrinsic traits only after identity merging.
-stable_visual_description and distinguishing_features are intrinsic only;
-chapter_appearance/chapter_state contain neutral scene-scope appearance only.
 Use the source narration's language for chunk_summary and descriptive prose. Preserve
 proper names and verbatim foreign-language quotations. JSON keys and enums stay fixed.
 """
@@ -124,6 +122,7 @@ def _extract_source(step, client, model, system, user, args):
     source_input = json.loads(user)
     history = []
     context_incomplete = False
+    last_reviewed = None
     try:
         result = validated_request(step.chat_json, client, model, system, user, step.CHUNK_SCHEMA,
                                    args, lambda data: reference_visuals.validate_evidence(data, source_input),
@@ -143,11 +142,22 @@ def _extract_source(step, client, model, system, user, args):
                                    args, lambda data: reference_visuals.validate_evidence(data, source_input),
                                    include_previous=True)
     for attempt in range(3):
+        trait_targets = {
+            target: {"kind": kind, "entity_index": entity_index, "trait_index": trait_index}
+            for target, (kind, entity_index, trait_index) in enumerate((
+                (kind, entity_index, trait_index)
+                for kind in ("characters", "locations", "objects")
+                for entity_index, entity in enumerate(result.get(kind, []))
+                for trait_index in range(len(entity["visual_traits"]))
+            ), start=2)
+        }
         try:
             issues = narrative_validation.review(
                 step.chat_json, client, model,
-                {"stage": "extraction", "source_input": json.loads(user), "extraction": result},
-                1, args.max_tokens,
+                {"stage": "extraction", "source_input": source_input, "extraction": result,
+                 "visual_trait_targets": trait_targets},
+                1 + len(trait_targets), args.max_tokens,
+                system=narrative_validation.SYSTEM + "\n" + reference_visuals.APPEARANCE_RULES,
             )
         except _REVIEW_ERRORS as exc:
             if lmstudio_json._is_comfy_interrupt(exc):
@@ -156,16 +166,27 @@ def _extract_source(step, client, model, system, user, args):
             history.append({"attempt": attempt + 1, "status": "incomplete",
                             "reason": type(exc).__name__,
                             "message": "Source review failed; valid extraction retained."})
-            return result, history, "incomplete"
+            return last_reviewed if last_reviewed is not None else result, history, "incomplete"
         messages = [message for values in issues.values() for message in values]
         incomplete = any("could not be interpreted reliably" in m for m in messages)
         status = "incomplete" if incomplete else "issues" if issues else "passed"
-        history.append({"attempt": attempt + 1, "status": status, "messages": messages})
+        last_reviewed = deepcopy(result)
+        rejected_targets = [
+            target for target, defects in sorted(issues.items(), reverse=True)
+            if target in trait_targets and any("could not be interpreted reliably" not in m for m in defects)
+        ]
+        for target in rejected_targets:
+            address = trait_targets[target]
+            del last_reviewed[address["kind"]][address["entity_index"]]["visual_traits"][address["trait_index"]]
+        history.append({"attempt": attempt + 1, "status": status, "messages": messages,
+                        "rejected_visual_traits": [trait_targets[target] for target in rejected_targets]})
         if not issues or incomplete or attempt == 2:
-            return result, history, "incomplete" if context_incomplete else status
+            return last_reviewed, history, "incomplete" if context_incomplete else status
         lmstudio_pipeline.comfy_interrupt_check()
-        correction = json.dumps({"source_input": json.loads(user), "rejected_extraction": result,
-                                 "defects_to_correct": messages}, ensure_ascii=False)
+        correction = json.dumps({"source_input": source_input, "rejected_extraction": result,
+                                 "defects_to_correct": messages,
+                                 "rejected_visual_traits": history[-1]["rejected_visual_traits"]},
+                                ensure_ascii=False)
         try:
             result = validated_request(step.chat_json, client, model, system, correction, step.CHUNK_SCHEMA,
                                        args, lambda data: reference_visuals.validate_evidence(data, source_input),
@@ -177,7 +198,7 @@ def _extract_source(step, client, model, system, user, args):
             history.append({"attempt": attempt + 1, "status": "incomplete",
                             "reason": type(exc).__name__,
                             "message": "Source correction failed; previous valid extraction retained."})
-            return result, history, "incomplete"
+            return last_reviewed, history, "incomplete"
 
 
 def _catalog_digest(payload):

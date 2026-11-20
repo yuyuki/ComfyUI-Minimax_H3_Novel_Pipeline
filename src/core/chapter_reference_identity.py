@@ -62,9 +62,9 @@ def _compact(entity):
             "canonical_name": entity["canonical_name"], "names": _names(entity),
             "identity_quotes": entity["identity_quotes"],
             "sequences": _unique([m["sequence"] for m in entity["members"]]),
-            "stable_visual_descriptions": _unique([m["observation"]["stable_visual_description"]
-                                                    for m in entity["members"] if m["observation"]["stable_visual_description"]]),
-            "distinguishing_features": _unique([v for m in entity["members"] for v in m["observation"]["distinguishing_features"]]),
+            "intrinsic_descriptions": _unique([trait["description"] for m in entity["members"]
+                                               for trait in m["observation"]["visual_traits"]
+                                               if trait["scope"] == "intrinsic"]),
             "evidence": _unique([v for m in entity["members"] for v in m["observation"]["evidence"]])}
 
 
@@ -160,11 +160,8 @@ def _catalog(entities, step):
         prefix = {"characters": "CHAR", "locations": "LOC", "objects": "OBJ"}[kind]
         item["local_id"] = f"{prefix}_{len(catalog[kind]) + 1:03d}"
         item["first_sequence"] = min(m["sequence"] for m in entity["members"])
-        item["chapter_appearance" if kind == "characters" else "chapter_state"] = ""
         for field in ("evidence", "reference_view_hints"):
             item[field] = _unique([v for o in observations for v in o[field]])
-        item["stable_visual_description"] = ""
-        item["distinguishing_features"] = []
         for field, order in (("importance", step.IMPORTANCE), ("reference_priority", step.PRIORITY)):
             values = [o[field] for o in observations if o.get(field) in order]
             if values:

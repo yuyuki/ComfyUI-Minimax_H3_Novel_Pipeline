@@ -236,11 +236,12 @@ def incoming_entities(chapter: dict[str, Any]) -> list[dict[str, Any]]:
                     "reference_priority": e.get("reference_priority", "optional"),
                     "reference_view_hints": e.get("reference_view_hints", []),
                     "stable_observations": [
-                        {key: observation[key] for key in (
-                            "canonical_name", "aliases", "stable_visual_description",
-                            "distinguishing_features", "voice_description", "speaks",
+                        {**{key: observation[key] for key in (
+                            "canonical_name", "aliases", "voice_description", "speaks",
                             "importance", "reference_priority", "reference_view_hints",
-                        ) if key in observation}
+                        ) if key in observation},
+                         "intrinsic_traits": [trait["description"] for trait in observation["visual_traits"]
+                                              if trait["scope"] == "intrinsic"]}
                         for phases in e["state_by_sequence"].values()
                         for observations in phases.values() for observation in observations
                     ],
@@ -651,7 +652,7 @@ def build_picture_specs(registry: list[dict[str, Any]], args: argparse.Namespace
 
     for spec in specs:
         design = getattr(args, "visual_designs", {}).get(spec["linked_global_id"], {})
-        spec["added_details"] = design.get("added_details", {})
+        spec["added_details"] = design.get("added_details", {}) if spec["entity_type"] == "character" else {}
         spec["image_style"] = getattr(args, "image_style", "realistic photographic")
     return specs
 
@@ -695,20 +696,19 @@ Merge stable_visual_description, distinguishing_features and approved added_deta
 describe each visible fact once, including paraphrases and translations of the same
 fact. Preserve unique visible identity traits
 and approved design choices without inventing new ones. Do not include the entity's
-name, image style, view, camera, lighting, background instructions or prompt labels:
-the caller supplies those separately. For a location, retain its actual environment.
+name, image style, view, camera, composition instructions or prompt labels.
+For a location, retain its actual environment, including every supplied
+scene-specific lighting, weather and backdrop condition. Invent no conditions.
 Use natural descriptive sentences, not headings, lists or trait: value notation.
 Exclude biography, occupation history, plot, metaphors, actions, gestures, poses,
 expressions, handling and narrative orientation, even from fields labelled stable
 or distinguishing. References describe appearance independently from animation.
-Keep persistent clothing, carried equipment, anatomy, materials and markings.
-Base identity references use a neutral rested expression and clean, dry skin;
-omit transient sweat, fatigue, dirt and recent injuries unless the chapter state
-explicitly requires them. Preserve established permanent scars and markings.
+For characters, keep the profile's timeless physical traits and the applicable
+neutral outfit. Omit dirt, wetness, garment damage, recent injuries and signs of
+interactions; preserve established permanent scars and markings from the profile.
+For objects, keep only supplied physical appearance, construction and materials.
 If base_appearance is supplied, reuse its wording for unchanged traits. Apply only
-the supplied chapter_visual_state's visible changes; replace conflicting base
-clothing or conditions instead of describing both alternatives. A chapter state
-may retain relevant temporary appearance, but never require an action scene.
+the supplied chapter_visual_state's outfit; replace conflicting base clothing.
 Do not invent missing age, ethnicity or other traits. Preserve all distinct useful
 appearance facts within the response limit. No repeated facts or sentences.
 """.strip()
@@ -759,7 +759,7 @@ def prepare_picture_appearances(client, model, specs, args):
             "entity_type", "stable_visual_description", "distinguishing_features",
             "added_details", "chapter_visual_state", "ignored_traits",
         )}
-        if spec["variant"] != "base":
+        if spec["entity_type"] == "character" and spec["variant"] != "base":
             facts["base_appearance"] = appearances.get((key[0], "base"), "")
 
         def validate_appearance(data):
@@ -791,11 +791,9 @@ identity choices; do not invent traits or change their colors, shapes or wording
 Omit physique, shoulders, arms, forearms, hands, clothing, footwear, backpacks,
 tools, weapons and all carried equipment, even when mentioned in the same sentence
 as a facial trait. Do not describe a pose, action, environment or camera.
-For the base reference omit transient sweat, fatigue, dirt and recent injuries;
-use a neutral rested expression. For chapter variants retain only explicitly
-established facial changes from chapter_visual_state; never restore off-frame details.
-If base_view_appearance is supplied, reuse its unchanged facial identity wording
-while applying only the current state's established facial changes.
+Use a neutral rested expression for every wardrobe variant. Omit sweat, fatigue,
+dirt and recent injuries. If base_view_appearance is supplied, reuse its unchanged
+facial identity wording.
 Use concise natural prose in the supplied appearance's source language; do not
 translate into English. Keep JSON keys unchanged. Prefer 20-70 words. When no
 facial traits are established, state that they are unspecified in that language
@@ -811,7 +809,7 @@ VIEW_APPEARANCE_RULES = {
     ),
     "costume_detail": (
         "Select one established garment or contiguous clothing detail, retaining its exact color, "
-        "material, wear and construction. Omit facial identity, physique, unrelated garments, "
+        "material and construction. Omit facial identity, physique, unrelated garments, "
         "footwear and equipment outside that crop. Do not describe an entire outfit or invent seams."
     ),
     "key_detail": (
@@ -842,6 +840,7 @@ Preserve the supplied appearance's source language; do not translate into Englis
 Keep JSON keys unchanged.
 Preserve exact identity, materials, colors, markings and chapter state; never redesign.
 Select facts, do not add camera, pose, lighting or background instructions.
+For a location, preserve visible lighting and weather supplied for its current backdrop.
 If base_view_appearance is supplied, retain its subject/detail and unchanged wording;
 apply only changes established in the current appearance and chapter_visual_state.
 Never restore a replaced base outfit or condition. Omit off-frame chapter changes.
@@ -873,7 +872,7 @@ def picture_view_appearances(client, model, specs, args, appearances):
                 if not is_facial:
                     facts.update(view_type=view, view_scope=VIEW_APPEARANCE_RULES[view])
                 base = projected.get((key[0], "base", group))
-                if spec["variant"] != "base" and base:
+                if spec["entity_type"] == "character" and spec["variant"] != "base" and base:
                     facts["base_view_appearance"] = base
 
                 def validate(data):
@@ -911,7 +910,8 @@ Write both fields in each supplied appearance's source language; do not translat
 into English or infer language from technical view/style names. Keep JSON keys
 and IDs unchanged.
 
-Use neutral, legible lighting unless source facts establish a defining light source.
+Use neutral, legible lighting for characters and objects. For places, preserve the
+supplied lighting and weather in the backdrop; add no conflicting conditions.
 Characters: simple background, neutral pose, unobstructed view; never invent a setting.
 Facial views (face_front, profile, expression_closeup): tight facial framing only.
 Do not introduce body, outfit, equipment or temporary conditions absent from the

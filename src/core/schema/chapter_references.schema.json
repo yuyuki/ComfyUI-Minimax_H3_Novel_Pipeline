@@ -5,7 +5,7 @@
   "properties": {
     "default_temporal_context": {"type": "string", "description": "User-supplied date or era fallback; explicit narrative timing takes precedence. Not source evidence."},
     "schema_version": {"const": "minimax-h3-novel-refs.chapter.v5"},
-    "timeline_version": {"const": "cinematic-neutral-references.v1"},
+    "timeline_version": {"const": "cinematic-neutral-references.v2"},
     "chapter_id": {"type": "string", "minLength": 1},
     "chapter_name": {"type": "string", "minLength": 1},
     "source": {
@@ -27,8 +27,8 @@
       "additionalProperties": false
     },
     "characters": {"type": "array", "items": {"$ref": "#/$defs/character"}},
-    "locations": {"type": "array", "items": {"$ref": "#/$defs/location"}},
-    "objects": {"type": "array", "items": {"$ref": "#/$defs/object"}}
+    "locations": {"type": "array", "items": {"$ref": "#/$defs/entity"}},
+    "objects": {"type": "array", "items": {"$ref": "#/$defs/entity"}}
   },
   "required": ["schema_version", "timeline_version", "chapter_id", "chapter_name", "source", "sequences", "characters", "locations", "objects"],
   "additionalProperties": false,
@@ -115,11 +115,20 @@
     },
     "observation": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "presence",
         "visual_traits"
       ],
       "properties": {
+        "canonical_name": {"type": "string"},
+        "aliases": {"type": "array", "items": {"type": "string"}},
+        "voice_description": {"type": "string"},
+        "speaks": {"type": "boolean"},
+        "importance": {"enum": ["major", "recurring", "minor", "background"]},
+        "reference_priority": {"enum": ["required", "recommended", "optional"]},
+        "reference_view_hints": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "array", "items": {"type": "string"}},
         "presence": {
           "enum": [
             "visible",
@@ -166,29 +175,10 @@
         {"$ref": "#/$defs/entity"},
         {
           "properties": {
-            "chapter_appearance": {"type": "string"},
             "voice_description": {"type": "string"},
             "speaks": {"type": "boolean"}
           },
-          "required": ["chapter_appearance", "voice_description", "speaks"]
-        }
-      ]
-    },
-    "location": {
-      "allOf": [
-        {"$ref": "#/$defs/entity"},
-        {
-          "properties": {"chapter_state": {"type": "string"}},
-          "required": ["chapter_state"]
-        }
-      ]
-    },
-    "object": {
-      "allOf": [
-        {"$ref": "#/$defs/entity"},
-        {
-          "properties": {"chapter_state": {"type": "string"}},
-          "required": ["chapter_state"]
+          "required": ["voice_description", "speaks"]
         }
       ]
     }

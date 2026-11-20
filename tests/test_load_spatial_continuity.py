@@ -18,7 +18,7 @@ def saved_plan(tmp_path, monkeypatch):
     camera = {k: fields.pop(k) for k in list(fields) if k.startswith('camera_')}
     plan = {'schema_version': 'minimax-spatial-continuity.v2', 'source_digest': 'original',
             'chapters': {'chapter': {'sequences': [{'sequence': 1, 'camera': camera, **fields}]}}}
-    registry = {'schema_version': util.REGISTRY_SCHEMA, 'source_digest': 'original',
+    registry = {'schema_version': util.REGISTRY_SCHEMA, 'timeline_version': util.REFERENCE_TIMELINE_VERSION, 'source_digest': 'original',
                 'chapter_timelines': {'chapter': {'sequences': [{'sequence': 1}]}}}
     path = tmp_path / 'spatial_continuity.json'
     path.write_text(json.dumps(plan), encoding='utf-8')

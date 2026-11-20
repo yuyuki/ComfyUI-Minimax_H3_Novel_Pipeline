@@ -103,6 +103,74 @@ def chapter(name="chapter"):
     ]}
 
 
+def test_catalog_retains_only_category_specific_image_traits(execution, monkeypatch, tmp_path):
+    _, params, config = execution
+    value = chapter()
+    value["sequences"] = value["sequences"][:1]
+    adaptation = value["sequences"][0]["adaptation"]
+    adaptation.update(
+        initialState="Indy porte un pantalon bleu déchiré. Une grosse corde tressée en lin lui presse le torse. "
+                     "Les parois de granit sont dans le brouillard.",
+        event="Le brouillard se dissipe.",
+        endingState="La lumière orangée éclaire le canyon.",
+    )
+
+    def fact(attribute, description, evidence, scope="intrinsic"):
+        return {"attribute": attribute, "description": description, "evidence": evidence, "scope": scope}
+
+    step = lmstudio_pipeline.load("extract")
+
+    def chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
+        if schema["name"] == "chapter_reference_identity":
+            return {"groups": []}
+        if schema["name"] == "narrative_semantic_review":
+            bad = {"wardrobe_trousers_damage", "wardrobe_torso_condition", "weather_after"}
+            issues = []
+            for target, address in payload["visual_trait_targets"].items():
+                entity = payload["extraction"][address["kind"]][address["entity_index"]]
+                if entity["visual_traits"][address["trait_index"]]["attribute"] in bad:
+                    issues.append({"target": int(target), "message": "This trait belongs to animation."})
+            return {"issues": issues}
+        assert schema == step.CHUNK_SCHEMA
+        source = payload.get("source_input", payload)
+        assert "lumière orangée" not in json.dumps(source, ensure_ascii=False)
+        return neutral_candidates({
+            "chunk_summary": "",
+            "characters": [{"canonical_name": "Indy", "visual_traits": [
+                fact("wardrobe_trousers", "Un pantalon bleu", "un pantalon bleu", "scene"),
+                fact("wardrobe_trousers_damage", "Pantalon déchiré", "pantalon bleu déchiré", "scene"),
+                fact("wardrobe_torso_condition", "Torse comprimé", "lui presse le torse", "scene"),
+            ]}],
+            "objects": [{"canonical_name": "corde", "visual_traits": [
+                fact("construction", "Grosse corde tressée", "grosse corde tressée"),
+                fact("material", "En lin", "en lin"),
+            ]}],
+            "locations": [{"canonical_name": "canyon", "visual_traits": [
+                fact("walls_material", "Parois de granit", "parois de granit"),
+                fact("weather", "Brouillard", "dans le brouillard", "scene"),
+                fact("weather_after", "Ciel dégagé", "Le brouillard se dissipe", "scene"),
+            ]}],
+        }, source["text"])
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    catalogs, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
+    catalog, = catalogs
+    character, = catalog["characters"]
+    rope, = catalog["objects"]
+    canyon, = catalog["locations"]
+    from minimax_h3_novel_pipeline.core.reference_visuals import appearance_at
+
+    assert appearance_at(character, "chapter", 1) == "Un pantalon bleu"
+    assert appearance_at(rope, "chapter", 1) == "Grosse corde tressée En lin"
+    assert appearance_at(canyon, "chapter", 1) == "Parois de granit Brouillard"
+    assert catalog["sequences"][0]["adaptation"] == adaptation
+    check_path, = tmp_path.rglob("*.diagnostics.json")
+    check = util.load_json(check_path)["checks"][0]
+    assert check["status"] == "issues"
+    assert len(check["history"][-1]["rejected_visual_traits"]) == 3
+
+
 def identity_reply(data):
     grouped = {}
     for entity in data["entities"]:
@@ -131,8 +199,7 @@ def execution(tmp_path, monkeypatch):
         result = {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
         for name, kind in (("Indy", "characters"), ("Doriane", "characters"), ("torch", "objects")):
             if name in data["text"]:
-                state = "chapter_appearance" if kind == "characters" else "chapter_state"
-                result[kind].append({"canonical_name": name, "aliases": [], state: data["text"]})
+                result[kind].append({"canonical_name": name, "aliases": []})
         return neutral_candidates(result, data["text"])
     monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", extract)
     params = {k: spec[1]["default"] for k, spec in ExtractChapterReferencesNode.INPUT_TYPES()["required"].items()
@@ -164,9 +231,9 @@ def test_multiple_chapters_ordered_sources_and_identity(execution):
         assert "first_phase" not in torch
         states = torch["state_by_sequence"]
         assert "1" not in states and list(states["2"]) == ["source"]
-        assert states["2"]["source"][0]["chapter_state"] == ""
-        assert states["3"]["source"][0]["chapter_state"] == ""
-        assert torch["chapter_state"] == ""
+        assert states["2"]["source"][0]["visual_traits"][0]["scope"] == "intrinsic"
+        assert states["3"]["source"][0]["visual_traits"][0]["scope"] == "intrinsic"
+        assert "chapter_state" not in torch and "chapter_state" not in states["2"]["source"][0]
         assert "link_to_local_id" not in torch
         indy = [e for e in catalog["characters"] if e["canonical_name"] == "Indy"]
         assert len(indy) == 1
@@ -264,7 +331,7 @@ def test_category_correction_keeps_context_schema_and_source_observations(execut
         corrected = "defects_to_correct" in data or source["sequence"] == 2
         name = "la crevasse" if corrected else "l'obscurité"
         return neutral_candidates({"chunk_summary": "", "characters": [], "objects": [], "locations": [
-            {"canonical_name": name, "aliases": [], "chapter_state": source["text"]}]}, source["text"])
+            {"canonical_name": name, "aliases": []}]}, source["text"])
 
     monkeypatch.setattr(step, "chat_json", chat)
     result, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
@@ -496,7 +563,7 @@ def test_language_and_spatial_defects_are_corrected(execution, monkeypatch, tmp_
         calls.append(data)
         assert "actual filming environments" in system and "source narration" in system
         corrected = "defects_to_correct" in data
-        entity = {"canonical_name": "la torche", "aliases": [], "chapter_state": "inclinee vers le bas"}
+        entity = {"canonical_name": "la torche", "aliases": []}
         return neutral_candidates({"chunk_summary": "La torche est inclinee." if corrected else "English summary.",
                 "characters": [], "locations": [] if corrected else [entity],
                 "objects": [entity] if corrected else []}, data.get("source_input", data)["text"])

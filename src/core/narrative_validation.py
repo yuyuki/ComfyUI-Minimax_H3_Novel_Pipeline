@@ -65,17 +65,18 @@ Do not report mutually contradictory requirements; check each criticism against 
 Original source outranks generated states: do not demand continuity with an erroneous
 earlier state. Distinguish body orientation from head position and gaze; compatible
 descriptions are not contradictions. Preserve source-supported ongoing motion.
-For extraction, target is always 1. Occurrence evidence is only source_input.text.
+For extraction, use target 1 for general defects, including omissions. For a supplied
+visual trait that must be deleted or rewritten, report its exact target from
+visual_trait_targets (zero-based entity_index and trait_index within extraction).
+Use the trait target even if its quotation is exact but describes only an interaction,
+an inadmissible kind of appearance or an unsupported inference. Identify every bad
+trait individually; use target 1 only when there is no trait to point to.
+Occurrence evidence is only source_input.text.
 chapter_context may clarify referents and categories, never establish local presence or
 import future traits, possession or actions. Check verbatim local evidence and language.
 Visible characters can have empty local appearance when independent profiles supply it.
-visual_traits must be neutral appearance: intrinsic traits, or scene-specific wardrobe
-and visible condition established when the entity is depicted. An entity first seen
-during an event can have its outfit described there. Evidence must quote the current text.
-Use reference_state to distinguish established conditions from event results; never turn
-a transformation to animate into an already completed appearance. Actions, gestures,
-expressions, poses, handling and narrative orientation
-belong to animation; never require them in appearance. Check useful visual detail without
+Use reference_state to distinguish established appearance from event results.
+Evidence must quote the current text. Check useful visual detail without
 inventing traits or requiring name-only environment assets. Settings are actual spaces,
 not positions or effects. Group features unless distinct filming spaces are established.
 Props are concrete physical objects. Keep distinct instances separate and check category

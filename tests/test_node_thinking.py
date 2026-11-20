@@ -37,7 +37,7 @@ def test_node_thinking_reaches_client(tmp_path, monkeypatch, cinematic_registry,
     monkeypatch.setattr(character_visual_review, "candidates", lambda *a: ["candidate"])
     catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "chapter",
                "chapter_name": "chapter", "source": {},
-               "timeline_version": "cinematic-neutral-references.v1",
+               "timeline_version": util.REFERENCE_TIMELINE_VERSION,
                "characters": [], "locations": [], "objects": [],
                "sequences": registry["chapter_timelines"]["chapter"]["sequences"]}
     inputs = {

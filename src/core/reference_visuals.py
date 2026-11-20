@@ -12,8 +12,29 @@ from .editable_schemas import validate_document
 from .reference_requests import validated_request
 
 
-VERSION = "neutral-visual-reference.v2"
+VERSION = "neutral-visual-reference.v3"
 PRESENCE = ("visible", "offscreen", "mentioned")
+APPEARANCE_RULES = """Apply the image-reference rules independently to each category:
+- Characters: extract only clothing and footwear as worn in this sequence. Describe
+  explicitly stated garment type, cut, color, material, texture, pattern and quality.
+  Use scene scope and an English attribute key beginning with wardrobe_ for each
+  garment or garment property. Omit temporary dirt, wetness, damage, holes and tears.
+  Omit bodily appearance, injuries, marks from interactions, props and equipment.
+  Timeless physical identity comes from the independent character visual profiles.
+- Objects: extract only the object's explicitly described physical design, including
+  material, size, shape, construction, texture, color and markings. Use intrinsic
+  scope. Record material as its own attribute (qualify by part when applicable).
+  Omit temporary condition, damage, handling, attachment, tension, placement and
+  orientation. An unspecified material stays unspecified.
+- Locations: extract the visible environment, including durable terrain, architecture,
+  layout, surfaces and fixed features. Use scene scope for established temporary
+  conditions of the backdrop, including local light, weather, fog and visible changes
+  already present. Keep different conditions at their own sequence addresses.
+  Omit characters, separately tracked props, camera staging and ongoing actions.
+In all categories, an interaction alone does not establish a visual trait. Details
+revealed during an event may be used if already applicable when the subject appears;
+the result of a transformation happening in the sequence belongs to its animation.
+Keep one visual fact per attribute and quote the local passage as evidence."""
 TRAIT_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
@@ -48,7 +69,7 @@ def attribute_key(value):
     return re.sub(r"[^\w]+", "_", value.casefold()).strip("_")
 
 
-def validate_observation(observation):
+def validate_observation(observation, kind=None):
     if (not isinstance(observation, dict) or observation.get("presence") not in PRESENCE
             or not isinstance(observation.get("visual_traits"), list)):
         raise ValueError("Neutral visual observations are required; re-extract chapter references.")
@@ -58,6 +79,12 @@ def validate_observation(observation):
                 or not all(isinstance(trait[k], str) and trait[k].strip() for k in TRAIT_SCHEMA["required"])
                 or not attribute_key(trait["attribute"])):
             raise ValueError("Invalid neutral visual trait; re-extract chapter references.")
+        if kind == "characters" and (
+            trait["scope"] != "scene" or not re.fullmatch(r"wardrobe_[a-z0-9]+(?:_[a-z0-9]+)*", trait["attribute"])
+        ):
+            raise ValueError("Character visual traits require scene scope and a wardrobe_ attribute.")
+        if kind == "objects" and trait["scope"] != "intrinsic":
+            raise ValueError("Object visual traits require intrinsic scope.")
 
 
 def validate_evidence(result, source_input):
@@ -65,7 +92,10 @@ def validate_evidence(result, source_input):
     text = source_input["text"]
     for kind in ("characters", "locations", "objects"):
         for index, observation in enumerate(result.get(kind, [])):
-            validate_observation(observation)
+            try:
+                validate_observation(observation, kind)
+            except ValueError as exc:
+                raise ValueError(f"{kind}[{index}]: {exc}") from exc
             for trait_index, trait in enumerate(observation["visual_traits"]):
                 restored = restore_quote(text, trait["evidence"])
                 if restored is None:
@@ -230,12 +260,12 @@ def validate_registry(registry):
                     raise ValueError("Image reference state does not match its scene; reconsolidate references.")
 
 
-def validate_reference(reference):
+def validate_reference(reference, kind=None):
     if not isinstance(reference, dict) or set(reference) != {"common_traits", "scenes"}:
         raise ValueError("Neutral visual references are required; re-extract and reconsolidate references.")
     if not isinstance(reference["common_traits"], list) or not isinstance(reference["scenes"], dict):
         raise ValueError("Invalid neutral visual reference.")
-    validate_observation({"presence": "visible", "visual_traits": reference["common_traits"]})
+    validate_observation({"presence": "visible", "visual_traits": reference["common_traits"]}, kind)
     if any(t["scope"] != "intrinsic" for t in reference["common_traits"]):
         raise ValueError("Common visual appearance must contain intrinsic traits only.")
     for sequences in reference["scenes"].values():
@@ -247,7 +277,7 @@ def validate_reference(reference):
                     or not isinstance(state["excluded_attributes"], list)
                     or not all(isinstance(k, str) and k for k in state["excluded_attributes"])):
                 raise ValueError("Invalid scene-addressed visual appearance.")
-            validate_observation({"presence": state["presence"], "visual_traits": state["traits"]})
+            validate_observation({"presence": state["presence"], "visual_traits": state["traits"]}, kind)
 
 
 def scene_assets(assets, chapter, sequence):

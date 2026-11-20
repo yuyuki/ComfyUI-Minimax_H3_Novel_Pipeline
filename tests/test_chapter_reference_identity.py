@@ -10,7 +10,7 @@ from minimax_h3_novel_pipeline.core import chapter_reference_identity as identit
 
 def job(sequence, source, *names):
     return {"sequence": sequence, "chunk": 1, "text": source, "result": {
-        "characters": [{"canonical_name": name, "aliases": [], "chapter_appearance": source,
+        "characters": [{"canonical_name": name, "aliases": [], "presence": "visible", "visual_traits": [],
                         "importance": "major", "reference_priority": "required", "evidence": [source]}
                        for name in names], "locations": [], "objects": [],
     }}
@@ -50,7 +50,7 @@ def test_pronouns_and_named_aliases_merge_without_changing_observations(tmp_path
     catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
     indy, doriane = catalog["characters"]
     assert (indy["canonical_name"], indy["aliases"], doriane["canonical_name"]) == ("Indy", ["Jones"], "Doriane")
-    assert indy["first_sequence"] == 1 and indy["chapter_appearance"] == ""
+    assert indy["first_sequence"] == 1
     assert [indy["state_by_sequence"][str(n)]["source"][0]["canonical_name"] for n in (1, 2, 3)] == ["Indy", "l'homme", "Jones"]
     assert len(diagnostics["identity_occurrences"]) == 4
     assert len(calls) == 1
@@ -61,7 +61,8 @@ def test_pronouns_and_named_aliases_merge_without_changing_observations(tmp_path
 def test_same_generic_name_and_identical_object_names_do_not_force_merge(tmp_path, monkeypatch):
     jobs = [job(1, "Un homme entre.", "l'homme"), job(2, "Ailleurs, un autre homme attend.", "l'homme")]
     for entry in jobs:
-        entry["result"]["objects"] = [{"canonical_name": "la corde", "aliases": [], "chapter_state": entry["text"]}]
+        entry["result"]["objects"] = [{"canonical_name": "la corde", "aliases": [], "presence": "visible",
+                                       "visual_traits": []}]
     catalog, diagnostics, _ = run(tmp_path, monkeypatch, jobs, lambda *a: {"groups": []})
     assert len(catalog["characters"]) == len(catalog["objects"]) == 2
     assert [e["first_sequence"] for e in catalog["characters"]] == [1, 2]
@@ -86,7 +87,8 @@ def test_later_batch_can_unify_previously_separate_identities(tmp_path, monkeypa
 @pytest.mark.parametrize("defect", ["unknown_id", "duplicate_id", "cross_type", "invented_name", "invented_alias", "invented_quote", "overlap", "schema"])
 def test_invalid_merge_is_retried_and_preserves_every_occurrence(tmp_path, monkeypatch, defect):
     jobs = [job(1, "Indy et un homme parlent.", "Indy", "l'homme")]
-    jobs[0]["result"]["objects"] = [{"canonical_name": "la corde", "aliases": []}]
+    jobs[0]["result"]["objects"] = [{"canonical_name": "la corde", "aliases": [], "presence": "visible",
+                                    "visual_traits": []}]
     def reply(payload, count):
         invalid = group(["REF_00001", "REF_00002"], "Indy", jobs[0]["text"])
         if defect == "unknown_id":

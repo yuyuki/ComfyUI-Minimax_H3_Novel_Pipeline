@@ -31,8 +31,6 @@ COMPACT_FIELD_LIMITS = {
     "chapter_summary": 400,
     "canonical_name": 80,
     "stable_visual_description": 500,
-    "chapter_appearance": 350,
-    "chapter_state": 350,
     "distinguishing_features": 120,
     "voice_description": 100,
     "evidence": 120,

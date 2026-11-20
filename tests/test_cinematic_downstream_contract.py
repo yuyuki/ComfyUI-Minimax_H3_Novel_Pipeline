@@ -58,7 +58,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
                 "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
 
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", adapt_chat)
-    monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *a: {})
+    monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *a, **kw: {})
     direct, saved_files = CinematicChapterAdapterNode().run(
         config, {"chapter_paths": [str(source)]}, duration=12)["result"]
     before = deepcopy(direct)

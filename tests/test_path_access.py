@@ -114,12 +114,12 @@ def test_cinematic_input_rejects_file_paths(roots, monkeypatch, tmp_path, node, 
 def test_loaders_resume_from_confined_outputs(roots, tmp_path):
     _, output = roots
     catalog = {"schema_version": util.CHAPTER_SCHEMA, "chapter_id": "one", "characters": [], "locations": [], "objects": [],
-               "timeline_version": "cinematic-neutral-references.v1",
+               "timeline_version": util.REFERENCE_TIMELINE_VERSION,
                "chapter_name": "one", "sequences": [{"sequence": 1, "source": "Wait.",
                "adaptation": {"initialState": "Here.", "event": "Wait.", "endingState": "Here."}}]}
     util.save_json(Path("chapter_catalogs/one_references.json"), catalog)
     assert LoadChapterCatalogsNode().run("chapter_catalogs")[0] == [catalog]
-    registry = {"schema_version": util.REGISTRY_SCHEMA, "entities": [], "chapter_entity_map": {}, "entity_asset_index": {},
+    registry = {"schema_version": util.REGISTRY_SCHEMA, "timeline_version": util.REFERENCE_TIMELINE_VERSION, "entities": [], "chapter_entity_map": {}, "entity_asset_index": {},
                 "picture_assets": [], "audio_assets": []}
     util.save_json(Path("references/consolidated_references.json"), registry)
     assert LoadConsolidatedReferencesNode().run("references")[0] == registry

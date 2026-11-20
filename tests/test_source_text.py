@@ -91,13 +91,13 @@ def test_normalized_sequence_does_not_omit_temporary_evidence():
 
 
 def test_local_reference_evidence_uses_normalized_source():
-    original = "L’homme a les yeux verts."
-    trait = {"attribute": "eyes", "description": "verts", "scope": "intrinsic",
+    original = "L’homme porte un pantalon vert."
+    trait = {"attribute": "wardrobe_trousers_color", "description": "vert", "scope": "scene",
              "evidence": original.replace("’", "'")}
     result = {"characters": [{"presence": "visible", "visual_traits": [trait]}]}
     reference_visuals.validate_evidence(result, {"text": original})
     assert trait["evidence"] == st.normalize(original)
-    trait["evidence"] = "L’homme a les yeux bleus."
+    trait["evidence"] = "L’homme porte un pantalon bleu."
     with pytest.raises(ValueError):
         reference_visuals.validate_evidence(result, {"text": original})
 

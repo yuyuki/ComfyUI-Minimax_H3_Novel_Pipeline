@@ -98,7 +98,7 @@ def test_spatial_generation_repairs_future_evidence_before_carrying_state(tmp_pa
 
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
 
-    registry = {'schema_version': util.REGISTRY_SCHEMA, 'source_digest': 'source',
+    registry = {'schema_version': util.REGISTRY_SCHEMA, 'timeline_version': util.REFERENCE_TIMELINE_VERSION, 'source_digest': 'source',
                 'entities': [{'global_id': 'tablet', 'canonical_name': 'Tablet'}],
                 'chapter_timelines': {'chapter': {'sequences': [
                     {'sequence': i, 'source': 'Wait' if i == 1 else 'Tablet revealed'} for i in (1, 4)]}}}

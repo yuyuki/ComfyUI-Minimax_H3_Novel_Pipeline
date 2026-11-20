@@ -361,7 +361,7 @@ def test_spatial_planning_keeps_local_facts_and_schema_on_retries(setup, monkeyp
     monkeypatch.setattr(lmstudio_json, 'QWEN35_LENGTH_RETRIES', 1)
     monkeypatch.setattr(spatial.lmstudio_pipeline, 'make_client_and_model', lambda *a: (client, 'qwen3.5'))
     monkeypatch.setattr(spatial, 'stage_output', lambda *a: root / 'spatial')
-    refs = {'schema_version': util.REGISTRY_SCHEMA, 'source_digest': 'source', 'entities': [entity],
+    refs = {'schema_version': util.REGISTRY_SCHEMA, 'timeline_version': util.REFERENCE_TIMELINE_VERSION, 'source_digest': 'source', 'entities': [entity],
             'chapter_timelines': {'chapter1': chapter}, 'visual_designs': result['visual_designs'],
             'character_enrichment': enrichment}
     spatial.SpatialContinuityNode().run(refs, {'api_url': 'unused'})

@@ -32,8 +32,11 @@ def narrative_review():
 
 @pytest.fixture
 def cinematic_registry():
+    from minimax_h3_novel_pipeline.core.util import REFERENCE_TIMELINE_VERSION
+
     def make(path, **extra):
-        return {"chapters": [{"chapter_id": "chapter", "source_file": str(path)}],
+        return {"timeline_version": REFERENCE_TIMELINE_VERSION,
+                "chapters": [{"chapter_id": "chapter", "source_file": str(path)}],
                 "chapter_timelines": {"chapter": {"sequences": [
                     {"sequence": 1, "source": "A character waits.", "adaptation": {
                         "initialState": "A character waits.", "event": "The character moves.",

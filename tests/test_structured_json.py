@@ -88,10 +88,8 @@ def test_compact_retry_preserves_visual_detail_and_entity_capacity(schema_name):
     for kind in ("characters", "locations", "objects"):
         assert props[kind].get("maxItems") == schema["schema"]["properties"][kind].get("maxItems")
         fields = props[kind]["items"]["properties"]
-        assert fields["stable_visual_description"]["maxLength"] == 500
-        state = "chapter_appearance" if kind == "characters" else "chapter_state"
-        assert fields[state]["maxLength"] == 350
-        assert "maxItems" not in fields["distinguishing_features"]
+        assert not {"stable_visual_description", "chapter_appearance", "chapter_state",
+                    "distinguishing_features"} & fields.keys()
         assert fields["visual_traits"] == schema["schema"]["properties"][kind]["items"]["properties"]["visual_traits"]
         assert fields["evidence"]["maxItems"] == 2
         assert fields["evidence"]["items"]["maxLength"] == 120
@@ -273,7 +271,13 @@ def test_unsupported_structured_output_propagates_without_fallback():
 def test_old_schemas_are_rejected(schema, version):
     with pytest.raises(ValueError, match="regenerate"):
         util.require_schema({"schema_version": schema.rsplit(".", 1)[0] + "." + version}, schema)
-    util.require_schema({"schema_version": schema}, schema)
+    util.require_schema({"schema_version": schema, "timeline_version": util.REFERENCE_TIMELINE_VERSION}, schema)
+
+
+def test_registry_requires_current_appearance_revision():
+    with pytest.raises(ValueError, match="reconsolidate"):
+        util.require_schema({"schema_version": util.REGISTRY_SCHEMA,
+                             "timeline_version": "cinematic-neutral-references.v1"}, util.REGISTRY_SCHEMA)
 
 
 @pytest.mark.parametrize("model", ["qwen3.5-9b", "other-model"])

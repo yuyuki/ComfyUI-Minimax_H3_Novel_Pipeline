@@ -16,11 +16,14 @@ from .source_text import read_source
 
 CHAPTER_SCHEMA = "minimax-h3-novel-refs.chapter.v5"
 REGISTRY_SCHEMA = "minimax-h3-novel-refs.consolidated.v5"
+REFERENCE_TIMELINE_VERSION = "cinematic-neutral-references.v2"
 
 
 def require_schema(data: Any, expected: str) -> None:
     if not isinstance(data, dict) or data.get("schema_version") != expected:
         raise ValueError(f"Expected current schema {expected}; regenerate older outputs.")
+    if expected == REGISTRY_SCHEMA and data.get("timeline_version") != REFERENCE_TIMELINE_VERSION:
+        raise ValueError("Regenerate the chapter catalogs and reconsolidate references with the current appearance rules.")
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}

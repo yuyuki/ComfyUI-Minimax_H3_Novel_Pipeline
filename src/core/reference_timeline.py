@@ -37,7 +37,7 @@ def validate_catalogs(chapters):
                 if "link_to_local_id" in entity or "first_phase" in entity:
                     raise ValueError(f"{cid}/{lid}: obsolete reference fields; re-extract the chapter.")
                 states = entity.get("state_by_sequence")
-                validate_reference(entity.get("visual_reference"))
+                validate_reference(entity.get("visual_reference"), kind)
                 if not isinstance(states, dict) or not states:
                     raise ValueError(f"{cid}/{lid}: state_by_sequence is required.")
                 for sequence, entry in states.items():
@@ -48,7 +48,7 @@ def validate_catalogs(chapters):
                             or not all(isinstance(o, dict) for o in observations)):
                         raise ValueError(f"{cid}/{lid}: source observations must be a non-empty object list.")
                     for observation in observations:
-                        validate_observation(observation)
+                        validate_observation(observation, kind)
 
 
 def merge_timeline(entity, timeline):
