@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from minimax_h3_novel_pipeline.core import continuity_issues as issues
+from minimax_h3_novel_pipeline.core import generation_requests
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step, path_access, lmstudio_json, lmstudio_model_gemma
 from tests.h3_review_helpers import issue
 from tests.test_structured_json import Stream, client_for
@@ -111,6 +112,55 @@ def test_metadata_corrections_cannot_invent_ids_views_visibility_or_story(change
     with pytest.raises(ValueError):
         issues.repair_metadata(None, "gemma", step.scene_to_dict(scene()), evidence, [],
                                SimpleNamespace(max_tokens=8192), Mock(return_value=answer))
+
+
+def test_selected_visible_location_does_not_need_to_be_listed_twice():
+    evidence = row()
+    evidence["catalog"].append({"global_id": "room", "entity_type": "location", "presence": "visible",
+                                "available_picture_views": [{"view_type": "wide_establishing"}]})
+    answer = {**metadata(), "location_global_id": "room", "reference_view_requests": [
+        {"global_id": "room", "view_types": ["wide_establishing"], "prominence": "primary", "reason": "Establish the room"}]}
+    result = issues.repair_metadata(None, "gemma", step.scene_to_dict(scene()), evidence, [],
+                                    SimpleNamespace(max_tokens=8192), Mock(return_value=answer))
+    assert result["visible_entity_ids"] == ["room", "hero"]
+    assert answer["visible_entity_ids"] == ["hero"]
+
+    evidence["catalog"][-1]["presence"] = "mentioned"
+    with pytest.raises(ValueError, match="room.*without approved visibility"):
+        issues.repair_metadata(None, "gemma", step.scene_to_dict(scene()), evidence, [],
+                               SimpleNamespace(max_tokens=8192), Mock(return_value=answer))
+
+
+def test_metadata_cache_rejects_semantically_invalid_responses(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    invalid = {**metadata(), "reference_view_requests": [
+        {"global_id": "hero", "view_types": ["profile"], "prominence": "primary", "reason": "Wrong view"}]}
+    valid = metadata()
+    transport = Mock(side_effect=[invalid, valid, valid])
+    monkeypatch.setattr(lmstudio_json, "chat_json", transport)
+    client = SimpleNamespace(base_url="http://127.0.0.1:1234/v1")
+    args = SimpleNamespace(max_tokens=8192, out_dir=tmp_path / "h3", force=False)
+
+    def repair():
+        return issues.repair_metadata(client, "gemma", step.scene_to_dict(scene()), row(), [], args,
+                                      generation_requests.chat_json)
+
+    with generation_requests.chapter("chapter", args), generation_requests.task("scene_metadata"):
+        cache = args.out_dir / ".cache" / "chapter" / "requests"
+        with pytest.raises(ValueError, match="hero.*profile.*face_front"):
+            repair()
+        assert list(cache.glob("*.json")) == []
+        assert repair()["visible_entity_ids"] == ["hero"]
+        checkpoint, = cache.glob("*.json")
+        record = json.loads(checkpoint.read_text(encoding="utf-8"))
+        record.update(result=invalid, result_digest=generation_requests.digest(invalid))
+        checkpoint.write_text(json.dumps(record), encoding="utf-8")
+        assert repair()["reference_view_requests"] == []
+        assert repair()["reference_view_requests"] == []
+    assert transport.call_count == 3
+    metrics = json.loads((cache.parent / "request_metrics.json").read_text(encoding="utf-8"))
+    assert metrics["tasks"]["scene_metadata"]["invalid_checkpoints"] == 1
+    assert metrics["tasks"]["scene_metadata"]["cache_hits"] == 1
 
 
 def test_binding_repair_rebuilds_without_llm_or_metadata_mutation(monkeypatch):

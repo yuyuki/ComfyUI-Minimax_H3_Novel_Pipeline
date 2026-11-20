@@ -35,6 +35,7 @@ class GenerateH3PromptsNode:
             "repair_attempts": ("INT", {"default": 2, "min": 0, "max": 10}), "force": ("BOOLEAN", {"default": False}), "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
             "refine_camera": ("BOOLEAN", {"default": True, "tooltip": "After prompt validation, ask LM Studio for camera-only descriptions for each shot. Adds one request per scene."}),
         }, "optional": {
+            "continue_from_last_frame": ("BOOLEAN", {"default": True, "tooltip": "Use the previous sequence's last frame as the opening image for each later sequence in the chapter. Supply the frame directly in MiniMax. Disable for independent clips."}),
             "spatial_continuity": ("MINIMAX_SPATIAL_CONTINUITY", {"tooltip": "Connect Spatial Continuity or Load Spatial Continuity to use its staging plan and review final prompts for consistency."}),
             "camera_direction": ("STRING", {"multiline": True, "default": "", "tooltip": "Optional camera axis, screen placement, starting view, movement and ending view. Applies to each generated scene."}),
             "camera_thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for the optional camera-only pass. Independent of generation thinking. GPT-OSS always reasons; OpenAI has no thinking control."}),
@@ -111,6 +112,7 @@ class GenerateH3PromptsNode:
             if not 1 <= args.max_shots <= 6:
                 raise ValueError("max_shots must be between 1 and 6. Set it on Generate H3 Prompts.")
             args.camera_direction = str(params.get("camera_direction", "")).strip()
+            args.continue_from_last_frame = bool(params.get("continue_from_last_frame", True))
             args.refine_camera = bool(params.get("refine_camera", False))
             args.camera_thinking = bool(params.get("camera_thinking", True))
             args.review_thinking = bool(params.get("review_thinking", True))

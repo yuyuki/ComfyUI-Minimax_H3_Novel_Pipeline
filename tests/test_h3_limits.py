@@ -48,7 +48,7 @@ def test_no_audio_only_bindings(monkeypatch):
     monkeypatch.setattr(step, "entity_index", lambda refs: {})
     monkeypatch.setattr(step, "request_map", lambda scene: {})
     monkeypatch.setattr(step, "audio_asset_for", lambda *args: pytest.fail("Audio selected without image"))
-    scene = SimpleNamespace(location_global_id="", visible_entity_ids=[], speaking_entity_ids=["speaker"])
+    scene = step.Scene("Scene", "Text", "Event", "", [], ["speaker"], [], True, "")
     bindings = step.build_bindings({}, scene, "chapter", SimpleNamespace(
         max_pictures=9, max_pictures_per_subject=4, max_audio=3))
     assert bindings["audio"] == []

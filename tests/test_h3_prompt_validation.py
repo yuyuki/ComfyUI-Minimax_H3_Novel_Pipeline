@@ -68,6 +68,16 @@ def test_first_shot_can_start_with_at_in_prose():
     assert step.validate_prompt(prompt, BINDINGS, 8).ok
 
 
+def test_opening_frame_is_a_keyframe_without_an_asset_label():
+    bindings = {**BINDINGS, "previous_frame_sequence": 1}
+    prompt = prompt_with_shots("[Shot 1] The action continues.").replace(
+        "[reference generation]", "[keyframe completion]")
+    assert step.validate_prompt(prompt, bindings, 8).ok
+    for label in ("<Picture 1>", "<Video 1>"):
+        candidate = prompt.replace("The action continues.", f"Continue with {label}.")
+        assert any(label in error for error in step.validate_prompt(candidate, bindings, 8).errors)
+
+
 @pytest.mark.parametrize("separator", [": ", " ", " = "])
 def test_subject_definitions_accept_colon_and_whitespace(separator):
     bindings = {"subjects": [

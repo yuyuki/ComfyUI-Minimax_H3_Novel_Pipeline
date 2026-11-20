@@ -4,7 +4,7 @@ from copy import deepcopy
 from jsonschema import Draft202012Validator
 
 from . import continuity_context
-from .generation_requests import digest
+from .generation_requests import digest, response_validation
 
 
 
@@ -156,36 +156,62 @@ def repair_metadata(client, model, scene, row, issues, args, request):
         "add dialogue or turn offscreen/mentioned characters into visible characters. "
         "Return only the schema fields. Preserve existing correct values. Empty means unknown, not invented. "
         "Use only catalog global IDs and available_picture_views. Never supply picture asset IDs as entity IDs. "
+        "Only request a view for a visible entity or the visible location selected for this beat. "
+        "Submit at most one view request per entity. Omit preferences when no catalog view fits. "
         "Source, selected choices, beat, dialogue text and phases are immutable."
     ) + continuity_context.INSTRUCTIONS
     payload = {"current_scene": scene, "upstream_sequence": row, "issues": issues}
     if not continuity_context.fits(system, payload, schema):
         raise ValueError("H3 metadata repair exceeds the safe request budget; no evidence was discarded.")
-    result = request(client, model, system, continuity_context.pack(payload), schema, .1, args.max_tokens)
-    if not Draft202012Validator(schema["schema"]).is_valid(result):
+    validator = Draft202012Validator(schema["schema"])
+
+    def validate(result):
+        return validate_metadata(result, row, validator)
+
+    with response_validation(validate):
+        result = request(client, model, system, continuity_context.pack(payload), schema, .1, args.max_tokens)
+    visible = validate(result)
+    # Picture selection is rebuilt from approved assets, never model asset IDs.
+    return {**deepcopy(scene), **deepcopy(result), "visible_entity_ids": visible}
+
+
+def validate_metadata(result, row, validator):
+    """Validate current-scene visibility before checking image preferences."""
+    if not validator.is_valid(result):
         raise ValueError("Invalid H3 scene metadata repair.")
     if not result["dialogue_present"] and result["speaking_entity_ids"]:
         raise ValueError("Scene metadata repair assigns speakers to a beat without dialogue.")
-    views = {item["global_id"]: {view["view_type"] for view in item.get("available_picture_views", [])}
-             for item in row["catalog"]}
+    catalog = {item["global_id"]: item for item in row["catalog"]}
+    visible = list(result["visible_entity_ids"])
+    location = result["location_global_id"]
+    if location and location not in visible:
+        visible.insert(0, location)
+    for gid in visible:
+        if catalog[gid].get("presence", "visible") != "visible":
+            raise ValueError(f"Scene metadata selects entity {gid!r} without approved visibility in this sequence.")
+    visible_ids = set(visible)
     seen = set()
     for requested in result["reference_view_requests"]:
         gid = requested["global_id"]
-        if (gid in seen or gid not in result["visible_entity_ids"]
-                or not set(requested["view_types"]) <= views[gid]):
-            raise ValueError("Scene metadata repair requests an unavailable or invisible reference.")
+        if gid in seen:
+            raise ValueError(f"Scene metadata contains duplicate view requests for entity {gid!r}.")
+        if gid not in visible_ids:
+            raise ValueError(f"Scene metadata requests a view for entity {gid!r} outside the visible selection.")
+        views = {view["view_type"] for view in catalog[gid].get("available_picture_views", [])}
+        unavailable = set(requested["view_types"]) - views
+        if unavailable:
+            raise ValueError(
+                f"Scene metadata requests unavailable views for entity {gid!r}: "
+                f"{sorted(unavailable)!r}. Allowed views: {sorted(views)!r}."
+            )
         seen.add(gid)
     context = row.get("character_context")
     if context and context.get("sequence"):
         mapped = context["registry_ids"]
         presence = dict.fromkeys(mapped.values(), "absent")
         presence.update({mapped[r["local_id"]]: r["presence"] for r in context["sequence"]["characters"]})
-        if any(presence.get(gid, "visible") != "visible" for gid in result["visible_entity_ids"]):
+        if any(presence.get(gid, "visible") != "visible" for gid in visible):
             raise ValueError("Scene metadata repair contradicts approved character visibility.")
         if any(presence.get(gid, "offscreen") not in ("visible", "offscreen") for gid in result["speaking_entity_ids"]):
             raise ValueError("Scene metadata repair contradicts approved speech presence.")
-    # Picture selection is rebuilt from approved assets, never model asset IDs.
-    candidate = {**deepcopy(scene), **result}
-    if candidate["location_global_id"] and candidate["location_global_id"] not in candidate["visible_entity_ids"]:
-        candidate["visible_entity_ids"].insert(0, candidate["location_global_id"])
-    return candidate
+    return visible

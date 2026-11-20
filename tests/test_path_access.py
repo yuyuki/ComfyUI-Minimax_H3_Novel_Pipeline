@@ -222,22 +222,26 @@ def test_bundled_steps_reject_nested_directory_escape(roots, tmp_path, step_name
 
 
 def test_generated_scene_files_and_manifest_stay_in_output(roots, monkeypatch, cinematic_registry):
+    from tests.test_h3_prompt_validation import prompt_with_shots
+
     source, output = roots
     output.mkdir()
     chapter = source / "chapter.txt"
     chapter.write_text("Chapter text. " * 20, encoding="utf-8")
     step = lmstudio_pipeline.load("generate")
     monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
+    prompt = prompt_with_shots("[Shot 1] A figure pauses.")
+    monkeypatch.setattr(step, "chat_json", lambda *args: {"prompt_text": prompt})
     args = SimpleNamespace(force=True, chunk_chars=5500, overlap_paragraphs=0,
                            out_dir=output, duration=8, delay=0, max_scenes=0,
-                           max_pictures=8, max_pictures_per_subject=4, max_audio=3)
+                           max_pictures=8, max_pictures_per_subject=4, max_audio=3,
+                           temperature=.38, max_tokens=8192)
     manifest = step.process_chapter(chapter_input(cinematic_registry(chapter)), cinematic_registry(chapter), None, "mock", args)
     assert json.loads((output / "chapter/manifest.json").read_text()) == manifest
-    scene = SimpleNamespace(title="A scene", visual_event="An event", adaptation_notes="", source_excerpt="Text")
-    bindings = {"picture_input_order": [], "subjects": [], "audio": []}
-    validation = SimpleNamespace(ok=True, errors=[], word_count=1)
-    entry = step.save_scene(output / "chapter", 1, scene, bindings, "Prompt", validation)
+    entry, = manifest["outputs"]
+    assert entry["valid"]
     record = json.loads((output / "chapter" / entry["assets_file"]).read_text())
-    assert record["copy_paste_prompt"] == "Prompt"
-    assert (output / "chapter" / entry["prompt_file"]).read_text().endswith("COPY-PASTE PROMPT:\nPrompt\n")
+    assert record["copy_paste_prompt"] == step.normalize_prompt(prompt)
+    sheet = (output / "chapter" / entry["prompt_file"]).read_text()
+    assert sheet.endswith(f"COPY-PASTE PROMPT:\n{record['copy_paste_prompt']}\n")
     assert not list((output / "chapter").glob("*_assets.txt"))

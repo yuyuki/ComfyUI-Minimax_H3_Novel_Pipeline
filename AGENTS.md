@@ -84,6 +84,26 @@ Preserve existing node IDs and socket types for workflow compatibility.
 
 ## Behavior and security constraints
 
+### Cinematic continuity
+
+- Treat the novel and the resolved cinematic adaptation as authoritative for
+  narrative continuity. Follow the current sequence's opening state, event
+  and ending state in order. An authored change of location, time or action
+  determines how the next clip progresses.
+- By default, Generate H3 Prompts prepares later sequences in each chapter
+  for an opening image supplied directly in MiniMax. Use the previous clip's
+  last frame when the action continues. For an explicit cut at the opening,
+  use an image matching the new opening state. The first sequence of each
+  chapter starts independently. Keep the opening image outside the registry
+  and the numbered reference bindings. The operator can disable continuation
+  for independent clips.
+- Generate a prompt even when a sequence has no registry image or audio
+  binding. Reuse explicitly linked references when useful. Keep Spatial
+  Continuity optional for staging and camera guidance.
+- Keep extraction and consolidation focused on source-grounded observations
+  and reusable references. Avoid a second inferred timeline or automatic
+  carry-forward of locations, characters, objects and local visual states.
+
 ### Neutral visual reference requirements
 
 The reference contract and validation cases are documented in

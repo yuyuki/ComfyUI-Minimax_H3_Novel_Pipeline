@@ -304,12 +304,14 @@ Cinematic timeline constraints:
   conflicting observations. Stable image designs establish identity, not possession,
   injury, position or other transient narrative facts.
 
-Write ONE MiniMax H3 full-reference/reference-to-video prompt.
+Write ONE MiniMax H3 prompt for the supplied cinematic sequence.
 
 The prompt MUST contain exactly these six top-level sections, in this order:
 subject_definitions:
+- use N/A when the binding table supplies no Subject or Audio references;
 summary:
 retention_analysis:
+- use N/A when the binding table supplies no Subject or Audio references;
 detailed_description:
 overall_soundscape:
 non_diegetic_music:
@@ -435,9 +437,10 @@ class Scene:
     visible_entity_ids: list[str]
     speaking_entity_ids: list[str]
     reference_view_requests: list[ViewRequest]
-    dialogue_present: bool
+    dialogue_present: bool | None
     adaptation_notes: str
     sequence: int = 0
+    previous_frame_sequence: int | None = None
 
 
 @dataclass
@@ -535,17 +538,15 @@ def selected_timeline(refs, chapter):
 
 
 def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> list[dict[str, Any]]:
-    """Expose exact sequence source observations without inventing phase timing."""
+    """Expose exact source observations and explicitly scene-bound images."""
     entities = entity_index(refs)
     result = []
     for item in chapter_catalog(refs, chapter_id):
         entity = entities[item["global_id"]]
         source = source_observations_at(entity, chapter_id, sequence)
-        if source:
-            state = entity["visual_reference"]["scenes"].get(chapter_id, {}).get(str(sequence))
-            views = reference_visuals.scene_assets(
-                [a for a in refs.get("picture_assets", []) if a["linked_global_id"] == entity["global_id"]],
-                chapter_id, sequence)
+        state = entity["visual_reference"]["scenes"].get(chapter_id, {}).get(str(sequence))
+        views = available_assets_for_entity(refs, entity["global_id"], chapter_id, sequence)
+        if source or (state is not None and state["presence"] == "visible" and views):
             result.append({**item, "source_observations": source,
                            "presence": state["presence"] if state else "mentioned",
                            "neutral_visual_appearance": reference_visuals.appearance_at(entity, chapter_id, sequence),
@@ -576,10 +577,12 @@ def prepare_cinematic_scene(client, model, row, period, args):
     scene = Scene(
         title=f"Sequence {sequence['sequence']:03d}", source_excerpt=sequence["source"],
         visual_event=sequence["adaptation"]["event"], location_global_id="",
-        visible_entity_ids=[], speaking_entity_ids=[], reference_view_requests=[], dialogue_present=False,
+        visible_entity_ids=[], speaking_entity_ids=[], reference_view_requests=[], dialogue_present=None,
         adaptation_notes="Authoritative cinematic scene (preserve every phase): "
                          + json.dumps(sequence["adaptation"], ensure_ascii=False)
                          + ("\n" + period if period else ""), sequence=sequence["sequence"])
+    if not row["catalog"]:
+        return scene
     feedback = [{"message": "Populate reference metadata for this complete cinematic scene. "
                  "Preserve all phases and dialogue, including offscreen speech. "
                  "Never split, merge, shorten, rewrite or advance the scene."}]
@@ -831,6 +834,8 @@ def build_bindings(
             )
 
     return {
+        **({"previous_frame_sequence": scene.previous_frame_sequence}
+           if scene.previous_frame_sequence is not None else {}),
         "subjects": subjects,
         "audio": audio,
         "picture_input_order": picture_input_order,
@@ -862,6 +867,22 @@ def pacing_instruction(duration: float, max_shots: int = 1) -> str:
 
 
 
+def _summary_tasks(bindings):
+    primary = "keyframe completion" if "previous_frame_sequence" in bindings else "reference generation"
+    return [primary, *(["audio reference"] if bindings.get("audio") else [])]
+
+
+_FRAME_INSTRUCTIONS = (
+    "When the binding table specifies previous_frame_sequence, the operator supplies that sequence's last "
+    "video frame in MiniMax as this clip's opening image. It has no numbered reference label. "
+    "Start from that image and proceed with this sequence's initialState and event. Preserve the visible "
+    "composition and appearance as the action continues. Follow any authored transition in the adaptation "
+    "at its specified point, including a change of location or time. If initialState already opens after "
+    "a cut, establish the authored opening directly. Do not invent a transition or repeat "
+    "the preceding beat. Use only numbered reference labels assigned by the binding table."
+)
+
+
 def generate_prompt(
     client: OpenAI,
     model: str,
@@ -871,8 +892,7 @@ def generate_prompt(
     args: argparse.Namespace,
     continuity: dict[str, Any] | None = None,
 ) -> str:
-    has_audio = bool(bindings["audio"])
-    expected_prefix = "reference generation" + (" + audio reference" if has_audio else "")
+    expected_prefix = " + ".join(_summary_tasks(bindings))
     system = H3_RULES + """
 
 The caller supplies an exact per-clip binding table. Obey it exactly:
@@ -884,7 +904,9 @@ The caller supplies an exact per-clip binding table. Obey it exactly:
 - state what each picture contributes to that one subject;
 - unreferenced visible entities may appear as ordinary prose without Subject labels;
 - do not claim an audio reference exists unless it is in the audio bindings.
-"""
+""" + _FRAME_INSTRUCTIONS
+    dialogue = (scene.dialogue_present if scene.dialogue_present is not None
+                else "Use the supplied sequence and adaptation to identify any dialogue.")
     user = f"""TARGET DURATION: {duration:g} seconds.
 All cut timestamps must be <= {duration:.3f} seconds.
 {pacing_instruction(duration, getattr(args, 'max_shots', 1))}
@@ -893,7 +915,7 @@ EXPECTED SUMMARY PREFIX: [{expected_prefix}]
 SCENE
 Title: {scene.title}
 Visual event: {scene.visual_event}
-Dialogue present in source: {scene.dialogue_present}
+Dialogue present in source: {dialogue}
 Adaptation notes: {scene.adaptation_notes}
 CAMERA DIRECTION (keep screen positions consistent with the camera axis):
 {getattr(args, 'camera_direction', '') or 'No operator camera direction supplied.'}
@@ -945,7 +967,7 @@ def normalize_prompt(prompt: str, bindings: dict[str, Any] | None = None) -> str
             text = match.group(1).strip()
             tasks = text.split(" + ")
             if (tasks and all(task in TASK_TYPES for task in tasks)
-                    and "reference generation" in tasks
+                    and _summary_tasks(bindings)[0] in tasks
                     and ("audio reference" in tasks) == bool(bindings.get("audio"))
                     and "audio reuse" not in tasks):
                 prompt = prompt[:match.start(1)] + f"[{text}]" + prompt[match.end(1):]
@@ -1071,7 +1093,7 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float, max_
             errors.append("summary has a duplicate task type.")
         if any(x not in TASK_TYPES for x in parts):
             errors.append("summary contains an invalid task type.")
-        expected = ["reference generation"] + (["audio reference"] if bindings["audio"] else [])
+        expected = _summary_tasks(bindings)
         if parts != expected:
             errors.append(f"summary task prefix should be [{' + '.join(expected)}].")
 
@@ -1159,6 +1181,9 @@ def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float, max_
         errors.append("Unbound Picture labels: " + ", ".join(sorted(used_pictures - expected_pictures)))
     if used_audio - expected_audio:
         errors.append("Unbound Audio labels: " + ", ".join(sorted(used_audio - expected_audio)))
+    used_video = set(re.findall(r"<Video\s+\d+>", prompt))
+    if used_video:
+        errors.append("Unbound Video labels: " + ", ".join(sorted(used_video)))
 
     for subject in bindings["subjects"]:
         label = subject["h3_subject_label"]
@@ -1325,14 +1350,14 @@ def repair_prompt(
         schema = {"name": "h3_section_patch_v1", "strict": True, "schema": {
             "type": "object", "properties": {name: {"type": "string"} for name in sections},
             "required": list(sections), "additionalProperties": False}}
-        expected = "reference generation" + (" + audio reference" if bindings.get("audio") else "")
+        expected = " + ".join(_summary_tasks(bindings))
         system = H3_RULES + (
             "\nRepair ONLY the requested section bodies. Return the JSON properties specified by the schema, "
             "without section headings. All other sections are read-only. Fix the listed errors while "
             "preserving the assigned visual event, exact dialogue and binding table. Use <Picture N> labels, "
             "not asset_id strings. Do not expand the action to neighbouring beats to meet the word target. "
             "Continuity issue evidence paths refer to the earlier review; their exact cited values are "
-            "provided with those issues.") + continuity_context.INSTRUCTIONS
+            "provided with those issues.") + "\n" + _FRAME_INSTRUCTIONS + continuity_context.INSTRUCTIONS
         payload = {
             "sections_to_repair": list(sections), "errors": errors,
             "expected_summary_prefix": f"[{expected}]", "duration_seconds": duration,
@@ -1383,8 +1408,15 @@ def repair_prompt(
 
 def scene_asset_sheet(scene: Scene, bindings: dict[str, Any], prompt: str, validation: Validation) -> str:
     """Human-readable upload instructions kept outside the six-section H3 prompt."""
-    lines = [f"SCENE: {scene.title}", "", "REFERENCE UPLOAD ORDER:",
-             "Attach the corresponding images and audio in the numbered order below."]
+    lines = [f"SCENE: {scene.title}", ""]
+    if "previous_frame_sequence" in bindings:
+        lines.extend(["OPENING IMAGE:",
+                      f"Use the last video frame of sequence {bindings['previous_frame_sequence']} "
+                      "as the opening image in MiniMax when the action continues.",
+                      "For an explicit cut at the opening, use an image matching the new opening state.", ""])
+    if bindings["subjects"] or bindings["audio"]:
+        lines.extend(["REFERENCE UPLOAD ORDER:",
+                      "Attach the corresponding images and audio in the numbered order below."])
     for subject in bindings["subjects"]:
         lines.append(
             f"{subject['h3_subject_label']} = {subject['canonical_name']} "
@@ -1456,7 +1488,7 @@ def resume_scene_files(previous, chapter_dir, cache_dir, index, scene, bindings,
                 [record["prompt"], record["scene"], record["bindings"], record["camera_warnings"]]):
             return None
         saved_scene = scene_from_dict(record["scene"])
-        immutable = ("title", "source_excerpt", "visual_event", "adaptation_notes", "sequence")
+        immutable = ("title", "source_excerpt", "visual_event", "adaptation_notes", "sequence", "previous_frame_sequence")
         if any(getattr(saved_scene, key) != getattr(scene, key) for key in immutable) or record["bindings"] != bindings:
             return None
         prompt = record["prompt"]
@@ -1500,6 +1532,7 @@ def scene_to_dict(scene: Scene) -> dict[str, Any]:
         "dialogue_present": scene.dialogue_present,
         "adaptation_notes": scene.adaptation_notes,
         "sequence": scene.sequence,
+        "previous_frame_sequence": scene.previous_frame_sequence,
     }
 
 
@@ -1512,9 +1545,10 @@ def scene_from_dict(data: dict[str, Any]) -> Scene:
         visible_entity_ids=list(data["visible_entity_ids"]),
         speaking_entity_ids=list(data["speaking_entity_ids"]),
         reference_view_requests=[ViewRequest(**x) for x in data.get("reference_view_requests", [])],
-        dialogue_present=bool(data["dialogue_present"]),
+        dialogue_present=data["dialogue_present"],
         adaptation_notes=data["adaptation_notes"],
         sequence=data["sequence"],
+        previous_frame_sequence=data.get("previous_frame_sequence"),
     )
 
 
@@ -1616,6 +1650,8 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
         generation_requests.position(f"{chapter_id} sequence {row['sequence']['sequence']}")
         with generation_requests.task("scene_metadata"):
             scene = prepare_cinematic_scene(client, model, row, period, args)
+        if scenes and getattr(args, "continue_from_last_frame", True):
+            scene.previous_frame_sequence = scenes[-1].sequence
         constrain_character_presence(refs, chapter_id, scene, contexts=contexts)
         scenes.append(scene)
     # Keep all future evidence even when only generating a prefix of the chapter.
@@ -1654,12 +1690,6 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
                 "entities": [design for design in visual_designs.get("entities", [])
                              if design["global_id"] in scene_ids],
             }
-        if not bindings["subjects"] and not bindings["audio"]:
-            reason = "No reference asset available for this full-reference scene."
-            entries.append({"index": i, "title": scene.title, "sequence": scene.sequence, "skipped": True, "reason": reason})
-            print(f"    skipped: {reason}")
-            continue
-
         if getattr(args, "resume_scene_files", False):
             resumed = resume_scene_files(confined_path(chapter_id, resume_cache_dir.parent), chapter_dir,
                                          confined_path(chapter_id, resume_cache_dir), i, scene, bindings, args)
@@ -1713,7 +1743,7 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
                 else:
                     repaired_scene = scene_from_dict(cached["scene"])
                     # Cache reuse may restore corrected metadata, never a changed beat.
-                    immutable = ("title", "source_excerpt", "visual_event", "adaptation_notes", "sequence")
+                    immutable = ("title", "source_excerpt", "visual_event", "adaptation_notes", "sequence", "previous_frame_sequence")
                     if any(getattr(repaired_scene, field) != getattr(scene, field) for field in immutable):
                         generation_requests.cache_event("final_prompt", "immutable_beat_changed", source=source_index)
                         continue

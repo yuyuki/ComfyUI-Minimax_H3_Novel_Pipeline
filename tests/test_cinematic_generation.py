@@ -1,6 +1,7 @@
 from tests.cinematic_generation_helpers import chapter_input
 """One authoritative cinematic sequence per generated H3 scene."""
 from copy import deepcopy
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,8 @@ from jsonschema import Draft202012Validator
 
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step, continuity_issues, path_access
 from minimax_h3_novel_pipeline.nodes.generate_h3_prompts import GenerateH3PromptsNode
+from tests.neutral_reference_helpers import entity
+from tests.test_h3_prompt_validation import prompt_with_shots
 
 
 def metadata():
@@ -67,6 +70,22 @@ def test_metadata_keeps_phases_source_and_offscreen_dialogue(monkeypatch):
     assert scene.visible_entity_ids == ["hero"] and row == original
 
 
+@pytest.mark.parametrize(("kind", "view"), [
+    ("location", "wide_establishing"), ("character", "face_front"), ("object", "front_view"),
+])
+def test_sequence_catalog_includes_compiled_visibility_without_new_source_observation(kind, view):
+    subject = entity({"global_id": "subject", "entity_type": kind, "canonical_name": "Subject",
+                      "chapters_seen": ["chapter"]}, sequences=(1, 2))
+    del subject["timeline"]["chapter"]["2"]
+    refs = {"entities": [subject], "picture_assets": [
+        {"asset_id": "picture", "linked_global_id": "subject", "variant": "base",
+         "view_type": view, "scene_bindings": {"chapter": [1, 2]}}]}
+    item, = step.sequence_catalog(refs, "chapter", 2)
+    assert item["source_observations"] == []
+    assert item["presence"] == "visible" and item["available_picture_views"][0]["asset_id"] == "picture"
+    assert step.sequence_catalog(refs, "chapter", 3) == []
+
+
 def test_schema_only_offers_resolvable_pointers_and_preserves_all_container_evidence():
     payload = {"current_scene": {"adaptation_notes": "Exact notes", "dialogue_present": False},
                "current_prompt_sections": {"detailed_description": "Exact prompt"},
@@ -112,6 +131,60 @@ def test_one_scene_per_sequence_retains_repetitions_and_future_when_capped(tmp_p
     assert [r["sequence"] for r in result["outputs"]] == [1, 3, 8]
     assert not list(args.out_dir.rglob("plan_*.json"))
     assert not (tmp_path / "never_read.txt").exists()
+
+
+@pytest.mark.parametrize("continue_from_last_frame", [True, False])
+def test_generation_saves_sequences_with_no_registry_assets(tmp_path, monkeypatch, cinematic_registry, continue_from_last_frame):
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+    refs = cinematic_registry(tmp_path / "chapter.txt")
+    refs["entities"] = []
+    refs["picture_assets"] = []
+    refs["audio_assets"] = []
+    beats = [
+        ("Indy hangs in a crevasse.", "Indy reaches for a ledge.", "His hand grips the ledge."),
+        ("Indy grips the ledge.", "Indy climbs to the lip.", "Indy holds at the lip."),
+        ("Indy holds at the lip.", "Indy climbs out onto the plateau at Delphi.", "Indy stands on the plateau."),
+    ]
+    refs["chapter_timelines"]["chapter"]["sequences"] = [
+        {"sequence": number, "source": " ".join(phases),
+         "adaptation": dict(zip(("initialState", "event", "endingState"), phases))}
+        for number, phases in enumerate(beats, 1)
+    ]
+    calls = []
+
+    def request(client, model, system, user, schema, temperature, max_tokens):
+        assert schema == step.PROMPT_SCHEMA
+        index = len(calls)
+        calls.append(user)
+        prefix = "keyframe completion" if index and continue_from_last_frame else "reference generation"
+        assert f"EXPECTED SUMMARY PREFIX: [{prefix}]" in user
+        assert beats[index][1] in user
+        assert "Use the supplied sequence and adaptation to identify any dialogue." in user
+        assert "Follow any authored transition" in system
+        prompt = prompt_with_shots(f"[Shot 1] {beats[index][1]}").replace("[reference generation]", f"[{prefix}]")
+        return {"prompt_text": prompt}
+
+    monkeypatch.setattr(step, "chat_json", request)
+    args = SimpleNamespace(out_dir=tmp_path / "h3", force=False, max_scenes=0, duration=8,
+                           max_tokens=8192, repair_attempts=0, temperature=.38, refine_camera=False,
+                           max_pictures=8, max_pictures_per_subject=4, max_audio=3,
+                           continue_from_last_frame=continue_from_last_frame)
+    result = step.process_chapter(chapter_input(refs), refs, None, "model", args)
+    assert result["saved_prompt_count"] == len(calls) == 3
+    for index, output in enumerate(result["outputs"]):
+        assert output["valid"] and output["picture_count"] == output["audio_count"] == 0
+        directory = args.out_dir / "chapter"
+        sheet = (directory / output["prompt_file"]).read_text(encoding="utf-8")
+        record = json.loads((directory / output["assets_file"]).read_text(encoding="utf-8"))
+        assert record["picture_input_order"] == []
+        if index and continue_from_last_frame:
+            assert record["previous_frame_sequence"] == index
+            assert f"Use the last video frame of sequence {index}" in sheet
+        else:
+            assert "previous_frame_sequence" not in record
+            assert "OPENING IMAGE:" not in sheet
+        assert "REFERENCE UPLOAD ORDER:" not in sheet
+        assert beats[index][1] in record["copy_paste_prompt"]
 
 
 @pytest.mark.parametrize("field", ["source", "adaptation", "sequence"])

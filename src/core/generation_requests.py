@@ -19,13 +19,13 @@ VERSION = 2
 # These versions replace runtime inspection of the package's Python sources.
 CACHE_CONTRACTS = {
     "transport": 2,  # Shared JSON transport, model profiles and normalized text output.
-    "evidence": 4,  # Neutral source traits and scene-addressed visual states.
-    "metadata": 2,  # Scene-specific image applicability and binding construction.
-    "draft": 1,
-    "format": 1,
+    "evidence": 5,  # Neutral source traits and scene-addressed visual states.
+    "metadata": 3,  # Scene-specific image applicability and semantic cache validation.
+    "draft": 2,
+    "format": 2,
     "camera": 1,
     "continuity": 1,  # Packing, evidence validation, review and repair.
-    "final_prompt": 1,
+    "final_prompt": 2,
 }
 _TASK_CONTRACTS = {
     "scene_metadata": ("metadata",), "scene_metadata_repair": ("metadata", "continuity"),
@@ -35,6 +35,7 @@ _TASK_CONTRACTS = {
 _SESSION = ContextVar("h3_generation_requests", default=None)
 _TASK = ContextVar("h3_generation_task", default="planning")
 _DETAIL = ContextVar("h3_generation_detail", default={})
+_RESPONSE_VALIDATOR = ContextVar("h3_generation_response_validator", default=None)
 
 
 def digest(value):
@@ -153,6 +154,27 @@ def detail(**values):
         _DETAIL.reset(token)
 
 
+@contextmanager
+def response_validation(validate):
+    """Require the caller's semantic check before storing or reusing a response."""
+    token = _RESPONSE_VALIDATOR.set(validate)
+    try:
+        yield
+    finally:
+        _RESPONSE_VALIDATOR.reset(token)
+
+
+def _response_rejection(result, validator, validate):
+    if not isinstance(result, dict) or not validator.is_valid(result):
+        return "validation_failed"
+    if validate is not None:
+        try:
+            validate(result)
+        except ValueError:
+            return "semantic_validation_failed"
+    return None
+
+
 def write_metrics(state, stage, status, **values):
     state["last_metrics"] = (stage, status, values)
     try:
@@ -197,8 +219,8 @@ def chapter(chapter_id, args):
 def chat_json(client, model, system, user, schema, temperature, max_tokens):
     """Memoize completed structured responses, never exceptions or partial streams.
 
-    A response is a draft, not a validation result. All caller-side format and
-    semantic checks still run on cache hits, including each continuity batch.
+    Each caller still validates its response. Opted-in requests additionally
+    check semantics at the checkpoint boundary.
     """
     state = _SESSION.get()
     if state is None:
@@ -222,6 +244,7 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
     relative = Path("requests") / f"{key}.json"
     target = confined_path(relative, state["directory"])
     validator = Draft202012Validator(schema["schema"])
+    validate = _RESPONSE_VALIDATOR.get()
     started = time.perf_counter()
     metrics = {"llm_requests": 0, "estimated_input_tokens": 0, "estimated_output_tokens": 0}
     metric_token = lmstudio_json.REQUEST_METRICS.set(metrics)
@@ -240,7 +263,7 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
                 reason = ("contract_mismatch" if record.get("version") != VERSION else
                           "key_mismatch" if record.get("key") != key else
                           "integrity_mismatch" if record.get("result_digest") != digest(result) else
-                          "validation_failed" if not isinstance(result, dict) or not validator.is_valid(result) else None)
+                          _response_rejection(result, validator, validate))
                 if reason:
                     cache_event(diagnostic_stage, reason, source=index)
                     stats["invalid_checkpoints"] += 1
@@ -268,12 +291,13 @@ def chat_json(client, model, system, user, schema, temperature, max_tokens):
                       cache_reason="force" if state["force"] else "no_valid_exact_checkpoint")
         result = lmstudio_json.chat_json(client, model, system, user, schema, temperature, max_tokens)
         lmstudio_pipeline.comfy_interrupt_check()
-        if isinstance(result, dict) and validator.is_valid(result):
+        reason = _response_rejection(result, validator, validate)
+        if reason is None:
             atomic_json(target, {"version": VERSION, "key": key, "result": result,
                                  "result_digest": digest(result)})
         else:
-            cache_event(diagnostic_stage, "not_cacheable")
-        status = "completed"
+            cache_event(diagnostic_stage, "not_cacheable" if validate is None else reason)
+        status = "completed" if reason is None or validate is None else "rejected"
         return result
     except Exception:
         # Do not wrap cancellation or echo arbitrary server errors/secrets.
