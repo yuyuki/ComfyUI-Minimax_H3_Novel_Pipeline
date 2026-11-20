@@ -34,7 +34,14 @@ def test_example_uses_valid_current_defaults():
     node = next(n for n in data["nodes"] if n["type"] == "GenerateH3PromptsNode")
     values = node["widgets_values_named"]
     Node.validate_parameters(values)
-    assert values["max_scenes"] == Node.INPUT_TYPES()["required"]["max_scenes"][1]["default"] == 0
+    inputs = Node.INPUT_TYPES()
+    widget_names = [
+        name for section in ("required", "optional")
+        for name, spec in inputs[section].items()
+        if spec[0] in {"BOOLEAN", "INT", "FLOAT", "STRING"}
+    ]
+    assert list(values) == widget_names
+    assert values["max_scenes"] == inputs["required"]["max_scenes"][1]["default"] == 0
     assert node["widgets_values"] == list(values.values())
 
 
