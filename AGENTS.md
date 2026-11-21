@@ -97,9 +97,34 @@ Preserve existing node IDs and socket types for workflow compatibility.
   chapter starts independently. Keep the opening image outside the registry
   and the numbered reference bindings. The operator can disable continuation
   for independent clips.
-- Generate a prompt even when a sequence has no registry image or audio
-  binding. Reuse explicitly linked references when useful. Keep Spatial
-  Continuity optional for staging and camera guidance.
+- For a continuing clip, use the opening image to anchor the first shot's
+  framing, visible positions, and ongoing action. When a recurring location is
+  visible, also bind its scene-appropriate reference image, including when the
+  opening frame shows only part of the set. Keep one location identity for the
+  same physical space and attach distinct camera angles as separate reference
+  views of that identity. Select the views that support each scene's planned
+  framing and camera movement, and group multiple assigned views under the same
+  location subject. Preserve the geometry while allowing source-supported
+  changes in lighting, appearance, or action.
+- Establish reference coverage upstream. In the resolved adaptation, identify
+  the continuing location and recurring objects in the current sequence's
+  `initialState` or `event` when supported by the narrative. Resolve names and
+  aliases against passage evidence, then verify that the consolidated registry
+  explicitly binds the applicable image to each sequence. Correct missing or
+  conflicting observations, identities, or bindings at their source. Keep
+  Spatial Continuity optional for staging and camera guidance.
+- In the H3 prompt, use the assigned `<Subject N>` and `<Picture N>` labels
+  to anchor visible reference subjects. Describe the camera relative to stable
+  landmarks and preserve the sequence's ending state so its final frame can open
+  the next clip. Generate a prompt even without registry image or audio
+  bindings. Describe unbound entities in ordinary prose and keep internal
+  registry IDs out of the copy-paste prompt.
+- Review each continuing clip against the previous ending, the current
+  adaptation and bindings, and the next opening when available. Check for
+  unexplained changes in location, layout, staging, or visible state, and verify
+  that camera movement preserves established spatial relationships. Record
+  missing continuity-critical references and upstream conflicts in the scene's
+  diagnostic JSON, even when a usable prompt can still be generated.
 - Keep extraction and consolidation focused on source-grounded observations
   and reusable references. Avoid a second inferred timeline or automatic
   carry-forward of locations, characters, objects and local visual states.
