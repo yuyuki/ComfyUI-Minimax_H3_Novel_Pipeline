@@ -1,7 +1,7 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 253,
+  "last_node_id": 256,
   "last_link_id": 369,
   "nodes": [
     {
@@ -448,8 +448,8 @@
       "id": 156,
       "type": "MarkdownNote",
       "pos": [
-        -4116.677261240018,
-        1573.478576509076
+        -4115.739884236132,
+        1545.35683728879
       ],
       "size": [
         812.0097305691662,
@@ -463,10 +463,10 @@
       "title": "Note for Chapter selection",
       "properties": {},
       "widgets_values": [
-        "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (8192) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run."
+        "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (8192) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
       ],
       "widgets_values_named": {
-        "text": "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (8192) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run."
+        "text": "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (8192) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -490,10 +490,10 @@
       "title": "Note for Chapter Extraction",
       "properties": {},
       "widgets_values": [
-        "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input."
+        "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input.\n\n**Observed runtime:** 1 h 08 min 07 s for one prologue (20 Nov 2026, completed)."
       ],
       "widgets_values_named": {
-        "text": "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input."
+        "text": "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (8192) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input.\n\n**Observed runtime:** 1 h 08 min 07 s for one prologue (20 Nov 2026, completed)."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -517,10 +517,10 @@
       "title": "Note for Consolidation",
       "properties": {},
       "widgets_values": [
-        "### 3. Reference consolidation\n**Consolidate References** merges chapter catalogs into a shared registry: it reconciles recurring characters, locations, and objects, assigns global IDs, and prepares visual and audio reference briefs. It produces text/JSON, not media files.\n\n**Entity matching:** `candidate_count` (12) = similar candidates proposed per entity; `include_all_below` (35) = compare against all entities of the same type when their count does not exceed this threshold. `no_audit` = disable the duplicate audit; `audit_max_entities` (120) = threshold for a whole-registry audit, switching to clustered audits above it; `audit_similarity` (0.68) = similarity threshold for audit clusters; `audit_cluster_size` (24) = maximum entities per audit cluster.\n\n**References:** `audio_threshold` (`recommended`) = minimum priority for audio references; `max_character_base_views` (4), `max_location_base_views` (3), `max_object_base_views` (2) = view limits by entity type; `asset_batch_size` (4) = reference briefs per batch; `image_style` = style of the visual briefs; `visual_designs_path` = an existing `visual_designs.json` file to reimport (leave empty on the first run).\n\n**LLM / saving:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.12) = output variability; `max_tokens` (8500) = response token budget; `out_dir` (`references`) = subfolder within the run.\n\n**Load Chapter Catalogs:** `catalog_path` loads a folder of `*_references.json` files or a single catalog produced by extraction. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023215454/chapter_catalogs`). This lets you rerun consolidation without extracting the chapters again; update the path to the saved results you want to use."
+        "### 3. Reference consolidation\n**Consolidate References** merges chapter catalogs into a shared registry: it reconciles recurring characters, locations, and objects, assigns global IDs, and prepares visual and audio reference briefs. It produces text/JSON, not media files.\n\n**Entity matching:** `candidate_count` (12) = similar candidates proposed per entity; `include_all_below` (35) = compare against all entities of the same type when their count does not exceed this threshold. `no_audit` = disable the duplicate audit; `audit_max_entities` (120) = threshold for a whole-registry audit, switching to clustered audits above it; `audit_similarity` (0.68) = similarity threshold for audit clusters; `audit_cluster_size` (24) = maximum entities per audit cluster.\n\n**References:** `audio_threshold` (`recommended`) = minimum priority for audio references; `max_character_base_views` (4), `max_location_base_views` (3), `max_object_base_views` (2) = view limits by entity type; `asset_batch_size` (4) = reference briefs per batch; `image_style` = style of the visual briefs; `visual_designs_path` = an existing `visual_designs.json` file to reimport (leave empty on the first run).\n\n**LLM / saving:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.12) = output variability; `max_tokens` (8500) = response token budget; `out_dir` (`references`) = subfolder within the run.\n\n**Load Chapter Catalogs:** `catalog_path` loads a folder of `*_references.json` files or a single catalog produced by extraction. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023215454/chapter_catalogs`). This lets you rerun consolidation without extracting the chapters again; update the path to the saved results you want to use.\n\n**Observed runtime:** 14 min 27 s for one prologue (21 Nov 2026, completed; existing visual designs supplied)."
       ],
       "widgets_values_named": {
-        "text": "### 3. Reference consolidation\n**Consolidate References** merges chapter catalogs into a shared registry: it reconciles recurring characters, locations, and objects, assigns global IDs, and prepares visual and audio reference briefs. It produces text/JSON, not media files.\n\n**Entity matching:** `candidate_count` (12) = similar candidates proposed per entity; `include_all_below` (35) = compare against all entities of the same type when their count does not exceed this threshold. `no_audit` = disable the duplicate audit; `audit_max_entities` (120) = threshold for a whole-registry audit, switching to clustered audits above it; `audit_similarity` (0.68) = similarity threshold for audit clusters; `audit_cluster_size` (24) = maximum entities per audit cluster.\n\n**References:** `audio_threshold` (`recommended`) = minimum priority for audio references; `max_character_base_views` (4), `max_location_base_views` (3), `max_object_base_views` (2) = view limits by entity type; `asset_batch_size` (4) = reference briefs per batch; `image_style` = style of the visual briefs; `visual_designs_path` = an existing `visual_designs.json` file to reimport (leave empty on the first run).\n\n**LLM / saving:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.12) = output variability; `max_tokens` (8500) = response token budget; `out_dir` (`references`) = subfolder within the run.\n\n**Load Chapter Catalogs:** `catalog_path` loads a folder of `*_references.json` files or a single catalog produced by extraction. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023215454/chapter_catalogs`). This lets you rerun consolidation without extracting the chapters again; update the path to the saved results you want to use."
+        "text": "### 3. Reference consolidation\n**Consolidate References** merges chapter catalogs into a shared registry: it reconciles recurring characters, locations, and objects, assigns global IDs, and prepares visual and audio reference briefs. It produces text/JSON, not media files.\n\n**Entity matching:** `candidate_count` (12) = similar candidates proposed per entity; `include_all_below` (35) = compare against all entities of the same type when their count does not exceed this threshold. `no_audit` = disable the duplicate audit; `audit_max_entities` (120) = threshold for a whole-registry audit, switching to clustered audits above it; `audit_similarity` (0.68) = similarity threshold for audit clusters; `audit_cluster_size` (24) = maximum entities per audit cluster.\n\n**References:** `audio_threshold` (`recommended`) = minimum priority for audio references; `max_character_base_views` (4), `max_location_base_views` (3), `max_object_base_views` (2) = view limits by entity type; `asset_batch_size` (4) = reference briefs per batch; `image_style` = style of the visual briefs; `visual_designs_path` = an existing `visual_designs.json` file to reimport (leave empty on the first run).\n\n**LLM / saving:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.12) = output variability; `max_tokens` (8500) = response token budget; `out_dir` (`references`) = subfolder within the run.\n\n**Load Chapter Catalogs:** `catalog_path` loads a folder of `*_references.json` files or a single catalog produced by extraction. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023215454/chapter_catalogs`). This lets you rerun consolidation without extracting the chapters again; update the path to the saved results you want to use.\n\n**Observed runtime:** 14 min 27 s for one prologue (21 Nov 2026, completed; existing visual designs supplied)."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -544,10 +544,10 @@
       "title": "Note for Spatial Continuity",
       "properties": {},
       "widgets_values": [
-        "### 4. Spatial continuity\n**Spatial Continuity** plans the staging of the registry's sequences: location layouts, character/object positions and states, camera setup, justified changes, and warnings. It exports a JSON plan used to maintain spatial continuity during prompt generation.\n\n**Parameters:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.1) = output variability; `max_tokens` (5000) = response token budget; `out_dir` (`spatial_continuity`) = subfolder within the timestamped run where the plan is saved.\n\n**Load Consolidated References:** `consolidated_path` loads the folder containing `consolidated_references.json` or that file itself. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222151/references`). It provides the saved registry to this stage without rerunning consolidation; update the path to the intended version.\n\n**Resuming from a saved plan:** in this workflow, the Spatial Continuity output is not directly connected to the next group. That group uses **Load Spatial Continuity**: after generating or manually editing the plan, set its `spatial_path` to load that saved version. The different Load paths must refer to compatible results."
+        "### 4. Spatial continuity\n**Spatial Continuity** plans the staging of the registry's sequences: location layouts, character/object positions and states, camera setup, justified changes, and warnings. It exports a JSON plan used to maintain spatial continuity during prompt generation.\n\n**Parameters:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.1) = output variability; `max_tokens` (5000) = response token budget; `out_dir` (`spatial_continuity`) = subfolder within the timestamped run where the plan is saved.\n\n**Load Consolidated References:** `consolidated_path` loads the folder containing `consolidated_references.json` or that file itself. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222151/references`). It provides the saved registry to this stage without rerunning consolidation; update the path to the intended version.\n\n**Resuming from a saved plan:** in this workflow, the Spatial Continuity output is not directly connected to the next group. That group uses **Load Spatial Continuity**: after generating or manually editing the plan, set its `spatial_path` to load that saved version. The different Load paths must refer to compatible results.\n\n"
       ],
       "widgets_values_named": {
-        "text": "### 4. Spatial continuity\n**Spatial Continuity** plans the staging of the registry's sequences: location layouts, character/object positions and states, camera setup, justified changes, and warnings. It exports a JSON plan used to maintain spatial continuity during prompt generation.\n\n**Parameters:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.1) = output variability; `max_tokens` (5000) = response token budget; `out_dir` (`spatial_continuity`) = subfolder within the timestamped run where the plan is saved.\n\n**Load Consolidated References:** `consolidated_path` loads the folder containing `consolidated_references.json` or that file itself. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222151/references`). It provides the saved registry to this stage without rerunning consolidation; update the path to the intended version.\n\n**Resuming from a saved plan:** in this workflow, the Spatial Continuity output is not directly connected to the next group. That group uses **Load Spatial Continuity**: after generating or manually editing the plan, set its `spatial_path` to load that saved version. The different Load paths must refer to compatible results."
+        "text": "### 4. Spatial continuity\n**Spatial Continuity** plans the staging of the registry's sequences: location layouts, character/object positions and states, camera setup, justified changes, and warnings. It exports a JSON plan used to maintain spatial continuity during prompt generation.\n\n**Parameters:** `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.1) = output variability; `max_tokens` (5000) = response token budget; `out_dir` (`spatial_continuity`) = subfolder within the timestamped run where the plan is saved.\n\n**Load Consolidated References:** `consolidated_path` loads the folder containing `consolidated_references.json` or that file itself. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222151/references`). It provides the saved registry to this stage without rerunning consolidation; update the path to the intended version.\n\n**Resuming from a saved plan:** in this workflow, the Spatial Continuity output is not directly connected to the next group. That group uses **Load Spatial Continuity**: after generating or manually editing the plan, set its `spatial_path` to load that saved version. The different Load paths must refer to compatible results.\n\n"
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -571,10 +571,10 @@
       "title": "Note for Prompt Generation",
       "properties": {},
       "widgets_values": [
-        "### 5. Prompt generation\n**Generate H3 Prompts** uses the registry, selected chapters, and loaded spatial plan to produce MiniMax H3 scene prompts and image-prompt text. It saves the results; it does not generate images, audio, or videos itself.\n\n**Scene structure:** `duration` (8) = seconds per scene; `max_shots` (1) = maximum camera shots per scene; `scenes_per_chunk` (4) = maximum scenes per cinematic sequence; `max_scenes` (0) = maximum scenes per chapter, with 0 meaning all scenes.\n\n**References:** `max_pictures` (8) = maximum reference images per scene; `max_pictures_per_subject` (4) = maximum per subject; `max_audio` (3) = maximum audio references.\n\n**LLM / output:** `thinking` (false) = planning/generation reasoning; `temperature` (0.38) = output variability; `max_tokens` (8192) = response token budget; `repair_attempts` (2) = repair attempts; `force` = recompute instead of reusing compatible cached results; `out_dir` (`h3_prompts`) = subfolder within the run.\n\n**Camera / continuity:** `refine_camera` (false) = optional camera-description pass; `camera_thinking` (false) and `review_thinking` (false) = independent reasoning controls; `camera_direction` = camera instructions applied to each scene (empty = none); Connect a Spatial Continuity or Load Spatial Continuity output to use its staging plan and enable final-prompt continuity checks.\n\n**Is thinking useful?** Thinking can help with complex scenes, but it costs time and does not guarantee better output.\n\n- `thinking`: planning scene chronology, fitting dialogue into the duration, generating coherent prompts and repairing their format.\n- `review_thinking`: resolving difficult spatial contradictions, camera axes and character orientation during continuity reviews and repairs.\n- `camera_thinking`: reasoning through complicated camera movements in the optional camera-refinement pass. Simpler camera notes may need little reasoning.\n\n**Quality-focused trial:** `thinking=true`, `review_thinking=false`, `camera_thinking=false`. This keeps reasoning for planning/generation while avoiding it in the review stage that exhausted its output budget. `camera_thinking` has no effect when `refine_camera=false`.\n\n**Faster baseline:** all three thinking controls are false in this example. Reasoning and JSON share the output token budget: reasoning can consume it before any JSON is returned. The reported seven-hour run failed this way during continuity review; this does not prove that thinking was useless during planning. Output quality has not been compared with thinking on versus off for this chapter.\n\nThese switches depend on model support: GPT-OSS always reasons, OpenAI has no thinking control, and LM Studio must honor the loaded model's reasoning controls.\n\n**Associated Load nodes:** `Load Consolidated References.consolidated_path` reloads the registry (`20261023222151/references`) without reconsolidation. `Load Spatial Continuity.spatial_path` reloads the plan (`20261023181509/spatial_continuity`) from a folder containing `spatial_continuity.json` or a JSON file, including a manually edited copy. It validates the plan against the connected registry and detects saved edits on the next run. Paths are relative to `ComfyUI/output/minimax_h3_novel`: check that results are compatible and update paths after the preceding stages. `Get_chapterSelection` retrieves the shared selection, not a saved result file."
+        "### 5. Prompt generation\n**Generate H3 Prompts** uses the registry, selected chapters, and loaded spatial plan to produce MiniMax H3 scene prompts and image-prompt text. It saves the results; it does not generate images, audio, or videos itself.\n\n**Scene structure:** `duration` (8) = seconds per scene; `max_shots` (1) = maximum camera shots per scene; `scenes_per_chunk` (4) = maximum scenes per cinematic sequence; `max_scenes` (0) = maximum scenes per chapter, with 0 meaning all scenes.\n\n**References:** `max_pictures` (8) = maximum reference images per scene; `max_pictures_per_subject` (4) = maximum per subject; `max_audio` (3) = maximum audio references.\n\n**LLM / output:** `thinking` (false) = planning/generation reasoning; `temperature` (0.38) = output variability; `max_tokens` (8192) = response token budget; `repair_attempts` (2) = repair attempts; `force` = recompute instead of reusing compatible cached results; `out_dir` (`h3_prompts`) = subfolder within the run.\n\n**Camera / continuity:** `refine_camera` (false) = optional camera-description pass; `camera_thinking` (false) and `review_thinking` (false) = independent reasoning controls; `camera_direction` = camera instructions applied to each scene (empty = none); Connect a Spatial Continuity or Load Spatial Continuity output to use its staging plan and enable final-prompt continuity checks.\n\n**Is thinking useful?** Thinking can help with complex scenes, but it costs time and does not guarantee better output.\n\n- `thinking`: planning scene chronology, fitting dialogue into the duration, generating coherent prompts and repairing their format.\n- `review_thinking`: resolving difficult spatial contradictions, camera axes and character orientation during continuity reviews and repairs.\n- `camera_thinking`: reasoning through complicated camera movements in the optional camera-refinement pass. Simpler camera notes may need little reasoning.\n\n**Quality-focused trial:** `thinking=true`, `review_thinking=false`, `camera_thinking=false`. This keeps reasoning for planning/generation while avoiding it in the review stage that exhausted its output budget. `camera_thinking` has no effect when `refine_camera=false`.\n\n**Faster baseline:** all three thinking controls are false in this example. Reasoning and JSON share the output token budget: reasoning can consume it before any JSON is returned. The reported seven-hour run failed this way during continuity review; this does not prove that thinking was useless during planning. Output quality has not been compared with thinking on versus off for this chapter.\n\nThese switches depend on model support: GPT-OSS always reasons, OpenAI has no thinking control, and LM Studio must honor the loaded model's reasoning controls.\n\n**Associated Load nodes:** `Load Consolidated References.consolidated_path` reloads the registry (`20261023222151/references`) without reconsolidation. `Load Spatial Continuity.spatial_path` reloads the plan (`20261023181509/spatial_continuity`) from a folder containing `spatial_continuity.json` or a JSON file, including a manually edited copy. It validates the plan against the connected registry and detects saved edits on the next run. Paths are relative to `ComfyUI/output/minimax_h3_novel`: check that results are compatible and update paths after the preceding stages. `Get_chapterSelection` retrieves the shared selection, not a saved result file.\n\n**Observed runtime:** unavailable: the 21 Nov 2026 run is recorded as started, with no completion time. Its files span 09:30:05–10:37:30; this is not a completed runtime."
       ],
       "widgets_values_named": {
-        "text": "### 5. Prompt generation\n**Generate H3 Prompts** uses the registry, selected chapters, and loaded spatial plan to produce MiniMax H3 scene prompts and image-prompt text. It saves the results; it does not generate images, audio, or videos itself.\n\n**Scene structure:** `duration` (8) = seconds per scene; `max_shots` (1) = maximum camera shots per scene; `scenes_per_chunk` (4) = maximum scenes per cinematic sequence; `max_scenes` (0) = maximum scenes per chapter, with 0 meaning all scenes.\n\n**References:** `max_pictures` (8) = maximum reference images per scene; `max_pictures_per_subject` (4) = maximum per subject; `max_audio` (3) = maximum audio references.\n\n**LLM / output:** `thinking` (false) = planning/generation reasoning; `temperature` (0.38) = output variability; `max_tokens` (8192) = response token budget; `repair_attempts` (2) = repair attempts; `force` = recompute instead of reusing compatible cached results; `out_dir` (`h3_prompts`) = subfolder within the run.\n\n**Camera / continuity:** `refine_camera` (false) = optional camera-description pass; `camera_thinking` (false) and `review_thinking` (false) = independent reasoning controls; `camera_direction` = camera instructions applied to each scene (empty = none); Connect a Spatial Continuity or Load Spatial Continuity output to use its staging plan and enable final-prompt continuity checks.\n\n**Is thinking useful?** Thinking can help with complex scenes, but it costs time and does not guarantee better output.\n\n- `thinking`: planning scene chronology, fitting dialogue into the duration, generating coherent prompts and repairing their format.\n- `review_thinking`: resolving difficult spatial contradictions, camera axes and character orientation during continuity reviews and repairs.\n- `camera_thinking`: reasoning through complicated camera movements in the optional camera-refinement pass. Simpler camera notes may need little reasoning.\n\n**Quality-focused trial:** `thinking=true`, `review_thinking=false`, `camera_thinking=false`. This keeps reasoning for planning/generation while avoiding it in the review stage that exhausted its output budget. `camera_thinking` has no effect when `refine_camera=false`.\n\n**Faster baseline:** all three thinking controls are false in this example. Reasoning and JSON share the output token budget: reasoning can consume it before any JSON is returned. The reported seven-hour run failed this way during continuity review; this does not prove that thinking was useless during planning. Output quality has not been compared with thinking on versus off for this chapter.\n\nThese switches depend on model support: GPT-OSS always reasons, OpenAI has no thinking control, and LM Studio must honor the loaded model's reasoning controls.\n\n**Associated Load nodes:** `Load Consolidated References.consolidated_path` reloads the registry (`20261023222151/references`) without reconsolidation. `Load Spatial Continuity.spatial_path` reloads the plan (`20261023181509/spatial_continuity`) from a folder containing `spatial_continuity.json` or a JSON file, including a manually edited copy. It validates the plan against the connected registry and detects saved edits on the next run. Paths are relative to `ComfyUI/output/minimax_h3_novel`: check that results are compatible and update paths after the preceding stages. `Get_chapterSelection` retrieves the shared selection, not a saved result file."
+        "text": "### 5. Prompt generation\n**Generate H3 Prompts** uses the registry, selected chapters, and loaded spatial plan to produce MiniMax H3 scene prompts and image-prompt text. It saves the results; it does not generate images, audio, or videos itself.\n\n**Scene structure:** `duration` (8) = seconds per scene; `max_shots` (1) = maximum camera shots per scene; `scenes_per_chunk` (4) = maximum scenes per cinematic sequence; `max_scenes` (0) = maximum scenes per chapter, with 0 meaning all scenes.\n\n**References:** `max_pictures` (8) = maximum reference images per scene; `max_pictures_per_subject` (4) = maximum per subject; `max_audio` (3) = maximum audio references.\n\n**LLM / output:** `thinking` (false) = planning/generation reasoning; `temperature` (0.38) = output variability; `max_tokens` (8192) = response token budget; `repair_attempts` (2) = repair attempts; `force` = recompute instead of reusing compatible cached results; `out_dir` (`h3_prompts`) = subfolder within the run.\n\n**Camera / continuity:** `refine_camera` (false) = optional camera-description pass; `camera_thinking` (false) and `review_thinking` (false) = independent reasoning controls; `camera_direction` = camera instructions applied to each scene (empty = none); Connect a Spatial Continuity or Load Spatial Continuity output to use its staging plan and enable final-prompt continuity checks.\n\n**Is thinking useful?** Thinking can help with complex scenes, but it costs time and does not guarantee better output.\n\n- `thinking`: planning scene chronology, fitting dialogue into the duration, generating coherent prompts and repairing their format.\n- `review_thinking`: resolving difficult spatial contradictions, camera axes and character orientation during continuity reviews and repairs.\n- `camera_thinking`: reasoning through complicated camera movements in the optional camera-refinement pass. Simpler camera notes may need little reasoning.\n\n**Quality-focused trial:** `thinking=true`, `review_thinking=false`, `camera_thinking=false`. This keeps reasoning for planning/generation while avoiding it in the review stage that exhausted its output budget. `camera_thinking` has no effect when `refine_camera=false`.\n\n**Faster baseline:** all three thinking controls are false in this example. Reasoning and JSON share the output token budget: reasoning can consume it before any JSON is returned. The reported seven-hour run failed this way during continuity review; this does not prove that thinking was useless during planning. Output quality has not been compared with thinking on versus off for this chapter.\n\nThese switches depend on model support: GPT-OSS always reasons, OpenAI has no thinking control, and LM Studio must honor the loaded model's reasoning controls.\n\n**Associated Load nodes:** `Load Consolidated References.consolidated_path` reloads the registry (`20261023222151/references`) without reconsolidation. `Load Spatial Continuity.spatial_path` reloads the plan (`20261023181509/spatial_continuity`) from a folder containing `spatial_continuity.json` or a JSON file, including a manually edited copy. It validates the plan against the connected registry and detects saved edits on the next run. Paths are relative to `ComfyUI/output/minimax_h3_novel`: check that results are compatible and update paths after the preceding stages. `Get_chapterSelection` retrieves the shared selection, not a saved result file.\n\n**Observed runtime:** unavailable: the 21 Nov 2026 run is recorded as started, with no completion time. Its files span 09:30:05–10:37:30; this is not a completed runtime."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -647,10 +647,10 @@
       "title": "Note for LM Studio Config",
       "properties": {},
       "widgets_values": [
-        "### Shared LM Studio configuration\n**LM Studio Configuration** validates the API endpoint and prepares settings shared by the LLM stages. Start the LM Studio server and load a model from the selected family.\n\n- `api_url` = API address, here `http://127.0.0.1:1234/v1`; it must match \"Trusted API URL\" in ComfyUI Settings > MiniMax H3 Novel > LM Studio. Set the API key in those ComfyUI settings, not in this node.\n- `model_family` (`Qwen`) = family of the model available in LM Studio; Mistral ignores `thinking` and the `qwen35_*` settings.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes)."
+        "### Shared LM Studio configuration\n**LM Studio Configuration** validates the API endpoint and prepares settings shared by the LLM stages. Start the LM Studio server and load a model from the selected family.\n\n- `api_url` = API address, here `http://127.0.0.1:1234/v1`; it must match \"Trusted API URL\" in ComfyUI Settings > MiniMax H3 Novel > LM Studio. Set the API key in those ComfyUI settings, not in this node.\n- `model_family` (`Qwen`) = family of the model available in LM Studio; Mistral ignores `thinking` and the `qwen35_*` settings.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes).\n\n**Timing context:** observed on a Ryzen 9 5900X / RTX 3090 Ti 24 GB with LM Studio `gemma-4-26b-it`. Each duration is one recorded run, not a reliable average. Workload, model, settings, retries and cache reuse affect timing."
       ],
       "widgets_values_named": {
-        "text": "### Shared LM Studio configuration\n**LM Studio Configuration** validates the API endpoint and prepares settings shared by the LLM stages. Start the LM Studio server and load a model from the selected family.\n\n- `api_url` = API address, here `http://127.0.0.1:1234/v1`; it must match \"Trusted API URL\" in ComfyUI Settings > MiniMax H3 Novel > LM Studio. Set the API key in those ComfyUI settings, not in this node.\n- `model_family` (`Qwen`) = family of the model available in LM Studio; Mistral ignores `thinking` and the `qwen35_*` settings.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes)."
+        "text": "### Shared LM Studio configuration\n**LM Studio Configuration** validates the API endpoint and prepares settings shared by the LLM stages. Start the LM Studio server and load a model from the selected family.\n\n- `api_url` = API address, here `http://127.0.0.1:1234/v1`; it must match \"Trusted API URL\" in ComfyUI Settings > MiniMax H3 Novel > LM Studio. Set the API key in those ComfyUI settings, not in this node.\n- `model_family` (`Qwen`) = family of the model available in LM Studio; Mistral ignores `thinking` and the `qwen35_*` settings.\n- `qwen35_length_retries` (2) = compact retries after an incomplete Qwen3.5 JSON response.\n- `qwen35_top_k` (20) = restrict token choices to the most probable candidates.\n- `qwen35_min_p` (0) = relative probability filter; 0 disables it.\n- `qwen35_repeat_penalty` (1.05) = penalty to reduce repetition; 1 is neutral.\n\n**Set_LmConfig / Get_LmConfig** distribute this configuration under the name `LmConfig`. They are not Load nodes: they do not reload saved results from disk.\n\n**Resuming the workflow:** Load nodes use the paths stored in their fields; they do not automatically follow new outputs. `out_dir` is a run subfolder under `ComfyUI/output/minimax_h3_novel/<timestamp>/`. After each stage, set the next Load node to the saved results you want to use. Different timestamps are acceptable if the results remain compatible.\n\nDocumentation checked against plugin source version `34348942731573286ca21dfe1ca99d40a0b97459`: [source code](https://github.com/yuyuki/ComfyUI-Minimax_H3_Novel_Pipeline/tree/34348942731573286ca21dfe1ca99d40a0b97459/src/nodes).\n\n**Timing context:** observed on a Ryzen 9 5900X / RTX 3090 Ti 24 GB with LM Studio `gemma-4-26b-it`. Each duration is one recorded run, not a reliable average. Workload, model, settings, retries and cache reuse affect timing."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -735,8 +735,8 @@
       "id": 176,
       "type": "GetNode",
       "pos": [
-        -1450.80766484467,
-        2763.234780379094
+        -1322.4850285216255,
+        2755.6863900071503
       ],
       "size": [
         213.2734375,
@@ -814,8 +814,8 @@
       "id": 179,
       "type": "GetNode",
       "pos": [
-        173.91513809539975,
-        2752.194971624939
+        625.3085598356083,
+        2749.175603958233
       ],
       "size": [
         294.01902797498457,
@@ -852,8 +852,8 @@
       "id": 190,
       "type": "LoadCharacterProfilesNode",
       "pos": [
-        -1445.956657674782,
-        2951.5526134969255
+        -1317.6340213517376,
+        2944.0042231249818
       ],
       "size": [
         270,
@@ -893,8 +893,8 @@
       "id": 195,
       "type": "GetNode",
       "pos": [
-        181.10487317283588,
-        2956.727869970237
+        504.17565858999995,
+        2961.2568926754743
       ],
       "size": [
         292.7601545711669,
@@ -1388,8 +1388,8 @@
       "id": 229,
       "type": "ConsolidateCharacterProfilesNode",
       "pos": [
-        -912.2906205049904,
-        2751.156109420536
+        -783.9679841819459,
+        2743.607719048592
       ],
       "size": [
         407.2084774441033,
@@ -1456,8 +1456,8 @@
       "id": 230,
       "type": "CharacterVisualProfileGeneratorNode",
       "pos": [
-        598.5663234082739,
-        2756.6558237908166
+        921.6371088254377,
+        2761.184846496054
       ],
       "size": [
         404.7600904227113,
@@ -1909,7 +1909,7 @@
         1907.4660899339658
       ],
       "size": [
-        210,
+        232.3248046875,
         60
       ],
       "flags": {},
@@ -2072,7 +2072,7 @@
         1864.669867459366
       ],
       "size": [
-        265.0483589348044,
+        290.2734375,
         93.98748669641078
       ],
       "flags": {},
@@ -2149,7 +2149,7 @@
         2748.772336166367
       ],
       "size": [
-        293.42948645760265,
+        439.23046875,
         102.42400813741801
       ],
       "flags": {},
@@ -2235,11 +2235,11 @@
       "id": 248,
       "type": "GetNode",
       "pos": [
-        -1449.322660336496,
-        2811.2414981486313
+        -1321.0000240134516,
+        2803.6931077766876
       ],
       "size": [
-        210,
+        237.115234375,
         60
       ],
       "flags": {},
@@ -2271,8 +2271,8 @@
       "id": 249,
       "type": "ComfySwitchNode",
       "pos": [
-        -437.88057459562265,
-        2753.1232120623304
+        -309.5579382725784,
+        2745.5748216903867
       ],
       "size": [
         270,
@@ -2320,11 +2320,11 @@
       "id": 250,
       "type": "SetNode",
       "pos": [
-        -125.7257338715956,
-        2752.1858350584425
+        10.145062464799821,
+        2759.734225430387
       ],
       "size": [
-        210,
+        433.1484375,
         60
       ],
       "flags": {},
@@ -2361,11 +2361,11 @@
       "id": 251,
       "type": "GetNode",
       "pos": [
-        198.722011148479,
-        2805.347930017831
+        650.1154328886876,
+        2802.3285623511247
       ],
       "size": [
-        210,
+        234.07421875,
         60
       ],
       "flags": {},
@@ -2397,11 +2397,11 @@
       "id": 252,
       "type": "SetNode",
       "pos": [
-        1090.9616479112628,
-        2764.39294854638
+        1407.9940435329027,
+        2765.9026035849097
       ],
       "size": [
-        210,
+        528.1171875,
         60
       ],
       "flags": {},
@@ -2886,10 +2886,10 @@
       "id": 8,
       "title": "Character Extraction",
       "bounding": [
-        -3101.315581392283,
-        2628.570428501701,
-        4485.654379637859,
-        639.4057689520296
+        -3083.4416421545757,
+        2630.9544500004013,
+        5039.552873187477,
+        570.6250038315634
       ],
       "color": "#3f789e",
       "flags": {}
@@ -2898,10 +2898,10 @@
       "id": 7,
       "title": "Extraction",
       "bounding": [
-        -3091.315581392283,
-        2668.570428501701,
-        1598.2706205625375,
-        538.2167750149965
+        -3073.4416421545757,
+        2670.9544500004013,
+        1721.5589703850055,
+        520.6250038315634
       ],
       "color": "#3f789e",
       "flags": {}
@@ -2910,10 +2910,10 @@
       "id": 9,
       "title": "Consolidation",
       "bounding": [
-        -1472.1874188850552,
-        2674.583241082648,
-        1593.4164953862273,
-        535.7035312708231
+        -1332.4850285216255,
+        2673.607719048592,
+        1781.2496785501335,
+        512.808893107609
       ],
       "color": "#3f789e",
       "flags": {}
@@ -2922,10 +2922,10 @@
       "id": 10,
       "title": "Generator",
       "bounding": [
-        150.97235630932465,
-        2681.8881434143627,
-        1191.3614443311722,
-        530.3392967538875
+        494.17565858999995,
+        2679.175603958233,
+        1451.935572442902,
+        505.1299393551499
       ],
       "color": "#3f789e",
       "flags": {}
@@ -2934,10 +2934,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.398132456791901,
+      "scale": 0.5299142999900204,
       "offset": [
-        3927.056393577724,
-        -1695.2763613109782
+        1571.7900662675586,
+        -1275.9909965904978
       ]
     },
     "frontendVersion": "1.58.5"
