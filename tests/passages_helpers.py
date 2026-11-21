@@ -106,6 +106,11 @@ def adapt_fixture_reply(reply, payload, schema):
         for group in result["groups"]:
             if "source_quotes" in group:
                 group.pop("source_quotes")
+                name = group.pop("canonical_name")
+                group.pop("aliases", None)
+                group["canonical_member_id"] = next(
+                    row["id"] for row in payload["entities"]
+                    if row["id"] in group["member_ids"] and row["canonical_name"] == name)
                 owners = {member for row in payload["entities"] if row["id"] in group["member_ids"]
                           for member in row["sequences"]}
                 group["passage_ids"] = [offer["id"] for offer in payload["source_passages"] if offer["sequence"] in owners]
@@ -130,6 +135,9 @@ def adapt_fixture_reply(reply, payload, schema):
 def with_passage_ids(chat):
     @wraps(chat)
     def wrapped(client, model, system, prompt, schema, *args, **kwargs):
+        if isinstance(schema, dict) and schema.get("name") == "reference_extraction_finding_support":
+            findings = json.loads(prompt)["findings"]
+            return {"supported": [finding["number"] for finding in findings]}
         if isinstance(schema, dict) and schema.get("name") == "reference_identity_evidence_review":
             decisions = json.loads(prompt)["decisions"]
             return {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"} for row in decisions]}

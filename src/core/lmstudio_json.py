@@ -36,7 +36,11 @@ COMPACT_FIELD_LIMITS = {
     "evidence": 120,
 }
 
-class StructuredOutputLengthError(RuntimeError):
+class StructuredOutputError(RuntimeError):
+    """The response could not be read as the requested structured output."""
+
+
+class StructuredOutputLengthError(StructuredOutputError):
     """Structured output remained incomplete at the server's output limit."""
 
 
@@ -329,7 +333,7 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                     " Structured JSON reached the output token limit. Reduce passage size or increase "
                     "max_tokens; a larger context window alone does not increase the output budget."
                 ) if finish_reason == "length" else ""
-                error_type = StructuredOutputLengthError if finish_reason == "length" else RuntimeError
+                error_type = StructuredOutputLengthError if finish_reason == "length" else StructuredOutputError
                 raise error_type(
                     f"Invalid structured JSON after {attempt + 1} attempt(s). {diagnostics}{hint}"
                 ) from error

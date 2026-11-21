@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from minimax_h3_novel_pipeline import NODE_CLASS_MAPPINGS
 from minimax_h3_novel_pipeline.nodes.generate_h3_prompts import GenerateH3PromptsNode as Node
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
 
@@ -43,6 +44,19 @@ def test_example_uses_valid_current_defaults():
     assert list(values) == widget_names
     assert values["max_scenes"] == inputs["required"]["max_scenes"][1]["default"] == 0
     assert node["widgets_values"] == list(values.values())
+
+
+def test_max_tokens_default_matches_bundled_workflow():
+    data = json.loads((Path(__file__).parents[1] / "examples/ExtractChapter.json").read_text(encoding="utf-8"))
+    for node in NODE_CLASS_MAPPINGS.values():
+        for inputs in node.INPUT_TYPES().values():
+            if "max_tokens" in inputs:
+                assert inputs["max_tokens"][1]["default"] == 32768, node.__name__
+    for node in data["nodes"]:
+        named = node.get("widgets_values_named", {})
+        if "max_tokens" in named:
+            position = list(named).index("max_tokens")
+            assert node["widgets_values"][position] == named["max_tokens"] == 32768, node["type"]
 
 
 def test_binding_rejects_excessive_budget():

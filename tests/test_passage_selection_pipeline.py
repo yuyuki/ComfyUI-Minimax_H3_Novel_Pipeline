@@ -261,7 +261,7 @@ def test_extraction_traits_and_identity_keep_local_offsets_through_consumer_and_
             offered = data["source_passages"]
             assert {row["sequence"] for row in offered} == {1, 2}
             return validate_reply(schema, {"groups": [{"member_ids": [e["id"] for e in data["entities"]],
-                "canonical_name": "La cloche", "aliases": [],
+                "canonical_member_id": data["entities"][0]["id"],
                 "passage_ids": [next(row["id"] for row in offered if row["sequence"] == n) for n in (1, 2)]}]})
         return validate_reply(schema, {"issues": []})
 
@@ -359,8 +359,9 @@ def test_identity_with_exact_but_unsupported_passages_stays_incomplete(tmp_path,
             return validate_reply(schema, {"decisions": [{"decision_number": 1, "verdict": "unsupported"}]})
         proposals.append(data)
         return validate_reply(schema, {"groups": [{
-            "member_ids": [row["id"] for row in data["entities"]], "canonical_name": "La cloche",
-            "aliases": [], "passage_ids": [row["id"] for row in data["source_passages"]],
+            "member_ids": [row["id"] for row in data["entities"]],
+            "canonical_member_id": data["entities"][0]["id"],
+            "passage_ids": [row["id"] for row in data["source_passages"]],
         }]})
 
     monkeypatch.setattr(step, "chat_json", chat)
@@ -369,7 +370,7 @@ def test_identity_with_exact_but_unsupported_passages_stays_incomplete(tmp_path,
     result = identity.consolidate(jobs, step, None, "mock", args, tmp_path, diagnostics, tmp_path / "diagnostics.json")
     assert len(result["objects"]) == 2
     assert len(proposals) == 2
-    assert "do not establish the same identity" in proposals[-1]["correction"]["validation_error"]
+    assert proposals[-1]["correction"]["reason"] == "evidence_unsupported"
     assert diagnostics["identity_consolidation"][0]["status"] == "incomplete"
     assert not list(tmp_path.glob("identity_*.json"))
 

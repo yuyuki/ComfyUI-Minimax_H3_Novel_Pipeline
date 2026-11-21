@@ -1,7 +1,7 @@
 """Bounded semantic validation on top of the existing JSON request retries."""
 import json
 
-from . import lmstudio_json, prompt_cache, util
+from . import continuity_context, lmstudio_json, prompt_cache, util
 from .editable_schemas import validate_document
 from .lmstudio_pipeline import comfy_interrupt_check
 
@@ -14,7 +14,8 @@ class InvalidResponse(ValueError):
         self.rejected = rejected
 
 
-def validated_request(chat, client, model, system, user, schema, args, validate, *, include_previous=False, validation_version=None):
+def validated_request(chat, client, model, system, user, schema, args, validate, *, include_previous=False,
+                      validation_version=None, bounded=False, bound_initial=True):
     original = user if isinstance(user, str) else json.dumps(user, ensure_ascii=False)
     cache_dir = getattr(args, "cache_dir", None)
     cache = None
@@ -50,6 +51,7 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
         elif resume is not None:
             print(f"[minimax_h3_novel] {schema['name']}: resume cache bypassed (force=True)", flush=True)
     correction = ""
+    rejected = None
     profile, settings = lmstudio_json.model_settings(client, model)
     if hasattr(args, "max_attempts"):
         retries = args.max_attempts - 1
@@ -57,6 +59,8 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
         retries = profile.retries(model, settings) if getattr(client, "__dict__", {}).get("_minimax_h3_profile") else lmstudio_json.QWEN35_LENGTH_RETRIES
     for attempt in range(retries + 1):
         comfy_interrupt_check()
+        if bounded and (attempt or bound_initial) and not continuity_context.fits(system, original + correction, schema):
+            raise InvalidResponse("Structured correction exceeds the request budget.", rejected=rejected)
         print(f"[minimax_h3_novel] {schema['name']}: request attempt {attempt + 1}/{retries + 1}", flush=True)
         result = chat(client, model, system, original + correction, schema, args.temperature, args.max_tokens)
         try:
@@ -65,6 +69,7 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
                 util.save_json(cache, result)
             return result
         except ValueError as exc:
+            rejected = result
             if attempt == retries:
                 raise InvalidResponse(f"Invalid {schema['name']} response after bounded retries: {exc}",
                                       rejected=result) from exc

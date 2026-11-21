@@ -297,7 +297,7 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
     assert diagnostics["status"] == ("incomplete" if persistent_defect else "passed")
     assert len(calls) == len(reviews) == (3 if persistent_defect else 2)
     cr.process_chapter(chapter, output, None, "mock", args, "scene")
-    assert len(calls) == len(reviews) == (6 if persistent_defect else 2)
+    assert (len(calls), len(reviews)) == ((5, 6) if persistent_defect else (2, 2))
 
 
 def proposal_response():

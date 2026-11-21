@@ -23,6 +23,7 @@ PHASES = ("initialState", "event", "endingState")
 from .source_text import PASSAGE_VERSION, paragraph_chunks
 
 CATALOG_CACHE_VERSION = ("cinematic-neutral-catalog.v3", PASSAGE_VERSION)
+EXTRACTION_CHECKPOINT_VERSION = "source-extraction-checkpoint.v1"
 CATALOG_SCHEMA_FILENAME = "chapter_references.schema.json"
 CATALOG_SCHEMA = json.loads(
     (Path(__file__).resolve().parent / "schema" / CATALOG_SCHEMA_FILENAME).read_text(encoding="utf-8")
@@ -133,7 +134,7 @@ def copy_catalog_schema(output):
 _REVIEW_ERRORS = (ValueError, RuntimeError, APIConnectionError, InternalServerError, RateLimitError)
 
 
-def _extract_source(step, client, model, system, user, args):
+def _extract_source(step, client, model, system, user, args, checkpoint=None, save_checkpoint=None):
     source_input = json.loads(user)
     source_input["source_passages"] = reference_visuals.evidence_index(source_input).passages()
     user = json.dumps(source_input, ensure_ascii=False)
@@ -141,42 +142,28 @@ def _extract_source(step, client, model, system, user, args):
     def validate(data):
         reference_visuals.resolve_evidence(data, source_input)
 
-    def extract(prompt):
+    def extract(prompt, *, correction=False):
         selected = validated_request(step.chat_json, client, model, system, prompt, step.CHUNK_SCHEMA,
-                                     args, validate, include_previous=True)
+                                     args, validate, bounded=True, bound_initial=correction)
         return reference_visuals.resolve_evidence(selected, source_input)
     history = []
     context_incomplete = False
-    last_reviewed = None
-    try:
-        result = extract(user)
-    except InvalidResponse as first:
-        if lmstudio_json._is_comfy_interrupt(first):
-            raise
-        exc = first
-        if "chapter_context" in source_input:
-            lmstudio_pipeline.comfy_interrupt_check()
-            source_input.pop("chapter_context")
-            user = json.dumps(source_input, ensure_ascii=False)
-            history.append({"stage": "source_evidence_validation", "status": "incomplete",
-                            "message": "Contextual extraction rejected. Retrying with local source only."})
-            context_incomplete = True
-            try:
-                result = extract(user)
-            except InvalidResponse as local:
-                exc = local
-            else:
-                exc = None
-        if exc is not None:
-            rejected = []
-            result = reference_visuals.resolve_evidence(exc.rejected, source_input, rejected=rejected)
-            if not any(result.get(kind) for kind in ("characters", "locations", "objects")):
-                raise exc
-            history.append({"stage": "source_evidence_validation", "status": "incomplete",
-                            "rejected_fields": rejected,
-                            "message": "Invalid evidence selections were excluded after correction. Valid observations retained."})
-            context_incomplete = True
-    for attempt in range(3):
+    if checkpoint is not None:
+        result = checkpoint["extraction"]
+        history = checkpoint["history"]
+        context_incomplete = checkpoint["context_incomplete"]
+    else:
+        try:
+            result = extract(user)
+        except InvalidResponse as first:
+            result, context_incomplete = _recover_extraction(first, source_input, extract, history)
+        if save_checkpoint is not None and not any("rejected_fields" in entry for entry in history):
+            save_checkpoint({"extraction": result, "history": history, "context_incomplete": context_incomplete})
+    if any(entry["stage"] == "source_evidence_validation" for entry in history):
+        source_input.pop("chapter_context", None)
+    baseline = result
+    retry = {}
+    for attempt in range(1, 4):
         trait_targets = {
             target: {"kind": kind, "entity_index": entity_index, "trait_index": trait_index}
             for target, (kind, entity_index, trait_index) in enumerate((
@@ -186,54 +173,125 @@ def _extract_source(step, client, model, system, user, args):
                 for trait_index in range(len(entity["visual_traits"]))
             ), start=2)
         }
-        cited_findings = []
+        cited_findings, failures = [], []
+        stage = "source_extraction_review"
         try:
-            issues = narrative_validation.review(
+            narrative_validation.review(
                 step.chat_json, client, model,
                 {"stage": "extraction", "source_input": source_input, "extraction": result,
-                 "visual_trait_targets": trait_targets},
+                 "visual_trait_targets": trait_targets, **retry},
                 1 + len(trait_targets), args.max_tokens,
                 system=narrative_validation.SYSTEM + "\n" + reference_visuals.APPEARANCE_RULES,
-                on_evidence=cited_findings.append,
+                on_evidence=cited_findings.append, on_failure=failures.append,
             )
+            stage = "finding_support"
+            supported = narrative_validation.supported_extraction_findings(
+                step.chat_json, client, model, source_input["text"], result, trait_targets, cited_findings,
+                reference_visuals.APPEARANCE_RULES, args.max_tokens)
         except _REVIEW_ERRORS as exc:
             if lmstudio_json._is_comfy_interrupt(exc):
                 raise
             lmstudio_pipeline.comfy_interrupt_check()
-            history.append({"attempt": attempt + 1, "status": "incomplete",
-                            "reason": type(exc).__name__,
-                            "message": "Source review failed; valid extraction retained."})
-            return last_reviewed if last_reviewed is not None else result, history, "incomplete"
-        messages = [message for values in issues.values() for message in values]
-        incomplete = any("could not be interpreted reliably" in m for m in messages)
-        status = "incomplete" if incomplete else "issues" if issues else "passed"
-        last_reviewed = deepcopy(result)
-        rejected_targets = [
-            target for target, defects in sorted(issues.items(), reverse=True)
-            if target in trait_targets and any("could not be interpreted reliably" not in m for m in defects)
-        ]
-        for target in rejected_targets:
-            address = trait_targets[target]
-            del last_reviewed[address["kind"]][address["entity_index"]]["visual_traits"][address["trait_index"]]
-        history.append({"attempt": attempt + 1, "status": status, "messages": messages, "cited_findings": cited_findings,
-                        "rejected_visual_traits": [trait_targets[target] for target in rejected_targets]})
-        if not issues or incomplete or attempt == 2:
-            return last_reviewed, history, "incomplete" if context_incomplete or issues else status
-        lmstudio_pipeline.comfy_interrupt_check()
-        correction = json.dumps({"source_input": source_input, "rejected_extraction": result,
-                                 "defects_to_correct": messages,
-                                 "rejected_visual_traits": history[-1]["rejected_visual_traits"]},
-                                ensure_ascii=False)
+            failures.append({"stage": stage, "reason": type(exc).__name__})
+            supported = set()
+        verified = [finding for index, finding in enumerate(cited_findings, 1) if index in supported]
+        failures.extend({"stage": "finding_support", "reason": "diagnosis_not_fully_supported", "issue": index,
+                         "target": finding["target"]}
+                        for index, finding in enumerate(cited_findings, 1) if index not in supported)
+        rejected_targets = sorted({f["target"] for f in verified if f["target"] in trait_targets}, reverse=True)
+        history.append({"attempt": attempt, "status": "incomplete" if failures else "issues" if verified else "passed",
+                        "failures": failures, "cited_findings": cited_findings,
+                        "rejected_visual_traits": [trait_targets[t] for t in rejected_targets] if result is baseline else []})
+        if not failures and not verified:
+            return result, history, "incomplete" if context_incomplete else "passed"
+        reviewed_result = result
+        if result is baseline and rejected_targets:
+            baseline = deepcopy(result)
+            for target in rejected_targets:
+                address = trait_targets[target]
+                del baseline[address["kind"]][address["entity_index"]]["visual_traits"][address["trait_index"]]
+            result = baseline
+        if attempt == 3:
+            break
+        if failures:
+            retry = {"review_retry": {"reasons": sorted({failure["reason"] for failure in failures}),
+                                      "findings_to_recheck": [finding for index, finding in enumerate(cited_findings, 1)
+                                                              if index not in supported],
+                                      "instruction": "Recheck local evidence and report only fully substantiated defects."}}
+            if any(failure["reason"] == "review_context_budget" for failure in failures) and "chapter_context" in source_input:
+                source_input.pop("chapter_context")
+                context_incomplete = True
+            continue
+        correction = {"source_input": source_input, "rejected_extraction": reviewed_result,
+                      "defects_to_correct": verified,
+                      "rejected_visual_traits": [trait_targets[t] for t in rejected_targets]}
         try:
-            result = extract(correction)
+            result = extract(json.dumps(correction, ensure_ascii=False, separators=(",", ":")), correction=True)
         except _REVIEW_ERRORS as exc:
             if lmstudio_json._is_comfy_interrupt(exc):
                 raise
             lmstudio_pipeline.comfy_interrupt_check()
-            history.append({"attempt": attempt + 1, "status": "incomplete",
+            history.append({"attempt": attempt, "stage": "source_extraction_correction", "status": "incomplete",
                             "reason": type(exc).__name__,
                             "message": "Source correction failed; previous valid extraction retained."})
-            return last_reviewed, history, "incomplete"
+            break
+        retry = {}
+    return baseline, history, "incomplete"
+
+
+def _recover_extraction(first, source_input, extract, history):
+    if lmstudio_json._is_comfy_interrupt(first):
+        raise
+    context_incomplete = True
+    exc = first
+    if "chapter_context" in source_input:
+        lmstudio_pipeline.comfy_interrupt_check()
+        source_input.pop("chapter_context")
+        history.append({"stage": "source_evidence_validation", "status": "incomplete",
+                        "message": "Contextual extraction rejected. Retrying with local source only."})
+        try:
+            result = extract(json.dumps(source_input, ensure_ascii=False))
+        except InvalidResponse as local:
+            exc = local
+        else:
+            exc = None
+    if exc is not None:
+        if exc.rejected is None:
+            raise exc
+        rejected = []
+        result = reference_visuals.resolve_evidence(exc.rejected, source_input, rejected=rejected)
+        if not any(result.get(kind) for kind in ("characters", "locations", "objects")):
+            raise exc
+        history.append({"stage": "source_evidence_validation", "status": "incomplete",
+                        "rejected_fields": rejected,
+                        "message": "Invalid evidence selections were excluded after correction. Valid observations retained."})
+    return result, context_incomplete
+
+
+def _read_extraction_cache(name, cache_dir, args, *, review_key=None):
+    if args.force:
+        return None
+    resume = getattr(args, "resume_cache_dir", None)
+    for folder in [cache_dir, resume] if resume is not None else [cache_dir]:
+        try:
+            record = util.load_json(confined_path(name, folder))
+        except FileNotFoundError:
+            continue
+        if review_key is not None:
+            if record["status"] != "passed":
+                continue
+            if "review_key" in record:
+                if record["review_key"] != review_key:
+                    continue
+            elif not (len(record["history"]) == 1 and record["history"][0]["status"] == "passed"
+                      and record["history"][0].get("cited_findings") == []):
+                # Only clean, first-pass historical reviews predate the finding
+                # verifier without having applied any unverified corrections.
+                continue
+        if folder != cache_dir:
+            util.save_json(confined_path(name, cache_dir), record)
+        return record
+    return None
 
 
 def _catalog_digest(payload):
@@ -246,11 +304,16 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     step = lmstudio_pipeline.load("extract")
     period = temporal_context.normalize(getattr(args, "default_temporal_context", ""))
     system = step.EXTRACT_SYSTEM + "\n" + SOURCE_SYSTEM + "\n" + temporal_context.RULES
+    review_key = fingerprint(model, args, "source-extraction-review.v2", narrative_validation.SYSTEM,
+                             narrative_validation.SCHEMA, narrative_validation.EXTRACTION_FINDINGS_SYSTEM,
+                             narrative_validation.EXTRACTION_FINDINGS_SCHEMA, reference_visuals.APPEARANCE_RULES,
+                             client=client)
     key = fingerprint(model, args, TEMPORAL_VERSION, CATALOG_CACHE_VERSION,
                       system, narrative_validation.SYSTEM, narrative_validation.SCHEMA,
                       step.CHUNK_SCHEMA, chapter_reference_identity.VERSION,
                       reference_visuals.VERSION, reference_visuals.EQUIVALENCE_SYSTEM, reference_visuals.EQUIVALENCE_SCHEMA,
-                      chapter_reference_identity.SYSTEM, chapter_reference_identity.SCHEMA, chapter, client=client)
+                      chapter_reference_identity.SYSTEM, chapter_reference_identity.SCHEMA,
+                      review_key, chapter, client=client)
     saved = confined_path(output / f"{chapter_id}_references.json", output)
     diagnostic_path = confined_path(output / f"{chapter_id}_references.diagnostics.json", output)
     if saved.exists() and diagnostic_path.exists() and not args.force:
@@ -263,6 +326,9 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
             return saved
     cache_dir = confined_path(output / ".cache" / chapter_id, output)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    args = copy(args)
+    if getattr(args, "resume_cache_dir", None) is not None:
+        args.resume_cache_dir = confined_path(chapter_id, args.resume_cache_dir)
     extracted = []
     diagnostics = {"chapter_id": chapter_id, "cache_key": key,
                    "input_narrative_review": deepcopy(chapter.get("narrative_review", {})),
@@ -293,13 +359,17 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
         user = json.dumps(source_input, ensure_ascii=False)
         part_key = fingerprint(model, args, CATALOG_CACHE_VERSION, system, step.CHUNK_SCHEMA,
                                narrative_validation.SYSTEM, narrative_validation.SCHEMA, user, client=client)
-        cache = confined_path(cache_dir / f"{part_key}.json", output)
-        if cache.exists() and not args.force:
-            record = util.load_json(cache)
+        cache = confined_path(f"{part_key}.json", cache_dir)
+        record = _read_extraction_cache(cache.name, cache_dir, args, review_key=review_key)
+        if record is not None:
             result, history, status = record["extraction"], record["history"], record["status"]
         else:
+            draft_key = fingerprint(model, args, EXTRACTION_CHECKPOINT_VERSION, system, step.CHUNK_SCHEMA, user, client=client)
+            draft = confined_path(f"extraction_{draft_key}.json", cache_dir)
+            checkpoint = _read_extraction_cache(draft.name, cache_dir, args)
             try:
-                result, history, status = _extract_source(step, client, model, system, user, args)
+                result, history, status = _extract_source(step, client, model, system, user, args, checkpoint,
+                                                          lambda record: util.save_json(draft, record))
             except InvalidResponse as exc:
                 if lmstudio_json._is_comfy_interrupt(exc):
                     raise
@@ -309,8 +379,9 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
                 diagnostics["status"] = "incomplete"
                 util.save_json(diagnostic_path, diagnostics)
                 continue
-            if status != "incomplete":
-                util.save_json(cache, {"extraction": result, "history": history, "status": status})
+            if status == "passed":
+                util.save_json(cache, {"extraction": result, "history": history, "status": status,
+                                       "review_key": review_key})
         diagnostics["checks"].append({"sequence": seq["sequence"], "chunk": number,
                                       "stage": "source_extraction_review", "status": status,
                                       "source_excerpt": text, "history": history})
@@ -327,27 +398,26 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     with progress.scope(0.75, 0.98):
         catalog = chapter_reference_identity.consolidate(
             extracted, step, client, model, args, cache_dir, diagnostics, diagnostic_path)
+    source_by_scene = reference_visuals.scene_sources({chapter_id: chapter["sequences"]})
     for kind in ("characters", "locations", "objects"):
-        retained = []
         for entity in catalog[kind]:
             visual_args = copy(args)
             visual_args.cache_dir = cache_dir
             reference = reference_visuals.build_reference(
                 {chapter_id: entity["state_by_sequence"]}, diagnostics["checks"], entity["local_id"],
-                step.chat_json, client, model, visual_args)
+                step.chat_json, client, model, visual_args, source_by_scene=source_by_scene)
             entity["visual_reference"] = reference
             entity["stable_visual_description"] = reference_visuals.descriptions(reference["common_traits"])
             entity["distinguishing_features"] = []
             entity.pop("presence", None)
             entity.pop("visual_traits", None)
-            visible = any(s["presence"] == "visible" for s in reference["scenes"][chapter_id].values())
-            described = bool(reference["common_traits"] or any(s["traits"] for s in reference["scenes"][chapter_id].values()))
-            if kind == "characters" or (visible and (described or kind == "locations")):
-                retained.append(entity)
-            else:
+            if kind != "characters" and not any(
+                reference_visuals.appearance_at(entity, chapter_id, sequence)
+                for sequence in reference["scenes"][chapter_id]
+            ):
                 diagnostics["checks"].append({"stage": "neutral_visual_selection", "entity_id": entity["local_id"],
-                                              "status": "incomplete", "message": "No visible, source-described image reference; entity omitted."})
-        catalog[kind] = retained
+                                              "status": "passed", "image_eligible": False,
+                                              "message": "No visible, source-described image reference; observations retained."})
     functional = downstream_chapter(chapter)
     payload = {"schema_version": util.CHAPTER_SCHEMA, "timeline_version": TEMPORAL_VERSION,
                "default_temporal_context": period,

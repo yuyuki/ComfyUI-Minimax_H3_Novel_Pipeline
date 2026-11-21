@@ -76,6 +76,15 @@ def test_distinct_entities_do_not_share_material_and_name_only_objects_have_no_i
     assert visual.appearance_at(second, "chapter", 1) == ""
 
 
+def test_unspecified_material_keeps_occurrence_without_generating_empty_image():
+    unknown = trait("material", "unspecified", evidence="A bell hangs in the doorway.")
+    item, checks = reference({1: [observation(unknown)]})
+    assert item["timeline"]["chapter"]["1"]["source"][0]["visual_traits"] == [unknown]
+    assert visual.appearance_at(item, "chapter", 1) == ""
+    assert lmstudio_pipeline.load("consolidate").build_picture_specs([item], options()) == []
+    assert checks == []
+
+
 def test_object_view_hints_can_expose_geometry_without_narrative_staging():
     item, _ = reference({1: [observation(trait("construction", "A hollow sculpted form."))]})
     item["reference_view_hints"] = ["hero_three_quarter"]
@@ -110,6 +119,32 @@ def test_ambiguous_local_override_does_not_restore_the_common_value():
                               kind="location", gid="LOC_001")
     assert checks and visual.appearance_at(item, "chapter", 2) == "Oak."
     assert item["visual_reference"]["scenes"]["chapter"]["2"]["excluded_attributes"] == ["color"]
+
+
+@pytest.mark.parametrize("verdict", ["compatible", "conflicting"])
+def test_cited_local_lighting_uses_spatial_scope(verdict):
+    first = trait("lighting", "The entry is dim.", "scene", "The entry is dim.")
+    other = "A bright alcove lies beyond it." if verdict == "compatible" else "The same entry is brightly lit."
+    second = trait("lighting", other, "scene", other)
+    timeline = {"chapter": {"1": {"source": [observation(first, second)]},
+                            "2": {"source": [observation()]}}}
+    source = f"{first['evidence']} {second['evidence']}"
+
+    def chat(client, model, system, user, schema, *args):
+        assert schema == visual.LOCAL_COMPATIBILITY_SCHEMA and schema["strict"]
+        payload = json.loads(user)
+        assert payload["local_source"] == source and payload["traits"] == [first, second]
+        return {"verdict": verdict}
+
+    checks = []
+    resolved = visual.build_reference(timeline, checks, "LOC_001", chat, None, "mock",
+                                      SimpleNamespace(temperature=0, max_tokens=1000),
+                                      source_by_scene={("chapter", 1): source})
+    item = {"visual_reference": resolved}
+    assert visual.appearance_at(item, "chapter", 1) == (source if verdict == "compatible" else "")
+    assert visual.appearance_at(item, "chapter", 2) == ""
+    assert resolved["common_traits"] == []
+    assert any(check["status"] == "incomplete" for check in checks) == (verdict == "conflicting")
 
 
 def test_loader_rejects_an_image_state_bound_to_an_earlier_scene():

@@ -156,10 +156,11 @@ class ConsolidateReferencesNode:
             runtime_info = {"base_url": lmstudio_config["api_url"], "model": resolved_model,
                             "thinking": bool(lmstudio_config["thinking"]), "chat_backend": "structured-json"}
             args.reference_diagnostics = visual_checks
+            source_by_scene = reference_visuals.scene_sources({c["chapter_id"]: c["sequences"] for c in chapters})
             for entity in registry:
                 entity["visual_reference"] = reference_visuals.build_reference(
                     entity["timeline"], visual_checks, entity["global_id"],
-                    pipeline.chat_json, client, resolved_model, args)
+                    pipeline.chat_json, client, resolved_model, args, source_by_scene=source_by_scene)
                 entity["stable_visual_description"] = reference_visuals.descriptions(
                     entity["visual_reference"]["common_traits"])
                 entity["distinguishing_features"] = []

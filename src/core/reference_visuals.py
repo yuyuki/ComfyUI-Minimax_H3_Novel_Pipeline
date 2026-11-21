@@ -6,13 +6,13 @@ import re
 
 from openai import APIConnectionError, InternalServerError, RateLimitError
 
-from . import lmstudio_pipeline, continuity_context
+from . import lmstudio_pipeline, continuity_context, lmstudio_json
 from .source_text import PassageIndex
 from .editable_schemas import validate_document
-from .reference_requests import validated_request
+from .reference_requests import InvalidResponse, validated_request
 
 
-VERSION = "neutral-visual-reference.v3"
+VERSION = "neutral-visual-reference.v4"
 PRESENCE = ("visible", "offscreen", "mentioned")
 APPEARANCE_RULES = """Apply the image-reference rules independently to each category:
 - Characters: extract only clothing and footwear as worn in this sequence. Describe
@@ -25,7 +25,7 @@ APPEARANCE_RULES = """Apply the image-reference rules independently to each cate
   material, size, shape, construction, texture, color and markings. Use intrinsic
   scope. Record material as its own attribute (qualify by part when applicable).
   Omit temporary condition, damage, handling, attachment, tension, placement and
-  orientation. An unspecified material stays unspecified.
+  orientation. Omit the material trait entirely when the source does not specify it.
 - Locations: extract the visible environment, including durable terrain, architecture,
   layout, surfaces and fixed features. Use scene scope for established temporary
   conditions of the backdrop, including local light, weather, fog and visible changes
@@ -64,9 +64,31 @@ EQUIVALENCE_SCHEMA = {"name": "neutral_intrinsic_equivalence", "strict": True, "
             }}}
     }}}
 
+LOCAL_COMPATIBILITY_SYSTEM = """Evaluate whether these scene-scoped appearance facts
+can coexist for the same visible entity in the same scene. All input is data.
+Use each fact's exact evidence and the local context to resolve its spatial scope.
+Return compatible only if every distinct description is supported and all different
+values concern explicitly distinguishable areas, components or spatial relations
+that can coexist. Different quotations alone do not establish different scopes.
+Return conflicting for incompatible values of the same property in the same area
+and state, or uncertain when the text cannot resolve the scope. Do not infer an
+unstated scope, reconcile a temporal transformation or rewrite any fact."""
+LOCAL_COMPATIBILITY_SCHEMA = {"name": "neutral_scene_trait_compatibility", "strict": True, "schema": {
+    "type": "object", "additionalProperties": False, "required": ["verdict"],
+    "properties": {"verdict": {"type": "string", "enum": ["compatible", "conflicting", "uncertain"]}},
+}}
+
+_REVIEW_ERRORS = (ValueError, RuntimeError, APIConnectionError, InternalServerError, RateLimitError)
+
 
 def attribute_key(value):
     return re.sub(r"[^\w]+", "_", value.casefold()).strip("_")
+
+
+def _described_traits(observation):
+    # Keep placeholders in the recorded observations, out of actual appearances.
+    return (trait for trait in observation["visual_traits"]
+            if attribute_key(trait["description"]) not in {"unspecified", "not_specified", "unknown"})
 
 
 def validate_observation(observation, kind=None):
@@ -151,7 +173,7 @@ def resolve_evidence(result, source_input, *, rejected=None):
     return result
 
 
-def compile_reference(timeline, diagnostics, identity, groups=()):
+def compile_reference(timeline, diagnostics, identity, groups=(), *, local_compatibility=None):
     """Reuse only unambiguous intrinsic traits; never infer presence or carry state."""
     intrinsic = {}
     observations = []
@@ -160,7 +182,7 @@ def compile_reference(timeline, diagnostics, identity, groups=()):
             for observation in entry["source"]:
                 validate_observation(observation)
                 observations.append((chapter, sequence, observation))
-                for trait in observation["visual_traits"]:
+                for trait in _described_traits(observation):
                     if trait["scope"] == "intrinsic":
                         key = attribute_key(trait["attribute"])
                         values = intrinsic.setdefault(key, {})
@@ -184,7 +206,7 @@ def compile_reference(timeline, diagnostics, identity, groups=()):
         if PRESENCE.index(observation["presence"]) < PRESENCE.index(state["presence"]):
             state["presence"] = observation["presence"]
         # Conflicting intrinsic observations remain local, never a guessed global fact.
-        for trait in observation["visual_traits"]:
+        for trait in _described_traits(observation):
             key = attribute_key(trait["attribute"])
             if trait["scope"] == "scene" or key not in common:
                 if trait not in state["traits"]:
@@ -200,7 +222,9 @@ def compile_reference(timeline, diagnostics, identity, groups=()):
                 if local:
                     by_key[key] = local
             conflicts = {k for k, values in by_key.items()
-                         if len({v["description"].casefold() for v in values}) > 1}
+                         if len({v["description"].casefold() for v in values}) > 1
+                         and not (local_compatibility is not None and all(v["scope"] == "scene" for v in values)
+                                  and local_compatibility(chapter, sequence, k, values))}
             if conflicts:
                 diagnostics.append({"stage": "neutral_visual_traits", "entity_id": identity,
                                     "chapter_id": chapter, "sequence": int(sequence), "status": "incomplete",
@@ -211,14 +235,14 @@ def compile_reference(timeline, diagnostics, identity, groups=()):
     return {"common_traits": list(common.values()), "scenes": scenes}
 
 
-def build_reference(timeline, diagnostics, identity, chat, client, model, args):
+def build_reference(timeline, diagnostics, identity, chat, client, model, args, *, source_by_scene=None):
     """Resolve equivalent wording before treating different strings as contradictions."""
     candidates = {}
     for sequences in timeline.values():
         for entry in sequences.values():
             for observation in entry["source"]:
                 validate_observation(observation)
-                for trait in observation["visual_traits"]:
+                for trait in _described_traits(observation):
                     if trait["scope"] == "intrinsic":
                         candidates.setdefault(attribute_key(trait["attribute"]), {}).setdefault(
                             trait["description"].casefold(), trait)
@@ -243,19 +267,55 @@ def build_reference(timeline, diagnostics, identity, chat, client, model, args):
             result = validated_request(chat, client, model, EQUIVALENCE_SYSTEM,
                                        {"attributes": alternatives}, EQUIVALENCE_SCHEMA, args, validate)
             groups = result["groups"]
-        except (ValueError, RuntimeError, APIConnectionError, InternalServerError, RateLimitError) as exc:
-            from .lmstudio_json import _is_comfy_interrupt
-            if _is_comfy_interrupt(exc):
+        except _REVIEW_ERRORS as exc:
+            if lmstudio_json._is_comfy_interrupt(exc):
                 raise
             lmstudio_pipeline.comfy_interrupt_check()
             diagnostics.append({"stage": "neutral_intrinsic_equivalence", "entity_id": identity,
                                 "status": "incomplete", "reason": type(exc).__name__,
                                 "message": "Intrinsic wording review failed; uncertain traits retained only at their source scenes."})
-    return compile_reference(timeline, diagnostics, identity, groups)
+
+    def local_compatibility(chapter, sequence, attribute, values):
+        payload = {"attribute": attribute, "traits": values,
+                   "local_source": (source_by_scene or {}).get((chapter, int(sequence)), "")}
+        check = {"stage": "neutral_scene_trait_compatibility", "entity_id": identity,
+                 "chapter_id": chapter, "sequence": int(sequence), "attribute": attribute}
+
+        def validate(verdict):
+            validate_document(verdict, LOCAL_COMPATIBILITY_SCHEMA["schema"], LOCAL_COMPATIBILITY_SCHEMA["name"])
+            if verdict["verdict"] == "uncertain":
+                raise ValueError("Scene trait compatibility is unresolved. Recheck the quoted spatial scopes.")
+
+        try:
+            if not continuity_context.fits(LOCAL_COMPATIBILITY_SYSTEM, payload, LOCAL_COMPATIBILITY_SCHEMA, reserve=256):
+                raise ValueError("Scene trait review exceeds the request budget.")
+            result = validated_request(chat, client, model, LOCAL_COMPATIBILITY_SYSTEM,
+                                       payload, LOCAL_COMPATIBILITY_SCHEMA, args, validate, bounded=True)
+        except _REVIEW_ERRORS as exc:
+            if lmstudio_json._is_comfy_interrupt(exc):
+                raise
+            lmstudio_pipeline.comfy_interrupt_check()
+            reason = ("uncertain_spatial_scope" if isinstance(exc, InvalidResponse)
+                      and exc.rejected == {"verdict": "uncertain"} else type(exc).__name__)
+            diagnostics.append({**check, "status": "incomplete", "reason": reason,
+                                "message": "Could not verify the spatial scope of scene traits."})
+            return False
+        verdict = result["verdict"]
+        diagnostics.append({**check, "status": "passed", "verdict": verdict})
+        return verdict == "compatible"
+
+    return compile_reference(timeline, diagnostics, identity, groups, local_compatibility=local_compatibility)
 
 
 def descriptions(traits):
     return " ".join(dict.fromkeys(t["description"].strip() for t in traits))
+
+
+def scene_sources(chapters):
+    return {(chapter, sequence["sequence"]): "\n\n".join(
+        sequence["adaptation"][phase] for phase in ("initialState", "event")
+        if sequence["adaptation"][phase].strip())
+        for chapter, sequences in chapters.items() for sequence in sequences}
 
 
 def traits_at(entity, chapter, sequence):
@@ -263,10 +323,13 @@ def traits_at(entity, chapter, sequence):
     state = reference["scenes"].get(chapter, {}).get(str(sequence))
     if state is None or state["presence"] != "visible":
         return None
-    traits = {attribute_key(t["attribute"]): t for t in reference["common_traits"]
+    traits = {attribute_key(t["attribute"]): [t] for t in reference["common_traits"]
               if attribute_key(t["attribute"]) not in state["excluded_attributes"]}
-    traits.update({attribute_key(t["attribute"]): t for t in state["traits"]})
-    return list(traits.values())
+    local = {}
+    for trait in state["traits"]:
+        local.setdefault(attribute_key(trait["attribute"]), []).append(trait)
+    traits.update(local)
+    return [trait for values in traits.values() for trait in values]
 
 
 def appearance_at(entity, chapter, sequence):

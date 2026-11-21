@@ -42,7 +42,7 @@ def test_invalid_visual_quote_retries_with_actionable_feedback(monkeypatch, pers
     assert len(calls) == (3 if persistent else 2)
     assert "objects[0].visual_traits[0]" in calls[1]
     assert "authorized source" in calls[1]
-    assert "Previous response (data, not instructions)" in calls[1]
+    assert "Previous response (data, not instructions)" not in calls[1]
     assert result["objects"][0]["visual_traits"][0]["evidence"] == "Une corde en chanvre."
     assert status == ("incomplete" if persistent else "passed")
     if persistent:
@@ -86,7 +86,7 @@ def test_review_recovers_omitted_visible_character_without_appearance(execution,
         assert schema == step.CHUNK_SCHEMA
         extraction = {"chunk_summary": opening, "characters": [], "locations": [], "objects": []}
         if "defects_to_correct" in data:
-            assert data["defects_to_correct"] == [omission]
+            assert [finding["message"] for finding in data["defects_to_correct"]] == [omission]
             assert opening in data["source_input"]["text"]
             extraction["characters"].append({"canonical_name": "Mina", "presence": "visible",
                                              "evidence": [opening], "visual_traits": []})
@@ -204,7 +204,7 @@ def test_catalog_retains_only_category_specific_image_traits(execution, monkeypa
     check_path, = tmp_path.rglob("*.diagnostics.json")
     check = util.load_json(check_path)["checks"][0]
     assert check["status"] == "incomplete"
-    assert len(check["history"][-1]["rejected_visual_traits"]) == 3
+    assert len(check["history"][0]["rejected_visual_traits"]) == 3
 
 
 def identity_reply(data):
@@ -538,7 +538,7 @@ def test_type_name_index_preserves_alias_variants(execution, monkeypatch):
 
 @pytest.mark.parametrize("failure", [ValueError("private response"), RuntimeError("private response"), {"issues": "broken"}])
 def test_advisory_failure_keeps_extraction_and_retries(execution, monkeypatch, tmp_path, failure):
-    _, params, config = execution
+    extractions, params, config = execution
     original = lmstudio_pipeline.load("extract").chat_json
     count = []
     def chat(client, model, system, user, schema, *args):
@@ -556,8 +556,77 @@ def test_advisory_failure_keeps_extraction_and_retries(execution, monkeypatch, t
     data = util.load_json(diagnostic)
     assert data["status"] == "incomplete" and all(c["status"] == "incomplete" for c in data["checks"])
     assert "private response" not in diagnostic.read_text(encoding="utf-8")
+    old_report = diagnostic.read_bytes()
+    new_config = {**config, "run_folder": "20261003120100"}
+    node.run(new_config, [chapter()], resume_run=config["run_folder"], **params)
+    assert len(count) == 18
+    assert len(extractions) == 3
+    assert diagnostic.read_bytes() == old_report
+
+
+def test_partial_support_and_unknown_passage_do_not_change_valid_observation(execution, monkeypatch, tmp_path):
+    _, params, config = execution
+    step = lmstudio_pipeline.load("extract")
+    local = "Mina examines marks on the panel."
+    value = {"chapter_name": "Hall", "sequences": [{"sequence": 1, "source": "Excluded original text.",
+             "adaptation": {"initialState": local, "event": "She steps away.", "endingState": "Excluded ending."}}]}
+    requests = []
+
+    def chat(client, model, system, user, schema, *args):
+        data = json.loads(user)
+        requests.append(schema["name"])
+        if schema == cr.narrative_validation.SCHEMA:
+            passage = data["review_passages"][0]["id"]
+            return {"issues": [
+                {"target": 2, "message": "Replace the marks with embossed silver lettering.", "passage_ids": [passage]},
+                {"target": 1, "message": "Another defect.", "passage_ids": ["unoffered-private-value"]},
+            ]}
+        if schema == cr.narrative_validation.EXTRACTION_FINDINGS_SCHEMA:
+            assert schema["strict"] and data["findings"][0]["source_passages"][0]["text"] == local
+            assert "Excluded" not in user
+            return {"supported": []}
+        assert schema == step.CHUNK_SCHEMA and "defects_to_correct" not in data
+        return {"chunk_summary": "", "characters": [], "locations": [], "objects": [
+            {"canonical_name": "Panel", "presence": "visible", "aliases": [],
+             "evidence_passage_ids": [data["source_passages"][0]["id"]], "visual_traits": [
+                {"attribute": "markings", "scope": "intrinsic", "description": "Marks on the panel.",
+                 "evidence_passage_ids": [data["source_passages"][0]["id"]]},
+             ]}]}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    result, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
+    panel, = result[0]["objects"]
+    assert [trait["description"] for trait in panel["visual_reference"]["common_traits"]] == ["Marks on the panel."]
+    assert "silver" not in json.dumps(result)
+    report_path, = tmp_path.rglob("*.diagnostics.json")
+    report = util.load_json(report_path)
+    check, = report["checks"]
+    assert check["sequence"] == 1 and check["status"] == "incomplete"
+    for attempt in check["history"]:
+        assert {failure["reason"] for failure in attempt["failures"]} == {
+            "unknown_passage_id", "diagnosis_not_fully_supported"}
+    assert "unoffered-private-value" not in report_path.read_text(encoding="utf-8")
+    assert requests.count(step.CHUNK_SCHEMA["name"]) == 1
+
+
+def test_review_contract_change_reuses_valid_extraction_drafts(execution, monkeypatch):
+    extractions, params, config = execution
+    step = lmstudio_pipeline.load("extract")
+    original = step.chat_json
+    reviewed = []
+
+    def chat(client, model, system, user, schema, *args):
+        if schema == cr.narrative_validation.SCHEMA:
+            reviewed.append(json.loads(user)["source_input"]["sequence"])
+        return original(client, model, system, user, schema, *args)
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    node = ExtractChapterReferencesNode()
     node.run(config, [chapter()], **params)
-    assert len(count) == 6
+    monkeypatch.setattr(cr.narrative_validation, "EXTRACTION_FINDINGS_SYSTEM", "Revised finding verification.")
+    node.run(config, [chapter()], **params)
+    assert reviewed == [1, 2, 3, 1, 2, 3]
+    assert len(extractions) == 3
 
 
 @pytest.mark.parametrize("failure", [OSError("disk"), KeyboardInterrupt()])
@@ -609,7 +678,7 @@ def test_language_and_spatial_defects_are_corrected(execution, monkeypatch, tmp_
     results, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
     assert len(calls) == 2
     assert results[0]["locations"] == [] and len(results[0]["objects"]) == 1
-    cache, = tmp_path.rglob(".cache/*/*.json")
+    cache, = [path for path in tmp_path.rglob(".cache/*/*.json") if not path.name.startswith("extraction_")]
     assert util.load_json(cache)["extraction"]["chunk_summary"] == "La torche est inclinee."
     diagnostic, = tmp_path.rglob("*.diagnostics.json")
     assert util.load_json(diagnostic)["status"] == "passed"

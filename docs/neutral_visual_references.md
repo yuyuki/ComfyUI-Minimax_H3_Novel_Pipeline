@@ -27,8 +27,10 @@ with offsets in the combined initialState/event source. The existing quote field
 contains the first selected quote, and `evidence_passages` retains each selected
 passage individually. The catalog loader checks addressed citations against their
 sequence. Before extraction is accepted,
-semantic review checks relevance, neutrality, language and chronology. An individual
-trait rejected by the review is dropped if correction cannot resolve the issue.
+semantic review checks relevance, neutrality, language and chronology. A separate
+structured check verifies that the selected quotations support the full diagnosis
+before it can trigger a correction or remove a trait. Malformed or unsupported
+findings are retried with local evidence and recorded in the diagnostic sidecar.
 Chapter context disambiguates referents and categories only; it cannot establish
 local presence or import changing traits. Actions remain in adaptation.
 
@@ -47,6 +49,11 @@ Chapter identity decisions group confirmed physical identities and retain their
 observations at `state_by_sequence[sequence].source`. Generic labels do not prove
 identity. Incomplete identity decisions remain explicit in diagnostics; uncertain
 physical instances stay separate rather than being silently merged.
+The model selects candidate IDs, one canonical member ID and supporting passage
+IDs. Python derives the names from the confirmed members. Independent supported
+groups survive invalid proposals, and overlapping claims are retried together.
+When an ordered window exceeds the request budget, smaller windows compare
+occurrences within and across their boundaries using the corresponding passages.
 An uninterrupted action can establish that a contextual alias or a visible wall
 belongs to the same space. A visible location can be recorded with empty local
 traits and use supported shared geometry once its identity is confirmed.
@@ -72,13 +79,24 @@ one attribute has multiple descriptions. Only confirmed equivalent supplied stri
 can share a representative; the model cannot invent replacement prose. Actual
 conflicts or failed reviews remain source-local with incomplete diagnostics.
 Ambiguous local values and their conflicting baseline fallback are omitted from image
-appearance through functional `excluded_attributes`. Attribute keys and semantic classification are model decisions, so
-source-grounded review remains necessary.
+appearance through functional `excluded_attributes`. A source-grounded review can
+retain multiple values under a scene attribute when the quotations establish
+compatible spatial scopes. Those values stay local to the scene.
 
 Objects and places require useful visual description. Name-only entries do not
-produce empty image references. Visible characters may rely on their independent
+produce empty image references, and their observations remain available for identity
+reconciliation. Visible characters may rely on their independent
 Character Visual Profile Generator output, including `visual_designs.json`, for
 physical identity. Offscreen speech is retained independently for audio needs.
+
+To resume extraction in a new run, set `resume_run` on Extract Chapter References
+to the previous timestamp and keep `out_dir`, source data and extraction settings
+the same, with `force` disabled. The previous run's
+`<out_dir>/.cache/<chapter_id>/` is read-only. Compatible completed extractions and
+confirmed identity decisions are reused. Open identity decisions remain pending.
+A saved evidence-validated extraction draft can resume at review. Sequences
+without a compatible draft or completed extraction are extracted again. New
+files go to the current run.
 
 ## Consolidation and image binding
 

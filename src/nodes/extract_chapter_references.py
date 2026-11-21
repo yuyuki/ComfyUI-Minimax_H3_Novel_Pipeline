@@ -7,6 +7,7 @@ import argparse
 from typing import Any
 
 from ..core import cinematic_references, configuration_snapshot, lmstudio_pipeline, temporal_context, util
+from ..core.path_access import confined_path
 from ..core.run_output import stage_output
 
 def _default_output_dir() -> str:
@@ -33,6 +34,7 @@ class ExtractChapterReferencesNode:
             "out_dir": ("STRING", {"default": _default_output_dir(), "tooltip": "Subfolder of the current timestamped run inside output/minimax_h3_novel."}),
         }, "optional": {
             "default_temporal_context": ("STRING", {"default": "", "multiline": True, "tooltip": "Optional default date or era, e.g. 1925 or France, late 19th century. Explicit narrative timing and flashbacks take precedence. Empty leaves unspecified periods unknown."}),
+            "resume_run": ("STRING", {"default": "", "tooltip": "Read compatible extraction and identity caches from this previous timestamped run. Results are written to the current run."}),
         }}
 
     RETURN_TYPES = ("MINIMAX_CHAPTERS", "STRING")
@@ -47,6 +49,17 @@ class ExtractChapterReferencesNode:
             raise ValueError("out_dir must be a non-empty string.")
         period = temporal_context.normalize(params.get("default_temporal_context", ""))
         output = stage_output(lmstudio_config, out_dir.strip())
+        resume_run = params.get("resume_run", "")
+        if not isinstance(resume_run, str):
+            raise ValueError("resume_run must be a previous timestamped run folder name.")
+        resume_run = resume_run.strip()
+        resume_cache = None
+        if resume_run:
+            resume_cache = confined_path(".cache", stage_output({"run_folder": resume_run}, out_dir.strip()))
+            if resume_cache == confined_path(".cache", output):
+                raise ValueError("resume_run must refer to a previous run, not the current run.")
+            if not resume_cache.is_dir():
+                raise ValueError("resume_run does not contain an extraction cache for this output folder.")
         chapters = cinematic_references.parse_chapters(cinematic_chapters)
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
@@ -61,7 +74,9 @@ class ExtractChapterReferencesNode:
             snapshot = configuration_snapshot.start(
                 output, "extract", lmstudio_config, resolved_model, args, out_dir=out_dir,
                 inputs={"chapters": [{"chapter_name": c["chapter_name"], "sha256": cinematic_references.chapter_digest(c)} for c in chapters]},
+                extra={"resume_run": resume_run},
             )
+            args.resume_cache_dir = resume_cache
             _log(f"LM Studio extraction: model={resolved_model}, chapters={len(chapters)}")
             results = []
             artifacts = []
