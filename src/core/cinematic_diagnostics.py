@@ -45,6 +45,8 @@ def explain(record):
     reason = record.get("reason", "")
     if record.get("status") == "completed":
         message, action = "The plan passed structural validation; this does not imply narrative approval.", ""
+    elif record.get("repair_outcome") == "timing_validated":
+        message, action = "The timing estimate passed validation. Continuity still requires assessment.", ""
     elif reason.startswith("schema_"):
         message, action = "The response does not match the requested JSON schema.", "Correct the indicated field according to the strict schema."
     else:

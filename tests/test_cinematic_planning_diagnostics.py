@@ -90,7 +90,8 @@ def test_request_failure_records_hashes_without_backend_messages(monkeypatch, fa
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = run()
     records = result["narrative_review"]["planning_diagnostics"]
-    assert len(records) == 1 and records[0]["reason"] == reason
+    assert len(records) == (2 if reason == "output_limit" else 1)
+    assert all(record["reason"] == reason for record in records)
     assert "private" not in json.dumps(records) + caplog.text
     assert result["sequences"][0]["review"]["status"] == "incomplete"
 

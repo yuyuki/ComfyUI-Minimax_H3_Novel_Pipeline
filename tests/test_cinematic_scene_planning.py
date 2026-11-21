@@ -36,7 +36,8 @@ def run(source, **kwargs):
                             max_tokens=16384, correction_attempts=kwargs.pop("correction_attempts", 1), **kwargs)
 
 
-def test_one_sentence_is_split_into_three_reviewed_scenes_and_resumes_without_replanning(monkeypatch):
+@pytest.mark.parametrize("combined_limit", [False, True])
+def test_one_sentence_is_split_into_three_reviewed_scenes_and_resumes_without_replanning(monkeypatch, combined_limit):
     spans = ["Il range son carnet et sort un filet", " dont il recouvre la tablette", ", avant de nouer les lacets."]
     source = "".join(spans)
     calls, snapshots, reviews = [], [], []
@@ -49,6 +50,12 @@ def test_one_sentence_is_split_into_three_reviewed_scenes_and_resumes_without_re
         if schema["name"] == planning.SCHEMA["name"]:
             item = payload["current_scene"]
             assert payload["maximum_seconds"] == 8
+            if combined_limit and item["source"] == source:
+                sections = payload["requested_sections"]
+                assert list(schema["schema"]["properties"]) == sections
+                if sections == ["timing", "continuity"]:
+                    raise ca.lmstudio_json.StructuredOutputLengthError("length")
+                assert ("event_words" in payload) == (sections == ["timing"])
             return plan(item, 14 if item["source"] == source else 4)
         if schema["name"] == nv.SCHEMA["name"]:
             reviews.append(payload)
