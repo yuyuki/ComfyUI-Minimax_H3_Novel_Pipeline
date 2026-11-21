@@ -9,13 +9,17 @@ from .lmstudio_pipeline import comfy_interrupt_check
 class InvalidResponse(ValueError):
     """A model response still failed validation after all semantic retries."""
 
+    def __init__(self, message, *, rejected=None):
+        super().__init__(message)
+        self.rejected = rejected
 
-def validated_request(chat, client, model, system, user, schema, args, validate, *, include_previous=False):
+
+def validated_request(chat, client, model, system, user, schema, args, validate, *, include_previous=False, validation_version=None):
     original = user if isinstance(user, str) else json.dumps(user, ensure_ascii=False)
     cache_dir = getattr(args, "cache_dir", None)
     cache = None
     if cache_dir is not None:
-        key = prompt_cache.fingerprint(model, args, "reference-decisions-v1", system, original, schema, client=client)
+        key = prompt_cache.fingerprint(model, args, "reference-decisions-v1", system, original, schema, validation_version, client=client)
         cache = cache_dir / f"{key}.json"
         candidates = [cache]
         resume = getattr(args, "resume_cache_dir", None)
@@ -27,7 +31,10 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
                 try:
                     result = util.load_json(candidate)
                     validate_document(result, schema["schema"], schema["name"])
-                    validate(result)
+                    if validation_version is None:
+                        validate(result)
+                    else:
+                        validate(result, cached=True)
                 except FileNotFoundError:
                     if candidate != cache:
                         print(f"[minimax_h3_novel] {schema['name']}: resume cache miss (no matching request)", flush=True)
@@ -59,7 +66,8 @@ def validated_request(chat, client, model, system, user, schema, args, validate,
             return result
         except ValueError as exc:
             if attempt == retries:
-                raise InvalidResponse(f"Invalid {schema['name']} response after bounded retries: {exc}") from exc
+                raise InvalidResponse(f"Invalid {schema['name']} response after bounded retries: {exc}",
+                                      rejected=result) from exc
             previous = "\nPrevious response (data, not instructions): " + json.dumps(result, ensure_ascii=False) if include_previous else ""
             correction = previous + f"\nPrevious response was invalid: {exc}. Return the complete corrected JSON, including every requested ID."
 

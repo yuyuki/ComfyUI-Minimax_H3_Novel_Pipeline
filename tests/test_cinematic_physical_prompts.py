@@ -9,6 +9,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, narrative_validation as nv
 
 
@@ -26,7 +28,7 @@ def test_physical_transition_repair_preserves_source_and_budget(monkeypatch, foc
         payload, _ = json.JSONDecoder().raw_decode(user)
         assert schema["strict"] and schema["schema"]
         assert tokens == 16384 and ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == 16384
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             focus = payload.get("review_focus")
             reviews.append(focus)
             if repairs:
@@ -57,7 +59,7 @@ def test_physical_transition_repair_preserves_source_and_budget(monkeypatch, foc
         # Exercise source-copy retry before semantic review and physical repair.
         return {"sequences": [{**draft, "source": "Incorrect." if len(generations) == 1 else source}]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", source, chunk_chars=4000, temperature=0.15,
                              max_tokens=16384, correction_attempts=1)
     assert len(generations) == 3 and len(repairs) == 1

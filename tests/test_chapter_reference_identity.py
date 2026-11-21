@@ -11,13 +11,13 @@ from minimax_h3_novel_pipeline.core import chapter_reference_identity as identit
 def job(sequence, source, *names):
     return {"sequence": sequence, "chunk": 1, "text": source, "result": {
         "characters": [{"canonical_name": name, "aliases": [], "presence": "visible", "visual_traits": [],
-                        "importance": "major", "reference_priority": "required", "evidence": [source]}
+                        "importance": "major", "reference_priority": "required", "evidence": [source], "evidence_passages": [{"chunk": 1, "start": 0, "end": len(source), "text": source}]}
                        for name in names], "locations": [], "objects": [],
     }}
 
 
-def group(ids, name, quote, aliases=None):
-    return {"member_ids": ids, "canonical_name": name, "aliases": aliases or [], "source_quotes": [quote]}
+def group(ids, name, passage_ids, aliases=None):
+    return {"member_ids": ids, "canonical_name": name, "aliases": aliases or [], "passage_ids": passage_ids}
 
 
 def run(tmp_path, monkeypatch, jobs, reply):
@@ -25,6 +25,9 @@ def run(tmp_path, monkeypatch, jobs, reply):
     step = lmstudio_pipeline.load("extract")
     calls = []
     def chat(client, model, system, user, schema, *args):
+        if schema == identity.IDENTITY_REVIEW_SCHEMA:
+            return {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"}
+                                  for row in json.loads(user)["decisions"]]}
         assert schema == identity.SCHEMA and schema["strict"] is True
         assert "adaptation" not in json.loads(user)
         payload = json.loads(user)
@@ -44,9 +47,9 @@ def test_pronouns_and_named_aliases_merge_without_changing_observations(tmp_path
             job(2, "Il lève les yeux.", "l'homme"),
             job(3, "— Jones ! appelle Doriane en regardant Indy.", "Jones", "Doriane")]
     def reply(payload, count):
-        assert [p["text"] for p in payload["source_passages"]] == [j["text"] for j in jobs]
+        assert {p["sequence"] for p in payload["source_passages"]} == {1, 2, 3}
         assert [e["canonical_name"] for e in payload["entities"]] == ["Indy", "l'homme", "Jones", "Doriane"]
-        return {"groups": [group(["REF_00003", "REF_00001", "REF_00002"], "Indy", jobs[2]["text"], ["Jones"])]}
+        return {"groups": [group(["REF_00003", "REF_00001", "REF_00002"], "Indy", [p["id"] for p in payload["source_passages"]], ["Jones"])]}
     catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
     indy, doriane = catalog["characters"]
     assert (indy["canonical_name"], indy["aliases"], doriane["canonical_name"]) == ("Indy", ["Jones"], "Doriane")
@@ -76,9 +79,9 @@ def test_later_batch_can_unify_previously_separate_identities(tmp_path, monkeypa
     def reply(payload, count):
         if count == 1:
             return {"groups": []}
-        assert [p["sequence"] for p in payload["source_passages"]] == [8, 9]
+        assert {p["sequence"] for p in payload["source_passages"]} == {1, 2, 8, 9}
         assert {e["canonical_name"] for e in payload["entities"]} == {"Indy", "l'homme", "Jones"}
-        return {"groups": [group([e["id"] for e in payload["entities"]], "Indy", jobs[-1]["text"], ["Jones"])]}
+        return {"groups": [group([e["id"] for e in payload["entities"]], "Indy", [p["id"] for p in payload["source_passages"]], ["Jones"])]}
     catalog, _, calls = run(tmp_path, monkeypatch, jobs, reply)
     assert len(calls) == 2 and len(catalog["characters"]) == 1
     assert list(catalog["characters"][0]["state_by_sequence"]) == ["1", "2", "9"]
@@ -90,7 +93,7 @@ def test_invalid_merge_is_retried_and_preserves_every_occurrence(tmp_path, monke
     jobs[0]["result"]["objects"] = [{"canonical_name": "la corde", "aliases": [], "presence": "visible",
                                     "visual_traits": []}]
     def reply(payload, count):
-        invalid = group(["REF_00001", "REF_00002"], "Indy", jobs[0]["text"])
+        invalid = group(["REF_00001", "REF_00002"], "Indy", [payload["source_passages"][0]["id"]])
         if defect == "unknown_id":
             invalid["member_ids"][1] = "missing"
         elif defect == "duplicate_id":
@@ -102,7 +105,7 @@ def test_invalid_merge_is_retried_and_preserves_every_occurrence(tmp_path, monke
         elif defect == "invented_alias":
             invalid["aliases"] = ["Henry"]
         elif defect == "invented_quote":
-            invalid["source_quotes"] = ["private fabricated quote"]
+            invalid["passage_ids"] = ["private fabricated passage ID"]
         elif defect == "schema":
             return {"groups": "private malformed data"}
         return {"groups": [invalid, invalid] if defect == "overlap" else [invalid]}
@@ -123,7 +126,7 @@ def test_retry_can_recover_without_discarding_evidence(tmp_path, monkeypatch):
         if count == 1:
             return {"groups": None}
         assert "correction" in payload
-        return {"groups": [group([e["id"] for e in payload["entities"]], "Indy", jobs[0]["text"])]}
+        return {"groups": [group([e["id"] for e in payload["entities"]], "Indy", [payload["source_passages"][0]["id"]])]}
     catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
     assert len(calls) == 2 and len(catalog["characters"]) == 1
     assert len(catalog["characters"][0]["state_by_sequence"]["1"]["source"]) == 2
@@ -134,7 +137,7 @@ def test_invalid_cached_identity_is_corrected_with_all_evidence(tmp_path, monkey
     jobs = [job(1, "Indy attend. Il regarde.", "Indy", "l'homme")]
     _, _, calls = run(tmp_path, monkeypatch, jobs, lambda *a: {"groups": []})
     cached, = tmp_path.glob("identity_*.json")
-    util.save_json(cached, {"groups": [group(["REF_00001", "missing"], "Indy", jobs[0]["text"])]})
+    util.save_json(cached, {"groups": [group(["REF_00001", "missing"], "Indy", [calls[0]["source_passages"][0]["id"]])]})
 
     def reply(payload, count):
         assert payload["entities"] == calls[0]["entities"]

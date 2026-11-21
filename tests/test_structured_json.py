@@ -32,8 +32,27 @@ class Stream:
         self.closed = True
 
 
-def client_for(*streams):
-    create = Mock(side_effect=streams)
+def client_for(*streams, passage_fixtures=False):
+    if passage_fixtures:
+        from tests.passages_helpers import adapt_fixture_reply
+        remaining = iter(streams)
+
+        def stream_for(**request):
+            stream = next(remaining)
+            if all(isinstance(part, str) for part in stream.pieces):
+                try:
+                    payload, _ = json.JSONDecoder().raw_decode(request["messages"][-1]["content"])
+                    reply = json.loads("".join(stream.pieces))
+                    schema = request["response_format"]["json_schema"]
+                    reply = adapt_fixture_reply(reply, payload, schema)
+                except (KeyError, ValueError, TypeError):
+                    pass
+                else:
+                    stream.pieces = [json.dumps(reply, ensure_ascii=False)]
+            return stream
+        create = Mock(side_effect=stream_for)
+    else:
+        create = Mock(side_effect=streams)
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), create
 
 
@@ -50,7 +69,7 @@ def test_cinematic_fragment_schema_and_all_actions_survive_compact_transport_ret
                                    for ref in fragments],
                          "pause_seconds": 0, "estimated_seconds": 13, "reason": "Thirteen actions."},
               "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
-    client, create = client_for(Stream(['{"timing":']), Stream([json.dumps(result)]))
+    client, create = client_for(Stream(['{"timing":']), Stream([json.dumps(result)]), passage_fixtures=True)
     validated = planning.assess(lmstudio_json.chat_json, client, model, item, [], 8, 16384, 0)
     assert len(validated["timing"]["beats"]) == 13 and create.call_count == 2
     assert validated["timing"]["beats"][-1]["events"] == [{"event_index": 2, "text": None}]
@@ -91,8 +110,8 @@ def test_compact_retry_preserves_visual_detail_and_entity_capacity(schema_name):
         assert not {"stable_visual_description", "chapter_appearance", "chapter_state",
                     "distinguishing_features"} & fields.keys()
         assert fields["visual_traits"] == schema["schema"]["properties"][kind]["items"]["properties"]["visual_traits"]
-        assert fields["evidence"]["maxItems"] == 2
-        assert fields["evidence"]["items"]["maxLength"] == 120
+        assert "maxItems" not in fields["evidence_passage_ids"]
+        assert "maxLength" not in fields["evidence_passage_ids"]["items"]
         assert fields["reference_view_hints"] == schema["schema"]["properties"][kind]["items"]["properties"]["reference_view_hints"]
     # Guided decoding must allow a summary to finish its last sentence, including on retries.
     assert "maxLength" not in props["chunk_summary"]
@@ -156,7 +175,7 @@ def test_evidence_cleanup_preserves_original_excerpt():
     step = lmstudio_pipeline.load("extract")
     excerpt = "« La gardienne\n  portait une cape rouge. »"
     entity = step.clean_entity({"canonical_name": "la gardienne", "evidence": [excerpt, excerpt]}, "characters")
-    assert entity["evidence"] == [excerpt]
+    assert entity["evidence"] == [excerpt, excerpt]
 
 
 @pytest.mark.parametrize("profiled", [False, True])

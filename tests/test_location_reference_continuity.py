@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import lmstudio_pipeline, path_access, run_output, util
 from minimax_h3_novel_pipeline.nodes import consolidate_references, spatial_continuity
 from minimax_h3_novel_pipeline.nodes.extract_chapter_references import ExtractChapterReferencesNode
@@ -91,7 +93,7 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
         }
         return {"chunk_summary": events[n], "characters": [], "locations": [location], "objects": props.get(n, [])}
 
-    monkeypatch.setattr(extract, "chat_json", extract_reply)
+    monkeypatch.setattr(extract, "chat_json", with_passage_ids(extract_reply))
     params = defaults(ExtractChapterReferencesNode)
     catalogs = ExtractChapterReferencesNode().run(config, [chapter], **params)["result"][0]
     catalog, = catalogs
@@ -112,13 +114,13 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
     def consolidate_reply(client, model, system, user, schema, *settings):
         assert schema["strict"]
         if schema == consolidate.RECONCILE_SCHEMA:
-            incoming = json.loads(user.split("\n\nINCOMING:\n")[1].split("\n\nCANDIDATES:\n")[0])
+            incoming = json.JSONDecoder().raw_decode(user)[0]["incoming"]
             return {"resolutions": [
                 {**dict.fromkeys(("stable_visual_description", "voice_description"), ""),
                  **{key: item[key] for key in ("local_id", "entity_type", "canonical_name", "aliases")},
                  "match_global_id": "NEW", "distinguishing_features": [], "speaks": False,
                  "importance": "major", "reference_priority": "required", "reference_view_hints": [],
-                 "reason": "First occurrence in the registry.", "confidence": 1}
+                 "reason": "First occurrence in the registry.", "confidence": 1, "passage_ids": []}
                 for item in incoming
             ]}
         if schema == consolidate.AUDIT_SCHEMA:
@@ -129,7 +131,7 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
             if payload["location"] == "Puits méridional":
                 assert [scene["sequence"] for scene in scenes] == [10]
                 return {"views": [{"view_type": "wide_establishing", "framing": "Vue des parois de calcaire.",
-                                   "camera_axis": "Vers la paroi", "landmark_quote": "parois de calcaire",
+                                   "camera_axis": "Vers la paroi", "landmark_passage_ids": [p["id"] for p in payload["appearance_passages"] if "parois de calcaire" in p["text"]],
                                    "scene_ids": [1]}]}
             assert payload["max_views"] == 3
             assert payload["appearance"] == geometry
@@ -138,9 +140,9 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
             # The first reply omits sequence 8. The retry still receives all scenes.
             return {"views": [
                 {"view_type": view_types[0], "framing": angles[0], "scene_ids": [1, 2, 3],
-                 "camera_axis": "Vers le haut", "landmark_quote": "une ouverture"},
+                 "camera_axis": "Vers le haut", "landmark_passage_ids": [p["id"] for p in payload["appearance_passages"] if "une ouverture" in p["text"]]},
                 {"view_type": view_types[1], "framing": angles[1],
-                 "camera_axis": "Vers la paroi", "landmark_quote": "parois de granit",
+                 "camera_axis": "Vers la paroi", "landmark_passage_ids": [p["id"] for p in payload["appearance_passages"] if "parois de granit" in p["text"]],
                  "scene_ids": [3, 4, 6] if len(planned) == 1 else [3, 4, 5, 6]},
             ]}
         if schema == consolidate.APPEARANCE_SCHEMA:
@@ -150,7 +152,7 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
                             "generation_prompt": "Cadrage lisible."} for spec in payload]}
 
     monkeypatch.setattr(consolidate_references, "prepare_designs", lambda *a: {"entities": []})
-    monkeypatch.setattr(consolidate, "chat_json", consolidate_reply)
+    monkeypatch.setattr(consolidate, "chat_json", with_passage_ids(consolidate_reply))
     node = consolidate_references.ConsolidateReferencesNode
     registry = node().run(catalogs, config, **defaults(node))["result"][0]
     assert len(planned) == 2 and planned[0] == planned[1]
@@ -179,7 +181,7 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
         fields = {key: [] if spec["type"] == "array" else "Unknown" for key, spec in spatial_continuity._FIELDS.items()}
         return {**fields, "location_id": cid if spatial_calls == [4] else gid}
 
-    monkeypatch.setattr(spatial_continuity, "chat_json", spatial_reply)
+    monkeypatch.setattr(spatial_continuity, "chat_json", with_passage_ids(spatial_reply))
     plan = spatial_continuity.SpatialContinuityNode().run(registry, config)["result"][0]
     assert spatial_calls == [4, 4, 5, 6, 7, 8, 9, 10]
     assert [p["location_id"] for p in plan["chapters"][cid]["sequences"]] == [north_id] * 6 + [south_id]
@@ -220,7 +222,7 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
             prompt = prompt.replace("retention_analysis:\nN/A", f"retention_analysis:\n{label}: fully_preserved - Fixed geometry.")
         return {"prompt_text": prompt}
 
-    monkeypatch.setattr(generate, "chat_json", h3_reply)
+    monkeypatch.setattr(generate, "chat_json", with_passage_ids(h3_reply))
     params = defaults(GenerateH3PromptsNode)
     params.update(repair_attempts=0, refine_camera=False)
     result = GenerateH3PromptsNode().run(registry, config, [chapter], spatial_continuity=plan, **params)["result"][0]

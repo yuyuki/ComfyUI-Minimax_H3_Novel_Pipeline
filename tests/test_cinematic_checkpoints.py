@@ -6,6 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, path_access
 from minimax_h3_novel_pipeline.nodes import cinematic_chapter_adapter as adapter
 
@@ -37,9 +39,9 @@ def read_state(output):
 
 def test_draft_persisted_before_review_cancellation(setup_node, monkeypatch):
     run, output, source = setup_node
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene(source)]})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [scene(source)]}))
 
-    def review(*args):
+    def review(*args, **kwargs):
         state = read_state(output)
         assert state["stage"] == "scene_planned"
         assert state["pending_sequences"][0]["planning"]["timing"]["estimated_seconds"] > 0
@@ -64,7 +66,7 @@ def test_correction_persisted_before_next_review_fails(setup_node, monkeypatch):
         calls += 1
         return {"sequences": [scene(source, "Corrected." if calls > 1 else "After.")]}
 
-    def review(*args):
+    def review(*args, **kwargs):
         if calls == 1:
             return {1: ["Correct the ending."]}
         state = read_state(output)
@@ -72,7 +74,7 @@ def test_correction_persisted_before_next_review_fails(setup_node, monkeypatch):
         assert state["pending_sequences"][0]["final_state"] == "Corrected."
         raise RuntimeError("review unavailable")
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(ca.narrative_validation, "review", review)
     result = run(correction_attempts=1)["result"][0][0]
     assert result["sequences"][0]["adaptation"]["endingState"] == "Corrected."
@@ -101,8 +103,8 @@ def test_accepted_scene_files_survive_later_failure(setup_node, monkeypatch, fai
             result["unprocessed_source"] = ""
         return result
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args: {})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
+    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: {})
     if fail_next_window:
         with pytest.raises(RuntimeError, match="next window failed"):
             run(chunk_chars=110)

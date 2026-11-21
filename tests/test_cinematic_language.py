@@ -6,6 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
 from minimax_h3_novel_pipeline.core import narrative_validation as nv
 
@@ -26,7 +28,7 @@ def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
         data, _ = json.JSONDecoder().raw_decode(prompt)
         calls.append(schema["name"])
         assert schema["strict"] is True
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             assert "Report a language mismatch as a concrete" in system
             assert data["sequences"][0]["source"] == normalized_source
             return {"issues": [{"target": 1, "message": "Descriptions must remain in French."}]
@@ -35,14 +37,14 @@ def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
         assert "Never fall back to English" in system
         assert "when you support it" not in system
         assert data["current_passage"] == normalized_source
-        if "rejected_adaptation" in data or calls.count(ca.SCHEMA["name"]) > 2:
+        if "rejected_adaptation" in data or calls.count(ca.SCHEMA["name"]) > 1:
             if "rejected_adaptation" in data:
                 assert data["rejected_adaptation"]["events"] == english["events"]
                 return {"sequences": [{"source": source, **deepcopy(french)}]}
             return {"sequences": [{"source": source, **deepcopy(english)}]}
         return {"sequences": [{"source": "Wrong copy." if recovery else source, **english}]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "gemma-4-26B_q4_0-it.gguf", source,
                              chunk_chars=4000, temperature=0.15, max_tokens=1000,
                              correction_attempts=1)
@@ -52,6 +54,6 @@ def test_translated_adaptation_is_reviewed_and_repaired(monkeypatch, recovery):
         "event": '1. Indy tire une torche de son sac.\n2. Il crie : " Help! "',
         "endingState": french["final_state"],
     }
-    assert result["narrative_review"] == {"issues": []}
+    assert result["narrative_review"]["issues"] == []
     assert calls.count(nv.SCHEMA["name"]) == 2
-    assert calls.count(ca.SCHEMA["name"]) == (4 if recovery else 2)
+    assert calls.count(ca.SCHEMA["name"]) == (3 if recovery else 2)

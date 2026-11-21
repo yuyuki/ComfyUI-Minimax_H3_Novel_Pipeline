@@ -6,6 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, narrative_validation as nv
 
 
@@ -20,7 +22,7 @@ def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(mon
 
     def chat(client, model, system, user, schema, temperature, tokens):
         payload = json.loads(user)
-        if schema != nv.SCHEMA:
+        if schema["name"] != nv.SCHEMA["name"]:
             return {"sequences": deepcopy(scenes)}
         assert schema["strict"]
         assert tokens == 8192 and ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == 8192
@@ -29,7 +31,7 @@ def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(mon
             return {"issues": []}
         focus = payload.get("review_focus")
         calls.append(focus)
-        if focus is None or focus == failed_focus:
+        if focus is None or focus == failed_focus or focus == "source_fidelity_event_group":
             raise ca.lmstudio_json.StructuredOutputLengthError("length")
         assert payload["sequences"] == scenes[1:]
         assert len(system) < len(nv.SYSTEM)
@@ -40,11 +42,14 @@ def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(mon
             assert "previous_sequence" not in payload and "previous_final_state" not in payload
         return {"issues": []}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     kwargs = dict(chunk_chars=4000, temperature=0.15, max_tokens=8192, correction_attempts=1,
                   on_checkpoint=lambda state: snapshots.append(deepcopy(state)))
     result = ca.adapt_chapter(None, "mock", "Il attend. Il part.", **kwargs)
-    assert calls == [None, "source_fidelity", "cinematic_pacing", "local_transition"]
+    expected = [None, "source_fidelity", "cinematic_pacing", "local_transition"]
+    if failed_focus == "source_fidelity":
+        expected.insert(2, "source_fidelity_event_group")
+    assert calls == expected
     assert "".join(s["source"] for s in result["sequences"]) == "Il attend. Il part."
     if failed_focus:
         assert max(len(state["approved_reviews"]) for state in snapshots) == 1
@@ -53,7 +58,7 @@ def test_length_recovery_checks_every_aspect_and_never_approves_partial_work(mon
         assert committed[0]["sequences"][0]["source"] == scenes[0]["source"]
         assert committed[0]["pending_sequences"] == scenes[1:]
         assert result["sequences"][1]["review"]["status"] == "incomplete"
-        assert result["narrative_review"]["warnings"][-1]["check"] == failed_focus
+        assert result["narrative_review"]["warnings"][-1]["check"] == ("source_fidelity_event_1" if failed_focus == "source_fidelity" else failed_focus)
     else:
         assert len(snapshots[-1]["approved_reviews"]) == 2
         assert result["narrative_review"]["warnings"][0]["status"] == "recovered_by_focused_checks"
@@ -65,7 +70,7 @@ def test_focused_defects_are_combined_and_sent_to_local_repair(monkeypatch):
 
     def chat(client, model, system, user, schema, *args):
         payload = json.loads(user)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             focus = payload.get("review_focus")
             reviews.append(focus)
             if repairs:
@@ -77,7 +82,7 @@ def test_focused_defects_are_combined_and_sent_to_local_repair(monkeypatch):
             repairs.append(payload)
         return {"sequences": [scene(payload["current_passage"])]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     ca.adapt_chapter(None, "mock", "Il attend.", chunk_chars=4000, temperature=0.15,
                      max_tokens=8192, correction_attempts=1)
     assert len(repairs) == 1
@@ -90,11 +95,11 @@ def test_non_length_errors_do_not_trigger_adaptive_review(monkeypatch):
 
     def chat(client, model, system, user, schema, *args):
         calls.append(schema["name"])
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             raise RuntimeError("connection failed")
         return {"sequences": [scene("Il attend.")]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", "Il attend.", chunk_chars=4000, temperature=0.15,
                               max_tokens=8192, correction_attempts=1)
     assert result["sequences"][0]["review"]["status"] == "incomplete"

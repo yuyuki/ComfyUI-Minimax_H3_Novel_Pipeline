@@ -91,7 +91,7 @@ def test_configuration_records_effective_controls_and_resume_without_changing_ca
     folder = root / '20261031000002/profiles'
     record = json.loads((folder / 'character_profiles_configuration.json').read_text())
     assert record['node_settings'] == {
-        'out_dir': 'profiles', 'thinking': True, 'temperature': 0.12, 'max_tokens': 16384,
+        'out_dir': 'profiles', 'thinking': True, 'temperature': 0.12, 'max_tokens': node.ConsolidateCharacterProfilesNode.INPUT_TYPES()['required']['max_tokens'][1]['default'],
         'context_tokens': 65536, 'correction_attempts': 2, 'force': False,
         'persistence_filter': 'everything', 'resume_run': '20261031000001',
     }

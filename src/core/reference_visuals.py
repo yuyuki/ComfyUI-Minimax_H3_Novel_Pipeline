@@ -7,7 +7,7 @@ import re
 from openai import APIConnectionError, InternalServerError, RateLimitError
 
 from . import lmstudio_pipeline, continuity_context
-from .source_text import restore_quote
+from .source_text import PassageIndex
 from .editable_schemas import validate_document
 from .reference_requests import validated_request
 
@@ -34,7 +34,7 @@ APPEARANCE_RULES = """Apply the image-reference rules independently to each cate
 In all categories, an interaction alone does not establish a visual trait. Details
 revealed during an event may be used if already applicable when the subject appears;
 the result of a transformation happening in the sequence belongs to its animation.
-Keep one visual fact per attribute and quote the local passage as evidence."""
+Keep one visual fact per attribute and select the local evidence passage IDs."""
 TRAIT_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
@@ -74,7 +74,7 @@ def validate_observation(observation, kind=None):
             or not isinstance(observation.get("visual_traits"), list)):
         raise ValueError("Neutral visual observations are required; re-extract chapter references.")
     for trait in observation["visual_traits"]:
-        if (not isinstance(trait, dict) or set(trait) != set(TRAIT_SCHEMA["required"])
+        if (not isinstance(trait, dict) or set(trait) - {"evidence_passages"} != set(TRAIT_SCHEMA["required"])
                 or trait["scope"] not in ("intrinsic", "scene")
                 or not all(isinstance(trait[k], str) and trait[k].strip() for k in TRAIT_SCHEMA["required"])
                 or not attribute_key(trait["attribute"])):
@@ -87,26 +87,68 @@ def validate_observation(observation, kind=None):
             raise ValueError("Object visual traits require intrinsic scope.")
 
 
-def validate_evidence(result, source_input):
-    """Appearance evidence must belong to this scene, never the chapter context."""
-    text = source_input["text"]
+def evidence_index(source_input):
+    return PassageIndex(source_input["text"], f"reference:{source_input['sequence']}:{source_input.get('chunk', 1)}",
+                        offset=source_input.get("offset", 0))
+
+
+def resolve_evidence(result, source_input, *, rejected=None):
+    """Resolve current initialState/event IDs before semantic validation or persistence."""
+    index = evidence_index(source_input)
+    chunk = source_input.get("chunk", 1)
+    if not isinstance(result, dict):
+        raise ValueError("Reference extraction requires a structured object.")
+    result = deepcopy(result)
+
+    def selections(row):
+        return [{**span, "chunk": chunk} for span in index.resolve(row.pop("evidence_passage_ids", None))]
+
+    def reject(path, error):
+        if rejected is None:
+            raise ValueError(f"{path}: select supporting evidence IDs from this source chunk. {error}") from error
+        rejected.append(path)
+
     for kind in ("characters", "locations", "objects"):
-        for index, observation in enumerate(result.get(kind, [])):
+        retained = []
+        rows = result.get(kind, [])
+        if not isinstance(rows, list):
+            reject(kind, ValueError("Expected an array of observations."))
+            rows = []
+        for number, observation in enumerate(rows):
+            path = f"{kind}[{number}]"
+            try:
+                if not isinstance(observation, dict) or not isinstance(observation.get("visual_traits"), list):
+                    raise ValueError("Invalid reference observation.")
+                passages = selections(observation)
+                observation["evidence"] = [row["text"] for row in passages]
+                observation["evidence_passages"] = passages
+            except (KeyError, TypeError, ValueError) as exc:
+                reject(path + ".evidence_passage_ids", exc)
+                continue
+            traits = observation["visual_traits"]
+            observation["visual_traits"] = []
+            for trait_number, trait in enumerate(traits):
+                try:
+                    if not isinstance(trait, dict):
+                        raise ValueError("Invalid visual trait.")
+                    passages = selections(trait)
+                    trait["evidence"] = passages[0]["text"]
+                    trait["evidence_passages"] = passages
+                    validate_observation({**observation, "visual_traits": [trait]}, kind)
+                except (KeyError, TypeError, ValueError) as exc:
+                    reject(f"{path}.visual_traits[{trait_number}]", exc)
+                else:
+                    observation["visual_traits"].append(trait)
             try:
                 validate_observation(observation, kind)
+                if not isinstance(observation.get("canonical_name"), str) or not observation["canonical_name"].strip():
+                    raise ValueError("An observation needs its supported name.")
             except ValueError as exc:
-                raise ValueError(f"{kind}[{index}]: {exc}") from exc
-            for trait_index, trait in enumerate(observation["visual_traits"]):
-                restored = restore_quote(text, trait["evidence"])
-                if restored is None:
-                    raise ValueError(
-                        f"{kind}[{index}].visual_traits[{trait_index}].evidence: "
-                        "Visual trait evidence must quote the local passage, never another scene. "
-                        f"Rejected quotation: {json.dumps(trait['evidence'], ensure_ascii=False)}. "
-                        "Copy an exact contiguous quotation from source_input.text (or text), "
-                        "preserving spelling, punctuation and whitespace. Do not paraphrase or join excerpts. "
-                        "If the trait has no local support, omit that trait; never invent replacement evidence.")
-                trait["evidence"] = restored
+                reject(path, exc)
+            else:
+                retained.append(observation)
+        result[kind] = retained
+    return result
 
 
 def compile_reference(timeline, diagnostics, identity, groups=()):

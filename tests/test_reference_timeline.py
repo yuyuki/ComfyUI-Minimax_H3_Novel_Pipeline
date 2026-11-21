@@ -33,11 +33,21 @@ def catalog(cid="chapter", kind="characters", name="Indy", alias=None):
 def mocked_reconcile(monkeypatch):
     calls = []
     def chat(client, model, system, user, schema, *args):
-        incoming = json.loads(user.split("INCOMING:\n", 1)[1].split("\n\nCANDIDATES:", 1)[0])
-        candidates = json.loads(user.split("CANDIDATES:\n", 1)[1])
-        calls.append(user)
-        return {"resolutions": [{**item, "match_global_id": candidates[item["local_id"]][0]["global_id"]
-                                if candidates[item["local_id"]] else "NEW"} for item in incoming]}
+        data = json.JSONDecoder().raw_decode(user)[0]
+        if schema == step.IDENTITY_REVIEW_SCHEMA:
+            return {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"}
+                                  for row in data["decisions"]]}
+        incoming, candidates = data["incoming"], data["candidates"]
+        calls.append(data)
+        resolutions = []
+        fields = set(step.reconciliation_item_schema()["properties"])
+        for item in incoming:
+            lid = item["local_id"]
+            match = candidates[lid][0]["global_id"] if candidates[lid] else "NEW"
+            selected = [row["id"] for row in data["source_passages"] if row["entity"] in {lid, match}] if match != "NEW" else []
+            resolutions.append({**{key: value for key, value in item.items() if key in fields},
+                                "match_global_id": match, "passage_ids": selected, "reason": "", "confidence": 1})
+        return {"resolutions": resolutions}
     monkeypatch.setattr(step, "chat_json", chat)
     args = SimpleNamespace(candidate_count=12, include_all_below=35, temperature=0.1, max_tokens=8000)
     def run(chapter, registry=None):
@@ -61,7 +71,8 @@ def test_identity_and_exact_states_never_flatten(mocked_reconcile, kind):
     assert source_observations_at(entity, "missing", 1) == []
     assert entity["stable_visual_description"] == source[kind][0]["stable_visual_description"]
     assert entity["distinguishing_features"] == ["Permanent mark"]
-    assert all(word not in calls[0] for word in ("torch", "eyes closed", "empty hands", "looks upward"))
+    assert any(row["text"] == "empty hands" for row in calls[0]["source_passages"])
+    assert all(word not in json.dumps(calls[0]["incoming"]) for word in ("torch", "eyes closed", "empty hands", "looks upward"))
     assert "chapter_variations" not in entity
     result = source_observations_at(entity, "chapter", 1)
     result.clear()
@@ -81,7 +92,9 @@ def test_aliases_across_chapters_and_stable_observations(mocked_reconcile):
     assert entity["first_chapter_id"] == "chapter-Z"
     assert source_observations_at(entity, "chapter-A", 1)[0]["evidence"] == ["wears a disguise"]
     assert source_observations_at(entity, "chapter-Z", 1)[0]["evidence"] == ["empty hands"]
-    assert "Low voice" in calls[1] and "wears a disguise" not in calls[1]
+    assert "Low voice" in json.dumps(calls[1]["incoming"])
+    assert any(row["text"] == "wears a disguise" and row["chapter"] == "chapter-A"
+               for row in calls[1]["source_passages"])
     assert step.build_chapter_map(registry) == {"chapter-Z": {"LOCAL_1": "CHAR_001"}, "chapter-A": {"LOCAL_1": "CHAR_001"}}
 
 
@@ -186,7 +199,9 @@ def test_invalid_identity_resolutions_retry_without_losing_observations(monkeypa
     calls = []
     def chat(*args):
         calls.append(args)
-        resolution = {"local_id": "LOCAL_1", "entity_type": "character", "match_global_id": "NEW"}
+        item = json.JSONDecoder().raw_decode(args[3])[0]["incoming"][0]
+        resolution = {**{key: value for key, value in item.items() if key in step.reconciliation_item_schema()["properties"]},
+                      "match_global_id": "NEW", "passage_ids": [], "reason": "", "confidence": 1}
         if len(calls) > 1:
             return {"resolutions": [resolution]}
         if mode == "missing":

@@ -6,6 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as adaptation
 from minimax_h3_novel_pipeline.nodes import cinematic_chapter_adapter as adapter
 from minimax_h3_novel_pipeline.core import path_access
@@ -14,7 +16,7 @@ from minimax_h3_novel_pipeline.core import path_access
 @pytest.fixture(autouse=True)
 def accept_semantics(monkeypatch):
     # These tests isolate structural recovery; semantic review has dedicated tests.
-    monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *args: {})
+    monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *args, **kwargs: {})
 
 
 def _sequence(source, initial="Before.", final="After."):
@@ -45,7 +47,7 @@ def test_source_metadata_in_events_is_regenerated(monkeypatch, metadata):
         item["events"] = ["Il attend.", metadata] if len(calls) == 1 else ["Il attend."]
         return {"sequences": [item]}
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
                                       temperature=0.15, max_tokens=8192, correction_attempts=1)
     assert len(calls) == 2
@@ -57,7 +59,7 @@ def test_source_metadata_in_events_is_regenerated(monkeypatch, metadata):
 def test_source_metadata_cannot_be_saved_when_corrections_exhausted(monkeypatch):
     item = _sequence("Il attend.")
     item["events"] = ["source_excerpt: Il attend."]
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", lambda *args: {"sequences": [item]})
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [item]}))
     with pytest.raises(ValueError, match="source_excerpt metadata"):
         adaptation.adapt_chapter(None, "mock", "Il attend.", chunk_chars=4000,
                                  temperature=0.15, max_tokens=8192, correction_attempts=0)
@@ -78,7 +80,7 @@ def test_long_passage_recovers_after_corrections_with_lossless_continuity(monkey
         accepted.append((payload, final))
         return _response([_sequence(passage, payload["previous_final_state"] or "Before.", final)], schema)
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
                                       temperature=0.15, max_tokens=8192, correction_attempts=1)
     assert "".join(item["source"] for item in result["sequences"]) == source
@@ -99,7 +101,7 @@ def test_correction_success_does_not_split_passage(monkeypatch):
         prompts.append(args[3])
         return {"sequences": [_sequence("Wrong." if len(prompts) == 1 else source)]}
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
                                       temperature=0.15, max_tokens=8192, correction_attempts=1)
     assert len(prompts) == 2
@@ -107,7 +109,7 @@ def test_correction_success_does_not_split_passage(monkeypatch):
     assert result["sequences"][0]["source"] == source
 
 
-@pytest.mark.parametrize("invalid_source", ["Il part.", "Il attend."])
+@pytest.mark.parametrize("invalid_source", ["Il part."])
 def test_recovery_remains_bounded_and_rejects_invalid_fallback(monkeypatch, invalid_source):
     requests = []
 
@@ -115,41 +117,12 @@ def test_recovery_remains_bounded_and_rejects_invalid_fallback(monkeypatch, inva
         requests.append(args[3])
         return _response([_sequence(invalid_source)], args[4])
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ValueError, match="Cinematic adaptation at source character 1/3300: Source excerpts"):
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
+    with pytest.raises(ValueError, match="Cinematic adaptation at source character 1/3300: Source"):
         adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
                                  temperature=0.15, max_tokens=8192, correction_attempts=1)
     # Two attempts for each window, bounded span repair and bounded rebuild.
-    assert len(requests) == 10
-
-
-@pytest.mark.parametrize("invalid_source", ["Translated source.", "Il attend."])
-def test_copy_failure_regenerates_whole_passage_and_preserves_continuity(monkeypatch, invalid_source):
-    source = "Il attend. Il crie.\n\nIl part."
-    requests = []
-
-    def chat(client, model, system, prompt, schema, *args):
-        payload, _ = json.JSONDecoder().raw_decode(prompt)
-        requests.append((schema["name"], payload))
-        if payload["current_passage"].strip() == "Il part.":
-            assert payload["previous_final_state"] == "Il a crié."
-            return {"sequences": [_sequence("Il part.")]}
-        if len(requests) > 2:
-            return _response([{"source": payload["current_passage"], "initial_state": "Il est debout.", "events": ["Il attend.", "Il crie."],
-                               "final_state": "Il a crié."}], schema)
-        return _response([_sequence(invalid_source)], schema)
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
-    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=20,
-                                      temperature=0.15, max_tokens=8192, correction_attempts=1)
-    assert "".join(item["source"] for item in result["sequences"]) == source
-    assert [item["sequence"] for item in result["sequences"]] == [1, 2]
-    assert result["sequences"][0]["adaptation"]["event"] == "1. Il attend.\n2. Il crie."
-    assert [name for name, _ in requests] == [
-        "cinematic_chapter_window", "cinematic_chapter_window",
-        "cinematic_source_spans", "cinematic_source_spans",
-        "cinematic_chapter_window", "cinematic_chapter_adaptation",
-    ]
+    assert len(requests) == 6
 
 
 @pytest.mark.parametrize("error", [RuntimeError("network failure"), ValueError("invalid client configuration"), KeyboardInterrupt()])
@@ -160,7 +133,7 @@ def test_request_errors_do_not_trigger_subdivision(monkeypatch, error):
         requests.append(args[3])
         raise error
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(type(error)):
         adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
                                  temperature=0.15, max_tokens=8192, correction_attempts=1)
@@ -184,7 +157,7 @@ def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monk
         return {"sequences": [{"source": "Il part.", "initial_state": "Il a crié.",
                                "events": ["Il part."], "final_state": "Il est parti."}]}
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=20,
                                       temperature=0.15, max_tokens=8192, correction_attempts=0,
                                       chapter_name="Chapitre 1 — Le départ")
@@ -215,16 +188,16 @@ def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
     def chat(*args):
         calls.append(args)
         fields = {"initial_state": "Il est ici.", "events": ["Il part."], "final_state": "Il est parti."}
-        return {"sequences": [{"source": "Incorrect." if copy_failure and len(calls) <= 3 else source, **fields}]}
+        return {"sequences": [{"source": "Incorrect." if copy_failure and len(calls) == 1 else source, **fields}]}
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
 
     response = adapter.CinematicChapterAdapterNode().run(
         {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(chapter)]},
     )
     chapters, saved_files = response["result"]
-    assert adapter.CinematicChapterAdapterNode.INPUT_TYPES()["required"]["max_tokens"][1]["default"] == 16384
-    assert all(call[6] == 16384 for call in calls)
+    assert adapter.CinematicChapterAdapterNode.INPUT_TYPES()["required"]["max_tokens"][1]["default"] == 32768
+    assert all(call[6] == 32768 for call in calls)
     assert json.loads(response["ui"]["text"][0]) == chapters
     assert "Il est parti." in response["ui"]["text"][0]
     saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))

@@ -6,17 +6,15 @@ from unittest.mock import Mock
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import source_text as st
 from minimax_h3_novel_pipeline.core import character_chapter_enrichment as ce
 from minimax_h3_novel_pipeline.core import character_evidence as evidence
 from minimax_h3_novel_pipeline.core import character_profiles as profiles
-from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
-from minimax_h3_novel_pipeline.core import cinematic_scene_planning as planning
-from minimax_h3_novel_pipeline.core import reference_visuals
 from minimax_h3_novel_pipeline.core import lmstudio_json, path_access, util
 from tests.test_character_evidence import observation
 from tests.test_character_profiles import document
-from tests.test_cinematic_scene_planning import scene, plan, fact
 from tests.test_character_evidence import settings
 from tests.test_structured_json import Stream, client_for, SCHEMA
 
@@ -35,7 +33,6 @@ def test_equivalent_quotes_use_only_normalized_offsets(original, quote):
     assert start == len("Before.\n")
     assert st.contains(text, quote)
     assert st.comparison_text(original) == st.comparison_text(quote)
-    assert st.restore_quote(text, quote) == st.normalize(original)
     assert st.normalize(st.normalize(original)) == st.normalize(original)
 
 
@@ -47,14 +44,12 @@ def test_source_comparisons_reject_changes_and_empty_quotes(quote):
     source = "L’homme est là."
     assert not st.contains(source, quote)
     assert st.source_span(source, quote) is None
-    assert st.restore_quote(source, quote) is None
 
 
 def test_typography_equivalence_does_not_hide_ambiguous_locations():
     source = "L’homme attend. L'homme attend."
     assert st.source_span(source, "L'homme attend.") is None
     assert len(st.source_spans(source, "L'homme attend.")) == 2
-    assert st.restore_quote(source, "L'homme attend.") == "L'homme attend."
     assert st.source_span("aaaa", "aaa") is None
 
 
@@ -87,41 +82,7 @@ def test_normalized_sequence_does_not_omit_temporary_evidence():
                "chronological_changes": []}
     sequence = {"source": original.replace("’", "'")}
     chapter = {"_source_text": original, "source_file": "chapter.md"}
-    assert ce.state_candidates(profile, chapter, sequence)[0]["evidence_ids"] == ["e1"]
-
-
-def test_local_reference_evidence_uses_normalized_source():
-    original = "L’homme porte un pantalon vert."
-    trait = {"attribute": "wardrobe_trousers_color", "description": "vert", "scope": "scene",
-             "evidence": original.replace("’", "'")}
-    result = {"characters": [{"presence": "visible", "visual_traits": [trait]}]}
-    reference_visuals.validate_evidence(result, {"text": original})
-    assert trait["evidence"] == st.normalize(original)
-    trait["evidence"] = "L’homme porte un pantalon bleu."
-    with pytest.raises(ValueError):
-        reference_visuals.validate_evidence(result, {"text": original})
-
-
-def test_planning_restores_quotes_and_ordered_fragments_without_mutating_input():
-    original = "L’homme\u00a0s’arrête."
-    current = scene(original, events=[original])
-    proposed = plan(current, updates=[fact("L'homme s'arrête.")],
-                    reset=True, reset_evidence="L'homme s'arrête.")
-    proposed["timing"]["beats"][0]["events"][0]["text"] = "L'homme s'arrête."
-    snapshot = deepcopy(proposed)
-    checked = planning.validate(proposed, current)
-    assert checked["continuity"]["updates"][0]["source_quote"] == st.normalize(original)
-    assert checked["continuity"]["reset_evidence"] == st.normalize(original)
-    assert checked["timing"]["beats"][0]["events"][0]["text"] == st.normalize(original)
-    assert proposed == snapshot
-
-
-def test_adaptation_restores_whitespace_and_consumes_actual_source_length():
-    original = "Il  attend.\n\nIl  part."
-    result, consumed = ca._validated_window({"sequences": [scene("Il attend.")],
-                                            "unprocessed_source": "Il part."}, original)
-    assert consumed == len("Il  attend.")
-    assert "".join(s["source"] for s in result) + original[consumed:] == original
+    assert ce.state_candidates(profile, chapter, sequence, 0)[0]["evidence_ids"] == ["e1"]
 
 
 def test_both_readers_model_prompts_and_saved_locations_use_the_same_source(tmp_path, monkeypatch):
@@ -142,7 +103,7 @@ def test_both_readers_model_prompts_and_saved_locations_use_the_same_source(tmp_
         assert "\r" not in prompt and "’" not in prompt
         return {"evidence": [observation(quote)]}
 
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(evidence, "audit_observations", lambda rows, *args: rows)
     chapter = evidence.extract_chapter(path, tmp_path / "output", None, "qwen", settings(), 1)
     assert chapter["source_text"] == expected
@@ -184,6 +145,6 @@ def test_old_or_inconsistent_source_bases_are_rejected_without_rebasing(change, 
 
 def test_shared_transport_normalizes_all_model_text_before_returning_it():
     raw = 'E\u0301lise\u00a0s’arrête.\r\n« Oui. »'
-    client, _ = client_for(Stream([json.dumps({"value": raw})]))
+    client, _ = client_for(Stream([json.dumps({"value": raw})]), passage_fixtures=True)
     result = lmstudio_json.chat_json(client, "qwen", "Return data.", "Source.", SCHEMA, 0.1, 1024)
     assert result == {"value": st.normalize(raw)}

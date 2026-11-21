@@ -12,6 +12,7 @@ from minimax_h3_novel_pipeline.core.character_profile_document import make_docum
 from minimax_h3_novel_pipeline.core import path_access
 from minimax_h3_novel_pipeline.nodes import LoadCharacterProfilesNode
 from minimax_h3_novel_pipeline.nodes import consolidate_character_profiles as node
+from tests.passages_helpers import with_passage_ids
 from tests.test_character_profiles import document, group, plan, settings
 from tests.test_character_evidence import observation
 from tests.test_structured_json import Stream, client_for
@@ -79,13 +80,13 @@ def fake_model(*args):
         else:
             relation = "independent" if job["left"]["observation"]["persistence"] == "temporary" else "conflict"
             decisions.append({"job_id": job["job_id"], "relation": relation, "scope": "same_story_period",
-                              **dict.fromkeys(("before_id", "after_id", "support_id", "temporal_quote"), "")})
+                              "temporal_passage_ids": [], **dict.fromkeys(("before_id", "after_id", "support_id"), "")})
     return {"decisions": decisions}
 
 
 def run(data, workspace, monkeypatch, **kwargs):
     chat = Mock(side_effect=fake_model)
-    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", with_passage_ids(chat))
     result, saved = cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings(**kwargs))
     return result, saved, chat
 
@@ -199,7 +200,8 @@ def test_explicit_chronology_and_uncertainty_are_not_global(workspace, monkeypat
                 decision["relation"] = relation
                 if relation == "change":
                     decision.update(before_id=job["left"]["evidence_id"], after_id=job["right"]["evidence_id"],
-                                    support_id=job["right"]["evidence_id"], temporal_quote="Après la guérison")
+                                    support_id=job["right"]["evidence_id"],
+                                    temporal_passage_ids=[job["temporal_passages"][job["right"]["evidence_id"]][0]["id"]])
         return result
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", chronology)
     result, _ = cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings())
@@ -218,10 +220,10 @@ def test_explicit_chronology_and_uncertainty_are_not_global(workspace, monkeypat
      {"decisions": [{"job_id": k, "relation": "uncertain", "left_support": [0], "right_support": [0]} for k in ("e1", "e2")]}),
     (batches.RELATIONS, {"jobs": [{"job_id": "e1"}, {"job_id": "e2"}]},
      {"decisions": [{"job_id": k, "relation": "uncertain", "scope": "unknown",
-        **dict.fromkeys(("before_id", "after_id", "support_id", "temporal_quote"), "")} for k in ("e1", "e2")]}),
+        "temporal_passage_ids": [], **dict.fromkeys(("before_id", "after_id", "support_id"), "")} for k in ("e1", "e2")]}),
 ])
 def test_actual_transport_compact_retry_preserves_schema_and_ids(workspace, contract, payload, response):
-    client, create = client_for(Stream(['{']), Stream([json.dumps(response)]))
+    client, create = client_for(Stream(['{']), Stream([json.dumps(response)]), passage_fixtures=True)
     requests = batches.Requests(workspace, client, "qwen3.5", settings())
     assert requests.call("Keep all IDs", contract, payload, lambda result: None) == response
     assert create.call_count == 2
@@ -256,7 +258,7 @@ def test_empty_identity_profile_corrected_with_schema_and_full_evidence(workspac
     payload = {"observations": [batches.compact_record(key, item) for key, item in records.items()]}
     invalid = {"profiles": [group(ids), group([])]}
     corrected = plan(ids)
-    client, create = client_for(Stream([json.dumps(invalid)]), Stream([json.dumps(corrected)]))
+    client, create = client_for(Stream([json.dumps(invalid)]), Stream([json.dumps(corrected)]), passage_fixtures=True)
     requests = batches.Requests(workspace, client, "qwen3.5", settings())
     check = lambda result: cp.build_profiles(result, records)
     result = requests.call(cp.SYSTEM, cp.SCHEMA, payload, check)
@@ -279,7 +281,7 @@ def test_empty_identity_profile_corrected_with_schema_and_full_evidence(workspac
 def test_repeated_empty_identity_profile_warns_without_cache(workspace, monkeypatch, caplog):
     records = cp.prepare_evidence(document(observation()))
     chat = Mock(return_value={"profiles": [group([])]})
-    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", with_passage_ids(chat))
     requests = batches.Requests(workspace, None, "qwen", settings(correction_attempts=2))
     payload = {"observations": [batches.compact_record(key, item) for key, item in records.items()]}
     assert requests.call(cp.SYSTEM, cp.SCHEMA, payload, lambda result: cp.build_profiles(result, records)) is None
@@ -396,7 +398,7 @@ def test_cancel_between_batches_resumes_completed_requests(workspace, monkeypatc
     assert len(list((workspace / ".cache").glob("*.json"))) == 1
     assert not (workspace / "character_profiles.json").exists()
     chat = Mock(side_effect=fake_model)
-    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", with_passage_ids(chat))
     cp.consolidate(data, records, workspace, None, "qwen", settings())
     assert [call.args[4] for call in chat.call_args_list] == [batches.TRAITS]
 
@@ -404,7 +406,7 @@ def test_cancel_between_batches_resumes_completed_requests(workspace, monkeypatc
 def test_oversized_observation_fails_before_network(workspace, monkeypatch):
     data = document(observation("Élise " + "x" * 100000))
     chat = Mock()
-    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(ValueError, match="No evidence was truncated"):
         cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings(context_tokens=24000, max_tokens=1024))
     chat.assert_not_called()
@@ -503,7 +505,7 @@ def test_node_budget_settings_and_configuration(workspace, monkeypatch, family, 
 
 def test_cache_invalidation_for_changed_evidence_and_force(workspace, monkeypatch):
     chat = Mock(side_effect=fake_model)
-    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", with_passage_ids(chat))
     data = document(observation())
     first, _ = cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings())
     assert chat.call_count == 2
@@ -535,7 +537,7 @@ def test_invented_temporal_quote_is_rejected(workspace, monkeypatch):
             for decision, job in zip(result["decisions"], payload["jobs"]):
                 decision.update(relation="change", before_id=job["left"]["evidence_id"],
                                 after_id=job["right"]["evidence_id"], support_id=job["right"]["evidence_id"],
-                                temporal_quote="Invented healing chronology")
+                                temporal_passage_ids=["invented-chronology-passage"])
         return result
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", fabricated)
     result, saved = cp.consolidate(data, cp.prepare_evidence(data), workspace, None, "qwen", settings())
@@ -546,4 +548,4 @@ def test_invented_temporal_quote_is_rejected(workspace, monkeypatch):
     assert not profile["global_traits"]
     assert profile["trait_relations"][0]["relation"] == "uncertain"
     report = json.loads((workspace / "character_profiles_requests.json").read_text())
-    assert "exact explicit" in report["warnings"][0]["reason"]
+    assert "authorized source" in report["warnings"][0]["reason"]

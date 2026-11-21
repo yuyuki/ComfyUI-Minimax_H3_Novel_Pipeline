@@ -6,6 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, narrative_validation as nv
 
 
@@ -25,7 +27,7 @@ def test_review_budget_is_scoped_and_previous_scene_crosses_windows(monkeypatch,
 
     def chat(client, model, system, prompt, schema, temperature, max_tokens):
         data = json.loads(prompt)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             assert max_tokens == expected
             assert ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == expected
             assert "at most 8 seconds" in system
@@ -38,7 +40,7 @@ def test_review_budget_is_scoped_and_previous_scene_crosses_windows(monkeypatch,
             result["unprocessed_source"] = ""
         return result
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", source, chunk_chars=11, temperature=0.1,
                               max_tokens=budget, correction_attempts=0)
     assert len(reviews) == 2
@@ -58,25 +60,25 @@ def test_local_correction_rechecks_only_changed_scene_and_successor(monkeypatch)
     def chat(client, model, system, prompt, schema, *args):
         assert schema["strict"] is True
         data = json.loads(prompt)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             reviews.append(deepcopy(data))
             return {"issues": [{"target": i + 1, "message": "Wrong ending."}
                                for i, s in enumerate(data["sequences"]) if s["final_state"] == "Wrong."]}
         if "rejected_adaptation" in data:
             repairs.append(data)
-            assert data["current_passage"] == fields[3]["source"]
-            assert data["previous_sequence"]["source"] == fields[2]["source"]
+            assert data["current_passage"].strip() == fields[3]["source"].strip()
+            assert data["previous_sequence"]["source"].strip() == fields[2]["source"].strip()
             assert data["previous_sequence"]["final_state"] == fields[2]["final_state"]
             assert "neighboring_sequences" not in data
             assert "next_sequence" not in data
             return {"sequences": [scene(data["current_passage"], "Correct.")]}
         return {"sequences": deepcopy(fields)}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = run("".join(s["source"] for s in fields))
     assert len(repairs) == 1
     assert [len(r["sequences"]) for r in reviews] == [1] * 8
-    assert [r["sequences"][0]["source"] for r in reviews] == [fields[i]["source"] for i in (0, 1, 2, 3, 3, 4, 5, 6)]
+    assert [r["sequences"][0]["source"].strip() for r in reviews] == [fields[i]["source"].strip() for i in (0, 1, 2, 3, 3, 4, 5, 6)]
     assert all("next_sequence" not in r for r in reviews)
     assert result["sequences"][3]["adaptation"]["endingState"] == "Correct."
     assert "".join(s["source"] for s in result["sequences"]) == "".join(s["source"] for s in fields)
@@ -90,7 +92,7 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
     snapshots = []
 
     def chat(client, model, system, prompt, schema, *args):
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": 1, "message": "Check scene four."}]
                     if json.loads(prompt)["sequences"][0]["source"] == fields[3]["source"] else []}
         return {"sequences": deepcopy(fields)}
@@ -101,7 +103,7 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
             raise RuntimeError("interrupted")
 
     source = "".join(s["source"] for s in fields)
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(RuntimeError, match="interrupted"):
         run(source, on_checkpoint=stop_after_review)
     saved = snapshots[-1]
@@ -110,14 +112,14 @@ def test_resume_reuses_only_reviews_with_identical_context(monkeypatch, change_c
         saved["sequences"][-1]["adaptation"]["endingState"] = "Changed."
     reviews = []
 
-    def review(chat, client, model, payload, count, tokens):
+    def review(chat, client, model, payload, count, tokens, **kwargs):
         reviews.append(deepcopy(payload))
         return {}
 
     monkeypatch.setattr(ca.narrative_validation, "review", review)
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No generation expected"))
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: pytest.fail("No generation expected")))
     result = run(source, resume_state=saved)
-    assert [s["source"] for r in reviews for s in r["sequences"]] == [s["source"] for s in fields[2 if change_context else 3:]]
+    assert [s["source"].strip() for r in reviews for s in r["sequences"]] == [s["source"].strip() for s in fields[2 if change_context else 3:]]
     assert len(result["sequences"]) == 4
 
 
@@ -130,7 +132,7 @@ def test_learned_window_avoids_repeated_large_failures_and_survives_resume(monke
     def chat(client, model, system, prompt, schema, *args):
         nonlocal accepted
         assert schema["strict"]
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": []}
         payload, _ = json.JSONDecoder().raw_decode(prompt)
         passage = payload["current_passage"]
@@ -152,7 +154,7 @@ def test_learned_window_avoids_repeated_large_failures_and_survives_resume(monke
             if accepted == 1:
                 raise RuntimeError("restart here")
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(RuntimeError, match="restart here"):
         run(source, correction_attempts=5, on_checkpoint=checkpoint)
     assert sum(n > 2000 for n in sizes) == (2 if failure == "coverage" else 1)

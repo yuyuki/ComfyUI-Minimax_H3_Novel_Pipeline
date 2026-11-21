@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import lmstudio_pipeline
 
 
@@ -41,22 +43,26 @@ def test_large_audit_is_bounded_and_rejects_unseen_ids(monkeypatch):
     step = lmstudio_pipeline.load("consolidate")
     registry = [entity(str(i), "Alice") for i in range(4)] + [entity("outside", "Castle", "location")]
     args = SimpleNamespace(no_audit=False, audit_max_entities=2, audit_cluster_size=2,
-                           audit_similarity=0.68, temperature=0.1, max_tokens=6500, delay=0)
+                           audit_similarity=0.68, temperature=0.1, max_tokens=6500, delay=0, max_attempts=1)
     calls = []
 
     def chat(client, model, system, user, *unused):
-        group = json.loads(user)
+        data = json.JSONDecoder().raw_decode(user)[0]
+        group = data["entities"]
         calls.append(group)
         return {"merge_groups": [{"keep_global_id": group[0]["global_id"],
-                                  "merge_global_ids": [group[1]["global_id"], "outside"]}]}
+                                  "merge_global_ids": [group[1]["global_id"], "outside"],
+                                  "canonical_name": group[0]["canonical_name"], "aliases": [],
+                                  "stable_visual_description": "", "distinguishing_features": [],
+                                  "voice_description": "", "reference_view_hints": [], "reason": "",
+                                  "passage_ids": ["outside"]}]}
 
-    monkeypatch.setattr(step, "chat_json", chat)
+
+    monkeypatch.setattr(step, "chat_json", with_passage_ids(chat))
     result = step.audit_registry(None, "model", registry, args)
     assert len(calls) == 2
     assert all(len(c) == 2 for c in calls)
-    assert len(result) == 3
-    assert result[-1]["global_id"] == "outside"
-    assert len(result[0]["source_entities"]) == 2
+    assert result == registry
     args.no_audit = True
     assert step.audit_registry(None, "model", registry, args) is registry
     assert len(calls) == 2
@@ -84,7 +90,7 @@ def test_extraction_uses_node_chunk_size(tmp_path, monkeypatch, model, chunk_cha
             return {"issues": []}
         extracted.append(json.loads(user)["text"])
         return {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
-    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", extract)
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", with_passage_ids(extract))
     args = SimpleNamespace(force=False, chunk_chars=chunk_chars, temperature=0.1, max_tokens=3000)
     cr.process_chapter(chapter, tmp_path, None, model, args, "chapter")
     assert len(extracted) == expected_count

@@ -21,7 +21,7 @@ class CinematicChapterAdapterNode:
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768,
                                    "tooltip": "Output budget per request for generation, timing/context planning, scene validation and focused checks. "
-                                   "Reasoning and JSON share this budget; retries cannot exceed it."}),
+                                   "Reasoning and JSON share this budget. Focused reviews and their event groups each use the selected budget."}),
             "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000,
                                     "tooltip": "Maximum source characters per reading window. Incomplete trailing scenes "
                                     "are read again with new source text. Instructions and review text add to request size."}),
@@ -105,17 +105,17 @@ class CinematicChapterAdapterNode:
                     previous_checkpoint = resume_cache / cache_dir.name / "progress.json"
                     if previous_checkpoint.is_file():
                         resume_state = util.load_json(previous_checkpoint)
-                        if (resume_state.get("schema_version") != "minimax-cinematic-checkpoint.v2"
+                        if (resume_state.get("schema_version") != cinematic_adaptation.CHECKPOINT_SCHEMA
                                 or resume_state.get("source_file") != str(path)
                                 or resume_state.get("model") != model
                                 or resume_state.get("settings") != {**settings, "thinking": bool(thinking)}):
-                            raise ValueError(f"Invalid or mismatched cinematic checkpoint for {path.name}.")
+                            raise ValueError(f"Invalid or mismatched cinematic checkpoint for {path.name}. Clear resume_run to regenerate.")
 
                 def checkpoint(state):
                     nonlocal persisted_scenes, latest_state
                     # Replace atomically so interruption leaves the last complete
                     # checkpoint readable. Drafts never masquerade as final output.
-                    data = {"schema_version": "minimax-cinematic-checkpoint.v2",
+                    data = {"schema_version": cinematic_adaptation.CHECKPOINT_SCHEMA,
                             "source_file": str(path), "model": model,
                             "settings": {**settings, "thinking": bool(thinking)}, **state}
                     pending = cache_dir / "progress.json.tmp"

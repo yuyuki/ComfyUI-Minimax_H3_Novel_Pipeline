@@ -6,6 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import progress
 from minimax_h3_novel_pipeline.core import lmstudio_pipeline
 from minimax_h3_novel_pipeline.nodes import NODE_CLASS_MAPPINGS
@@ -122,14 +124,14 @@ def test_cinematic_adaptation_advances_before_review(bars, monkeypatch, passages
             result["unprocessed_source"] = ""
         return result
 
-    def review(*args):
+    def review(*args, **kwargs):
         reviewed.append(bars[0].current)
         assert bars[0].current == int(100 * (len(reviewed) - 0.5) / passages)
         if review_fails:
             raise RuntimeError("review failed")
         return {}
 
-    monkeypatch.setattr(cinematic_adaptation.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(cinematic_adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(cinematic_adaptation.narrative_validation, "review", review)
 
     @progress.node_progress

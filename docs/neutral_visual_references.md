@@ -21,8 +21,12 @@ to animate must not be treated as already completed appearance.
 
 Each source observation records `presence` (`visible`, `offscreen`, `mentioned`)
 and `visual_traits`. Every trait has a consistent attribute key, a source-language
-description, `intrinsic` or `scene` scope, and a verbatim local evidence quotation.
-Quotations are checked against the current passage before extraction is accepted;
+description, `intrinsic` or `scene` scope, and local source evidence. Extraction
+and correction requests select passage IDs. Python resolves them to exact quotes
+with offsets in the combined initialState/event source. The existing quote field
+contains the first selected quote, and `evidence_passages` retains each selected
+passage individually. The catalog loader checks addressed citations against their
+sequence. Before extraction is accepted,
 semantic review checks relevance, neutrality, language and chronology. An individual
 trait rejected by the review is dropped if correction cannot resolve the issue.
 Chapter context disambiguates referents and categories only; it cannot establish

@@ -8,6 +8,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
 from minimax_h3_novel_pipeline.core import cinematic_references as cr
 from minimax_h3_novel_pipeline.core import narrative_validation as nv, narrative_choices as nc, path_access, util
@@ -30,7 +32,7 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
         data = json.loads(prompt)
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             reviews.append(deepcopy(data))
             return {"issues": [{"target": 1, "message": "Final state contradicts or omits source facts."}]
                     if data["sequences"][0]["final_state"] == bad else []}
@@ -39,7 +41,7 @@ def test_targeted_repair_preserves_other_sequences_and_rechecks(monkeypatch, sou
             return {"sequences": [{"source": data["current_passage"], "initial_state": second["initial_state"], "events": [source], "final_state": good}]}
         return {"sequences": deepcopy([first, second])}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", first["source"] + source, chunk_chars=4000,
                              temperature=0.15, max_tokens=1000, correction_attempts=1)
     assert len(repairs) == 1 and repairs[0]["current_passage"] == " " + source
@@ -64,12 +66,12 @@ def test_semantic_failure_is_bounded_even_for_small_fallback(monkeypatch):
         calls.append(schema["name"])
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": 1, "message": "Missing explicit action."}]}
         fields = {"initial_state": "Before.", "events": [], "final_state": "After."}
-        return {"sequences": [{"source": "Wrong copy." if calls.count(ca.SCHEMA["name"]) <= 2 else data["current_passage"], **fields}]}
+        return {"sequences": [{"source": "Wrong boundary." if "rejected_adaptation" in data else data["current_passage"], **fields}]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", "A bell rings.", chunk_chars=4000,
                               temperature=0.1, max_tokens=1000, correction_attempts=1)
     issue = result["narrative_review"]["issues"][0]
@@ -95,7 +97,7 @@ def test_final_semantic_recovery_stays_local_and_is_reviewed(monkeypatch, attemp
         data = json.loads(prompt)
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             reviews.append(deepcopy(data))
             return {"issues": [{"target": 1, "message": "Preserve the swinging motion."}]
                     if data["sequences"][0]["source"].strip() == "Indy se balance."
@@ -117,7 +119,7 @@ def test_final_semantic_recovery_stays_local_and_is_reviewed(monkeypatch, attemp
             result["unprocessed_source"] = ""
         return result
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     kwargs = dict(chunk_chars=len(source), temperature=0.15, max_tokens=1000,
                   correction_attempts=attempts)
     if not attempts:
@@ -143,7 +145,7 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
         data = json.loads(prompt)
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": i + 1, "message": "Incorrect posture."}
                                for i, s in enumerate(data["sequences"]) if s["final_state"] == "Wrong."]}
         if "rejected_adaptation" in data:
@@ -152,7 +154,7 @@ def test_targeted_repairs_use_updated_neighbor_state(monkeypatch):
                     "final_state": "Il se balance."}]}
         return {"sequences": deepcopy(sequences)}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     ca.adapt_chapter(None, "mock", "".join(s["source"] for s in sequences), chunk_chars=4000,
                      temperature=0.15, max_tokens=1000, correction_attempts=1)
     assert len(repairs) == 2
@@ -167,7 +169,7 @@ def test_duration_repair_splits_scene_and_keeps_following_target_and_state(monke
     def chat(client, model, system, prompt, schema, *args):
         assert "6" in system and "duration" in system
         data = json.loads(prompt)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": i + 1, "message": "Split excessive action or correct state."}
                                for i, s in enumerate(data["sequences"]) if s["final_state"] == "Wrong."]}
         assert schema == ca.SCHEMA and schema["strict"]
@@ -176,7 +178,7 @@ def test_duration_repair_splits_scene_and_keeps_following_target_and_state(monke
             parts = ["First.", " Second."] if len(repairs) == 1 else [sources[1]]
             return {"sequences": [{"source": s, **fields, "final_state": "Correct."} for s in parts]}
         return {"sequences": [{"source": s, **fields} for s in sources]}
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", "".join(sources), chunk_chars=4000,
                              temperature=.1, max_tokens=2000, correction_attempts=1, duration=6)
     assert result["duration"] == 6
@@ -198,45 +200,39 @@ def test_invalid_review_never_approves(response):
     assert "not an established defect" in issues[1][0]
 
 
-def test_invalid_review_preserves_valid_doubts_and_uses_safe_targets():
-    response = {"issues": [
-        {"target": 2, "message": "Missing dialogue."},
-        {"target": 2, "message": "Wrong gaze.", "extra": True},
-        {"target": 99, "message": "Missing action."},
-    ]}
-    issues = nv.review(lambda *a: response, None, "mock", {}, 2, 1000)
-    assert len(issues[1]) == 1 and "Missing action." in issues[1][0]
-    assert len(issues[2]) == 3
+def test_invalid_review_preserves_valid_doubts_and_rejects_foreign_passages():
+    def chat(client, model, system, prompt, schema, *args):
+        offers = json.loads(prompt)["review_passages"]
+        return {"issues": [
+            {"target": 2, "message": "Missing dialogue.", "passage_ids": [offers[1]["id"]]},
+            {"target": 2, "message": "Wrong gaze.", "passage_ids": [offers[0]["id"]]},
+        ]}
+
+    issues = nv.review(chat, None, "mock", {"sequences": [{"source": "Before."}, {"source": "She says hello."}]}, 2, 1000)
+    assert list(issues) == [2]
     assert issues[2][0] == "Missing dialogue."
-    assert "Wrong gaze." in issues[2][1]
-    assert "Missing action." in issues[2][2]
+    assert "not an established defect" in issues[2][1]
 
 
 @pytest.mark.parametrize("attempts", [0, 1])
-def test_malformed_reviews_reach_resolvable_proposals(monkeypatch, attempts):
+def test_malformed_reviews_remain_incomplete_without_editable_defects(monkeypatch, attempts):
     source = "A bell rings."
     calls = []
 
     def chat(client, model, system, prompt, schema, *args):
         calls.append(schema["name"])
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": 99, "message": "Missing bell."}]}
-        if schema == nc.PROPOSAL_SCHEMA:
-            assert "Missing bell." in prompt
-            return proposal_response()
-        fields = {"initial_state": "Before.", "events": [source], "final_state": "After."}
-        return {"sequences": [{"source": source, **fields}]}
+        assert schema != nc.PROPOSAL_SCHEMA
+        return {"sequences": [{"source": source, "initial_state": "Before.", "events": [source], "final_state": "After."}]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", source, chunk_chars=4000,
                              temperature=0.1, max_tokens=1000, correction_attempts=attempts)
-    issue = result["narrative_review"]["issues"][0]
-    assert issue["sequence"] == 1 and issue["source_excerpt"] == source
-    assert "Missing bell." in issue["description"]
-    assert len(issue["proposals"]) == 2
-    assert nc.resolve_chapter(result) == result
-    assert calls.count(nv.SCHEMA["name"]) == (4 if attempts else 2)
-    assert issue["proposals"][0]["review"]["status"] == "unresolved"
+    assert result["narrative_review"]["issues"] == []
+    assert result["sequences"][0]["review"]["status"] == "incomplete"
+    assert result["sequences"][0]["source"] == source
+    assert calls.count(nv.SCHEMA["name"]) == (2 if attempts else 1)
 
 
 @pytest.mark.parametrize("error", [ConnectionError("Offline"), RuntimeError("Invalid structured JSON"),
@@ -272,14 +268,14 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
     def chat(client, model, system, prompt, schema, *rest):
         data = json.loads(prompt)
         assert "NOT EXTRACTION INPUT" not in prompt
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             reviews.append(data)
             assert data["source_input"]["text"] == chapter["sequences"][0]["adaptation"]["event"]
             rejected = data["extraction"]["chunk_summary"] == "bad"
             return {"issues": [{"target": 1, "message": "Separate the basket rope from the support rope."}]
                     if rejected else []}
         if schema == cr.chapter_reference_identity.SCHEMA:
-            assert data["source_passages"][0]["text"] == chapter["sequences"][0]["adaptation"]["event"]
+            assert all(row["text"] in chapter["sequences"][0]["adaptation"]["event"] for row in data["source_passages"])
             return {"groups": []}
         assert schema == cr.lmstudio_pipeline.load("extract").CHUNK_SCHEMA
         calls.append(data)
@@ -289,7 +285,7 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
                 "objects": [{"canonical_name": name, "aliases": ["rope"]}
                             for name in ("support rope", "basket rope")]}, data.get("source_input", data)["text"])
 
-    monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json", chat)
+    monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json", with_passage_ids(chat))
     saved = cr.process_chapter(chapter, output, None, "mock", args, "scene")
     catalog = util.load_json(saved)
     assert len(catalog["objects"]) == 2
@@ -298,10 +294,10 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
     assert list(person["state_by_sequence"]["1"]) == ["source"]
     assert "extraction_issues" not in catalog["narrative_review"]
     diagnostics = util.load_json(output / "scene_references.diagnostics.json")
-    assert diagnostics["status"] == ("issues" if persistent_defect else "passed")
+    assert diagnostics["status"] == ("incomplete" if persistent_defect else "passed")
     assert len(calls) == len(reviews) == (3 if persistent_defect else 2)
     cr.process_chapter(chapter, output, None, "mock", args, "scene")
-    assert len(calls) == len(reviews) == (3 if persistent_defect else 2)
+    assert len(calls) == len(reviews) == (6 if persistent_defect else 2)
 
 
 def proposal_response():
@@ -320,7 +316,7 @@ def test_selected_proposals_are_reviewed_once_with_previous_scene(monkeypatch, r
         data = json.loads(prompt)
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             if "defects_to_recheck" in data:
                 checked.append(data)
                 assert data["sequences"][0]["final_state"] == "After."
@@ -335,7 +331,7 @@ def test_selected_proposals_are_reviewed_once_with_previous_scene(monkeypatch, r
             for source in ("He swings.", " He looks up.")
         ]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", "He swings. He looks up.", chunk_chars=4000,
                              temperature=0.1, max_tokens=1000, correction_attempts=0,
                              on_checkpoint=lambda state: snapshots.append(deepcopy(state)))
@@ -357,7 +353,7 @@ def test_proposals_keep_global_sequence_ids_and_selected_continuity(monkeypatch)
 
     def chat(client, model, system, prompt, schema, *args):
         data = json.loads(prompt)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": 1, "message": "Uncertain staging."}]}
         if schema == nc.PROPOSAL_SCHEMA:
             return proposal_response()
@@ -368,7 +364,7 @@ def test_proposals_keep_global_sequence_ids_and_selected_continuity(monkeypatch)
             response["unprocessed_source"] = ""
         return response
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = ca.adapt_chapter(None, "mock", "".join(sources), chunk_chars=len(sources[0]),
                              temperature=0.1, max_tokens=1000, correction_attempts=0)
     assert [i["sequence"] for i in result["narrative_review"]["issues"]] == [1, 2]

@@ -7,6 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 from minimax_h3_novel_pipeline.core import character_evidence, path_access
 from minimax_h3_novel_pipeline.nodes import LoadCharacterEvidenceNode as Loader
@@ -20,8 +22,11 @@ def saved(tmp_path, monkeypatch):
     source = tmp_path / "input/chapter.txt"
     source.parent.mkdir()
     source.write_bytes("Élise avait les yeux verts.  \r\n".encode())
-    chat = Mock(return_value={"evidence": [observation(), None, {}]})
-    monkeypatch.setattr(character_evidence.lmstudio_json, "chat_json", chat)
+    def chat(client, model, system, user, schema, *args):
+        if schema == character_evidence.AUDIT_SCHEMA:
+            return {"verdicts": [{"observation_index": 0, "verdict": "valid", "issue": "none"}]}
+        return {"evidence": [observation()]}
+    monkeypatch.setattr(character_evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     output = tmp_path / "output"
     chapter = character_evidence.extract_chapter(source, output, None, "qwen3.5", settings(), 1)
     data = {"format_version": character_evidence.VERSION, "location_convention": "Original offsets",

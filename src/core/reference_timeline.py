@@ -22,7 +22,9 @@ def validate_catalogs(chapters):
         if chapter.get("timeline_version") != TEMPORAL_VERSION:
             raise ValueError("Re-extract chapter catalogs with the cinematic timeline format.")
         parse_chapters([chapter])
-        sequences = {str(s["sequence"]) for s in chapter["sequences"]}
+        sequences = {str(s["sequence"]): "\n\n".join(
+            s["adaptation"][field] for field in ("initialState", "event") if s["adaptation"][field].strip())
+            for s in chapter["sequences"]}
         local_ids = set()
         for kind in ("characters", "locations", "objects"):
             if not isinstance(chapter.get(kind), list):
@@ -49,6 +51,29 @@ def validate_catalogs(chapters):
                         raise ValueError(f"{cid}/{lid}: source observations must be a non-empty object list.")
                     for observation in observations:
                         validate_observation(observation, kind)
+                        _check_passages(observation, sequences[sequence])
+
+
+def _check_passages(observation, text):
+    for row in [observation, *observation["visual_traits"]]:
+        citations = row.get("evidence_passages")
+        if citations is None:
+            continue
+        if not isinstance(citations, list) or not citations:
+            raise ValueError("Reference evidence passages must be a nonempty list.")
+        selected = []
+        for span in citations:
+            if not isinstance(span, dict) or set(span) != {"start", "end", "text", "chunk"}:
+                raise ValueError("Reference evidence passage has invalid provenance.")
+            start, end = span["start"], span["end"]
+            if (type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text)
+                    or type(span["chunk"]) is not int or span["chunk"] < 1
+                    or span["text"] != text[start:end]):
+                raise ValueError("Reference evidence passage does not match its sequence. Re-extract references.")
+            selected.append(span["text"])
+        expected = selected if row is observation else selected[0]
+        if expected != row.get("evidence"):
+            raise ValueError("Reference citations do not match their addressed passages. Re-extract references.")
 
 
 def merge_timeline(entity, timeline):

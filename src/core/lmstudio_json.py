@@ -19,7 +19,7 @@ QWEN35_LENGTH_RETRIES = lmstudio_model_qwen.DEFAULTS["length_retries"]
 QWEN35_TOP_K = lmstudio_model_qwen.DEFAULTS["top_k"]
 QWEN35_MIN_P = lmstudio_model_qwen.DEFAULTS["min_p"]
 QWEN35_REPEAT_PENALTY = lmstudio_model_qwen.DEFAULTS["repeat_penalty"]
-COMPACT_SCHEMA_VERSION = 3
+COMPACT_SCHEMA_VERSION = 4
 REQUEST_THINKING = ContextVar("lmstudio_request_thinking", default=None)
 REQUEST_OUTPUT_LIMIT = ContextVar("lmstudio_request_output_limit", default=None)
 REQUEST_METRICS = ContextVar("lmstudio_request_metrics", default=None)
@@ -104,7 +104,7 @@ def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
         if node.get("type") == "string" and "maxLength" in node and field_name in COMPACT_FIELD_LIMITS:
             node["maxLength"] = min(int(node["maxLength"]), COMPACT_FIELD_LIMITS[field_name])
         if node.get("type") == "array":
-            item_limit = {"aliases": 2, "evidence": 2}
+            item_limit = {"aliases": 2}
             # Only compact lists of short strings, never independent observations.
             if field_name in item_limit and node.get("items", {}).get("type") == "string":
                 node["maxItems"] = min(int(node.get("maxItems", item_limit[field_name])), item_limit[field_name])

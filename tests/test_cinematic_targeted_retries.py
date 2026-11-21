@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_scene_planning as planning
 from minimax_h3_novel_pipeline.core import cinematic_diagnostics as diagnostics
 
@@ -21,61 +23,6 @@ def plan():
             "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
 
 
-def test_repeated_mismatch_escalates_and_identifies_the_character():
-    prompts, records = [], []
-
-    def chat(client, model, system, user, schema, temperature, tokens):
-        prompts.append(user)
-        assert schema == planning.SCHEMA and schema["strict"] and tokens == 1000
-        value = plan()
-        if len(prompts) < 3:
-            value["timing"]["beats"][0]["events"][0]["text"] = "la corde se resserre Sous ses bras"
-        else:
-            assert "Rebuild the timing section" in user
-            assert '"attempt": 1' in user and '"attempt": 2' in user
-        return value
-
-    result = planning.assess(chat, None, "mock", scene(), [], 8, 1000, 2, on_diagnostic=records.append)
-    assert result == plan()
-    assert len(set(prompts)) == 3
-    assert [r["strategy"] for r in records] == ["initial", "targeted_correction", "rebuild_section"]
-    assert records[1]["same_failure_as_previous_attempt"] and records[1]["same_response_as_previous_attempt"]
-    assert records[0]["expected_codepoint"] == ord("s") and records[0]["received_codepoint"] == ord("S")
-    human = diagnostics.explain(records[0])
-    assert '"s" (U+0073)' in human["difference"] and '"S" (U+0053)' in human["difference"]
-    assert "expected" in human["difference"] and "received" in human["difference"]
-    assert human["suggested_action"]
-
-
-def test_quote_then_duplicate_feedback_keeps_both_constraints():
-    prompts, records = [], []
-    fact = {"entity": "corde", "aspect": "attachment", "fact": "sous les bras",
-            "source_quote": scene()["source"]}
-
-    def chat(client, model, system, user, schema, temperature, tokens):
-        prompts.append(user)
-        value = plan()
-        value["continuity"]["updates"] = [deepcopy(fact)]
-        if len(prompts) == 1:
-            value["continuity"]["updates"][0]["source_quote"] = "private rejected quotation"
-        elif len(prompts) == 2:
-            assert "EXACT contiguous substring" in user
-            value["continuity"]["updates"].append(deepcopy(fact))
-        else:
-            assert '"conflicting_update_indices": [0, 1]' in user
-            assert '"aspect": "attachment"' in user
-            assert "at most ONE" in user
-            assert "source_quote_mismatch" in user and "duplicate_entity_aspect" in user
-        assert "private rejected quotation" not in user
-        return value
-
-    planning.assess(chat, None, "mock", scene(), [], 8, 1000, 2, on_diagnostic=records.append)
-    assert records[1]["conflicting_update_indices"] == [0, 1]
-    assert records[1]["identical_updates"]
-    assert records[-1]["status"] == "completed"
-    assert "private rejected quotation" not in json.dumps(records)
-
-
 def test_repetition_budget_remains_bounded_and_does_not_approve():
     records = []
 
@@ -85,7 +32,7 @@ def test_repetition_budget_remains_bounded_and_does_not_approve():
         return value
 
     with pytest.raises(planning._PlanningValidationError):
-        planning.assess(chat, None, "mock", scene(), [], 8, 1000, 2, on_diagnostic=records.append)
+        planning.assess(with_passage_ids(chat), None, "mock", scene(), [], 8, 1000, 2, on_diagnostic=records.append)
     assert len(records) == 3 and all(r["status"] == "failed" for r in records)
 
 
@@ -138,7 +85,7 @@ def test_node_persists_sidecar_during_retry_and_exports_only_chapter_data(tmp_pa
 
     def chat(client, model, system, user, schema, *args):
         nonlocal calls
-        if schema == planning.SCHEMA:
+        if schema["name"] == planning.SCHEMA["name"]:
             calls += 1
             value = plan()
             if calls == 1:
@@ -146,14 +93,14 @@ def test_node_persists_sidecar_during_retry_and_exports_only_chapter_data(tmp_pa
             else:
                 saved = json.loads(sidecar_path.read_text(encoding="utf-8"))
                 assert saved["summary"]["failed_planning_attempts"] == 1
-                assert saved["planning_attempts"][0]["difference"]
+                assert saved["planning_attempts"][0]["field_path"].startswith("/timing")
                 assert not list(output.glob("*.cinematic.json"))
                 if interrupted:
                     raise KeyboardInterrupt()
             return value
-        return {"issues": []} if schema == nv.SCHEMA else {"sequences": [{**scene(), "source": source}]}
+        return {"issues": []} if schema["name"] == nv.SCHEMA["name"] else {"sequences": [{**scene(), "source": source}]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
 
     def run():
         return adapter.CinematicChapterAdapterNode().run(

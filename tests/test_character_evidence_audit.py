@@ -4,6 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import character_evidence as evidence
 from minimax_h3_novel_pipeline.core import character_profiles, path_access
 from tests.test_character_evidence import observation, settings
@@ -24,7 +26,7 @@ def verdicts(*issues):
 ])
 def test_rejected_exact_quote_cannot_enter_consolidation(monkeypatch, quote, value, issue):
     chat = Mock(return_value=verdicts([issue]))
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     items = evidence.audit_observations([observation(quote, value=value)], [quote],
                                        None, "qwen", settings(), {"llm_calls": 0})
     assert items[0]["warnings"]
@@ -49,7 +51,7 @@ def test_audit_transport_retry_preserves_all_observations_and_schema():
 
 
 def test_failed_audit_retains_every_observation_for_review(monkeypatch):
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(return_value=verdicts([], [])))
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(Mock(return_value=verdicts([], []))))
     result = evidence.audit_observations([observation()], ["source"], None, "qwen",
                                          settings(correction_attempts=0), {"llm_calls": 0})
     assert len(result) == 1
@@ -77,29 +79,30 @@ def test_gemma_audit_constrains_coverage_and_corrects_invalid_verdicts():
     assert "maxItems" not in evidence.AUDIT_SCHEMA["schema"]["properties"]["verdicts"]
 
 
-def test_repair_audit_and_cache_integration(tmp_path, monkeypatch):
+def test_exact_unsupported_observation_is_rechecked_and_stays_incomplete(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     quote = "Élise portait une chemise blanche."
-    invalid = observation('"' + quote + '"', value="blonde hair")
-    chat = Mock(side_effect=[{"evidence": [invalid]}, verdicts(["Shirt does not support hair color"])])
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    invalid = observation(quote, value="blonde hair")
+    chat = Mock(side_effect=[{"evidence": [invalid]}, verdicts(["Shirt does not support hair color"])] * 2)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     args = settings(character_scope="all_characters")
-    path = tmp_path / "chapter.txt"
-    result = evidence.extract_chapter(path, tmp_path, None, "qwen", args, 1,
-                                      source=(quote, "normalized_utf8_text"))
-    assert result["evidence"][0]["extraction_correction"]
+    diagnostics = []
+    result = evidence.extract_chapter(tmp_path / "chapter.txt", tmp_path, None, "qwen", args, 1,
+                                      source=(quote, "normalized_utf8_text"), diagnostics=diagnostics)
     assert result["evidence"][0]["warnings"]
-    assert evidence.extract_chapter(path, tmp_path, None, "qwen", args, 1,
-                                    source=(quote, "normalized_utf8_text")) == result
-    assert chat.call_count == 2
+    assert diagnostics[0]["status"] == "incomplete"
+    assert diagnostics[0]["semantic_support_checks"][0]["status"] == "incomplete"
+    assert not list((tmp_path / ".cache").glob("*.json"))
+    assert chat.call_count == 4
     assert next(iter(character_profiles.prepare_evidence({"format_version": evidence.VERSION,
         "location_convention": "offsets", "chapters": [result]}).values()))["validation_confidence"] == "low"
+
 
 
 def test_audit_cancellation_propagates(monkeypatch):
     class InterruptProcessingException(RuntimeError):
         pass
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(side_effect=InterruptProcessingException()))
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(Mock(side_effect=InterruptProcessingException())))
     with pytest.raises(InterruptProcessingException):
         evidence.audit_observations([observation()], ["source"], None, "qwen", settings(), {"llm_calls": 0})
     assert evidence.lmstudio_json.REQUEST_THINKING.get() is None
@@ -121,7 +124,7 @@ def test_audit_compact_transport_retry_keeps_all_observations(monkeypatch):
                                          ("valid", "This observation passes all checks.")])
 def test_audit_rejects_inconsistent_verdicts(monkeypatch, status, issue):
     response = {"verdicts": [{"observation_index": 0, "verdict": status, "issue": issue}]}
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(return_value=response))
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(Mock(return_value=response)))
     item = evidence.audit_observations([observation()], ["source"], None, "qwen",
                                        settings(correction_attempts=0), {"llm_calls": 0})[0]
     assert item["semantic_review"]["verdict"] == "uncertain"
@@ -134,7 +137,7 @@ def test_audit_thinking_override_is_scoped_and_restored(monkeypatch):
         assert evidence.lmstudio_json.model_settings(client, model)[1]["thinking"] is False
         assert budget == 512
         return verdicts([])
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     evidence.audit_observations([observation()], ["source"], None, "qwen", settings(), {"llm_calls": 0})
     assert evidence.lmstudio_json.model_settings(None, "qwen")[1]["thinking"] is True
     assert evidence.lmstudio_json.REQUEST_THINKING.get() is None

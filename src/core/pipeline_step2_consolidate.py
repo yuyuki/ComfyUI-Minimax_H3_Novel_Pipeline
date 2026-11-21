@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from . import continuity_context, lmstudio_json, lmstudio_pipeline, progress
 from .editable_schemas import validate_document
+from .chapter_reference_identity import IDENTITY_REVIEW_SCHEMA, IDENTITY_REVIEW_SYSTEM, review_merge_evidence
 from .reference_timeline import merge_timeline, validate_catalogs
 from . import temporal_context
 from . import reference_visuals
@@ -10,7 +11,6 @@ from . import reference_visuals
 import argparse
 from copy import copy
 import difflib
-import json
 import logging
 import re
 from pathlib import Path
@@ -20,6 +20,7 @@ from openai import APIConnectionError, InternalServerError, OpenAI, RateLimitErr
 
 from .lmstudio_json import chat_json, select_model as select_model
 from .reference_requests import InvalidResponse, validated_request, validate_assets
+from .source_text import PASSAGE_IDS, PassageIndex, offered_passages, passage_catalog, select_passages
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
 
@@ -76,6 +77,7 @@ def reconciliation_item_schema() -> dict[str, Any]:
         "reference_view_hints": {"type": "array", "items": {"type": "string"}},
         "reason": {"type": "string"},
         "confidence": {"type": "number"},
+        "passage_ids": {**PASSAGE_IDS, "minItems": 0},
     }
     return {
         "type": "object",
@@ -109,6 +111,7 @@ AUDIT_ITEM = {
     "voice_description": {"type": "string"},
     "reference_view_hints": {"type": "array", "items": {"type": "string"}},
     "reason": {"type": "string"},
+    "passage_ids": PASSAGE_IDS,
 }
 AUDIT_SCHEMA = {
     "name": "global_duplicate_identity_audit_v4",
@@ -326,7 +329,10 @@ Rules:
   and attachment.
 - Names, aliases, relationships, distinctive traits and narrative role are stronger
   identity evidence than generic appearance.
-- When uncertain, choose NEW.
+- For a match, select passage_ids from both the incoming entity and its candidate.
+  Evidence must establish the same physical referent through supported relationships,
+  continuity or explicit naming. A shared label alone does not establish identity.
+  When uncertain, choose NEW and return empty passage_ids.
 - Merge only source-supported profile information; never invent missing traits.
 - reference_view_hints should be the union of justified useful views and must be
   valid for the entity type.
@@ -334,6 +340,36 @@ Rules:
   actions, damage, injuries or other temporary conditions to stable fields.
 - stable_observations are identity-only observations; no temporal state is supplied.
 """.strip()
+
+
+def _identity_sources(entity_id, timeline):
+    for chapter, sequences in timeline.items():
+        for sequence, state in sequences.items():
+            for number, observation in enumerate(state["source"], 1):
+                scope = {"entity": entity_id, "chapter": chapter, "sequence": sequence, "observation": number}
+                # A v5 catalog already carries exact resolved quotes. Keep each occurrence's address.
+                references = list(observation.get("evidence_passages",
+                                   [{"text": text} for text in observation.get("evidence", [])]))
+                for trait in observation["visual_traits"]:
+                    for passage in trait.get("evidence_passages", [{"text": trait["evidence"]}]):
+                        if passage not in references:
+                            references.append(passage)
+                for evidence, row in enumerate(references, 1):
+                    yield ({**scope, "evidence": evidence, "offset": row.get("start", 0),
+                            **({"chunk": row["chunk"]} if "chunk" in row else {})}, row["text"])
+
+
+def _merge_passages(catalog, ids, members):
+    evidence = select_passages(catalog, ids)
+    if {item["entity"] for item in evidence} != set(members):
+        raise ValueError("Select supporting evidence from every matched entity and only those entities.")
+    return evidence
+
+
+def _identity_diagnostic(args, stage, **details):
+    checks = getattr(args, "identity_diagnostics", None)
+    if checks is not None:
+        checks.append({"stage": stage, **details})
 
 
 def reconcile_chapter(
@@ -349,12 +385,22 @@ def reconcile_chapter(
     if not incoming:
         return registry
     candidates = candidate_catalog(incoming, registry, args.candidate_count, args.include_all_below)
-    def validate_resolutions(result):
-        resolutions = result.get("resolutions", [])
+    selectable = {item["global_id"] for group in candidates.values() for item in group}
+    catalog = passage_catalog([
+        *(source for lid, item in sources.items()
+          for source in _identity_sources(lid, {chapter["chapter_id"]: item["state_by_sequence"]})),
+        *(source for item in registry if item["global_id"] in selectable
+          for source in _identity_sources(item["global_id"], item["timeline"])),
+    ], "cross-chapter-reconciliation")
+
+    def validate_resolutions(result, *, cached=False):
+        validate_document(result, RECONCILE_SCHEMA["schema"], RECONCILE_SCHEMA["name"])
+        resolutions = result["resolutions"]
         ids = [r.get("local_id") for r in resolutions]
         expected = {item["local_id"]: item for item in incoming}
         if len(ids) != len(set(ids)) or set(ids) != set(expected):
             raise ValueError("Return exactly one resolution for each incoming local_id.")
+        matches = []
         for resolution in resolutions:
             lid = resolution["local_id"]
             if resolution.get("entity_type") != expected[lid]["entity_type"]:
@@ -362,13 +408,37 @@ def reconcile_chapter(
             if resolution.get("match_global_id") not in {"NEW", *(e["global_id"] for e in candidates[lid])}:
                 raise ValueError("Match must be NEW or a supplied candidate for this entity.")
 
-    result = validated_request(
-        chat_json, client, model, RECONCILE_SYSTEM + "\n" + temporal_context.RULES,
-        temporal_context.prompt(chapter.get("default_temporal_context", "")) +
-        f"\nChapter: {chapter['chapter_id']}\n\nINCOMING:\n{json.dumps(incoming, ensure_ascii=False, indent=2)}\n\nCANDIDATES:\n{json.dumps(candidates, ensure_ascii=False, indent=2)}",
-        RECONCILE_SCHEMA,
-        args, validate_resolutions,
-    )
+            matched = resolution["match_global_id"]
+            if matched == "NEW":
+                if resolution["passage_ids"]:
+                    raise ValueError("NEW requires empty passage_ids.")
+            else:
+                passages = _merge_passages(catalog, resolution["passage_ids"], (lid, matched))
+                matches.append({"member_ids": [lid, matched], "canonical_name": resolution["canonical_name"],
+                                "aliases": resolution["aliases"], "source_passages": passages})
+        if not cached:
+            review_merge_evidence(chat_json, client, model, args, matches)
+
+    try:
+        result = validated_request(
+            chat_json, client, model, RECONCILE_SYSTEM + "\n" + temporal_context.RULES,
+            {"chapter": chapter["chapter_id"], "default_temporal_context": chapter.get("default_temporal_context", ""),
+             "incoming": incoming, "candidates": candidates, "source_passages": offered_passages(catalog)},
+            RECONCILE_SCHEMA, args, validate_resolutions,
+            validation_version=(IDENTITY_REVIEW_SYSTEM, IDENTITY_REVIEW_SCHEMA),
+        )
+    except (InvalidResponse, RuntimeError, APIConnectionError, InternalServerError, RateLimitError) as exc:
+        if lmstudio_json._is_comfy_interrupt(exc):
+            raise
+        _identity_diagnostic(args, "cross_chapter_identity", chapter=chapter["chapter_id"], status="incomplete",
+                             reason=type(exc).__name__, message="Unconfirmed cross-chapter identities retained independently.")
+        result = {"resolutions": [{**item, "match_global_id": "NEW"} for item in incoming]}
+    else:
+        for row in result["resolutions"]:
+            if row["match_global_id"] != "NEW":
+                _identity_diagnostic(args, "cross_chapter_identity", chapter=chapter["chapter_id"], status="passed",
+                                     local_id=row["local_id"], global_id=row["match_global_id"],
+                                     source_passages=select_passages(catalog, row["passage_ids"]))
     resolutions = {x["local_id"]: x for x in result.get("resolutions", [])}
 
     for item in incoming:
@@ -424,6 +494,9 @@ clearly identify the exact same fictional entity. Never merge merely similar
 entities and never merge across entity types. Preserve only source-supported facts.
 For locations or objects, require evidence of the same physical referent. Shared
 generic names, materials and types are insufficient to merge separate instances.
+For every merge select passage_ids from all involved entities in source_passages.
+The selected passages must establish a shared referent through explicit identity,
+distinctive relationships or physical continuity.
 Union useful reference_view_hints. If there are no clear duplicates, return none.
 Preserve the source language of names, aliases and descriptive prose. Do not
 translate into English. Keep JSON keys, IDs and schema enum values unchanged.
@@ -545,11 +618,43 @@ def audit_registry(
     audit_args.temperature = min(args.temperature, 0.10)
 
     def request_audit(entities):
-        return validated_request(
-            chat_json, client, model, AUDIT_SYSTEM,
-            json.dumps([compact_global(e) for e in entities], ensure_ascii=False, indent=2),
-            AUDIT_SCHEMA, audit_args, lambda result: None,
-        )
+        by_id = {entity["global_id"]: entity["entity_type"] for entity in entities}
+        catalog = passage_catalog(
+            (source for entity in entities for source in _identity_sources(entity["global_id"], entity["timeline"])),
+            "cross-chapter-audit")
+
+        def check(result, *, cached=False):
+            validate_document(result, AUDIT_SCHEMA["schema"], AUDIT_SCHEMA["name"])
+            used, matches = set(), []
+            for group in result["merge_groups"]:
+                members = [group["keep_global_id"], *group["merge_global_ids"]]
+                if (len(members) < 2 or len(members) != len(set(members)) or set(members) & used
+                        or any(key not in by_id for key in members)
+                        or len({by_id[key] for key in members}) != 1):
+                    raise ValueError("Audit groups require distinct supplied IDs of the same type.")
+                passages = _merge_passages(catalog, group["passage_ids"], members)
+                matches.append({"member_ids": members, "canonical_name": group["canonical_name"],
+                                "aliases": group["aliases"], "source_passages": passages})
+                used.update(members)
+            if not cached:
+                review_merge_evidence(chat_json, client, model, audit_args, matches)
+
+        try:
+            result = validated_request(chat_json, client, model, AUDIT_SYSTEM,
+                {"entities": [compact_global(e) for e in entities], "source_passages": offered_passages(catalog)},
+                AUDIT_SCHEMA, audit_args, check,
+                validation_version=(IDENTITY_REVIEW_SYSTEM, IDENTITY_REVIEW_SCHEMA))
+        except (InvalidResponse, RuntimeError, APIConnectionError, InternalServerError, RateLimitError) as exc:
+            if lmstudio_json._is_comfy_interrupt(exc):
+                raise
+            _identity_diagnostic(args, "cross_chapter_audit", status="incomplete", entities=list(by_id),
+                                 reason=type(exc).__name__, message="Unconfirmed duplicate identities retained independently.")
+            return {"merge_groups": []}
+        for group in result["merge_groups"]:
+            _identity_diagnostic(args, "cross_chapter_audit", status="passed",
+                                 global_id=group["keep_global_id"],
+                                 source_passages=select_passages(catalog, group["passage_ids"]))
+        return result
 
     # Small registries keep the old whole-registry audit because it is cheap and gives
     # the LLM maximum context. Large registries switch automatically to bounded clusters.
@@ -619,11 +724,11 @@ LOCATION_VIEW_SCHEMA = {"name": "location_reference_views", "strict": True, "sch
     "type": "object", "required": ["views"], "additionalProperties": False,
     "properties": {"views": {"type": "array", "minItems": 1, "items": {
         "type": "object", "additionalProperties": False,
-        "required": ["view_type", "camera_axis", "landmark_quote", "framing", "scene_ids"],
+        "required": ["view_type", "camera_axis", "landmark_passage_ids", "framing", "scene_ids"],
         "properties": {
             "view_type": {"type": "string", "enum": LOCATION_VIEWS},
             "camera_axis": {"type": "string", "minLength": 1, "maxLength": 120},
-            "landmark_quote": {"type": "string", "minLength": 1, "maxLength": 300},
+            "landmark_passage_ids": PASSAGE_IDS,
             "framing": {"type": "string", "minLength": 1, "maxLength": 300},
             "scene_ids": {"type": "array", "minItems": 1, "items": {"type": "integer"}},
         },
@@ -640,8 +745,8 @@ when those framing needs are present. A lighting change or additional scene alon
 does not justify a view. An overview and a complementary angle may suffice; add a
 detail or further angle only for a framing need neither covers.
 Describe each camera position, direction and crop relative to supported landmarks
-in the source language. Give each distinct sightline its own camera_axis and quote a
-landmark verbatim from appearance. All angles must preserve the same layout and scale.
+in the source language. Give each distinct sightline its own camera_axis and select
+landmark_passage_ids from appearance_passages to support its framing. All angles must preserve the same layout and scale.
 Give each view a different view_type and list only scene_ids whose framing it serves.
 Cover every supplied scene ID. Assign more than one view to a scene only when its
 opening or camera movement needs both sightlines. Respect max_views.
@@ -657,7 +762,9 @@ def plan_location_views(client, model, entity, group, args):
     scenes = [{"id": i, "chapter_id": chapter, "sequence": sequence,
                **{phase: by_address[chapter, sequence][phase] for phase in ("initialState", "event")}}
               for i, (chapter, sequence) in enumerate(addresses, 1)]
+    index = PassageIndex(group["appearance"], f"location-view:{entity['global_id']}")
     payload = {"location": entity["canonical_name"], "appearance": group["appearance"],
+               "appearance_passages": index.passages(),
                "max_views": args.max_location_base_views, "scenes": scenes}
     expected = set(range(1, len(scenes) + 1))
 
@@ -670,8 +777,8 @@ def plan_location_views(client, model, entity, group, args):
             values = {" ".join(v[key].casefold().split()) for v in views}
             if "" in values or len(values) != len(views):
                 raise ValueError("Each camera view requires distinct framing and a distinct camera axis.")
-        if any(not v["landmark_quote"].strip() or v["landmark_quote"] not in group["appearance"] for v in views):
-            raise ValueError("Quote each view's landmark exactly from its approved appearance.")
+        for view in views:
+            index.resolve(view["landmark_passage_ids"])
         if ({i for view in views for i in view["scene_ids"]} != expected
                 or any(len(set(v["scene_ids"])) != len(v["scene_ids"]) for v in views)):
             raise ValueError("Use only supplied scene IDs, without duplicates within a view, and cover every scene.")
@@ -699,6 +806,12 @@ def plan_location_views(client, model, entity, group, args):
             chapter, sequence = addresses[scene_id - 1]
             bindings.setdefault(chapter, []).append(sequence)
         planned.append((view["view_type"], view["framing"].strip(), bindings))
+        if hasattr(args, "reference_diagnostics"):
+            args.reference_diagnostics.append({
+                "stage": "location_view_planning", "status": "passed", "entity_id": entity["global_id"],
+                "view_type": view["view_type"], "scene_bindings": bindings,
+                "landmark_evidence": index.resolve(view["landmark_passage_ids"]),
+            })
     return planned
 
 

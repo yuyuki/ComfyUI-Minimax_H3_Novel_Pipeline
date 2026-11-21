@@ -1,6 +1,5 @@
 """Keep adapter diagnostics inspectable without sending them to downstream nodes."""
 from copy import deepcopy
-import json
 
 from . import cinematic_scene_planning as planning
 
@@ -12,16 +11,16 @@ _EXPLANATIONS = {
     ),
     "source_quote_mismatch": (
         "The supporting quotation is not an exact substring of this scene's source.",
-        "Copy a contiguous quotation from the source without paraphrasing or changing punctuation.",
+        "Select current-source passages that support the fact.",
     ),
-    "event_text_mismatch": (
-        "A fragment differs from the original event at the indicated position.",
-        "Copy the remaining event text exactly; compare the Unicode code points at the first difference.",
+    "event_fragment_range": (
+        "A fragment uses an invalid, overlapping or out-of-order word range.",
+        "Select consecutive word addresses with complete coverage for the same event.",
     ),
-    "event_text_incomplete": (
-        "The end of an event is not covered by any planning fragment.",
-        "Add the remaining text using the same event identifier without removing any action.",
-    ),
+    "passage_reference": ("An evidence ID is outside the authorized passage set.",
+                          "Select supporting passage IDs supplied for the current scene."),
+    "successive_fragments_same_beat": ("Successive fragments share one timing beat.",
+                                      "Use separate beats for successive actions of the same event."),
     "event_coverage": ("The plan does not cover all events.", "Reference every original event."),
     "event_order": ("Fragments do not follow the event order.", "Preserve the original order without returning to earlier events."),
     "event_reference": ("An event identifier is invalid.", "Use the original event identifiers, starting at 1."),
@@ -30,8 +29,11 @@ _EXPLANATIONS = {
     "timing_total_mismatch": ("The reported total differs from the sum of beat durations and pauses.", "Recalculate the total without shortening actions."),
     "timing_nonfinite": ("A duration is not a finite number.", "Return finite numeric durations."),
     "reset_quote_mismatch": ("The context reset has no valid source quotation.", "Support the reset with the current source or retain the context."),
+    "unsupported_continuity_evidence": ("Selected passages did not support the physical claim.",
+                                        "Inspect the claim against the scene source."),
     "blank_fact_field": ("A continuity field is blank.", "Provide the fact and its source quotation."),
     "output_limit": ("The response reached the output limit.", "Check the budget shared by reasoning and JSON."),
+    "unresolved_proposal": ("The selected alternative still has source-supported defects.", "Inspect the cited review findings."),
     "request_failed": ("The review request failed; the precise cause is unavailable.", "Check the server and its logs; this code does not prove a token limit was reached."),
     "duration_exceeded": ("The timing estimate exceeds the allowed maximum, including any allowance.", "Split between actions without rushing or removing them."),
 }
@@ -50,17 +52,6 @@ def explain(record):
             "The check could not be completed.", "Inspect the indicated check and field before treating the scene as approved.",
         ))
     result["explanation"] = message
-    if reason == "event_text_mismatch" and "expected_codepoint" in record:
-        def character(value):
-            if value is None:
-                return "end of text"
-            return f"{json.dumps(chr(value), ensure_ascii=True)} (U+{value:04X})"
-
-        result["difference"] = (
-            f"Index {record['mismatch_offset']} (0-based): "
-            f"expected {character(record['expected_codepoint'])}, "
-            f"received {character(record['received_codepoint'])}."
-        )
     if action:
         result["suggested_action"] = action
     return result
@@ -95,6 +86,7 @@ def report(state, *, chapter_name, source_file, maximum_seconds, completed=False
     for index, scene in enumerate(committed):
         saved_plan = plans[index] if index < len(plans) else None
         plan = saved_plan["plan"] if saved_plan else None
+        timing = plan.get("timing") if plan else None
         incomplete = scene.get("review", {}).get("status") == "incomplete"
         # A missing plan must never be presented as approval, even in a partial report.
         status = "incomplete" if incomplete or not plan else "completed"
@@ -102,14 +94,15 @@ def report(state, *, chapter_name, source_file, maximum_seconds, completed=False
             "sequence": scene["sequence"], "status": status,
             "source_excerpt": scene["source"],
             "events": deepcopy(saved_plan["events"]) if saved_plan else scene["adaptation"]["event"],
-            "timing": {"status": ("exceeded" if planning.duration_issues(plan, maximum_seconds) else "available") if plan else "incomplete",
+            "timing": {"status": ("exceeded" if planning.duration_issues(plan, maximum_seconds) else "available") if timing else "incomplete",
                        "maximum_seconds": maximum_seconds,
-                       "estimated_seconds": plan["timing"]["estimated_seconds"] if plan else None,
+                       "estimated_seconds": plan["timing"]["estimated_seconds"] if timing else None,
                        "seconds_with_allowance": (round(plan["timing"]["estimated_seconds"] * (
                            planning.SEQUENTIAL_TIMING_FACTOR if len(plan["timing"]["beats"]) > 1 else 1), 3)
-                           if plan else None),
-                       "beats": planning._describe_plan(plan, saved_plan["events"])["timing"]["beats"] if plan else [],
-                       "pause_seconds": plan["timing"]["pause_seconds"] if plan else None},
+                           if timing else None),
+                       "beats": planning._describe_plan(plan, saved_plan["events"])["timing"]["beats"] if timing else [],
+                       "pause_seconds": plan["timing"]["pause_seconds"] if timing else None},
+            "continuity": deepcopy(plan.get("continuity")) if plan else None,
             "review": deepcopy(scene.get("review", {"status": status})),
             "failed_checks": [w for w in warnings if w["sequence"] == scene["sequence"] and w["status"] == "incomplete"],
         })
@@ -124,5 +117,6 @@ def report(state, *, chapter_name, source_file, maximum_seconds, completed=False
                     "incomplete_scenes": incomplete_count, "planning_attempts": len(attempts),
                     "failed_planning_attempts": sum(a["status"] == "failed" for a in attempts)},
         "sequences": scenes, "planning_attempts": attempts, "warnings": warnings,
+        "cited_findings": deepcopy(review.get("cited_findings", [])),
         "narrative_choices": deepcopy(review.get("issues", [])),
     }

@@ -298,6 +298,6 @@ def test_extraction_requests_attributed_speech_from_original_prose(monkeypatch):
 
     monkeypatch.setattr(extract, "chat_json", chat)
     result, _, _ = cr._extract_source(extract, None, "model", extract.EXTRACT_SYSTEM + cr.SOURCE_SYSTEM,
-                                      json.dumps({"text": excerpt, "reference_state": ""}),
+                                      json.dumps({"sequence": 1, "text": excerpt, "reference_state": ""}),
                                       SimpleNamespace(temperature=0.12, max_tokens=8000))
     assert "Doriane calls back" in result["chunk_summary"]

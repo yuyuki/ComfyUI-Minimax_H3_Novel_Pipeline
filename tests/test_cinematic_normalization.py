@@ -6,6 +6,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
 from minimax_h3_novel_pipeline.core import narrative_choices as choices
 from minimax_h3_novel_pipeline.core import narrative_validation as nv
@@ -37,15 +39,6 @@ def test_unicode_quotes_and_line_separators_share_source_output_normalization():
     assert ca._normalized_output({"states": [original]}) == {"states": [expected]}
 
 
-def test_unicode_paragraph_suffix_advances_normalized_cursor():
-    source = ca._normalize_text('“Oui”.\u2029Il part.')
-    sequences, consumed = ca._validated_window({
-        "sequences": [scene('“Oui”.')], "unprocessed_source": '\u2029Il part.',
-    }, source)
-    assert consumed == len('"Oui".')
-    assert "".join(s["source"] for s in sequences) + source[consumed:] == source
-
-
 def test_source_requests_and_generated_descriptions_share_normalization(monkeypatch):
     original = "L’e\u0301te\u0301\u00a0!\r\n\r\nIl s’arrête."
     expected = "L'été !\n\nIl s'arrête."
@@ -54,7 +47,7 @@ def test_source_requests_and_generated_descriptions_share_normalization(monkeypa
     def chat(client, model, system, prompt, schema, *args):
         calls.append(schema["name"])
         data = json.loads(prompt)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             assert "".join(s["source"] for s in data["sequences"]) == expected
             assert data["sequences"][0]["initial_state"] == "L'été."
             return {"issues": []}
@@ -64,7 +57,7 @@ def test_source_requests_and_generated_descriptions_share_normalization(monkeypa
         item.update(initial_state="L’e\u0301te\u0301.", events=["Il s’arrête\u202f!"])
         return {"sequences": [item]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = run(original)
     assert calls == [ca.SCHEMA["name"], nv.SCHEMA["name"]]
     assert result["sequences"][0] == {
@@ -73,42 +66,12 @@ def test_source_requests_and_generated_descriptions_share_normalization(monkeypa
     }
 
 
-def test_normalized_deferred_suffix_uses_normalized_cursor():
-    source = "L'été.\n\nIl s'arrête."
-    sequences, consumed = ca._validated_window({
-        "sequences": [scene("L’e\u0301te\u0301.")],
-        "unprocessed_source": "\r\n\r\nIl s’arrête.",
-    }, source)
-    assert consumed == len("L'été.")
-    assert "".join(s["source"] for s in sequences) + source[consumed:] == source
-
-
 @pytest.mark.parametrize("excerpt", [
     "Il part.", "Il attend. Il attend.", "Il attend", "il attend.",
 ])
 def test_normalization_still_rejects_content_changes(excerpt):
     with pytest.raises(ca._SourceCoverageError):
         ca._validated_sequences({"sequences": [scene(excerpt)]}, "Il attend.")
-
-
-def test_retry_receives_first_difference_and_bounded_context(monkeypatch):
-    prompts = []
-
-    def chat(client, model, system, prompt, schema, *args):
-        if schema == nv.SCHEMA:
-            return {"issues": []}
-        prompts.append(prompt)
-        return {"sequences": [scene("Il part." if len(prompts) == 1 else "Il parle.")]}
-
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    result = run("Il parle.")
-    assert result["sequences"][0]["source"] == "Il parle."
-    assert "passage character 7 (sequence starts at 1)" in prompts[1]
-    assert 'Expected context: "Il parle."' in prompts[1]
-    assert 'Received context: "Il part."' in prompts[1]
-    with pytest.raises(ca._SourceCoverageError) as error:
-        ca._validated_sequences({"sequences": [scene("A" * 500 + "X")]}, "A" * 500 + "Y")
-    assert len(error.value.feedback) < 500
 
 
 @pytest.mark.parametrize("targeted_valid", [True, False])
@@ -120,7 +83,7 @@ def test_failed_local_repairs_retain_valid_work_and_resolve_issues(monkeypatch, 
     def chat(client, model, system, prompt, schema, *args):
         data, _ = json.JSONDecoder().raw_decode(prompt)
         assert schema["strict"]
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": i + 1, "message": "Vérifier la posture."}
                                for i, item in enumerate(data["sequences"]) if item["source"].strip() == "Il part."]}
         if schema == choices.PROPOSAL_SCHEMA:
@@ -141,7 +104,7 @@ def test_failed_local_repairs_retain_valid_work_and_resolve_issues(monkeypatch, 
             return {"sequences": [{"source": data["current_passage"]}]}
         return {"sequences": [scene("Texte inventé.")]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = run("Il attend. Il part.")
     assert len(repairs) == (2 if targeted_valid or failure == "length" else 4)
     assert not full_rebuilds
@@ -159,13 +122,13 @@ def test_failed_local_repairs_retain_valid_work_and_resolve_issues(monkeypatch, 
 def test_repair_request_errors_are_not_hidden(monkeypatch, error):
     def chat(client, model, system, prompt, schema, *args):
         data = json.loads(prompt)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": [{"target": 1, "message": "Vérifier la posture."}]}
         if "rejected_adaptation" in data:
             raise error
         return {"sequences": [scene("Il attend.")]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     if isinstance(error, KeyboardInterrupt):
         with pytest.raises(KeyboardInterrupt):
             run("Il attend.")

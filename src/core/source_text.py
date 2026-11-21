@@ -1,10 +1,15 @@
 """One normalized source basis for reading, model text and persisted locations."""
+import hashlib
+import json
 import re
 import unicodedata
 
 from .path_access import input_path
 
 VERSION = "normalized-source.v1"
+PASSAGE_VERSION = "source-passages.v2"
+PASSAGE_IDS = {"type": "array", "minItems": 1, "uniqueItems": True,
+               "items": {"type": "string", "minLength": 1}}
 
 
 _TYPOGRAPHY = str.maketrans({
@@ -87,36 +92,90 @@ def source_span(text, passage):
     return spans[0] if len(spans) == 1 else None
 
 
-def prefix_span(text, passage):
-    """Match the next ordered excerpt, ignoring leading source whitespace only."""
-    text = normalize(text)
-    for start, end in source_spans(text, passage):
-        if not text[:start].strip():
-            return start, end
-        break
-    return None
-
-
-def suffix_span(text, passage):
-    """Match a deferred suffix on the normalized source, including its whitespace."""
-    text = normalize(text)
-    for start, end in reversed(source_spans(text, passage)):
-        if not text[end:].strip():
-            while start > 0 and text[start - 1].isspace():
-                start -= 1
-            return start, len(text)
-        break
-    return None
-
-
 def contains(text, passage):
     """Test nonempty source membership with the shared comparison policy."""
     needle = comparison_text(passage)
     return bool(needle) and needle in comparison_text(text)
 
 
-def restore_quote(text, passage):
-    """Return a citation from the normalized source when occurrences agree."""
-    text = normalize(text)
-    quotes = {text[start:end] for start, end in source_spans(text, passage)}
-    return quotes.pop() if len(quotes) == 1 else None
+# East Asian text may contain compound actions without whitespace boundaries.
+_UNSPACED = r"\u3040-\u30ff\u3400-\u9fff"
+_SOURCE_UNIT = re.compile(rf"[{_UNSPACED}]|[^\s{_UNSPACED}]+")
+
+
+def source_units(text):
+    """Return token matches with positions in the exact input string."""
+    return list(_SOURCE_UNIT.finditer(text))
+
+
+class PassageIndex:
+    """Select exact slices by occurrence within a particular authoritative text."""
+
+    def __init__(self, text, scope, *, offset=0):
+        self.text = text
+        self.offset = offset
+        key = hashlib.sha256(f"{PASSAGE_VERSION}\0{scope}\0{offset}\0{text}".encode()).hexdigest()[:16]
+        self.ranges = {}
+        clauses = re.finditer(r"\S.*?(?:[。！？；，、]|[.!?;,:…](?=\s|$)|(?=\n|$))", text)
+        for clause in clauses:
+            words = source_units(clause.group())
+            for start in range(0, len(words), 18):
+                end = min(len(words), start + 18) - 1
+                left, right = clause.start() + words[start].start(), clause.start() + words[end].end()
+                self.ranges[f"{key}:{len(self.ranges) + 1}"] = (left, right)
+
+    def passages(self):
+        return [{"id": identifier, "text": self.text[start:end]}
+                for identifier, (start, end) in self.ranges.items()]
+
+    def resolve(self, ids, *, allow_empty=False):
+        records = {key: {"start": self.offset + start, "end": self.offset + end, "text": self.text[start:end]}
+                   for key, (start, end) in self.ranges.items()}
+        return select_passages(records, ids, allow_empty=allow_empty)
+
+
+def passage_catalog(sources, scope):
+    """Address passages across distinct source texts and retain each one's provenance."""
+    catalog = {}
+    for provenance, text in sources:
+        label = json.dumps(provenance, ensure_ascii=False, sort_keys=True)
+        offset = provenance.get("offset", 0)
+        index = PassageIndex(text, scope + ":" + label, offset=offset)
+        for passage in index.passages():
+            start, end = index.ranges[passage["id"]]
+            catalog[passage["id"]] = {**{k: v for k, v in provenance.items() if k != "offset"},
+                                      "start": offset + start, "end": offset + end, "text": passage["text"]}
+    return catalog
+
+
+def select_passages(catalog, ids, *, allow_empty=False):
+    if (not isinstance(ids, list) or (not ids and not allow_empty)
+            or any(not isinstance(value, str) or value not in catalog for value in ids)
+            or len(set(ids)) != len(ids)):
+        raise ValueError("Select distinct passage IDs from the authorized source.")
+    return [catalog[value].copy() for value in ids]
+
+
+def offered_passages(catalog):
+    return [{"id": key, **value} for key, value in catalog.items()]
+
+
+def contiguous_passage(text, passages):
+    """Resolve adjacent selections into one exact citation for single-span consumers."""
+    if not passages or any(left["end"] > right["start"] or text[left["end"]:right["start"]].strip()
+                           for left, right in zip(passages, passages[1:])):
+        raise ValueError("Select consecutive passages in source order for this citation.")
+    start, end = passages[0]["start"], passages[-1]["end"]
+    return {"start": start, "end": end, "text": text[start:end]}
+
+
+def paragraph_chunks(text, size):
+    """Split at paragraph boundaries and keep exact offsets in the original text."""
+    start = end = 0
+    for boundary in [*(match.end() for match in re.finditer(r"\n[^\S\n]*\n+", text)), len(text)]:
+        if end > start and boundary - start > size:
+            yield start, text[start:end]
+            start = end
+        end = boundary
+    if end > start:
+        yield start, text[start:end]

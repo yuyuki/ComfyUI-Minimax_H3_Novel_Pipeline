@@ -60,10 +60,7 @@ def apply(designs, chapters, registry, output, client, model, args):
         if len(sources) != 1:
             raise ValueError('Character source must resolve uniquely.')
         chapter = {**chapter, 'source_file': sources[0]['source_file'], '_source_text': sources[0]['source_text']}
-        for sequence in chapter['sequences']:
-            if enrichment.source_span(chapter['_source_text'], sequence['source']) is None:
-                raise ValueError(f"Cinematic source must match a unique passage in character evidence: "
-                                 f"{chapter['source_file']}, sequence {sequence['sequence']}.")
+        list(enrichment.source_offsets(chapter))
         current_entities = [e for e in registry
                             if e['entity_type'] == 'character' and chapter['chapter_id'] in e.get('chapters_seen', [])]
         candidate_names = set().union(*(_names(e) for e in current_entities))

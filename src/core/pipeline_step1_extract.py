@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .reference_visuals import APPEARANCE_RULES, TRAIT_SCHEMA
+from .source_text import PASSAGE_IDS
 
 
 import re
@@ -58,7 +59,7 @@ def entity_schema(kind: str) -> dict[str, Any]:
                 "maxItems": 5,
                 "items": {"type": "string", "enum": CHARACTER_VIEWS},
             },
-            "evidence": {"type": "array", "maxItems": 3, "items": {"type": "string", "maxLength": 120}},
+            "evidence_passage_ids": PASSAGE_IDS,
         }
     elif kind == "location":
         props = {
@@ -71,7 +72,7 @@ def entity_schema(kind: str) -> dict[str, Any]:
                 "maxItems": 4,
                 "items": {"type": "string", "enum": LOCATION_VIEWS},
             },
-            "evidence": {"type": "array", "maxItems": 3, "items": {"type": "string", "maxLength": 120}},
+            "evidence_passage_ids": PASSAGE_IDS,
         }
     else:
         props = {
@@ -84,9 +85,10 @@ def entity_schema(kind: str) -> dict[str, Any]:
                 "maxItems": 3,
                 "items": {"type": "string", "enum": OBJECT_VIEWS},
             },
-            "evidence": {"type": "array", "maxItems": 3, "items": {"type": "string", "maxLength": 120}},
+            "evidence_passage_ids": PASSAGE_IDS,
         }
-    trait_properties = dict(TRAIT_SCHEMA["properties"])
+    trait_properties = {k: v for k, v in TRAIT_SCHEMA["properties"].items() if k != "evidence"}
+    trait_properties["evidence_passage_ids"] = PASSAGE_IDS
     if kind == "character":
         trait_properties["attribute"] = {"type": "string", "pattern": r"^wardrobe_[a-z0-9]+(?:_[a-z0-9]+)*$"}
         trait_properties["scope"] = {"type": "string", "enum": ["scene"]}
@@ -94,7 +96,7 @@ def entity_schema(kind: str) -> dict[str, Any]:
         trait_properties["scope"] = {"type": "string", "enum": ["intrinsic"]}
     props.update({
         "presence": {"type": "string", "enum": ["visible", "offscreen", "mentioned"]},
-        "visual_traits": {"type": "array", "items": {**TRAIT_SCHEMA, "properties": trait_properties}},
+        "visual_traits": {"type": "array", "items": {**TRAIT_SCHEMA, "properties": trait_properties, "required": list(trait_properties)}},
     })
     return {
         "type": "object",
@@ -155,7 +157,9 @@ def clean_entity(entity: dict[str, Any], kind: str) -> dict[str, Any]:
     e = {field: entity[field] for field in fields if field in entity}
     e["canonical_name"] = re.sub(r"\s+", " ", e.get("canonical_name", "")).strip()
     e["aliases"] = compact_strings(e.get("aliases", []), 6, 80)
-    e["evidence"] = compact_strings(e.get("evidence", []), 3, 120, verbatim=True)
+    e["evidence"] = entity.get("evidence", [])
+    if "evidence_passages" in entity:
+        e["evidence_passages"] = entity["evidence_passages"]
     e["reference_view_hints"] = list(dict.fromkeys(e.get("reference_view_hints", [])))[:5]
     if kind == "characters":
         e["voice_description"] = re.sub(r"\s+", " ", e.get("voice_description", "")).strip()
@@ -187,11 +191,11 @@ Importance: major, recurring, minor, background. Reference priority: required wh
 continuity depends on it, recommended when useful, optional otherwise.
 Names, chunk_summary and descriptive prose use the source narration's language.
 Keep JSON keys, enums and visual-trait attribute keys fixed. Preserve proper names
-and verbatim foreign-language dialogue. Evidence must quote the local passage.
+and verbatim foreign-language dialogue. Select evidence_passage_ids from the local source_passages for each observation and each trait.
 Summarize events only in chunk_summary, in source order and complete sentences.
 Scale its length to the current local passage, not chapter_context or the full chapter.
 The output token budget is shared by the entire JSON response, including reasoning
-when applicable. Keep the summary concise so reference arrays and their quoted evidence
+when applicable. Keep the summary concise so reference arrays and their evidence selections
 can fit; prioritize distinct entities and supported visual facts over summary detail.
 There is no separate fixed character target. Shorten by rephrasing, never
 by cutting a word or sentence. Detailed reference facts belong in the entity arrays.

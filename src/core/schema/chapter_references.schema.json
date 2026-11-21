@@ -51,6 +51,11 @@
             "scene"
           ]
         },
+        "evidence_passages": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["start", "end", "text"],
+          "properties": {"start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1},
+                         "text": {"type": "string", "minLength": 1}, "chunk": {"type": "integer", "minimum": 1}}
+        }},
         "evidence": {
           "type": "string",
           "minLength": 1
@@ -128,6 +133,11 @@
         "importance": {"enum": ["major", "recurring", "minor", "background"]},
         "reference_priority": {"enum": ["required", "recommended", "optional"]},
         "reference_view_hints": {"type": "array", "items": {"type": "string"}},
+        "evidence_passages": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["start", "end", "text"],
+          "properties": {"start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1},
+                         "text": {"type": "string", "minLength": 1}, "chunk": {"type": "integer", "minimum": 1}}
+        }},
         "evidence": {"type": "array", "items": {"type": "string"}},
         "presence": {
           "enum": [
@@ -157,6 +167,11 @@
         "importance": {"enum": ["major", "recurring", "minor", "background"]},
         "reference_priority": {"enum": ["required", "recommended", "optional"]},
         "reference_view_hints": {"type": "array", "items": {"type": "string"}},
+        "evidence_passages": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["start", "end", "text"],
+          "properties": {"start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1},
+                         "text": {"type": "string", "minLength": 1}, "chunk": {"type": "integer", "minimum": 1}}
+        }},
         "evidence": {"type": "array", "items": {"type": "string"}},
         "first_sequence": {"type": "integer", "minimum": 1},
         "state_by_sequence": {

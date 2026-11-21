@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.passages_helpers import adapt_fixture_reply, with_passage_ids
+
 from minimax_h3_novel_pipeline.core import reference_visuals as visual, lmstudio_pipeline, util
 from minimax_h3_novel_pipeline.core import cinematic_references as extraction
 from minimax_h3_novel_pipeline.core import pipeline_step3_generate as generation
@@ -136,17 +138,25 @@ def test_bindings_select_the_exact_scene_state_and_exclude_absent_entities():
             assert bound["picture_input_order"][0]["variant"] == ("base" if seq == 1 else specs[1]["variant"])
 
 
+def resolve_candidate(kind, candidate, source):
+    data = {"sequence": 1, "text": source}
+    data["source_passages"] = visual.evidence_index(data).passages()
+    wire = adapt_fixture_reply({"chunk_summary": "", kind: [
+        {**observation(candidate), "canonical_name": "Subject"}]}, data, lmstudio_pipeline.load("extract").CHUNK_SCHEMA)
+    return visual.resolve_evidence(wire, data)
+
+
 def test_evidence_validation_rejects_traits_quoted_from_another_scene():
     data = {"text": "An unmarked surface. It becomes cracked.", "reference_state": "An unmarked surface."}
-    result = {"objects": [observation(trait("material", "Wood.", evidence="A later scene only."))]}
-    with pytest.raises(ValueError, match="must quote the local passage"):
-        visual.validate_evidence(result, data)
+    candidate = trait("material", "Wood.", evidence="A later scene only.")
+    with pytest.raises(ValueError, match="authorized source"):
+        resolve_candidate("objects", candidate, data["text"])
 
 
 def test_appearance_of_an_entity_first_seen_during_an_event_is_supported():
     data = {"text": "An empty room. A visitor enters wearing a red coat.", "reference_state": "An empty room."}
-    result = {"characters": [observation(trait("wardrobe_coat", "A red coat.", "scene", "wearing a red coat"))]}
-    visual.validate_evidence(result, data)
+    candidate = trait("wardrobe_coat", "A red coat.", "scene", "wearing a red coat")
+    resolve_candidate("characters", candidate, data["text"])
 
 
 @pytest.mark.parametrize(("kind", "candidate"), [
@@ -156,7 +166,7 @@ def test_appearance_of_an_entity_first_seen_during_an_event_is_supported():
 ])
 def test_evidence_cannot_override_category_constraints(kind, candidate):
     with pytest.raises(ValueError, match=kind):
-        visual.validate_evidence({kind: [observation(candidate)]}, {"text": candidate["evidence"]})
+        resolve_candidate(kind, candidate, candidate["evidence"])
 
 
 def test_extraction_retries_with_structured_schema_and_full_evidence(monkeypatch):
@@ -168,9 +178,9 @@ def test_extraction_retries_with_structured_schema_and_full_evidence(monkeypatch
             return {"issues": []}
         calls.append((schema, user))
         quote = "Future text." if len(calls) == 1 else source["text"]
-        return {"characters": [], "locations": [], "objects": [
-            observation(trait("material", "Brass.", evidence=quote))]}
-    monkeypatch.setattr(step, "chat_json", chat)
+        return {"chunk_summary": "", "characters": [], "locations": [], "objects": [
+            {**observation(trait("material", "Brass.", evidence=quote)), "canonical_name": "Surface"}]}
+    monkeypatch.setattr(step, "chat_json", with_passage_ids(chat))
     args = SimpleNamespace(temperature=0.1, max_tokens=2000, max_attempts=2)
     result, _, status = extraction._extract_source(step, None, "mock", extraction.SOURCE_SYSTEM,
                                                   json.dumps(source), args)

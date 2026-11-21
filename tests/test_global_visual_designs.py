@@ -1,3 +1,4 @@
+from tests.passages_helpers import with_passage_ids
 from tests.cinematic_generation_helpers import chapter_input, metadata_scene
 """Stable physical imports, validated alias joins and scene-local enrichment."""
 from contextlib import nullcontext
@@ -49,7 +50,7 @@ def setup(tmp_path, monkeypatch):
         if schema == local.LOCAL_REVIEW:
             return {'issues': []}
         raise AssertionError(schema)
-    monkeypatch.setattr(lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(lmstudio_json, 'chat_json', with_passage_ids(chat))
     return tmp_path, data, result, chapter, entity, calls
 
 

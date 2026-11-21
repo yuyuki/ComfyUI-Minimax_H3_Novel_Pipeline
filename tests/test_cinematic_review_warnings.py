@@ -8,6 +8,8 @@ import pytest
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 from jsonschema import Draft202012Validator
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, cinematic_references as cr
 from minimax_h3_novel_pipeline.core import narrative_validation as nv
 
@@ -35,26 +37,27 @@ def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors
 
     def chat(client, model, system, user, schema, *args):
         payload = json.loads(user)
-        if schema != nv.SCHEMA:
+        if schema["name"] != nv.SCHEMA["name"]:
             return {"sequences": [scene("A."), scene(" B."), scene(" C.")]}
         source = payload["sequences"][0]["source"]
         focus = payload.get("review_focus")
         calls.append((source, focus))
         if source != " B.":
             return {"issues": []}
-        assert (payload["scene_plan"] is None) == missing_planning
-        if focus is None or focus == "source_fidelity":
+        if focus != "source_fidelity_event_group":
+            assert (payload["scene_plan"] is None) == missing_planning
+        if focus is None or focus in {"source_fidelity", "source_fidelity_event_group"}:
             raise ca.lmstudio_json.StructuredOutputLengthError("secret-backend-text")
         return {"issues": [{"target": 1, "message": "Pacing concern."}] if focus == "cinematic_pacing" else []}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     with caplog.at_level(logging.WARNING):
         result = run(on_checkpoint=lambda state: snapshots.append(deepcopy(state)))
     assert calls[-1] == (" C.", None)
-    assert [focus for source, focus in calls if source == " B."] == [None, *nv.ADAPTATION_REVIEW_FOCUSES]
+    assert [focus for source, focus in calls if source == " B."] == [None, "source_fidelity", "source_fidelity_event_group", "cinematic_pacing", "local_transition"]
     review = result["sequences"][1]["review"]
     assert review["status"] == "incomplete" and review["issues"] == ["Pacing concern."]
-    assert review["failed_checks"][-1] == {"stage": "adaptation", "check": "source_fidelity", "reason": "output_limit"}
+    assert review["failed_checks"][-1] == {"stage": "adaptation", "check": "source_fidelity_event_1", "reason": "output_limit"}
     assert len(snapshots[-1]["approved_reviews"]) == 2
     assert "secret-backend-text" not in json.dumps(result) + caplog.text
     assert all(record.levelno == logging.WARNING for record in caplog.records)
@@ -70,7 +73,7 @@ def test_failed_focus_keeps_successful_doubts_and_runs_all_checks_and_successors
 
 
 def test_selected_proposal_with_failed_planning_still_receives_semantic_review(monkeypatch):
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene("A. B. C.")]})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [scene("A. B. C.")]}))
     assess = ca.scene_planning.assess
     reviews = []
 
@@ -79,7 +82,7 @@ def test_selected_proposal_with_failed_planning_still_receives_semantic_review(m
             raise RuntimeError("private backend text")
         return assess(*args, **kwargs)
 
-    def review(chat, client, model, payload, *args):
+    def review(chat, client, model, payload, *args, **kwargs):
         reviews.append(deepcopy(payload))
         return {1: ["Check source-supported posture."]}
 
@@ -102,10 +105,10 @@ def test_selected_proposal_with_failed_planning_still_receives_semantic_review(m
 
 def test_partial_resume_preserves_warnings_and_does_not_approve_failed_review(monkeypatch):
     snapshots = []
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {
-        "sequences": [scene("A."), scene(" B."), scene(" C.")]})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {
+        "sequences": [scene("A."), scene(" B."), scene(" C.")]}))
 
-    def review(chat, client, model, payload, *args):
+    def review(chat, client, model, payload, *args, **kwargs):
         if payload["sequences"][0]["source"] == "A.":
             raise RuntimeError("unavailable")
         return {}
@@ -121,9 +124,9 @@ def test_partial_resume_preserves_warnings_and_does_not_approve_failed_review(mo
     saved = snapshots[-1]
     assert len(saved["approved_reviews"]) == 1
     assert saved["sequences"][0]["review"]["status"] == "incomplete"
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("Do not regenerate"))
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: pytest.fail("Do not regenerate")))
     reviews = []
-    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args: reviews.append(args[3]) or {})
+    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: reviews.append(args[3]) or {})
     result = run(resume_state=saved)
     assert [payload["sequences"][0]["source"] for payload in reviews] == [" C."]
     assert result["narrative_review"]["warnings"] == saved["narrative_review"]["warnings"]
@@ -133,9 +136,9 @@ def test_partial_resume_preserves_warnings_and_does_not_approve_failed_review(mo
 @pytest.mark.parametrize("error", [KeyboardInterrupt(), PermissionError("storage unavailable"),
                                  type("InterruptProcessingException", (RuntimeError,), {})("Stop")])
 def test_review_cancellation_and_storage_errors_still_propagate(monkeypatch, error):
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene("A. B. C.")]})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [scene("A. B. C.")]}))
 
-    def review(*args):
+    def review(*args, **kwargs):
         raise error
 
     monkeypatch.setattr(ca.narrative_validation, "review", review)
@@ -145,9 +148,9 @@ def test_review_cancellation_and_storage_errors_still_propagate(monkeypatch, err
 
 @pytest.mark.parametrize("failed_stage", ["proposals", "proposal_review"])
 def test_proposal_failure_keeps_valid_scene_and_continues(monkeypatch, failed_stage):
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene("A. B. C.")]})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [scene("A. B. C.")]}))
 
-    def review(chat, client, model, payload, *args):
+    def review(chat, client, model, payload, *args, **kwargs):
         if "defects_to_recheck" in payload:
             raise RuntimeError("review backend unavailable")
         return {1: ["Check posture."]}

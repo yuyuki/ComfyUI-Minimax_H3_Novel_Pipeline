@@ -7,6 +7,8 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, path_access
 from minimax_h3_novel_pipeline.nodes import cinematic_chapter_adapter as adapter
 
@@ -26,8 +28,8 @@ def node(tmp_path, monkeypatch):
     chapter.write_text(source, encoding="utf-8")
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(adapter.lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "mock"))
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene(source.strip())]})
-    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args: {})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [scene(source.strip())]}))
+    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: {})
 
     def run(stamp=OLD, **kwargs):
         return adapter.CinematicChapterAdapterNode().run(
@@ -43,7 +45,7 @@ def cache(root, stamp=OLD):
 def test_resume_pending_draft_then_completed_chapter_without_generation(node, monkeypatch):
     run, root, chapter = node
 
-    def interrupted(*args):
+    def interrupted(*args, **kwargs):
         raise KeyboardInterrupt()
 
     monkeypatch.setattr(ca.narrative_validation, "review", interrupted)
@@ -52,7 +54,7 @@ def test_resume_pending_draft_then_completed_chapter_without_generation(node, mo
     previous = cache(root).read_bytes()
     reviews = []
 
-    def review(*args):
+    def review(*args, **kwargs):
         reviews.append(args[3])
         return {}
 
@@ -60,7 +62,7 @@ def test_resume_pending_draft_then_completed_chapter_without_generation(node, mo
         pytest.fail("Saved source-validated draft must not be regenerated")
 
     monkeypatch.setattr(ca.narrative_validation, "review", review)
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", no_generation)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(no_generation))
     result = run(NEW, resume_run=OLD)["result"][0][0]
     assert len(reviews) == 1
     assert "".join(s["source"] for s in result["sequences"]) == chapter.read_text()
@@ -109,18 +111,18 @@ def test_core_resume_after_one_scene_committed_keeps_remaining_scene_and_choices
         if state["stage"] == "scene_committed":
             raise RuntimeError("interrupted after scene one")
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {
-        "sequences": [scene("Il attend."), scene(" Il part.")]})
-    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args: {})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {
+        "sequences": [scene("Il attend."), scene(" Il part.")]}))
+    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: {})
     kwargs = dict(chunk_chars=4000, temperature=0.15, max_tokens=1000, correction_attempts=0)
     with pytest.raises(RuntimeError, match="interrupted after scene"):
         ca.adapt_chapter(None, "mock", source, on_checkpoint=checkpoint, **kwargs)
     saved = snapshots[-1]
     assert len(saved["sequences"]) == len(saved["pending_sequences"]) == 1
     assert saved["source_cursor"] == len("Il attend.")
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No generation expected"))
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: pytest.fail("No generation expected")))
     reviews = []
-    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args: reviews.append(args[3]) or {})
+    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: reviews.append(args[3]) or {})
     result = ca.adapt_chapter(None, "mock", source, resume_state=saved, **kwargs)
     assert [s["sequence"] for s in result["sequences"]] == [1, 2]
     assert "".join(s["source"] for s in result["sequences"]) == source
@@ -136,7 +138,7 @@ def test_third_scene_failure_preserves_files_and_resumes_only_pending_scenes(nod
     fields = ca._validated_sequences({"sequences": fields}, source)
     for index, item in enumerate(fields):
         item["final_state"] = f"After scene {index + 1}."
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": deepcopy(fields)})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": deepcopy(fields)}))
     reviewed = []
 
     def review(chat, client, model, payload, count, tokens, **kwargs):
@@ -145,7 +147,7 @@ def test_third_scene_failure_preserves_files_and_resumes_only_pending_scenes(nod
         if item["final_state"] == fields[2]["final_state"]:
             state = json.loads(cache(root).read_text())
             assert len(state["sequences"]) == len(state["pending_sequences"]) == 2
-            assert state["source_cursor"] == len("".join(s["source"] for s in fields[:2]))
+            assert source[:state["source_cursor"]].strip() == "".join(s["source"] for s in fields[:2]).strip()
             assert cache(root).with_name("scene_001.json").is_file()
             assert cache(root).with_name("scene_002.json").is_file()
             assert not cache(root).with_name("scene_003.json").exists()
@@ -169,12 +171,12 @@ def test_third_scene_failure_preserves_files_and_resumes_only_pending_scenes(nod
     assert "saved_scenes=2, pending_scenes=2" in capsys.readouterr().out
     reviewed.clear()
 
-    def resumed_review(chat, client, model, payload, count, tokens):
+    def resumed_review(chat, client, model, payload, count, tokens, **kwargs):
         reviewed.append(deepcopy(payload))
         return {}
 
     monkeypatch.setattr(ca.narrative_validation, "review", resumed_review)
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No regeneration expected"))
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: pytest.fail("No regeneration expected")))
     result = run(NEW, resume_run=OLD)["result"][0][0]
     assert not reviewed
     diagnostics_path = cache(root, NEW).parent.parent.parent / "001_chapter.cinematic.diagnostics.json"
@@ -197,7 +199,7 @@ def test_split_repair_commits_each_replacement_before_reviewing_the_next(monkeyp
             return {"sequences": [scene("A."), scene(" B.")]}
         return {"sequences": deepcopy(fields)}
 
-    def review(chat, client, model, payload, count, tokens):
+    def review(chat, client, model, payload, count, tokens, **kwargs):
         source = payload["sequences"][0]["source"]
         if source == "A. B.":
             return {1: ["Split the scene."]}
@@ -210,13 +212,13 @@ def test_split_repair_commits_each_replacement_before_reviewing_the_next(monkeyp
             raise KeyboardInterrupt()
         return {}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(ca.narrative_validation, "review", review)
     kwargs = dict(chunk_chars=4000, temperature=0.15, max_tokens=16384, correction_attempts=1)
     with pytest.raises(KeyboardInterrupt):
         ca.adapt_chapter(None, "mock", "A. B. C.", on_checkpoint=lambda s: snapshots.append(deepcopy(s)), **kwargs)
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No regeneration expected"))
-    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args: {})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: pytest.fail("No regeneration expected")))
+    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: {})
     result = ca.adapt_chapter(None, "mock", "A. B. C.", resume_state=snapshots[-1], **kwargs)
     assert [s["source"] for s in result["sequences"]] == ["A.", " B.", " C."]
 
@@ -225,7 +227,7 @@ def test_split_repair_commits_each_replacement_before_reviewing_the_next(monkeyp
 def test_resume_selected_proposal_retains_choice_and_reviews_before_commit(monkeypatch, stage):
     snapshots = []
     proposal = {"initialState": "Before.", "event": "Wait.", "endingState": "After."}
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: {"sequences": [scene("Il attend.")]})
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [scene("Il attend.")]}))
     monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: {1: ["Uncertain posture."]})
     monkeypatch.setattr(ca.narrative_choices, "propose", lambda *args: [{"adaptation": deepcopy(proposal)}])
 
@@ -237,10 +239,10 @@ def test_resume_selected_proposal_retains_choice_and_reviews_before_commit(monke
     kwargs = dict(chunk_chars=4000, temperature=0.15, max_tokens=16384, correction_attempts=0)
     with pytest.raises(RuntimeError, match="interrupted proposal"):
         ca.adapt_chapter(None, "mock", "Il attend.", on_checkpoint=checkpoint, **kwargs)
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("No regeneration expected"))
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: pytest.fail("No regeneration expected")))
     monkeypatch.setattr(ca.narrative_choices, "propose", lambda *args: pytest.fail("Keep the selected proposal"))
     reviews = []
-    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args: reviews.append(args[3]) or {})
+    monkeypatch.setattr(ca.narrative_validation, "review", lambda *args, **kwargs: reviews.append(args[3]) or {})
     result = ca.adapt_chapter(None, "mock", "Il attend.", resume_state=snapshots[-1], **kwargs)
     assert len(reviews) == 1
     assert result["sequences"][0]["adaptation"] == proposal

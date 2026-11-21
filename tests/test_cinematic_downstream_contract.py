@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import (
     cinematic_adaptation as adaptation,
     cinematic_scene_planning as planning,
@@ -46,7 +48,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
     def adapt_chat(client, model, system, user, schema, *args):
         if schema == adaptation.SCHEMA:
             return {"sequences": deepcopy(drafts)}
-        assert schema == planning.SCHEMA
+        assert schema["name"] == planning.SCHEMA["name"]
         if planning_unavailable:
             raise ConnectionError("Offline planning")
         events = json.loads(user)["current_scene"]["events"]
@@ -57,7 +59,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
                            "reason": "Short scene."},
                 "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", adapt_chat)
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(adapt_chat))
     monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *a, **kw: {})
     direct, saved_files = CinematicChapterAdapterNode().run(
         config, {"chapter_paths": [str(source)]}, duration=12)["result"]
@@ -87,7 +89,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
         source_inputs.append(json.loads(user))
         return {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
 
-    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", extract_chat)
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", with_passage_ids(extract_chat))
     catalogs, _ = ExtractChapterReferencesNode().run(config, chapters, **defaults(ExtractChapterReferencesNode))["result"]
     sequences = chapters[0]["sequences"]
     assert [(p["sequence"], p["text"]) for p in source_inputs] == [
@@ -106,12 +108,12 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
                 "camera_movement": "Static.", "camera_axis": "Unknown.",
                 "initial_entities": [], "final_entities": [], "justified_changes": [], "warnings": []}
 
-    monkeypatch.setattr(spatial, "chat_json", spatial_chat)
+    monkeypatch.setattr(spatial, "chat_json", with_passage_ids(spatial_chat))
     spatial_plan = spatial.SpatialContinuityNode().run(registry, config)["result"][0]
     generator = lmstudio_pipeline.load("generate")
-    monkeypatch.setattr(generator, "chat_json", lambda *a: {
+    monkeypatch.setattr(generator, "chat_json", with_passage_ids(lambda *a: {
         "dialogue_present": False, "visible_entity_ids": [], "speaking_entity_ids": [],
-        "location_global_id": "", "reference_view_requests": []})
+        "location_global_id": "", "reference_view_requests": []}))
     prepared = []
 
     def generate_chapter(chapter, refs, client, model, args):

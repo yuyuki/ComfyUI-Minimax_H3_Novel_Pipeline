@@ -9,6 +9,8 @@ import httpx
 from openai import APIConnectionError
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 from minimax_h3_novel_pipeline.core import character_evidence as evidence, path_access
 from minimax_h3_novel_pipeline.nodes import character_evidence_extractor as node
@@ -55,7 +57,7 @@ def test_output_overflow_splits_with_overlap_and_preserves_cache(workspace, monk
     streams = [Stream([truncated]), Stream([truncated]),
                Stream([json.dumps({"evidence": [observation()]})]),
                Stream([json.dumps({"evidence": [observation()]})])]
-    client, create = client_for(*streams)
+    client, create = client_for(*streams, passage_fixtures=True)
     diagnostics = []
     args = settings(character_scope="all_characters")
     result = evidence.extract_chapter(path, output, client, "qwen3.8", args, 1, diagnostics=diagnostics)
@@ -63,7 +65,7 @@ def test_output_overflow_splits_with_overlap_and_preserves_cache(workspace, monk
     assert all(s.closed for s in streams)
     for call in create.call_args_list:
         schema = call.kwargs["response_format"]
-        assert schema == {"type": "json_schema", "json_schema": evidence.SCHEMA}
+        assert schema == {"type": "json_schema", "json_schema": evidence.EXTRACTION_SCHEMA}
         assert call.kwargs["max_tokens"] == args.max_tokens
     left, right = [json.loads(call.kwargs["messages"][-1]["content"])["passages"][0]
                    for call in create.call_args_list[-2:]]
@@ -82,7 +84,7 @@ def test_overflow_splitting_is_bounded_and_never_caches_partial_result(workspace
     path = source / "chapter.txt"
     path.write_text("Élise " * 150, encoding="utf-8")
     chat = Mock(side_effect=evidence.lmstudio_json.StructuredOutputLengthError("output limit"))
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(RuntimeError, match="character offset 0"):
         evidence.extract_chapter(path, output, None, "qwen3.8",
                                  settings(character_scope="all_characters", correction_attempts=10), 1)
@@ -94,10 +96,10 @@ def test_overflow_splits_disjoint_parts_without_joining_them(monkeypatch):
     chat = Mock(side_effect=[evidence.lmstudio_json.StructuredOutputLengthError("output limit"),
                             {"evidence": [observation("first")]},
                             {"evidence": [observation("second")]}])
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = evidence._extract_parts(None, "qwen3.8", evidence.SYSTEM, "chapter",
-                                     ["first", "second"], settings(), {"llm_calls": 0})
-    assert [item["quotation"] for item in result["evidence"]] == ["first", "second"]
+                                     [(0, "first"), (10, "second")], settings(), {"llm_calls": 0})
+    assert [item["quotation"] for item in result] == ["first", "second"]
     assert [json.loads(call.args[3])["passages"] for call in chat.call_args_list] == [
         ["first", "second"], ["first"], ["second"]]
 
@@ -110,7 +112,7 @@ def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch, famil
     for name in ("chapter10.txt", "chapter2.txt"):
         (source / name).write_bytes(text.encode("utf-8"))
     chat = Mock(return_value={"evidence": [observation()]})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     def make_client(*args):
         assert args[2]['model_family'] == family
         return nullcontext(), model
@@ -125,10 +127,10 @@ def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch, famil
     assert chat.call_count == 2
     for i, chapter in enumerate(data["chapters"], 1):
         assert chapter["source_text"] == evidence.normalize(text.removeprefix("\ufeff"))
-        item = chapter["evidence"][0]
-        assert item["provenance"]["chapter"] == i
-        assert len(item["provenance"]["locations"]) == 2
-        for loc in item["provenance"]["locations"]:
+        assert len(chapter["evidence"]) == 2
+        for item in chapter["evidence"]:
+            assert item["provenance"]["chapter"] == i
+            loc, = item["provenance"]["locations"]
             assert chapter["source_text"][loc["start_char"]:loc["end_char"]] == item["quotation"]
 
 
@@ -137,7 +139,7 @@ def test_cache_force_source_settings_and_corruption(workspace, monkeypatch):
     path = source / "chapter.txt"
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
     chat = Mock(return_value={"evidence": [observation()]})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     def run(**kwargs):
         return evidence.extract_chapter(path, output, None, "qwen3.5", settings(**kwargs), 1)
     assert run() == run()
@@ -165,7 +167,7 @@ def test_resume_run_reuses_completed_work_and_copies_cache(workspace, monkeypatc
     for path in (first, second):
         path.write_text("Élise avait les yeux verts.", encoding="utf-8")
     chat = Mock(return_value={"evidence": [observation()]})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model",
                         lambda *args: (nullcontext(), "qwen3.5"))
     extractor = node.CharacterEvidenceExtractorNode()
@@ -214,7 +216,7 @@ def test_resume_corrupt_cache_recomputed_without_changing_source(workspace, monk
     path = source / "chapter.txt"
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
     chat = Mock(return_value={"evidence": [observation()]})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     previous = output / "20261025154413/character_evidence/.cache"
     evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1, cache_dir=previous)
     cached_file = next(previous.glob("*.json"))
@@ -224,7 +226,10 @@ def test_resume_corrupt_cache_recomputed_without_changing_source(workspace, monk
                              cache_dir=current, resume_cache_dir=previous)
     assert chat.call_count == 2
     assert cached_file.read_text() == "broken"
-    assert json.loads(next(current.glob("*.json")).read_text(encoding="utf-8")) == [{"evidence": [observation()]}]
+    cached, = json.loads(next(current.glob("*.json")).read_text(encoding="utf-8"))
+    row, = cached["evidence"]
+    assert row.pop("_selected_location") == [0, len(observation()["quotation"])]
+    assert row == observation()
 
 
 @pytest.mark.parametrize("overrides", [
@@ -270,44 +275,34 @@ def test_malformed_item_warns_without_losing_valid_evidence(item, caplog):
 
 
 @pytest.mark.parametrize("valid_items", [[], [observation()]])
-def test_failed_repairs_keep_all_observations_and_do_not_block(workspace, monkeypatch, caplog, valid_items):
+def test_failed_selection_keeps_only_locatable_observations(workspace, monkeypatch, valid_items):
     source, output = workspace
     path = source / "chapter.txt"
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
-    chat = Mock(return_value={"evidence": [observation("translated"), *valid_items]})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
-    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
-    assert len(result["evidence"]) == 1 + len(valid_items)
-    assert result["evidence"][0]["quotation"] == "translated"
-    assert result["evidence"][0]["warnings"]
-    assert result["evidence"][0]["provenance"]["locations"] == []
-    assert chat.call_count == 1
-    assert len(caplog.records) == 1
-    assert caplog.records[0].levelname == "WARNING"
-    assert "observations need review" in caplog.text
-    cache = next((output / ".cache").glob("*.json"))
-    assert json.loads(cache.read_text(encoding="utf-8")) == [{"evidence": [observation("translated"), *valid_items]}]
-    assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
-    assert chat.call_count == 1
-    assert len(caplog.records) == 2
+    chat = Mock(return_value={"evidence": [observation("Unsupported quote."), *valid_items]})
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
+    diagnostics = []
+    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1, diagnostics=diagnostics)
+    assert len(result["evidence"]) == len(valid_items)
+    assert diagnostics[0]["status"] == "incomplete"
+    assert diagnostics[0]["incomplete_batches"][0]["rows"] == [1]
+    assert chat.call_count == 2
+    assert not list(output.rglob("*.json"))
 
 
 @pytest.mark.parametrize("item", [None, {}, observation(quote=""), observation(quote=123),
                                 observation(attribute=[], classification={}, persistence=[]),
                                 observation(confidence="unknown")])
-def test_malformed_observations_are_saved_without_blocking(workspace, monkeypatch, item):
+def test_malformed_observations_leave_incomplete_evidence_diagnostics(workspace, monkeypatch, item):
     source, output = workspace
     path = source / "chapter.txt"
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", Mock(return_value={"evidence": [item]}))
-    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
-    saved = result["evidence"][0]
-    assert saved["warnings"]
-    if isinstance(item, dict):
-        assert {k: v for k, v in saved.items() if k not in {"warnings", "provenance"}} == item
-    else:
-        assert saved["raw_evidence"] == item
-    assert json.loads(json.dumps(result)) == result
+    chat = Mock(return_value={"evidence": [item]})
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
+    diagnostic = []
+    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1, diagnostics=diagnostic)
+    assert result["evidence"] == []
+    assert diagnostic[0]["status"] == "incomplete"
 
 
 def test_all_validation_problems_are_recorded(caplog):
@@ -332,17 +327,17 @@ def test_chunks_cover_source_with_boundary_overlap():
 def test_extraction_uses_json_schema_and_repairs_malformed_json(workspace, monkeypatch):
     monkeypatch.setattr(evidence.lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
     first, second = Stream(['{"evidence":']), Stream(['```json\n{"evidence": []}\n```'])
-    client, create = client_for(first, second)
+    client, create = client_for(first, second, passage_fixtures=True)
     source, output = workspace
     path = source / "chapter.txt"
     path.write_text("Élise attend.", encoding="utf-8")
     result = evidence.extract_chapter(path, output, client, "qwen3.5", settings(), 1)
     assert result["evidence"] == []
     assert len(create.call_args_list) == 2
-    assert all(call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.SCHEMA}
+    assert all(call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.EXTRACTION_SCHEMA}
                for call in create.call_args_list)
-    items = evidence.SCHEMA["schema"]["properties"]["evidence"]["items"]
-    assert set(items["required"]) == evidence.FIELDS == set(items["properties"])
+    items = evidence.EXTRACTION_SCHEMA["schema"]["properties"]["evidence"]["items"]
+    assert set(items["required"]) == (evidence.FIELDS - {"quotation"}) | {"quotation_passage_ids"} == set(items["properties"])
     assert first.closed and second.closed
 
 
@@ -361,7 +356,7 @@ def test_interrupt_is_not_retried(workspace, monkeypatch):
     path = source / "chapter.txt"
     path.write_text("Élise avait les yeux verts.", encoding="utf-8")
     chat = Mock(side_effect=InterruptProcessingException())
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(InterruptProcessingException):
         evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
     assert chat.call_count == 1
@@ -375,8 +370,8 @@ def test_pdf_locations_use_extracted_text(workspace, monkeypatch):
     quote = "Élise avait les yeux verts."
     monkeypatch.setattr("pypdf.PdfReader", lambda _: Mock(pages=[
         Mock(extract_text=lambda: "Page one."), Mock(extract_text=lambda: quote)]))
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", lambda *a: {"evidence": [
-        observation(classification="inferred", confidence=0.4, persistence="unknown")]})
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(lambda *a: {"evidence": [
+        observation(classification="inferred", confidence=0.4, persistence="unknown")]}))
     result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
     assert result["location_basis"] == "normalized_pdf_extracted_text"
     assert result["source_text"] == "Page one.\n\n" + quote
@@ -390,7 +385,7 @@ def test_network_errors_have_context_without_server_details(workspace, monkeypat
     path.write_text("Élise attend.", encoding="utf-8")
     chat = Mock(side_effect=APIConnectionError(message="private server detail",
                                              request=httpx.Request("POST", "http://localhost")))
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(RuntimeError, match="chapter.txt, passage 1") as caught:
         evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
     assert "private server detail" not in str(caught.value)
@@ -446,7 +441,7 @@ def test_single_newlines_and_long_unbroken_text_have_bounded_windows():
 
 @pytest.mark.parametrize("attribute", ["name", "alias", "action", "context"])
 def test_nonphysical_observations_are_outside_contract(attribute):
-    assert attribute not in evidence.SCHEMA["schema"]["properties"]["evidence"]["items"]["properties"]["attribute"]["enum"]
+    assert attribute not in evidence.EXTRACTION_SCHEMA["schema"]["properties"]["evidence"]["items"]["properties"]["attribute"]["enum"]
     assert evidence.validate_result({"evidence": [observation(attribute=attribute)]},
                                     observation()["quotation"], log_warnings=False)[0]["warnings"]
 
@@ -463,7 +458,7 @@ def test_node_persists_diagnostics_and_completed_cache_on_interruption(workspace
     class InterruptProcessingException(RuntimeError):
         pass
     chat = Mock(side_effect=[{"evidence": [observation()]}, InterruptProcessingException()])
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model",
                         lambda *args: (nullcontext(), "qwen3.5"))
     with pytest.raises(InterruptProcessingException):
@@ -485,7 +480,7 @@ def test_unnamed_scope_and_validation(workspace, monkeypatch):
     path = source / "chapter.txt"
     path.write_text("The old man had grey eyes.", encoding="utf-8")
     chat = Mock(return_value={"evidence": []})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     evidence.extract_chapter(path, output, None, "qwen3.5", settings(character_scope="proper_names"), 1)
     assert chat.call_count == 0
     evidence.extract_chapter(path, output, None, "qwen3.5", settings(character_scope="all_characters"), 1)
@@ -508,7 +503,7 @@ def test_disjoint_batch_offsets_cache_and_conflicts(workspace, monkeypatch):
         return {"evidence": [observation(q, value=q) for q in (green, blue) if any(q in p for p in passages)]}
 
     mocked = Mock(side_effect=chat)
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", mocked)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(mocked))
     diagnostics = []
     args = settings(chunk_chars=1000)
     first = evidence.extract_chapter(path, output, None, "qwen3.5", args, 1, diagnostics=diagnostics)
@@ -518,13 +513,13 @@ def test_disjoint_batch_offsets_cache_and_conflicts(workspace, monkeypatch):
     for item in first["evidence"]:
         loc = item["provenance"]["locations"][0]
         assert first["source_text"][loc["start_char"]:loc["end_char"]] == item["quotation"]
-    # An edit outside the selected context shifts offsets without invalidating the batch.
+    # An edit outside the selected context shifts offsets and invalidates the old addresses.
     text = first["source_text"]
     cut = text.index("\n\n", len(green) + 3) + 2
     path.write_bytes((text[:cut] + "the extra rain.\n\n" + text[cut:]).encode("utf-8"))
     second = evidence.extract_chapter(path, output, None, "qwen3.5", args, 1, diagnostics=diagnostics)
-    assert mocked.call_count == 1
-    assert diagnostics[-1]["cache_hits"] == 1
+    assert mocked.call_count == 2
+    assert diagnostics[-1]["cache_hits"] == 0
     assert second["evidence"][1]["provenance"]["locations"][0]["start_char"] > first["evidence"][1]["provenance"]["locations"][0]["start_char"]
 
 
@@ -532,7 +527,7 @@ def test_node_cache_isolated_per_run_and_reused_within_run(workspace, monkeypatc
     source, output = workspace
     (source / "chapter.txt").write_text("Élise attend.", encoding="utf-8")
     chat = Mock(return_value={"evidence": []})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(node.lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "qwen3.5"))
     for stamp, expected_calls, expected_hits in (
         ("20261024120000", 1, 0),
@@ -553,11 +548,11 @@ def test_node_cache_isolated_per_run_and_reused_within_run(workspace, monkeypatc
 
 def test_transport_diagnostics_include_retries(monkeypatch):
     monkeypatch.setattr(evidence.lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
-    client, create = client_for(Stream(['{"evidence":']), Stream(['{"evidence": []}']))
+    client, create = client_for(Stream(['{"evidence":']), Stream(['{"evidence": []}']), passage_fixtures=True)
     metrics = dict(llm_requests=0, estimated_input_tokens=0, estimated_output_tokens=0)
     token = evidence.lmstudio_json.REQUEST_METRICS.set(metrics)
     try:
-        evidence.lmstudio_json.chat_json(client, "qwen3.5", evidence.SYSTEM, "Élise attend.", evidence.SCHEMA, 0.15, 8192)
+        evidence.lmstudio_json.chat_json(client, "qwen3.5", evidence.SYSTEM, "Élise attend.", evidence.EXTRACTION_SCHEMA, 0.15, 8192)
     finally:
         evidence.lmstudio_json.REQUEST_METRICS.reset(token)
     assert metrics["llm_requests"] == create.call_count == 2
@@ -574,7 +569,7 @@ def test_completed_batch_survives_interruption(workspace, monkeypatch):
         pass
 
     chat = Mock(side_effect=[{"evidence": []}, InterruptProcessingException()])
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     args = settings(character_scope="all_characters")
     with pytest.raises(InterruptProcessingException):
         evidence.extract_chapter(path, output, None, "qwen3.5", args, 1)
@@ -596,71 +591,13 @@ def test_overlap_dedup_preserves_conflicting_observations(workspace, monkeypatch
     def chat(*args):
         return {"evidence": observations if quote in args[3] else []}
 
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(character_scope="all_characters"), 1)
-    assert len(result["evidence"]) == 2
+    assert len(result["evidence"]) == 4
     assert {item["value"] for item in result["evidence"]} == {"green", "blue"}
     assert all(len(item["provenance"]["locations"]) == 1 for item in result["evidence"])
 
 
-def test_local_repair_preserves_facts_provenance_and_cache(workspace, monkeypatch):
-    source, output = workspace
-    path = source / "chapter.txt"
-    quote = "Élise avait l’œil vert."
-    path.write_text(quote, encoding="utf-8")
-    invalid = observation('"Élise avait l’œil vert."')
-    chat = Mock(return_value={"evidence": [invalid]})
-    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
-    result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
-    fixed = result["evidence"][0]
-    assert fixed["quotation"] == evidence.normalize(quote)
-    assert fixed["extraction_correction"]["original_quotation"] == evidence.normalize(invalid["quotation"])
-    assert all(fixed[k] == invalid[k] for k in evidence.FIELDS - {"quotation"})
-    loc = fixed["provenance"]["locations"][0]
-    assert result["source_text"][loc["start_char"]:loc["end_char"]] == evidence.normalize(quote)
-    assert evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1) == result
-    assert chat.call_count == 1
-    assert evidence.review_report({"chapters": [result]})["corrected_observations"] == 1
-
-
-@pytest.mark.parametrize("quote,parts,expected", [
-    ('"Shannon avait les cheveux roux."', ["Shannon avait les cheveux roux."], "Shannon avait les cheveux roux."),
-    ("L'homme avait l'oeil bleu.", ["L’homme avait l’œil bleu."], None),  # No lexical normalization.
-    ("L'homme était grand.", ["L’homme était grand."], "L’homme était grand."),
-    ("Élise avait les yeux verts.", ["Élise  avait\r\nles yeux verts."], "Élise  avait\r\nles yeux verts."),
-    ("left right", ["left", "right"], None),
-    ("Elle avait les yeux verts.", ["Élise avait les yeux verts."], None),
-    ("Elle était là.", ["Elle n’était pas là."], None),
-    ("L'homme est grand.", ["L’homme est grand.", "L‘homme est grand."], "L'homme est grand."),
-])
-def test_local_repair_only_maps_unambiguous_typography(quote, parts, expected):
-    original = observation(quote)
-    stats = {"llm_calls": 0}
-    result = evidence.repair_observations({"evidence": [original]}, parts, stats)[0]
-    assert result["quotation"] == evidence.normalize(expected or quote)
-    assert bool(result.get("warnings")) == (expected is None)
-    assert stats["llm_calls"] == 0
-    assert result["value"] == original["value"]
-
-
-def test_local_repair_keeps_independent_invalid_observations():
-    items = [observation("bad one"), observation("bad two")]
-    result = evidence.repair_observations({"evidence": items}, ["source"], {})
-    assert [i["quotation"] for i in result] == [i["quotation"] for i in items]
-    assert all(i["warnings"] for i in result)
-
-
 def test_extraction_schema_focuses_on_physical_appearance():
-    assert evidence.SCHEMA["schema"]["properties"]["evidence"]["items"]["properties"]["attribute"]["enum"] == [
+    assert evidence.EXTRACTION_SCHEMA["schema"]["properties"]["evidence"]["items"]["properties"]["attribute"]["enum"] == [
         "physical_appearance"]
-
-
-def test_shannon_typography_repair_preserves_all_enduring_traits():
-    source = "Son corps dégingandé faisait oublier ses pieds démesurés et son long cou à la pomme d’Adam proéminente."
-    quote = '"' + source.replace("’", "'") + '"'
-    values = ["corps dégingandé", "pieds démesurés", "long cou à la pomme d’Adam proéminente"]
-    items = [observation(quote, character="Shannon", value=value) for value in values]
-    result = evidence.repair_observations({"evidence": items}, [source], {})
-    assert [item["value"] for item in result] == [evidence.normalize(value) for value in values]
-    assert all(item["quotation"] == evidence.normalize(source) and item["persistence"] == "persistent" for item in result)
-    assert all(not item.get("warnings") for item in result)

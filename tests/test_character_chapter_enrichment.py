@@ -4,6 +4,9 @@ import json
 
 import pytest
 
+from tests.passages_helpers import with_passage_ids
+from minimax_h3_novel_pipeline.core import source_text
+
 from minimax_h3_novel_pipeline.core import character_chapter_enrichment as ce
 from minimax_h3_novel_pipeline.core import character_visual_profiles as vp
 from minimax_h3_novel_pipeline.core import character_profile_batches as batches, path_access, util
@@ -37,16 +40,14 @@ def mock_chat(monkeypatch, data, presence='visible'):
                 for c in payload['candidates']], 'unresolved': []}
         if schema == ce.STATES:
             return {'states': [{'state_id': s['state_id'], 'applies': s['kind'] == 'temporary',
-                'source_quote': payload['sequence']['source'], 'reason': 'Directly attested.'} for s in payload['states']]}
+                'source_quote': payload['sequence']['source'] if s['kind'] == 'temporary' else '', 'reason': 'Directly attested.'} for s in payload['states']]}
         if schema == ce.LOCAL_STATES:
             return {'observations': []}
         if schema == ce.LOCAL_REVIEW:
             return {'issues': []}
         raise AssertionError(schema)
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     return calls
-
-
 
 
 def test_temporary_clothing_stays_in_attested_source_and_not_design(output, monkeypatch):
@@ -61,9 +62,9 @@ def test_temporary_clothing_stays_in_attested_source_and_not_design(output, monk
     result = ce.enrich(data, [p], chapter, requests)
     assert result['sequences'][0]['states'][0]['value'] == 'red evening dress'
     elsewhere = {**chapter['sequences'][0], 'source': 'The next morning.'}
-    assert ce.state_candidates(p, chapter, elsewhere) == []
+    assert ce.state_candidates(p, chapter, elsewhere, len(chapter["_source_text"])) == []
     wrong_source = {**chapter, 'source_file': 'another.txt'}
-    assert ce.state_candidates(p, wrong_source, chapter['sequences'][0]) == []
+    assert ce.state_candidates(p, wrong_source, chapter['sequences'][0], 0) == []
     assert p['effective_traits'] == []
     assert not p['chronological_changes']  # No injury-to-scar inference.
 
@@ -73,6 +74,7 @@ def test_contextual_pronouns_offscreen_and_mentions(output, monkeypatch):
     chapter = selected_chapter(data, cinematic(data))
     chapter['sequences'].append({'sequence': 2, 'source': 'She waits.',
         'adaptation': {'initialState': 'She waits.', 'event': 'A voice is heard.', 'endingState': 'She waits.'}})
+    chapter['_source_text'] += ' She waits.'
     calls = mock_chat(monkeypatch, data, 'offscreen')
     result = ce.enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings()))
@@ -121,7 +123,7 @@ def test_chronological_scar_requires_sequence_evidence_not_chapter_order(output,
     mock_chat(monkeypatch, data)
     local = ce.enrich(data, [p], chapter, batches.Requests(output, None, 'qwen', settings()))
     assert not local['sequences'][0]['states']
-    rows = ce.state_candidates(p, chapter, chapter['sequences'][0])
+    rows = ce.state_candidates(p, chapter, chapter['sequences'][0], 0)
     assert {r['chronology']['side'] for r in rows} == {'before_id', 'after_id'}
     assert all(r['chronology']['temporal_quote'] == 'After healing' for r in rows)
 
@@ -146,9 +148,9 @@ def test_attested_chronology_selects_only_the_matching_state(output, monkeypatch
             return default_chat(client, model, system, prompt, schema, *args)
         payload = json.loads(prompt)
         return {'states': [{'state_id': r['state_id'], 'applies': r['chronology']['side'] == side,
-                            'source_quote': source['source_text'], 'reason': 'Explicit before/after source wording.'}
+                            'source_quote': source['source_text'] if r['chronology']['side'] == side else '', 'reason': 'Explicit before/after source wording.'}
                            for r in payload['states']]}
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     local = ce.enrich(data, vp.prepare_profiles(data), chapter,
                       batches.Requests(output, None, 'qwen', settings()))
     states = local['sequences'][0]['states']
@@ -157,33 +159,12 @@ def test_attested_chronology_selects_only_the_matching_state(output, monkeypatch
     assert states[0]['value'] == ('unmarked cheek' if side == 'before_id' else 'scar')
 
 
-
-
-
-
-
-
 def test_whitespace_mapping_preserves_original_offsets():
     original = 'Start.\n\nShe wears\t a red dress.\r\nEnd.'
-    start, end = ce.source_span(original, 'She wears a red dress.')
+    start, end = source_text.source_span(original, 'She wears a red dress.')
     assert original[start:end] == 'She wears\t a red dress.'
-    assert ce.source_span(original, 'She wears a blue dress.') is None
-    assert ce.source_span('She waits. She waits.', 'She waits.') is None
-
-
-@pytest.mark.parametrize('quote', ['She wears a red dress.', 'She\nwears a red dress.'])
-def test_presence_restores_source_whitespace(quote):
-    row = {'source_quote': quote}
-    source = 'Start. She wears\t a red dress.\r\nEnd.'
-    ce.presence_quote(row, source, 'hero')
-    assert row['source_quote'] == 'She wears\t a red dress.'
-
-
-@pytest.mark.parametrize('quote', ['', '  ', 'She wears a blue dress.', 'She wears ... dress.',
-                                  'She wears a red dress!'])
-def test_presence_rejects_changed_or_empty_evidence(quote):
-    with pytest.raises(ValueError, match='Presence hero:'):
-        ce.presence_quote({'source_quote': quote}, 'She wears a red dress.', 'hero')
+    assert source_text.source_span(original, 'She wears a blue dress.') is None
+    assert source_text.source_span('She waits. She waits.', 'She waits.') is None
 
 
 def test_presence_correction_identifies_row_and_preserves_candidates(output, monkeypatch):
@@ -197,14 +178,14 @@ def test_presence_correction_identifies_row_and_preserves_candidates(output, mon
         return {'characters': [{'local_id': pid, 'presence': 'mentioned', 'label': 'Hero',
                 'source_quote': 'Invented quote.' if len(prompts) == 1 else chapter['sequences'][0]['source']}],
                 'unresolved': []}
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     result = ce.enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
     assert result['sequences'][0]['characters'][0]['presence'] == 'mentioned'
     assert len(prompts) == 2
     assert json.loads(prompts[0]) == json.loads(prompts[1].split('\nRejected:')[0])
     correction = prompts[1].split('\nRejected:')[1]
-    assert pid in correction and 'Invented quote.' in correction and 'sequence.source' in correction
+    assert pid in correction and 'authorized source' in correction
 
 
 def test_invalid_presence_saves_low_confidence_and_continues(output, monkeypatch):
@@ -212,7 +193,7 @@ def test_invalid_presence_saves_low_confidence_and_continues(output, monkeypatch
     pid = data['profiles'][0]['local_id']
     response = {'characters': [{'local_id': pid, 'presence': 'uncertain', 'source_quote': '',
                                 'label': 'Hero'}], 'unresolved': []}
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', lambda *args: deepcopy(response))
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(lambda *args: deepcopy(response)))
     result = ce.enrich(data, vp.prepare_profiles(data), selected_chapter(data, cinematic(data)),
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
     assert result['validation']['confidence'] == 'low'
@@ -221,7 +202,7 @@ def test_invalid_presence_saves_low_confidence_and_continues(output, monkeypatch
     ce.save(result, output)
     warning = util.load_json(output / 'character_profiles_requests.json')['warnings'][0]
     assert warning['attempts'] == 2
-    assert warning['response'] == response
+    assert warning['response']['characters'][0]['passage_ids'] == []
     assert pid in warning['reason']
     assert warning['input']['sequence']['source'] == cinematic(data)[0]['sequences'][0]['source']
 
@@ -234,6 +215,7 @@ def test_exhausted_semantic_validation_retains_findings_and_continues(output, mo
                                    'evidence_ids': [profile['supporting_evidence'][0]['evidence_id']]}]
     chapter = selected_chapter(data, cinematic(data))
     chapter['sequences'].append({**deepcopy(chapter['sequences'][0]), 'sequence': 2})
+    chapter['_source_text'] += ' ' + chapter['sequences'][0]['source']
     mock_chat(monkeypatch, data)
     original_chat = batches.lmstudio_json.chat_json
     proposed = {'observations': [{'local_id': profile['local_id'], 'trait': 'clothing',
@@ -257,7 +239,7 @@ def test_exhausted_semantic_validation_retains_findings_and_continues(output, mo
             return value
         return original_chat(client, model, system, prompt, schema, *args)
 
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     result = ce.enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
     assert len(result['sequences']) == 2
@@ -290,7 +272,7 @@ def test_presence_bounds_48_candidates_without_losing_any(output, monkeypatch):
         return {'characters': [{'local_id': c['local_id'], 'presence': 'mentioned',
                 'label': c['canonical_name'], 'source_quote': payload['sequence']['source']}
                 for c in payload['candidates']], 'unresolved': []}
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     result = ce.enrich(data, profiles, chapter, batches.Requests(output, None, 'qwen', settings()))
     assert seen == [p['local_id'] for p in profiles]
     assert [r['local_id'] for r in result['sequences'][0]['characters']] == seen
@@ -309,10 +291,12 @@ def test_presence_splits_failed_batches_with_schema_and_full_context(output, def
                'unknown': [*rows, {**rows[0], 'local_id': 'char_unknown'}]}[defect]
     client, create = client_for(*(Stream([json.dumps(response)]) for response in [
         {'characters': invalid, 'unresolved': []}, {'characters': invalid, 'unresolved': []},
-        {'characters': rows[:1], 'unresolved': []}, {'characters': rows[1:], 'unresolved': []}]))
+        {'characters': rows[:1], 'unresolved': []}, {'characters': rows[1:], 'unresolved': []}]), passage_fixtures=True)
     requests = batches.Requests(output, client, 'qwen', settings(correction_attempts=1))
-    results = list(ce._presence_decisions(requests, context, candidates))
-    assert [r for result in results for r in result['characters']] == rows
+    index = source_text.PassageIndex(context["sequence"]["source"], "presence-test")
+    context["source_passages"] = index.passages()
+    results = list(ce._presence_decisions(requests, context, candidates, index))
+    assert [{k: v for k, v in r.items() if k != "_source_span"} for result in results for r in result['characters']] == rows
     assert create.call_count == 4
     for call in create.call_args_list:
         assert call.kwargs['response_format'] == {'type': 'json_schema', 'json_schema': ce.PRESENCE}
@@ -323,9 +307,7 @@ def test_presence_splits_failed_batches_with_schema_and_full_context(output, def
     assert ('char_unknown' if defect == 'unknown' else 'char_a' if defect == 'duplicate' else 'char_b') in correction
     warning = util.load_json(output / 'character_profiles_requests.json')['warnings'][0]
     assert warning['input']['candidates'] == candidates
-    assert warning['response']['characters'] == invalid
-
-
+    assert [r['local_id'] for r in warning['response']['characters']] == [r['local_id'] for r in invalid]
 
 
 def test_presence_compact_retry_uses_schema_and_complete_candidates(output):
@@ -337,7 +319,7 @@ def test_presence_compact_retry_uses_schema_and_complete_candidates(output):
                                 'label': 'Hero'}], 'unresolved': []}
     client, create = client_for(Stream(['{"characters":']), Stream([json.dumps(presence)]),
                                 Stream(['{"observations": []}']), Stream(['{"issues": []}']),
-                                )
+                                 passage_fixtures=True)
     ce.enrich(data, vp.prepare_profiles(data), chapter, batches.Requests(output, client, 'qwen', settings()))
     assert create.call_count == 4
     for call in create.call_args_list:
@@ -346,10 +328,6 @@ def test_presence_compact_retry_uses_schema_and_complete_candidates(output):
     for call in create.call_args_list[:2]:
         assert pid in str(call.kwargs['messages'])
         assert call.kwargs['response_format']['json_schema']['name'] == ce.PRESENCE['name']
-
-
-
-
 
 
 def test_chapter_candidates_exclude_other_chapters_but_keep_named_mentions():
@@ -385,7 +363,7 @@ def test_local_quote_repair_and_precise_corrections(output, monkeypatch, defect)
         return {'observations': [{'local_id': 'Hero' if first and defect == 'identity' else pid,
             'trait': 'injury', 'value': 'Burned arm',
             'source_quote': 'Her arm is injured.' if first and defect == 'wording' else 'Her arm is burned.'}]}
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     result = ce.enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings()))
     state = result['sequences'][0]['states'][0]
@@ -394,7 +372,7 @@ def test_local_quote_repair_and_precise_corrections(output, monkeypatch, defect)
     assert len(prompts) == (1 if defect == 'whitespace' else 2)
     if defect != 'whitespace':
         assert pid in prompts[1].split('\nRejected:')[1]
-        assert ('character.local_id' if defect == 'identity' else 'sequence.source') in prompts[1].split('\nRejected:')[1]
+        assert ('character.local_id' if defect == 'identity' else 'authorized source') in prompts[1].split('\nRejected:')[1]
 
 
 def test_ambiguous_speaker_does_not_become_multiple_cast_identities(output, monkeypatch):
@@ -419,31 +397,9 @@ def test_no_candidates_still_detects_unresolved_mentions(output, monkeypatch):
         assert schema == ce.PRESENCE
         assert json.loads(prompt)['candidates'] == []
         return {'characters': [], 'unresolved': [{'label': 'Élise', 'source_quote': quote}]}
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     result = ce.enrich(data, [], chapter, batches.Requests(output, None, 'qwen', settings()))
     assert result['sequences'][0]['unresolved'] == [{'label': 'Élise', 'source_quote': quote}]
-
-
-@pytest.mark.parametrize('source,quote', [
-    ('Indy se balançait dans l’obscurité.', "Indy se balançait dans l'obscurité."),
-    ("Indy se balançait dans l'obscurité.", 'Indy se balançait dans l’obscurité.'),
-    ('Indy\nse balançait dans l’obscurité.', "Indy se balançait dans l'obscurité."),
-])
-def test_presence_restores_apostrophes_and_whitespace(source, quote):
-    row = {'source_quote': quote}
-    ce.presence_quote(row, 'Start. ' + source + ' End.', 'Indy')
-    assert row['source_quote'] == normalize(source)
-
-
-@pytest.mark.parametrize('quote', [
-    "Indy se balançait dans l'obscurite.",  # Accent removed.
-    "Indy se balançait dans l'obscurité!",  # Punctuation changed.
-    "Indy se balançait dans lobscurité.",  # Apostrophe removed.
-    "Indy attendait dans l'obscurité.",  # Word replaced.
-])
-def test_apostrophe_repair_does_not_accept_changed_evidence(quote):
-    with pytest.raises(ValueError, match='not a contiguous quote'):
-        ce.presence_quote({'source_quote': quote}, 'Indy se balançait dans l’obscurité.', 'Indy')
 
 
 def test_real_presence_transport_caches_visible_with_normalized_apostrophe(output):
@@ -456,12 +412,14 @@ def test_real_presence_transport_caches_visible_with_normalized_apostrophe(outpu
         {'local_id': 'char_indy', 'presence': 'visible', 'label': 'Indy',
          'source_quote': source.replace('’', "'")},
         {'local_id': 'char_doriane', 'presence': 'absent', 'label': '', 'source_quote': ''}], 'unresolved': []}
-    client, create = client_for(Stream([json.dumps(response)]))
+    client, create = client_for(Stream([json.dumps(response)]), passage_fixtures=True)
     requests = batches.Requests(output, client, 'qwen', settings(correction_attempts=0))
     context = {'sequence': {'sequence': 1, 'source': source}, 'previous_context': []}
+    index = source_text.PassageIndex(source, "presence-test")
+    context["source_passages"] = index.passages()
     for _ in range(2):
-        result = list(ce._presence_decisions(requests, context, candidates))
-        assert result[0]['characters'][0]['source_quote'] == normalize(source)
+        result = list(ce._presence_decisions(requests, context, candidates, index))
+        assert result[0]['characters'][0]['source_quote'] == source
         assert result[0]['characters'][0]['presence'] == 'visible'
     assert create.call_count == 1
     assert requests.stats['cache_hits'] == 1
@@ -469,7 +427,7 @@ def test_real_presence_transport_caches_visible_with_normalized_apostrophe(outpu
     assert create.call_args.kwargs['response_format'] == {'type': 'json_schema', 'json_schema': ce.PRESENCE}
     cached = util.load_json(next(requests.cache_dir.glob('*.json')))
     assert cached['characters'][0]['presence'] == 'visible'
-    assert cached['characters'][0]['source_quote'] == normalize(source)
+    assert cached['characters'][0]['passage_ids'] == [p['id'] for p in index.passages()]
 
 
 @pytest.mark.parametrize('existing', [False, True])
@@ -492,7 +450,7 @@ def test_temporary_states_restore_source_apostrophes(output, monkeypatch, existi
             for state in response['states']:
                 state['source_quote'] = quote.replace('’', "'")
         return response
-    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', chat)
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
     result = ce.enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=0)))
     assert result['sequences'][0]['states'][0]['source_quote'] == normalize(quote)

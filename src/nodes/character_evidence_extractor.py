@@ -110,7 +110,11 @@ class CharacterEvidenceExtractorNode:
                             diagnostics=diagnostics["chapters"], checkpoint=checkpoint))
         finally:
             lmstudio_json.REQUEST_METRICS.reset(token)
-            diagnostics["status"] = "complete" if len(chapters) == len(paths) else "interrupted_or_failed"
+            if len(chapters) != len(paths):
+                diagnostics["status"] = "interrupted_or_failed"
+            else:
+                diagnostics["status"] = "incomplete" if any(
+                    row["status"] == "incomplete" for row in diagnostics["chapters"]) else "complete"
             for chapter_stats in diagnostics["chapters"]:
                 if chapter_stats["status"] == "running":
                     chapter_stats["status"] = "interrupted_or_failed"
@@ -118,9 +122,15 @@ class CharacterEvidenceExtractorNode:
         data = {"format_version": character_evidence.VERSION,
                 "location_convention": "Zero-based Unicode character offsets, exclusive end; one-based lines in normalized source_text.",
                 "chapters": chapters}
+        review = character_evidence.review_report(data)
+        for chapter in chapters:
+            chapter["evidence"] = [
+                {key: value for key, value in row.items() if key not in {"semantic_review", "warnings"}}
+                for row in chapter["evidence"] if not row.get("warnings")
+            ]
         saved = output / "character_evidence.json"
         util.save_json(saved, data)
-        util.save_json(output / "character_evidence_review.json", character_evidence.review_report(data))
+        util.save_json(output / "character_evidence_review.json", review)
         diagnostics["elapsed_seconds"] = round(time.perf_counter() - started, 3)
         util.save_json(output / "character_evidence_diagnostics.json", diagnostics)
         return {"ui": {"text": [str(saved)]}, "result": (data, str(saved))}

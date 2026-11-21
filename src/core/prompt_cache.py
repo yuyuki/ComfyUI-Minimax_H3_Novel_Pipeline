@@ -3,7 +3,7 @@ import hashlib
 import json
 
 from . import lmstudio_json
-from .source_text import VERSION as SOURCE_VERSION
+from .source_text import PASSAGE_VERSION, VERSION as SOURCE_VERSION
 
 
 def fingerprint(model, args, *content, client=None):
@@ -19,5 +19,6 @@ def fingerprint(model, args, *content, client=None):
         backend = {"profile": profile.NAME, "settings": model_settings, "chat_backend": lmstudio_json.CHAT_BACKEND}
     backend["compact_schema_version"] = lmstudio_json.COMPACT_SCHEMA_VERSION
     backend["source_normalization"] = SOURCE_VERSION
+    backend["source_passages"] = PASSAGE_VERSION
     return hashlib.sha256(json.dumps([model, settings, backend, content],
                                     ensure_ascii=False, sort_keys=True).encode()).hexdigest()

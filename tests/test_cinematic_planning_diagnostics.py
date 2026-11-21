@@ -6,6 +6,8 @@ import json
 import pytest
 from jsonschema import Draft202012Validator
 
+from tests.passages_helpers import with_passage_ids
+
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca, cinematic_scene_planning as planning, cinematic_references as cr
 from minimax_h3_novel_pipeline.core import narrative_validation as nv
 from minimax_h3_novel_pipeline.core.cinematic_diagnostics import downstream_chapter
@@ -32,55 +34,12 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def test_mismatch_metrics_identify_original_event_separately_from_fourth_beat():
-    item = {**scene(), "events": ["Prepare", "Move the item then wait"]}
-    value = plan(item)
-    refs = [(1, "Prepare"), (2, "Move"), (2, " the item"), (2, " then stop")]
-    value["timing"]["beats"] = [{"events": [{"event_index": i, "text": text}],
-                                    "seconds": 1, "reason": "Activity."} for i, text in refs]
-    with pytest.raises(planning._PlanningValidationError) as caught:
-        planning.validate(value, item)
-    event = item["events"][1]
-    assert caught.value.field_path == "/timing/beats/3/events/0/text"
-    assert caught.value.metrics == {
-        "event_index": 2, "beat_index": 3, "reference_index": 0,
-        "validated_prefix_length": event.index("then"), "matched_chars": len("then "),
-        "expected_remaining_length": len("then wait"), "received_length": len("then stop"),
-        "mismatch_offset": event.index("wait"),
-        "expected_codepoint": ord("w"), "received_codepoint": ord("s"),
-    }
-
-
-@pytest.mark.parametrize("defect", ["punctuation", "missing_tail", "duplicate"])
-def test_metrics_distinguish_extra_punctuation_missing_tail_and_duplicate_reference(defect):
-    item = scene()
-    event = item["events"][0]
-    value = plan(item, event + "." if defect == "punctuation" else event)
-    if defect == "missing_tail":
-        value["timing"]["beats"][0]["events"][0]["text"] = "Sensitive"
-    elif defect == "duplicate":
-        value["timing"]["beats"].append(deepcopy(value["timing"]["beats"][0]))
-    with pytest.raises(planning._PlanningValidationError) as caught:
-        planning.validate(value, item)
-    metrics = caught.value.metrics
-    if defect == "punctuation":
-        assert metrics["received_length"] == len(event) + 1
-        assert metrics["expected_remaining_length"] == metrics["matched_chars"] == metrics["mismatch_offset"] == len(event)
-    elif defect == "missing_tail":
-        assert caught.value.reason == "event_text_incomplete"
-        assert metrics["validated_prefix_length"] == metrics["mismatch_offset"] == len("Sensitive")
-        assert metrics["received_length"] == metrics["matched_chars"] == 0
-    else:
-        assert metrics["expected_remaining_length"] == 0
-        assert metrics["mismatch_offset"] == len(event)
-
-
 def test_every_validation_attempt_is_recorded_even_when_retry_recovers(monkeypatch):
     item = scene()
     snapshots, actual_hashes = [], []
 
     def chat(client, model, system, user, schema, temperature, tokens):
-        if schema == planning.SCHEMA:
+        if schema["name"] == planning.SCHEMA["name"]:
             assert system.count("Maximum scene duration:") == 1 and tokens == 16384
             actual_hashes.append((digest(system), digest(schema), digest({"system": system, "user": user})))
             if len(actual_hashes) == 1:
@@ -88,11 +47,11 @@ def test_every_validation_attempt_is_recorded_even_when_retry_recovers(monkeypat
             if len(actual_hashes) == 2:
                 return plan(item, "private rejected model body")
             return plan(item)
-        if schema == nv.SCHEMA:
+        if schema["name"] == nv.SCHEMA["name"]:
             return {"issues": []}
         return {"sequences": [deepcopy(item)]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = run(on_checkpoint=lambda state: snapshots.append(deepcopy(state)))
     records = result["narrative_review"]["planning_diagnostics"]
     assert [d["attempt"] for d in records] == [1, 2, 3]
@@ -116,7 +75,7 @@ def test_every_validation_attempt_is_recorded_even_when_retry_recovers(monkeypat
                "characters": [], "locations": [], "objects": []}
     Draft202012Validator(cr.CATALOG_SCHEMA).validate(catalog)
     saved = snapshots[-1]
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", lambda *args: pytest.fail("Do not regenerate completed work"))
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(lambda *args: pytest.fail("Do not regenerate completed work")))
     assert run(resume_state=saved) == result
 
 
@@ -124,11 +83,11 @@ def test_every_validation_attempt_is_recorded_even_when_retry_recovers(monkeypat
                                            (ca.lmstudio_json.StructuredOutputLengthError("private response"), "output_limit")])
 def test_request_failure_records_hashes_without_backend_messages(monkeypatch, failure, reason, caplog):
     def chat(client, model, system, user, schema, *args):
-        if schema == planning.SCHEMA:
+        if schema["name"] == planning.SCHEMA["name"]:
             raise failure
-        return {"issues": []} if schema == nv.SCHEMA else {"sequences": [scene()]}
+        return {"issues": []} if schema["name"] == nv.SCHEMA["name"] else {"sequences": [scene()]}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     result = run()
     records = result["narrative_review"]["planning_diagnostics"]
     assert len(records) == 1 and records[0]["reason"] == reason
@@ -140,16 +99,16 @@ def test_interruption_after_failed_attempt_preserves_metadata_on_resume(monkeypa
     snapshots = []
 
     def chat(client, model, system, user, schema, *args):
-        if schema == planning.SCHEMA:
+        if schema["name"] == planning.SCHEMA["name"]:
             return plan(scene(), "private rejected text")
-        return {"issues": []} if schema == nv.SCHEMA else {"sequences": [scene()]}
+        return {"issues": []} if schema["name"] == nv.SCHEMA["name"] else {"sequences": [scene()]}
 
     def checkpoint(state):
         snapshots.append(deepcopy(state))
         if state["stage"] == "planning_attempt":
             raise KeyboardInterrupt()
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(KeyboardInterrupt):
         run(on_checkpoint=checkpoint)
     saved = snapshots[-1]
@@ -158,10 +117,10 @@ def test_interruption_after_failed_attempt_preserves_metadata_on_resume(monkeypa
     assert first_record["status"] == "failed"
 
     def resumed_chat(client, model, system, user, schema, *args):
-        assert schema in (planning.SCHEMA, nv.SCHEMA)
-        return plan(scene()) if schema == planning.SCHEMA else {"issues": []}
+        assert schema["name"] in (planning.SCHEMA["name"], nv.SCHEMA["name"])
+        return plan(scene()) if schema["name"] == planning.SCHEMA["name"] else {"issues": []}
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", resumed_chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(resumed_chat))
     result = run(resume_state=saved)
     records = result["narrative_review"]["planning_diagnostics"]
     assert records[0] == first_record and records[1]["assessment_id"] == 2
@@ -173,13 +132,13 @@ def test_interruption_after_failed_attempt_preserves_metadata_on_resume(monkeypa
                                     ValueError("checkpoint integrity"), KeyboardInterrupt()])
 def test_attempt_checkpoint_failures_propagate_unchanged(monkeypatch, failure):
     def chat(client, model, system, user, schema, *args):
-        return plan(scene()) if schema == planning.SCHEMA else {"sequences": [scene()]}
+        return plan(scene()) if schema["name"] == planning.SCHEMA["name"] else {"sequences": [scene()]}
 
     def checkpoint(state):
         if state["stage"] == "planning_attempt":
             raise failure
 
-    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", with_passage_ids(chat))
     with pytest.raises(type(failure)) as caught:
         run(on_checkpoint=checkpoint)
     assert caught.value is failure
@@ -195,11 +154,11 @@ def test_fingerprints_track_actual_planning_instructions_and_schema(monkeypatch,
     def observe(record):
         records.append(record)
 
-    planning.assess(chat, None, "mock", scene(), [], 8, 16384, 0, on_diagnostic=observe)
+    planning.assess(with_passage_ids(chat), None, "mock", scene(), [], 8, 16384, 0, on_diagnostic=observe)
     if change == "system":
         monkeypatch.setattr(planning, "SYSTEM", planning.SYSTEM + "\nGeneric additional instruction.")
     elif change == "schema":
         monkeypatch.setattr(planning, "SCHEMA", {**planning.SCHEMA, "name": "new_planning_contract"})
-    planning.assess(chat, None, "mock", scene(), [], 9 if change == "duration" else 8, 16384, 0, on_diagnostic=observe)
+    planning.assess(with_passage_ids(chat), None, "mock", scene(), [], 9 if change == "duration" else 8, 16384, 0, on_diagnostic=observe)
     field = "schema_sha256" if change == "schema" else "system_prompt_sha256"
     assert records[0][field] != records[1][field]
