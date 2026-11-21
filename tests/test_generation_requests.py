@@ -298,10 +298,11 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
             raise lmstudio_json.StructuredOutputLengthError("reasoning exhausted")
         return {"errors": []}
     monkeypatch.setattr(lmstudio_json, "chat_json", network)
-    with pytest.raises(lmstudio_json.StructuredOutputLengthError):
-        step.process_chapter(chapter_input(refs), refs, client, "gemma", args)
-    assert len(reviews) == 2
-    assert not (args.out_dir / ".cache/chapter/prompt_001.json").exists()
+    first = step.process_chapter(chapter_input(refs), refs, client, "gemma", args)
+    assert len(first["outputs"]) == 4
+    assert first["outputs"][0]["continuity_review"]["status"] == "incomplete"
+    assert not json.loads((args.out_dir / ".cache/chapter/prompt_001.json").read_text())["valid"]
+    before_resume = len(reviews)
     args.resume_cache_dir = args.out_dir / ".cache"
     args.out_dir = args.out_dir.parent.parent / "second" / "h3"
     result = step.process_chapter(chapter_input(refs), refs, client, "gemma", args)
@@ -309,7 +310,7 @@ def test_review_failure_resumes_generation_and_each_completed_evidence_batch(set
     assert seen.count(step.PROMPT_SCHEMA["name"]) == 1
     assert seen.count(step.CAMERA_SCHEMA["name"]) == 1
     # Batch one was recovered, batch two was retried with exactly the same evidence.
-    assert reviews[1] == reviews[2]
+    assert reviews[1] == reviews[before_resume]
     assert reviews.count(reviews[0]) == 1
     before = len(seen)
     step.process_chapter(chapter_input(refs), refs, client, "gemma", args)

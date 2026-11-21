@@ -153,6 +153,9 @@ def test_generation_saves_sequences_with_no_registry_assets(tmp_path, monkeypatc
     calls = []
 
     def request(client, model, system, user, schema, temperature, max_tokens):
+        if schema["name"] == step.CONTINUITY_REVIEW_SCHEMA["name"]:
+            assert continue_from_last_frame
+            return {"errors": []}
         assert schema == step.PROMPT_SCHEMA
         index = len(calls)
         calls.append(user)

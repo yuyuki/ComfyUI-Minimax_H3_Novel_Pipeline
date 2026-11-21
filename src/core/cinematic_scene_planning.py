@@ -111,6 +111,9 @@ still-established physical constraints needed for that entity, citing current so
 do not invent quotations to retain an older fact. Other entities remain available.
 Use location for position, support for what bears weight, attachment for connections,
 possession for holder/storage, motion for ongoing movement and lighting for illumination.
+Location facts should name the filming space and a fixed landmark when supported.
+Keep folds, walls and openings within the established space unless the source
+establishes a distinct place. An alternate name can refer to the same space.
 Descriptive or informational content does not by itself establish a change in
 position or illumination; omit facts outside these physical categories.
 Preserve exact relative spatial relations, attachments, support and possession.

@@ -52,8 +52,12 @@ def test_completed_scene_files_resume_and_incomplete_scene_does_not(tmp_path, mo
     monkeypatch.setattr(step, "validate_prompt", lambda *args: validation)
     entry = step.save_scene(chapter, 1, scene, bindings, "prompt", validation)
     saved_scene = step.scene_to_dict(scene)
-    record = {"contract": 3, "valid": True, "prompt": "prompt", "scene": saved_scene,
-              "bindings": bindings, "camera_warnings": []}
+    diagnostics_name = entry["assets_file"].replace("_assets.json", "_diagnostics.json")
+    diagnostics = {"continuity_review": {"status": "approved"}, "checks": []}
+    (chapter / diagnostics_name).write_text(json.dumps(diagnostics), encoding="utf-8")
+    record = {"contract": 4, "valid": True, "prompt": "prompt", "scene": saved_scene,
+              "bindings": bindings, "camera_warnings": [],
+              "diagnostics_digest": step.generation_requests.digest(diagnostics)}
     record["result_digest"] = step.generation_requests.digest(
         [record["prompt"], saved_scene, bindings, []])
     (cache / "prompt_001.json").write_text(json.dumps(record), encoding="utf-8")
@@ -62,5 +66,11 @@ def test_completed_scene_files_resume_and_incomplete_scene_does_not(tmp_path, mo
     for key in ("assets_file", "prompt_file", "source_file"):
         assert (target / entry[key]).read_bytes() == (chapter / entry[key]).read_bytes()
     assert (current / ".cache/chapter/prompt_001.json").is_file()
+    assert (target / diagnostics_name).is_file()
+    (chapter / diagnostics_name).write_text(json.dumps({
+        **diagnostics, "continuity_review": {"status": "incomplete"},
+    }), encoding="utf-8")
+    assert step.resume_scene_files(chapter, target, cache, 1, scene, bindings, args) is None
+    (chapter / diagnostics_name).write_text(json.dumps(diagnostics), encoding="utf-8")
     (chapter / entry["source_file"]).unlink()
     assert step.resume_scene_files(chapter, target, cache, 1, scene, bindings, args) is None

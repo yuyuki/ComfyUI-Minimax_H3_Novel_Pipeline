@@ -15,6 +15,7 @@ from tests.test_path_access import link_to
 def saved_plan(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
     fields = {k: [] if v['type'] == 'array' else 'unknown' for k, v in _FIELDS.items()}
+    fields['location_id'] = ''
     camera = {k: fields.pop(k) for k in list(fields) if k.startswith('camera_')}
     plan = {'schema_version': 'minimax-spatial-continuity.v2', 'source_digest': 'original',
             'chapters': {'chapter': {'sequences': [{'sequence': 1, 'camera': camera, **fields}]}}}

@@ -32,6 +32,14 @@ original source and endingState are excluded. Use already resolved personal name
 reference_state establishes appearance before events, not reference-image staging.
 chapter_context may clarify physical referents and categories only. Never import its
 entities, possessions, actions or changing traits into the current sequence.
+Include each filming space depicted in the local text, even if only a portion is
+shown or no new neutral traits are stated. Attribute walls, openings and other
+fixed features to the depicted space unless they establish another filming space.
+Separate permanent geometry from shot lighting: retain a fixed light opening as
+geometry, and leave moving light, shadows and temporary exposure to animation.
+Use contextual aliases only when they demonstrably name the same physical space.
+Quote the local occurrence in evidence even when visual_traits is empty. Use
+qualified object names when contextual labels describe different supports or attachments.
 Keep distinct physical instances separate using supported qualified names. Group
 environmental features unless a distinct filming space is established. Orientation,
 attachment and possession are not places. Effects, sensations, sounds and metaphors
@@ -312,7 +320,7 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
             entity.pop("visual_traits", None)
             visible = any(s["presence"] == "visible" for s in reference["scenes"][chapter_id].values())
             described = bool(reference["common_traits"] or any(s["traits"] for s in reference["scenes"][chapter_id].values()))
-            if kind == "characters" or (visible and described):
+            if kind == "characters" or (visible and (described or kind == "locations")):
                 retained.append(entity)
             else:
                 diagnostics["checks"].append({"stage": "neutral_visual_selection", "entity_id": entity["local_id"],

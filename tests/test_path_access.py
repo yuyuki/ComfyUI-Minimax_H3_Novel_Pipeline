@@ -237,7 +237,7 @@ def test_generated_scene_files_and_manifest_stay_in_output(roots, monkeypatch, c
                            max_pictures=8, max_pictures_per_subject=4, max_audio=3,
                            temperature=.38, max_tokens=8192)
     manifest = step.process_chapter(chapter_input(cinematic_registry(chapter)), cinematic_registry(chapter), None, "mock", args)
-    assert json.loads((output / "chapter/manifest.json").read_text()) == manifest
+    assert json.loads((output / "chapter/manifest.json").read_text()) == step.public_manifest(manifest)
     entry, = manifest["outputs"]
     assert entry["valid"]
     record = json.loads((output / "chapter" / entry["assets_file"]).read_text())

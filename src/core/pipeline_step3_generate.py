@@ -6,6 +6,7 @@ from . import continuity_issues
 from . import generation_artifacts
 
 import argparse
+from copy import deepcopy
 import json
 import logging
 import re
@@ -15,9 +16,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
+from openai import APIConnectionError, InternalServerError, OpenAI, RateLimitError
 
 from .lmstudio_json import select_model as select_model
+from . import lmstudio_json, lmstudio_pipeline
 from .generation_requests import chat_json
 
 from .path_access import confined_path
@@ -29,6 +31,8 @@ from .reference_timeline import source_observations_at
 from . import reference_visuals
 
 logger = logging.getLogger(__name__)
+MODEL_REVIEW_ERRORS = (ValueError, RuntimeError, APIConnectionError, InternalServerError, RateLimitError,
+                       ConnectionError, TimeoutError)
 
 
 # Qwen thinking control. Non-thinking is the default for this pipeline.
@@ -110,6 +114,11 @@ def check_prompt_continuity(client: OpenAI, model: str, scene: Scene, prompt: st
         "evidence for contradictions and premature events. Unknown states remain unknown. "
         "Unreferenced visible entities may appear as ordinary prose without Subject labels; "
         "do not demand a new binding for every mentioned object. "
+        "When approved_location_catalog is supplied, check continuing places against it, even "
+        "when only a portion is framed. If source or the resolved phases establish a visible "
+        "place missing from the catalog, or it has no approved scene image, report upstream_conflict. "
+        "Cite the current scene and location catalog. A chapter ID or a neighboring view is not "
+        "approval. A cut, offscreen staging or full concealment can justify no visible location. "
         "Return actionable errors describing corrections needed in the CURRENT prompt. "
         "If constraints cannot be reconciled, report the conflict explicitly. Return an empty "
         "errors list only if the current prompt is consistent."
@@ -336,6 +345,8 @@ Reference semantics:
 - <Video N> is reserved for source-video editing/continuation/temporal structure.
 - <Audio N> is an audio signal used for copying/reference, e.g. voice timbre.
 - Once assigned, a label keeps the same meaning throughout the prompt.
+- Use only assigned H3 labels and ordinary names in the prompt. Keep internal
+  registry IDs and asset IDs out of every section.
 
 subject_definitions:
 - define each supplied <Subject N> exactly once;
@@ -550,7 +561,10 @@ def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> li
             result.append({**item, "source_observations": source,
                            "presence": state["presence"] if state else "mentioned",
                            "neutral_visual_appearance": reference_visuals.appearance_at(entity, chapter_id, sequence),
-                           "available_picture_views": [{k: a[k] for k in ("view_type", "variant", "asset_id")} for a in views]})
+                           "available_picture_views": [
+                               {**{k: a[k] for k in ("view_type", "variant", "asset_id")},
+                                **({"description": a.get("description", "")} if item["entity_type"] == "location" else {})}
+                               for a in views]})
     return result
 
 
@@ -571,16 +585,21 @@ def constrain_character_presence(refs: dict[str, Any], chapter_id: str, scene: S
                                     if request.global_id not in presence or presence[request.global_id] == 'visible']
 
 
-def prepare_cinematic_scene(client, model, row, period, args):
-    """Preserve one adapter sequence exactly; generate only reference metadata."""
+def cinematic_scene(row, period):
     sequence = row["sequence"]
-    scene = Scene(
+    locations = [item["global_id"] for item in continuity_issues.visible_locations(row)]
+    return Scene(
         title=f"Sequence {sequence['sequence']:03d}", source_excerpt=sequence["source"],
-        visual_event=sequence["adaptation"]["event"], location_global_id="",
-        visible_entity_ids=[], speaking_entity_ids=[], reference_view_requests=[], dialogue_present=None,
+        visual_event=sequence["adaptation"]["event"], location_global_id=locations[0] if len(locations) == 1 else "",
+        visible_entity_ids=locations, speaking_entity_ids=[], reference_view_requests=[], dialogue_present=None,
         adaptation_notes="Authoritative cinematic scene (preserve every phase): "
                          + json.dumps(sequence["adaptation"], ensure_ascii=False)
                          + ("\n" + period if period else ""), sequence=sequence["sequence"])
+
+
+def prepare_cinematic_scene(client, model, row, period, args):
+    """Preserve one adapter sequence exactly; generate only reference metadata."""
+    scene = cinematic_scene(row, period)
     if not row["catalog"]:
         return scene
     feedback = [{"message": "Populate reference metadata for this complete cinematic scene. "
@@ -677,9 +696,10 @@ def build_bindings(
 
         req = view_requests_by_id.get(gid)
         requested_views = req.view_types if req else []
-        if not requested_views:
+        if not requested_views or entity["entity_type"] == "location":
             available_view_set = {a.get("view_type") for a in available}
-            requested_views = [v for v in default_view_order(entity["entity_type"]) if v in available_view_set]
+            default_views = [v for v in default_view_order(entity["entity_type"]) if v in available_view_set]
+            requested_views = list(dict.fromkeys([*requested_views, *default_views]))
 
         selected_assets: list[dict[str, Any]] = []
         seen_asset_ids: set[str] = set()
@@ -717,7 +737,7 @@ def build_bindings(
     # Allocate at least one image to as many important entities as the total budget permits.
     allocated: dict[str, list[dict[str, Any]]] = {}
     picture_count = 0
-    for c in candidates:
+    for c in sorted(candidates, key=lambda candidate: candidate["entity"]["entity_type"] != "location"):
         if picture_count >= args.max_pictures:
             break
         if c["assets"]:
@@ -902,6 +922,9 @@ The caller supplies an exact per-clip binding table. Obey it exactly:
 - multiple pictures assigned to one subject are complementary views of the SAME
   entity, not separate subjects;
 - state what each picture contributes to that one subject;
+- anchor visible location staging to its assigned Subject and Picture labels. Keep
+  stable landmarks and describe camera motion relative to them, including when
+  the opening image shows only part of the location;
 - unreferenced visible entities may appear as ordinary prose without Subject labels;
 - do not claim an audio reference exists unless it is in the audio bindings.
 """ + _FRAME_INSTRUCTIONS
@@ -1074,6 +1097,9 @@ def timestamp_seconds(mm: str, ss: str, mmm: str) -> float:
 
 def validate_prompt(prompt: str, bindings: dict[str, Any], duration: float, max_shots: int = 1) -> Validation:
     errors: list[str] = []
+    prose = re.sub(r"<d>.*?</d>", "", prompt, flags=re.S)
+    if re.search(r"\b(?:PIC|AUD|CHAR|LOC|OBJ)_[A-Z0-9_]+\b", prose, flags=re.I):
+        errors.append("Use assigned H3 labels and ordinary names in place of internal reference IDs.")
     positions: list[int] = []
     for sec in SECTIONS:
         matches = list(re.finditer(rf"(?mi)^\s*{re.escape(sec)}\s*:\s*$", prompt))
@@ -1454,8 +1480,7 @@ def save_scene(
     assets_path = confined_path(chapter_dir / f"{stem}_assets.json", chapter_dir)
     prompt_path = confined_path(chapter_dir / f"{stem}_prompt.txt", chapter_dir)
     source_path = confined_path(chapter_dir / f"{stem}_source.txt", chapter_dir)
-    assets_record = {**bindings, "copy_paste_prompt": prompt.rstrip(),
-                     "valid": validation.ok, "validation_errors": validation.errors}
+    assets_record = {**bindings, "copy_paste_prompt": prompt.rstrip(), "valid": validation.ok}
     assets_path.write_text(json.dumps(assets_record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     prompt_path.write_text(scene_asset_sheet(scene, bindings, prompt, validation), encoding="utf-8")
     source_path.write_text(
@@ -1470,7 +1495,6 @@ def save_scene(
         "prompt_file": prompt_path.name,
         "source_file": source_path.name,
         "valid": validation.ok,
-        "validation_errors": validation.errors,
         "detailed_description_words": validation.word_count,
         "picture_count": len(bindings["picture_input_order"]),
         "subject_count": len(bindings["subjects"]),
@@ -1482,7 +1506,7 @@ def resume_scene_files(previous, chapter_dir, cache_dir, index, scene, bindings,
     """Restore a complete scene only when its files match its valid checkpoint."""
     try:
         record = json.loads(confined_path(f"prompt_{index:03d}.json", cache_dir).read_text(encoding="utf-8"))
-        if record.get("contract") != 3 or record.get("valid") is not True:
+        if record.get("contract") != 4 or record.get("valid") is not True:
             return None
         if record.get("result_digest") != generation_requests.digest(
                 [record["prompt"], record["scene"], record["bindings"], record["camera_warnings"]]):
@@ -1496,13 +1520,16 @@ def resume_scene_files(previous, chapter_dir, cache_dir, index, scene, bindings,
         if not validation.ok:
             return None
         stem = f"scene_{index:03d}_{slug(scene.title)}"
-        names = [f"{stem}_assets.json", f"{stem}_prompt.txt", f"{stem}_source.txt"]
+        names = [f"{stem}_assets.json", f"{stem}_prompt.txt", f"{stem}_source.txt", f"{stem}_diagnostics.json"]
         files = [confined_path(name, previous) for name in names]
         assets = json.loads(files[0].read_text(encoding="utf-8"))
+        diagnostics = json.loads(files[3].read_text(encoding="utf-8"))
         expected_source = (f"TITLE: {saved_scene.title}\n\nVISUAL EVENT:\n{saved_scene.visual_event}\n\n"
                            f"ADAPTATION NOTES:\n{saved_scene.adaptation_notes}\n\nSOURCE EXCERPT:\n{saved_scene.source_excerpt}\n")
-        if (assets != {**bindings, "copy_paste_prompt": prompt.rstrip(), "valid": True,
-                       "validation_errors": validation.errors}
+        if (assets != {**bindings, "copy_paste_prompt": prompt.rstrip(), "valid": True}
+                or generation_requests.digest(diagnostics) != record["diagnostics_digest"]
+                or diagnostics["continuity_review"]["status"] not in {"approved", "not_required"}
+                or diagnostics["checks"]
                 or files[1].read_text(encoding="utf-8") != scene_asset_sheet(saved_scene, bindings, prompt, validation)
                 or files[2].read_text(encoding="utf-8") != expected_source):
             return None
@@ -1511,11 +1538,11 @@ def resume_scene_files(previous, chapter_dir, cache_dir, index, scene, bindings,
         shutil.copyfile(confined_path(f"prompt_{index:03d}.json", cache_dir),
                         confined_path(f"prompt_{index:03d}.json", chapter_dir.parent / ".cache" / chapter_dir.name))
         entry = {"index": index, "title": scene.title, "assets_file": names[0], "prompt_file": names[1],
-                 "source_file": names[2], "valid": True, "validation_errors": validation.errors,
+                 "source_file": names[2], "diagnostics_file": names[3], "valid": True,
                  "detailed_description_words": validation.word_count, "picture_count": len(bindings["picture_input_order"]),
                  "subject_count": len(bindings["subjects"]), "audio_count": len(bindings["audio"]),
                  "sequence": scene.sequence, "repair_attempts_used": 0}
-        return saved_scene, prompt, entry
+        return saved_scene, prompt, entry, diagnostics["continuity_review"]
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
         return None
 
@@ -1646,10 +1673,22 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
                       if row["spatial_plan"] is not None}
     print(f"{chapter['chapter_name']}: {len(sequences)} cinematic scene(s); no replanning")
     scenes = []
+    metadata_checks = {}
     for row in progress.steps(bundle["sequences"], 0, 0.3):
-        generation_requests.position(f"{chapter_id} sequence {row['sequence']['sequence']}")
+        number = row["sequence"]["sequence"]
+        generation_requests.position(f"{chapter_id} sequence {number}")
         with generation_requests.task("scene_metadata"):
-            scene = prepare_cinematic_scene(client, model, row, period, args)
+            try:
+                scene = prepare_cinematic_scene(client, model, row, period, args)
+            except MODEL_REVIEW_ERRORS as exc:
+                if lmstudio_json._is_comfy_interrupt(exc):
+                    raise
+                lmstudio_pipeline.comfy_interrupt_check()
+                metadata_checks[number] = {
+                    "stage": "scene_metadata", "status": "incomplete", "reason": type(exc).__name__,
+                    "message": "Location coverage was retained from approved data. Other reference metadata could not be reviewed.",
+                }
+                scene = cinematic_scene(row, period)
         if scenes and getattr(args, "continue_from_last_frame", True):
             scene.previous_frame_sequence = scenes[-1].sequence
         constrain_character_presence(refs, chapter_id, scene, contexts=contexts)
@@ -1679,6 +1718,8 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
         if character_context is not None:
             continuity = {**(continuity or {}), "visual_designs": visual_designs,
                           "character_enrichment": character_context}
+        review_required = continuity is not None or scene.previous_frame_sequence is not None
+        row = evidence_rows[scene.sequence]
         print(f"  [{i}/{len(scenes)}] {scene.title}")
         bindings = build_bindings(bundle["references"], scene, chapter_id, args)
         if continuity is not None:
@@ -1694,14 +1735,12 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
             resumed = resume_scene_files(confined_path(chapter_id, resume_cache_dir.parent), chapter_dir,
                                          confined_path(chapter_id, resume_cache_dir), i, scene, bindings, args)
             if resumed is not None:
-                saved_scene, prompt, entry = resumed
+                saved_scene, prompt, entry, prompt_review = resumed
                 scene.__dict__.update(saved_scene.__dict__)
-                if continuity is not None:
-                    previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
-                                             "bindings": bindings, "continuity_errors": []})
+                previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt, "bindings": bindings})
+                if review_required:
                     entry["spatial_continuity"] = continuity
-                    entry["continuity_review"] = {"errors": [], "repair_attempts_used": 0,
-                                                  "valid": True, "status": "resumed"}
+                    entry["continuity_review"] = prompt_review
                     if spatial_plan is not None:
                         continuity_states[i - 1]["prompt_review"] = entry["continuity_review"]
                 entries.append(entry)
@@ -1733,7 +1772,7 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
             try:
                 candidate = confined_path(prompt_cache.name, candidate_dir)
                 cached = json.loads(candidate.read_text(encoding="utf-8"))
-                reason = ("contract_mismatch" if cached.get("contract") != 3 else
+                reason = ("contract_mismatch" if cached.get("contract") != 4 else
                           "dependencies_changed" if cached.get("cache_key") != prompt_key else
                           "validation_failed" if cached.get("valid") is not True else
                           "integrity_mismatch" if cached.get("result_digest") != generation_requests.digest(
@@ -1807,37 +1846,69 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
             for warning in camera_warnings:
                 print(f"    {warning}")
 
-        if continuity is not None:
-            continuity_errors, continuity_repairs = [], 0
-            reviewed = validation.ok
-            if reviewed:
+        checks = [metadata_checks[scene.sequence]] if scene.sequence in metadata_checks else []
+        continuity_errors, continuity_repairs = [], 0
+        status = "blocked_by_format" if not validation.ok else "not_required"
+        if review_required and validation.ok:
+            candidate_scene, candidate_bindings = deepcopy((scene, bindings))
+            review_context = {**(continuity or {}),
+                              "approved_location_catalog": continuity_issues.visible_locations(row)}
+            if i > 1:
+                prior = evidence_rows[scenes[i - 2].sequence]["sequence"]
+                review_context["previous_ending_state"] = prior["adaptation"]["endingState"]
+            try:
                 with generation_requests.task("continuity_review", getattr(args, "review_thinking", False)):
-                    prompt, validation, continuity_errors, continuity_repairs = review_and_repair_continuity(
-                        client, model, scene, prompt, bindings, continuity, previous_prompts, scenes[i:], args,
+                    candidate_prompt, candidate_validation, continuity_errors, continuity_repairs = review_and_repair_continuity(
+                        client, model, candidate_scene, prompt, candidate_bindings, review_context,
+                        previous_prompts, scenes[i:], args,
                         repair_inputs=lambda issues: repair_scene_inputs(
-                            client, model, scene, bindings, evidence_rows[scene.sequence],
-                            bundle["references"], chapter_id, issues, args, continuity, visual_designs),
+                            client, model, candidate_scene, candidate_bindings, row,
+                            bundle["references"], chapter_id, issues, args, review_context, visual_designs),
                     )
-            if validation.ok:
-                previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt,
-                                         "bindings": bindings, "continuity_errors": []})
-            prompt_review = {
-                "errors": continuity_errors, "repair_attempts_used": continuity_repairs,
-                "valid": validation.ok,
-                "status": "reviewed" if reviewed else "blocked_by_format",
-            }
-            if spatial_plan is not None:
-                continuity_states[i - 1]["prompt_review"] = prompt_review
-
+            except MODEL_REVIEW_ERRORS as exc:
+                if lmstudio_json._is_comfy_interrupt(exc):
+                    raise
+                lmstudio_pipeline.comfy_interrupt_check()
+                checks.append({"stage": "continuity_review", "status": "incomplete", "reason": type(exc).__name__,
+                               "message": "The continuity review could not finish. The usable prompt was retained."})
+                status = "incomplete"
+            else:
+                candidate_format = validate_prompt(candidate_prompt, candidate_bindings, args.duration,
+                                                   getattr(args, "max_shots", 1))
+                if candidate_format.ok:
+                    scene.__dict__.update(candidate_scene.__dict__)
+                    prompt, bindings, validation = candidate_prompt, candidate_bindings, candidate_format
+                    if continuity is not None and "visual_designs" in review_context:
+                        continuity["visual_designs"] = review_context["visual_designs"]
+                else:
+                    checks.append({"stage": "continuity_repair", "status": "incomplete", "reason": "repair_format",
+                                   "message": "Continuity repair did not produce a structurally usable replacement."})
+                status = "approved" if candidate_validation.ok and candidate_format.ok else "incomplete"
+        checks.extend(continuity_issues.location_coverage(row, bindings))
+        if checks and status in {"approved", "not_required"}:
+            status = "incomplete"
+        prompt_review = {"errors": continuity_errors, "repair_attempts_used": continuity_repairs,
+                         "valid": status == "approved", "status": status}
+        if spatial_plan is not None:
+            continuity_states[i - 1]["prompt_review"] = prompt_review
+        if validation.ok and status in {"approved", "not_required"}:
+            previous_prompts.append({"scene": scene_to_dict(scene), "prompt": prompt, "bindings": bindings})
         final_scene = scene_to_dict(scene)
+        diagnostics = {"chapter_id": chapter_id, "sequence": scene.sequence, "checks": checks,
+                       "continuity_review": prompt_review, "format_errors": validation.errors,
+                       "format_repair_attempts": repairs, "camera_warnings": camera_warnings}
+        entry = save_scene(chapter_dir, i, scene, bindings, prompt, validation)
+        diagnostics_name = f"scene_{i:03d}_{slug(scene.title)}_diagnostics.json"
+        generation_requests.atomic_json(confined_path(diagnostics_name, chapter_dir), diagnostics)
+        entry["diagnostics_file"] = diagnostics_name
         generation_requests.atomic_json(prompt_cache, {
-            "contract": 3, "cache_key": prompt_key, "prompt": prompt,
+            "contract": 4, "cache_key": prompt_key, "prompt": prompt,
             "scene": final_scene, "bindings": bindings, "camera_warnings": camera_warnings,
             "result_digest": generation_requests.digest([prompt, final_scene, bindings, camera_warnings]),
-            "valid": validation.ok,
+            "diagnostics_digest": generation_requests.digest(diagnostics),
+            "valid": validation.ok and status in {"approved", "not_required"},
         })
-        entry = save_scene(chapter_dir, i, scene, bindings, prompt, validation)
-        if continuity is not None:
+        if review_required or status == "incomplete":
             entry["spatial_continuity"] = continuity
             entry["continuity_review"] = prompt_review
         entry["sequence"] = scene.sequence
@@ -1875,5 +1946,14 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
     }
     if spatial_plan is not None:
         manifest["spatial_continuity"] = {"scenes": continuity_states}
-    confined_path(chapter_dir / "manifest.json", chapter_dir).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    generation_requests.atomic_json(confined_path(chapter_dir / "manifest.json", chapter_dir), public_manifest(manifest))
     return manifest
+
+
+def public_manifest(manifest):
+    """Project the scene files and counts for downstream consumers."""
+    return {**{key: value for key, value in manifest.items()
+               if key not in {"evidence_bundle", "spatial_continuity", "outputs"}},
+            "outputs": [{key: value for key, value in entry.items() if key not in {
+                "continuity_review", "spatial_continuity", "camera_warnings", "repair_attempts_used",
+            }} for entry in manifest["outputs"]]}

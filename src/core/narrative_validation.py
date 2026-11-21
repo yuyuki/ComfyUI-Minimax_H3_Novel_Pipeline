@@ -65,6 +65,9 @@ Do not report mutually contradictory requirements; check each criticism against 
 Original source outranks generated states: do not demand continuity with an erroneous
 earlier state. Distinguish body orientation from head position and gaze; compatible
 descriptions are not contradictions. Preserve source-supported ongoing motion.
+Flag a missing or ambiguous filming space in initial_state/events when local
+action and source evidence establish the same setting (including through a feature
+or contextual alias). Distinguish a change of framing or lighting from relocation.
 For extraction, use target 1 for general defects, including omissions. For a supplied
 visual trait that must be deleted or rewritten, report its exact target from
 visual_trait_targets (zero-based entity_index and trait_index within extraction).
@@ -83,6 +86,12 @@ offscreen framing and full concealment. Report each missing or wrongly classifie
 visible character as a target 1 issue with a short exact local quote, even when the
 character appears in chunk_summary. Empty visual_traits is valid when the passage
 supports no neutral appearance details.
+Apply the same coverage check to filming spaces explicitly depicted in the local
+text. A visible portion of a larger space belongs to that location, and empty
+traits are valid when the local passage establishes presence without geometry.
+Transient illumination cast by a moving source and subjective darkness are shot
+conditions, not neutral location traits. Preserve the geometry of a fixed opening
+or boundary when named, separately from the light seen through or upon it.
 Use reference_state to distinguish established appearance from event results.
 Evidence must quote the current text. Check useful visual detail without
 inventing traits or requiring name-only environment assets. Settings are actual spaces,

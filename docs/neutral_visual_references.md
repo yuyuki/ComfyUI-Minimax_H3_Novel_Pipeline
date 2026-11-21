@@ -36,12 +36,16 @@ local presence or import changing traits. Actions remain in adaptation.
   from interactions, dirt and torn or perforated garments stay in the adaptation.
 - Locations record durable setting details and the visible conditions established
   for each sequence, including light, weather, fog and already visible changes to
-  the backdrop. Ongoing transformations remain in the adaptation.
+  the backdrop. A fixed opening belongs to the setting geometry. Transient light
+  cast by a moving source and ongoing transformations remain in the adaptation.
 
 Chapter identity decisions group confirmed physical identities and retain their
 observations at `state_by_sequence[sequence].source`. Generic labels do not prove
 identity. Incomplete identity decisions remain explicit in diagnostics; uncertain
 physical instances stay separate rather than being silently merged.
+An uninterrupted action can establish that a contextual alias or a visible wall
+belongs to the same space. A visible location can be recorded with empty local
+traits and use supported shared geometry once its identity is confirmed.
 
 ## Shared traits and local states
 
@@ -91,6 +95,11 @@ Every image has explicit `scene_bindings`: chapter IDs mapped to sequence number
 H3 binding selects only images valid for the exact visible entity and sequence.
 Chapter membership or a base variant alone is insufficient. An absent entity cannot
 become visible because its shared description exists.
+Consolidation plans the fewest location views needed for the approved sequences,
+up to the configured view limit. The briefs describe camera placement relative
+to stable landmarks. If two views serve a scene, H3 can group them under one
+location subject. The opening image remains a separate MiniMax input. Missing
+location coverage is recorded in the scene diagnostic JSON.
 
 ## Persistence and validation
 

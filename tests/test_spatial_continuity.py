@@ -202,8 +202,8 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
     assert len(reviews) == 3  # Initial review, repaired review, cache-hit review.
     assert reviews[0][0] == "camera wording with wrong eyeline"
     assert reviews[2] == ("corrected", [])
-    report = json.loads((args.out_dir / "chapter/manifest.json").read_text())["spatial_continuity"]
-    assert all(s["prompt_review"]["valid"] for s in report["scenes"])
+    sidecar = args.out_dir / "chapter" / manifest["outputs"][0]["diagnostics_file"]
+    assert json.loads(sidecar.read_text(encoding="utf-8"))["continuity_review"]["status"] == "approved"
     assert not (args.out_dir / "chapter/spatial_continuity.json").exists()
     assert "corrected" in (args.out_dir / "chapter/all_prompts.txt").read_text()
 
@@ -211,6 +211,7 @@ def test_chapter_reviews_after_camera_and_on_cache_hits_and_saves_corrected_text
 def spatial_answer():
     from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
     answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in spatial._FIELDS.items()}
+    answer['location_id'] = ''
     entity = {k: 'unknown' for k in spatial._ENTITY}
     entity.update(entity_id='hero', kind='character', evidence='inferred', source_sequence=3,
                   world_position='Beside the fixed tablet')
@@ -226,7 +227,7 @@ def test_complete_chapter_is_visible_from_first_sequence(tmp_path, monkeypatch, 
     from minimax_h3_novel_pipeline.nodes import spatial_continuity as spatial
     from minimax_h3_novel_pipeline.core import util
     registry = {'schema_version': util.REGISTRY_SCHEMA, 'timeline_version': util.REFERENCE_TIMELINE_VERSION, 'source_digest': 'source',
-                'entities': ([{'global_id': 'hero', 'canonical_name': canonical_name}]
+                'entities': ([{'global_id': 'hero', 'canonical_name': canonical_name, 'entity_type': 'character'}]
                              if canonical_name is not None else []),
                 'chapter_timelines': {'chapter': {'sequences': [
                     {'sequence': i, 'source': 'Near tablet' if i == 3 else 'Waits'} for i in (3, 1, 2)]}}}

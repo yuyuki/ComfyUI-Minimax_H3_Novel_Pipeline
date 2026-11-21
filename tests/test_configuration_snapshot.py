@@ -111,6 +111,7 @@ def test_generate_continuity_plan_connection(setup, monkeypatch, connected, cine
     if connected:
         from minimax_h3_novel_pipeline.nodes.spatial_continuity import _FIELDS
         answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in _FIELDS.items()}
+        answer["location_id"] = ""
         camera = {k: answer.pop(k) for k in list(answer) if k.startswith('camera_')}
         params["spatial_continuity"] = {"schema_version": "minimax-spatial-continuity.v2",
             "source_digest": "", "chapters": {"chapter": {"sequences": [

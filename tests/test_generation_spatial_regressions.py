@@ -74,7 +74,8 @@ def test_invalid_prompts_do_not_pollute_history_or_get_reused(tmp_path, monkeypa
         monkeypatch.setattr(step, 'validate_prompt', lambda *a: step.Validation(True, [], 400))
     for _ in range(2):
         manifest = step.process_chapter(chapter_input(refs), refs, None, 'model', args)
-        assert all(not entry['valid'] for entry in manifest['outputs'])
+        assert all(entry['valid'] is (failure == 'continuity') for entry in manifest['outputs'])
+        assert all(not entry['continuity_review']['valid'] for entry in manifest['outputs'])
     # Drafts can be reused, but invalid final results are never accepted or
     # introduced into continuity history; every resumed candidate is checked.
     assert len(generations) == 2
@@ -99,7 +100,7 @@ def test_spatial_generation_repairs_future_evidence_before_carrying_state(tmp_pa
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
 
     registry = {'schema_version': util.REGISTRY_SCHEMA, 'timeline_version': util.REFERENCE_TIMELINE_VERSION, 'source_digest': 'source',
-                'entities': [{'global_id': 'tablet', 'canonical_name': 'Tablet'}],
+                'entities': [{'global_id': 'tablet', 'canonical_name': 'Tablet', 'entity_type': 'object'}],
                 'chapter_timelines': {'chapter': {'sequences': [
                     {'sequence': i, 'source': 'Wait' if i == 1 else 'Tablet revealed'} for i in (1, 4)]}}}
     monkeypatch.setattr(spatial, 'stage_output', lambda *a: tmp_path)
@@ -111,6 +112,7 @@ def test_spatial_generation_repairs_future_evidence_before_carrying_state(tmp_pa
         request = json.loads(user)
         requests.append(request)
         answer = {k: [] if v['type'] == 'array' else 'unknown' for k, v in spatial._FIELDS.items()}
+        answer['location_id'] = ''
         entity = {k: 'unknown' for k in spatial._ENTITY}
         entity.update(entity_id='tablet', canonical_name='Tablet', kind='object',
                       evidence='explicit', source_sequence=4)

@@ -151,7 +151,8 @@ class GenerateH3PromptsNode:
                 lmstudio_pipeline.comfy_interrupt_check()
                 chapter_args = argparse.Namespace(**vars(args), duration=float(chapter["duration"]))
                 with progress.scope(0.98 * index / len(chapters), 0.98 * (index + 1) / len(chapters)):
-                    manifests.append(pipeline.process_chapter(chapter, consolidated_references, client, resolved_model, chapter_args))
+                    manifest = pipeline.process_chapter(chapter, consolidated_references, client, resolved_model, chapter_args)
+                    manifests.append(pipeline.public_manifest(manifest))
             for manifest in manifests:
                 target = confined_path(manifest["chapter_id"], args.out_dir)
                 for scene in manifest["outputs"]:

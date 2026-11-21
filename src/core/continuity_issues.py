@@ -120,6 +120,36 @@ def unique(issues):
     return list({digest(issue): issue for issue in issues}.values())
 
 
+def visible_locations(row):
+    return [item for item in row["catalog"]
+            if item["entity_type"] == "location" and item.get("presence") == "visible"]
+
+
+def location_coverage(row, bindings):
+    """Diagnose approved visibility and image coverage without estimating presence."""
+    locations = visible_locations(row)
+    spatial = (row.get("spatial_plan") or {}).get("location_id")
+    bound = {s["global_id"]: {p["asset_id"] for p in s.get("pictures", [])} for s in bindings["subjects"]}
+    checks = []
+    if spatial and spatial not in {item["global_id"] for item in locations}:
+        checks.append({"reason": "spatial_location_not_approved", "entity_id": spatial,
+                       "message": "The spatial location has no approved visible occurrence in this sequence. "
+                                  "Check the resolved adaptation, extraction and consolidated identity."})
+    for item in locations:
+        gid = item["global_id"]
+        expected = {view["asset_id"] for view in item["available_picture_views"]}
+        if not expected:
+            checks.append({"reason": "missing_scene_binding", "entity_id": gid,
+                           "message": "The approved visible location has no explicitly scene-bound image. "
+                                      "Check its appearance evidence and view plan in consolidation."})
+        elif missing := (expected - bound.get(gid, set())):
+            checks.append({"reason": "unassigned_location_image", "entity_id": gid,
+                           "asset_ids": sorted(missing),
+                           "message": "An approved location view was available but was not assigned. "
+                                      "Check this scene's image budget and view selection."})
+    return [{"stage": "location_reference_coverage", "status": "incomplete", **check} for check in checks]
+
+
 def metadata_schema(catalog):
     ids = sorted({item["global_id"] for item in catalog})
     locations = sorted(item["global_id"] for item in catalog if item.get("entity_type") == "location")
@@ -157,6 +187,8 @@ def repair_metadata(client, model, scene, row, issues, args, request):
         "Return only the schema fields. Preserve existing correct values. Empty means unknown, not invented. "
         "Use only catalog global IDs and available_picture_views. Never supply picture asset IDs as entity IDs. "
         "Only request a view for a visible entity or the visible location selected for this beat. "
+        "Use the canonical catalog location when it is visibly established. Choose scene-bound "
+        "location views by their framing and landmarks. Request both only if the shot needs both. "
         "Submit at most one view request per entity. Omit preferences when no catalog view fits. "
         "Source, selected choices, beat, dialogue text and phases are immutable."
     ) + continuity_context.INSTRUCTIONS
@@ -171,6 +203,9 @@ def repair_metadata(client, model, scene, row, issues, args, request):
     with response_validation(validate):
         result = request(client, model, system, continuity_context.pack(payload), schema, .1, args.max_tokens)
     visible = validate(result)
+    approved = visible_locations(row)
+    if len(approved) == 1:
+        result = {**result, "location_global_id": approved[0]["global_id"]}
     # Picture selection is rebuilt from approved assets, never model asset IDs.
     return {**deepcopy(scene), **deepcopy(result), "visible_entity_ids": visible}
 
@@ -189,6 +224,7 @@ def validate_metadata(result, row, validator):
     for gid in visible:
         if catalog[gid].get("presence", "visible") != "visible":
             raise ValueError(f"Scene metadata selects entity {gid!r} without approved visibility in this sequence.")
+    visible = list(dict.fromkeys([*visible, *(item["global_id"] for item in visible_locations(row))]))
     visible_ids = set(visible)
     seen = set()
     for requested in result["reference_view_requests"]:

@@ -19,13 +19,13 @@ VERSION = 2
 # These versions replace runtime inspection of the package's Python sources.
 CACHE_CONTRACTS = {
     "transport": 2,  # Shared JSON transport, model profiles and normalized text output.
-    "evidence": 5,  # Neutral source traits and scene-addressed visual states.
-    "metadata": 3,  # Scene-specific image applicability and semantic cache validation.
+    "evidence": 6,  # Neutral source traits and scene-addressed view framing.
+    "metadata": 4,  # Approved location coverage and scene-specific view selection.
     "draft": 2,
     "format": 2,
     "camera": 1,
-    "continuity": 1,  # Packing, evidence validation, review and repair.
-    "final_prompt": 2,
+    "continuity": 2,  # Coverage, evidence validation, review and repair.
+    "final_prompt": 3,
 }
 _TASK_CONTRACTS = {
     "scene_metadata": ("metadata",), "scene_metadata_repair": ("metadata", "continuity"),

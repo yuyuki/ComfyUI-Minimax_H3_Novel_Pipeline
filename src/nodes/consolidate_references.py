@@ -197,7 +197,8 @@ class ConsolidateReferencesNode:
             lmstudio_pipeline.comfy_interrupt_check()
             _log("Preparing picture appearances, views and composition briefs")
             with progress.scope(0.5, 0.95):
-                pictures = pipeline.generate_picture_assets(client, resolved_model, pipeline.build_picture_specs(registry, args), args)
+                specs = pipeline.build_picture_specs(registry, args, client, resolved_model)
+                pictures = pipeline.generate_picture_assets(client, resolved_model, specs, args)
             lmstudio_pipeline.comfy_interrupt_check()
             _log("Preparing audio briefs")
             with progress.scope(0.95, 0.99):

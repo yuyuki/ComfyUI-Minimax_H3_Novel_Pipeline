@@ -5,6 +5,7 @@ facts to constrain earlier placement without pulling future actions backward.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 
 from jsonschema import Draft202012Validator
@@ -56,6 +57,10 @@ fabricated coordinates. Use consolidated global IDs where available; never
 pretend an ambiguous name is a certain match.
 Use each matched entity's exact consolidated canonical_name; use an empty
 canonical_name when entity_id has no matching consolidated global_id.
+Use an approved visible location ID for location_id when the current space is
+established. chapter_id is the address of the chapter, never an entity ID.
+If the place cannot be resolved to a registry location, return an empty ID and
+describe the evidence or uncertainty in staging prose. Do not invent an ID.
 Every inferred position must identify the supporting source_sequence; explicit facts must cite their
 actual sequence. Flag contradictions and missing evidence in warnings.
 Respect consolidated designs unless the source contradicts them.
@@ -86,6 +91,7 @@ def validate_plan(payload: dict[str, Any], registry: dict[str, Any]) -> None:
     chapters = payload.get("chapters")
     timelines = registry.get("chapter_timelines", {})
     names = {entity["global_id"]: entity["canonical_name"] for entity in registry.get("entities", [])}
+    kinds = {entity["global_id"]: entity["entity_type"] for entity in registry.get("entities", [])}
     if not isinstance(chapters, dict) or set(chapters) != set(timelines):
         raise ValueError("Spatial continuity must cover every consolidated chapter.")
     for cid, timeline in timelines.items():
@@ -102,9 +108,15 @@ def validate_plan(payload: dict[str, Any], registry: dict[str, Any]) -> None:
             answer = {k: v for k, v in plan.items() if k not in ("sequence", "camera")}
             answer.update(camera)
             _verify(answer, plan["sequence"])
+            if answer["location_id"] and kinds.get(answer["location_id"]) != "location":
+                raise ValueError(f"{cid}: spatial location_id must be a consolidated location ID or empty.")
             for entity in answer["initial_entities"] + answer["final_entities"]:
+                if entity["entity_id"] in chapters:
+                    raise ValueError(f"{cid}: a chapter ID cannot identify a spatial entity.")
                 if entity["canonical_name"] != names.get(entity["entity_id"], ""):
                     raise ValueError(f"{cid}: spatial canonical_name does not match consolidated references.")
+                if entity["kind"] != kinds.get(entity["entity_id"], entity["kind"]):
+                    raise ValueError(f"{cid}: spatial kind does not match consolidated references.")
                 if entity["evidence"] != "unknown" and entity["source_sequence"] not in expected:
                     raise ValueError(f"{cid}: spatial evidence cites an unknown sequence.")
 
@@ -153,6 +165,10 @@ class SpatialContinuityNode:
         chapters: dict[str, Any] = {}
         names = {entity["global_id"]: entity["canonical_name"]
                  for entity in consolidated_references.get("entities", [])}
+        kinds = {entity["global_id"]: entity["entity_type"]
+                 for entity in consolidated_references.get("entities", [])}
+        locations = [entity for entity in consolidated_references.get("entities", [])
+                     if entity["entity_type"] == "location"]
         tasks = [(chapter_id, timeline) for chapter_id, timeline in timelines.items()]
         with client:
             for chapter_id, timeline in progress.steps(tasks):
@@ -168,11 +184,22 @@ class SpatialContinuityNode:
                 for sequence in ordered:
                     lmstudio_pipeline.comfy_interrupt_check()
                     seq_id = sequence["sequence"]
+                    approved = [
+                        entity["global_id"] for entity in locations
+                        if entity["visual_reference"]["scenes"].get(chapter_id, {}).get(
+                            str(seq_id), {}).get("presence") == "visible"
+                    ]
+                    location_ids = approved or [entity["global_id"] for entity in locations
+                                                if chapter_id in entity["chapters_seen"]]
+                    schema = deepcopy(_SCHEMA)
+                    schema["schema"]["properties"]["location_id"]["enum"] = (
+                        approved if len(approved) == 1 else ["", *location_ids])
                     request = {
                         "target_sequence": seq_id,
                         "chapter_id": chapter_id,
                         "whole_chapter_timeline": ordered,
                         "entity_registry": consolidated_references.get("entities", []),
+                        "approved_visible_location_ids": approved,
                         "chapter_references": timeline.get("references", {}),
                         "visual_designs": {k: v for k, v in consolidated_references.get("visual_designs", {}).items()
                                            if k != 'character_profiles'},
@@ -183,9 +210,17 @@ class SpatialContinuityNode:
                     for attempt in range(3):
                         answer = chat_json(client, model, _SYSTEM,
                                            json.dumps(request, ensure_ascii=False),
-                                           _SCHEMA, float(temperature), int(max_tokens))
+                                           schema, float(temperature), int(max_tokens))
                         try:
                             _verify(answer, seq_id)
+                            if answer["location_id"] not in schema["schema"]["properties"]["location_id"]["enum"]:
+                                raise ValueError("Use an allowed consolidated location_id for this sequence.")
+                            if any(entity["entity_id"] in timelines
+                                   for entity in answer["initial_entities"] + answer["final_entities"]):
+                                raise ValueError("Chapter IDs cannot be used as spatial entity IDs.")
+                            if any(entity["kind"] != kinds.get(entity["entity_id"], entity["kind"])
+                                   for entity in answer["initial_entities"] + answer["final_entities"]):
+                                raise ValueError("Use the registry's kind for each matched entity.")
                         except ValueError as error:
                             if attempt == 2:
                                 raise

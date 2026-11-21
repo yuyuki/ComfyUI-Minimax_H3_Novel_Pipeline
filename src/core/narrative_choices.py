@@ -39,6 +39,9 @@ Address all reported doubts together so choices do not overwrite one another.
 Use the immediately previous sequence and source_evidence for continuity, never import
 their events. Evidence quotations outrank fallible paraphrases and generated states.
 Preserve exact spatial relations and physical support; do not prolong transient jolts.
+Identify the current filming space in initialState or event using the established
+name when the source supports continuity. Resolve contextual aliases and qualify
+coexisting objects by function or attachment without inventing visual traits.
 Keep source excerpts in their designated JSON fields. Never insert a
 source_excerpt: metadata line into initialState, event or endingState.
 Explain the tradeoff in reason. Return only JSON matching the schema.

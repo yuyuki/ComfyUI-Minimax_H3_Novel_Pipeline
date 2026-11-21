@@ -158,7 +158,7 @@ def test_stage_paths_require_current_config_and_relative_subfolder(output_root):
 
 @pytest.mark.parametrize("kind,gid,expected", [
     ("character", "CHAR_001", ["face_front", "full_body_front", "three_quarter", "back_view"]),
-    ("location", "LOC_001", ["wide_establishing", "secondary_angle", "key_detail"]),
+    ("location", "LOC_001", ["wide_establishing"]),
     ("object", "OBJ_001", ["front_view", "detail_closeup"]),
 ])
 def test_all_entity_coverage_prioritizes_core_views(kind, gid, expected):

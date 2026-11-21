@@ -108,6 +108,14 @@ supports continuity; handle explicit time/location changes without inventing a
 transition. Mark flashbacks and temporal breaks explicitly, keeping source
 excerpts in their original order and events chronological within each scene.
 Use previous context only for continuity, never as an event to repeat.
+Name the current filming space in initial_state or in the event that reveals it.
+For uninterrupted action, make the established space explicit even if the current
+passage refers to it only by a feature, a pronoun or a contextual synonym. Keep
+the same physical referent and preserve a meaningful source epithet alongside its
+established name when needed. Give fixed landmarks their precise relation to the
+space when the source supports it. Respect actual cuts and explicit concealment.
+Identify coexisting similar objects by their different functions or attachments
+whenever the current action depends on telling them apart.
 Final states are snapshots of results, never summaries replaying completed actions.
 They must not perform an additional action or anticipate the next scene's event.
 Update illumination, attachments and possession after each relevant event. Do not
@@ -157,7 +165,7 @@ You must complete at least one scene; keep each scene within the maximum duratio
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_POLICY = "timed-source-context-v10"
+_REVIEW_POLICY = "timed-source-context-v11"
 
 _REPAIR_SYSTEM = """
 Re-read the original source before correcting the rejected adaptation. Review
