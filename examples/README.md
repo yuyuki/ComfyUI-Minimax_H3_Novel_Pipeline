@@ -25,7 +25,7 @@ Review the generated adaptations, then connect `cinematic_chapters` to
 **Extract Chapter References** (replacing its former `chapter_selection` input).
 
 Adapter defaults are `duration=8.0` (maximum seconds per scene), `chunk_chars=4000`,
-`temperature=0.15`, `max_tokens=16384`, `correction_attempts=2` and `thinking=True`.
+`temperature=0.15`, `max_tokens=32768`, `correction_attempts=2` and `thinking=True`.
 The token budget applies to each generation, repair or review request; reasoning
 and JSON share it, so even 16384 tokens can be exhausted. Consecutive gestures
 may share a scene when they fit naturally. Existing workflows retain their saved

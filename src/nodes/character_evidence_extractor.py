@@ -20,7 +20,7 @@ class CharacterEvidenceExtractorNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 32768}),
+            "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 30000}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
@@ -48,7 +48,7 @@ class CharacterEvidenceExtractorNode:
 
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="character_evidence",
-            chunk_chars=5500, thinking=True, temperature=0.15, max_tokens=8192,
+            chunk_chars=5500, thinking=True, temperature=0.15, max_tokens=32768,
             correction_attempts=2, force=False, character_scope="proper_names", resume_run="", audit_thinking=False):
         started = time.perf_counter()
         if character_scope not in character_evidence.SCOPES:

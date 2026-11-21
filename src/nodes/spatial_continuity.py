@@ -133,7 +133,7 @@ class SpatialContinuityNode:
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "max_tokens": ("INT", {"default": 8192, "min": 1024, "max": 100000}),
+            "max_tokens": ("INT", {"default": 32768, "min": 1024, "max": 32768}),
             "temperature": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "consolidated_references": ("MINIMAX_REGISTRY",),
             "out_dir": ("STRING", {"default": "spatial_continuity",
@@ -148,7 +148,7 @@ class SpatialContinuityNode:
 
     @progress.node_progress
     def run(self, consolidated_references: dict[str, Any], lmstudio_config: dict[str, Any],
-            temperature: float = 0.1, max_tokens: int = 5000,
+            temperature: float = 0.1, max_tokens: int = 32768,
             out_dir: str = "spatial_continuity", thinking: bool = True) -> dict[str, Any]:
         util.require_schema(consolidated_references, util.REGISTRY_SCHEMA)
         timelines = consolidated_references.get("chapter_timelines")

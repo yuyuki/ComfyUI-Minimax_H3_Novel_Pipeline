@@ -1612,7 +1612,7 @@ def repair_scene_inputs(client, model, scene, bindings, row, references, chapter
 def artifact_dependencies(stage, client, model, args, *inputs):
     """Only consumed controls, exact inputs and explicit behavior contracts."""
     defaults = {"duration": 8, "max_shots": 1, "camera_direction": "", "repair_attempts": 2,
-                "max_tokens": 8192, "temperature": .38}
+                "max_tokens": 32768, "temperature": .38}
     names = {"draft": ("duration", "max_shots", "camera_direction", "max_tokens", "temperature"),
              "format": tuple(defaults),
              "camera": ("duration", "max_shots", "camera_direction", "repair_attempts")}

@@ -463,10 +463,10 @@
       "title": "Note for Chapter selection",
       "properties": {},
       "widgets_values": [
-        "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (8192) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
+        "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (32768) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
       ],
       "widgets_values_named": {
-        "text": "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (8192) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
+        "text": "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (32768) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -982,7 +982,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 16384,
+        "max_tokens": 32768,
         "chunk_chars": 4000,
         "temperature": 0.15,
         "duration": 8,
@@ -1047,7 +1047,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 16384,
+        "max_tokens": 32768,
         "chunk_chars": 5500,
         "temperature": 0.18,
         "force": false,
@@ -1131,7 +1131,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 16384,
+        "max_tokens": 32768,
         "temperature": 0.12,
         "candidate_count": 12,
         "include_all_below": 35,
@@ -1211,7 +1211,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 8192,
+        "max_tokens": 32768,
         "temperature": 0.1,
         "out_dir": "spatial_continuity"
       }
@@ -1296,7 +1296,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 16384,
+        "max_tokens": 32768,
         "temperature": 0.38,
         "max_shots": 1,
         "max_scenes": 0,
@@ -1373,7 +1373,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 8192,
+        "max_tokens": 32768,
         "chunk_chars": 5500,
         "temperature": 0.15,
         "correction_attempts": 2,
@@ -1442,7 +1442,7 @@
       ],
       "widgets_values_named": {
         "thinking": false,
-        "max_tokens": 16384,
+        "max_tokens": 32768,
         "temperature": 0.12,
         "context_tokens": 65536,
         "correction_attempts": 0,
@@ -1514,7 +1514,7 @@
       ],
       "widgets_values_named": {
         "thinking": true,
-        "max_tokens": 8192,
+        "max_tokens": 32768,
         "temperature": 0.12,
         "visual_designs_path": "",
         "context_tokens": 65536,

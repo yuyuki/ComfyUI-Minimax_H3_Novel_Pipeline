@@ -20,7 +20,7 @@ class CharacterVisualProfileGeneratorNode:
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
         }, "optional": {
             "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000}),
+            "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Reuse edited physical defaults."}),
             "context_tokens": ("INT", {"default": 65536, "min": 8192, "max": 2000000}),
@@ -42,7 +42,7 @@ class CharacterVisualProfileGeneratorNode:
     @progress.node_progress
     def run(self, character_profiles, chapter_selection, lmstudio_config,
             out_dir="character_visual_profiles", visual_designs_path="", thinking=False,
-            temperature=0.12, max_tokens=8192, context_tokens=65536, correction_attempts=2, force=False):
+            temperature=0.12, max_tokens=32768, context_tokens=65536, correction_attempts=2, force=False):
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty relative subfolder.")
         if max_tokens < 1 or context_tokens < 8192 or correction_attempts < 0 or not 0 <= temperature <= 2:

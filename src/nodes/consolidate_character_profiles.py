@@ -21,7 +21,7 @@ class ConsolidateCharacterProfilesNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "character_evidence": ("MINIMAX_CHARACTER_EVIDENCE",),
             "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000}),
+            "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "context_tokens": ("INT", {"default": 65536, "min": 8192, "max": 2000000,
                 "tooltip": "Must not exceed the loaded LM Studio context. Includes output and retry reserves."}),
@@ -49,7 +49,7 @@ class ConsolidateCharacterProfilesNode:
 
     @progress.node_progress
     def run(self, character_evidence, lmstudio_config, out_dir="character_profiles",
-            thinking=False, temperature=0.12, max_tokens=16384, correction_attempts=0, force=False, context_tokens=65536,
+            thinking=False, temperature=0.12, max_tokens=32768, correction_attempts=0, force=False, context_tokens=65536,
             persistence_filter="persistent", resume_run=""):
         if not isinstance(lmstudio_config, dict):
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")

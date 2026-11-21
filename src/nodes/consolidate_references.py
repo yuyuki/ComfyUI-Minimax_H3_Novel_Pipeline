@@ -38,7 +38,7 @@ class ConsolidateReferencesNode:
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",), "chapter_catalogs": ("MINIMAX_CHAPTERS",),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "max_tokens": ("INT", {"default": 8192, "min": 256, "max": 100000}),
+            "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768}),
             "temperature": ("FLOAT", {"default": 0.12, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "candidate_count": ("INT", {"default": 12, "min": 1, "max": 1000}), "include_all_below": ("INT", {"default": 35, "min": 0, "max": 100000}),
             "audio_threshold": (["optional", "recommended", "required"], {"default": "recommended"}),

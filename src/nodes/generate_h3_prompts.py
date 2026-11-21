@@ -25,7 +25,7 @@ class GenerateH3PromptsNode:
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Reasoning for reference metadata, prompt generation and format repairs. Camera and continuity review have separate controls. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 100000, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning. Reasoning-limit retries use at least 16384 tokens."}),
+            "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768, "tooltip": "Output token budget for prompt generation, repairs and continuity planning/review, including reasoning."}),
             "temperature": ("FLOAT", {"default": 0.38, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "consolidated_references": ("MINIMAX_REGISTRY",),
             "cinematic_chapter": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Cinematic Chapter Adapter or Load Cinematic Chapters; one H3 scene per supplied sequence."}),

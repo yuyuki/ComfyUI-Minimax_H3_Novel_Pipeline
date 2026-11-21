@@ -19,7 +19,7 @@ class CinematicChapterAdapterNode:
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
-            "max_tokens": ("INT", {"default": 16384, "min": 256, "max": 32768,
+            "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768,
                                    "tooltip": "Output budget per request for generation, timing/context planning, scene validation and focused checks. "
                                    "Reasoning and JSON share this budget; retries cannot exceed it."}),
             "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000,
@@ -51,7 +51,7 @@ class CinematicChapterAdapterNode:
 
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="cinematic_chapters",
-            chunk_chars=4000, temperature=0.15, max_tokens=16384, correction_attempts=2, thinking: bool = True, duration=8.0,
+            chunk_chars=4000, temperature=0.15, max_tokens=32768, correction_attempts=2, thinking: bool = True, duration=8.0,
             resume_run=""):
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
