@@ -22,21 +22,30 @@ to animate must not be treated as already completed appearance.
 Each source observation records `presence` (`visible`, `offscreen`, `mentioned`)
 and `visual_traits`. Every trait has a consistent attribute key, a source-language
 description, `intrinsic` or `scene` scope, and local source evidence. Extraction
-and correction requests select passage IDs. Python resolves them to exact quotes
-with offsets in the combined initialState/event source. The existing quote field
+and correction requests select passage IDs. Review uses the same local passage
+IDs. Python resolves them to exact, sentence-level quotes with offsets in the
+combined initialState/event source, in source order. The existing quote field
 contains the first selected quote, and `evidence_passages` retains each selected
 passage individually. The catalog loader checks addressed citations against their
 sequence. Before extraction is accepted,
-semantic review checks relevance, neutrality, language and chronology. A separate
+semantic review checks coverage against the passage, even for empty arrays, and
+checks each occurrence and trait against its actual referent. It also checks
+neutrality, language and chronology. A separate
 structured check verifies that the selected quotations support the full diagnosis
 before it can trigger a correction or remove a trait. Malformed or unsupported
 findings are retried with local evidence and recorded in the diagnostic sidecar.
+Targeted corrections preserve unaffected observations, traits and evidence.
 Chapter context disambiguates referents and categories only; it cannot establish
 local presence or import changing traits. Actions remain in adaptation.
 
+- A visible prop is retained even when only its use or physical relationship
+  establishes presence. A distinct fixture can be a prop; a constituent detail
+  can be a trait of its parent. An interaction surface alone is insufficient
+  evidence of a separate place. Local aliases require source-supported coreference.
 - Objects record intrinsic design such as shape, construction, color, texture,
-  markings and explicitly stated material. Damage, tension and handling stay in
-  the cinematic adaptation.
+  markings and explicitly stated material. Established visible physical conditions
+  and fixed installed geometry are local traits. Handling, incidental placement and
+  transformations taking place during the clip remain in the cinematic adaptation.
 - Characters record only neutral wardrobe and footwear at the sequence address.
   Character visual profiles supply timeless physical appearance. Injuries, marks
   from interactions, dirt and torn or perforated garments stay in the adaptation.

@@ -23,8 +23,8 @@ class LoadConsolidatedReferencesNode:
                         "default": "",
                         "tooltip": (
                             "Folder containing consolidated_references.json, or "
-                            "the consolidated_references.json file itself. "
-                            "Must be inside output/minimax_h3_novel; relative paths start there."
+                            "a saved consolidated references JSON file. "
+                            "Must be inside input or output/minimax_h3_novel; relative paths start there."
                         ),
                     },
                 ),
@@ -39,8 +39,8 @@ class LoadConsolidatedReferencesNode:
     @classmethod
     def IS_CHANGED(cls, consolidated_path):
         try:
-            path = util.output_path(consolidated_path.strip())
-            path = util.output_path(path / "consolidated_references.json" if path.is_dir() else path)
+            path = util.loader_path(consolidated_path.strip())
+            path = util.loader_path(path / "consolidated_references.json" if path.is_dir() else path)
             return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             # Cache inspection also visits nodes outside the executed branch.
@@ -57,21 +57,15 @@ class LoadConsolidatedReferencesNode:
                 "consolidated_references.json file."
             )
 
-        supplied_path = util.output_path(consolidated_path.strip())
+        supplied_path = util.loader_path(consolidated_path.strip())
         json_path = (
             supplied_path / "consolidated_references.json"
             if supplied_path.is_dir()
             else supplied_path
         )
-        json_path = util.output_path(json_path)
+        json_path = util.loader_path(json_path)
         if not json_path.is_file():
             raise ValueError(f"Consolidated references file does not exist: {json_path}")
-        if json_path.name != "consolidated_references.json":
-            raise ValueError(
-                "Expected a file named consolidated_references.json, or a folder containing it: "
-                f"{json_path}"
-            )
-
         registry = util.load_json(json_path)
         util.require_schema(registry, util.REGISTRY_SCHEMA)
         validate_registry(registry)

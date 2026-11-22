@@ -197,11 +197,21 @@ def test_appearance_of_an_entity_first_seen_during_an_event_is_supported():
 @pytest.mark.parametrize(("kind", "candidate"), [
     ("characters", trait("torso_condition", "A bruised torso.", "scene")),
     ("characters", trait("wardrobe_coat", "A red coat.")),
-    ("objects", trait("condition", "Frayed fibers.", "scene")),
 ])
 def test_evidence_cannot_override_category_constraints(kind, candidate):
     with pytest.raises(ValueError, match=kind):
         resolve_candidate(kind, candidate, candidate["evidence"])
+
+
+def test_established_object_condition_stays_at_its_source_scene():
+    source = "The wick is burning."
+    candidate = trait("condition", "Burning wick.", "scene", source)
+    resolved, = resolve_candidate("objects", candidate, source)["objects"]
+    item, checks = reference({1: [resolved], 2: [observation()]})
+    assert checks == []
+    assert item["visual_reference"]["common_traits"] == []
+    assert visual.appearance_at(item, "chapter", 1) == "Burning wick."
+    assert visual.appearance_at(item, "chapter", 2) == ""
 
 
 def test_extraction_retries_with_structured_schema_and_full_evidence(monkeypatch):

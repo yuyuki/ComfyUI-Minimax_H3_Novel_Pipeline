@@ -11,9 +11,9 @@ from ..core.character_evidence import validate_document
 def _evidence_path(value: str) -> Path:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("evidence_path must name a folder containing character_evidence.json or a saved JSON file.")
-    path = util.output_path(value.strip())
+    path = util.loader_path(value.strip())
     if path.is_dir():
-        path = util.output_path(path / "character_evidence.json")
+        path = util.loader_path(path / "character_evidence.json")
     if not path.is_file():
         raise ValueError(
             f"Character evidence file does not exist: {path}. "
@@ -34,7 +34,7 @@ class LoadCharacterEvidenceNode:
     def INPUT_TYPES(cls):
         return {"required": {"evidence_path": ("STRING", {"default": "", "tooltip": (
             "Folder containing character_evidence.json, for example 20261024163701/character_evidence. "
-            "The JSON file is found automatically. Must be inside output/minimax_h3_novel; "
+            "The JSON file is found automatically. Must be inside input or output/minimax_h3_novel; "
             "relative paths start there. A saved JSON file (including renamed copies) is also accepted. "
             "Edits reload on the next execution."
         )})}}
@@ -47,7 +47,7 @@ class LoadCharacterEvidenceNode:
     @classmethod
     def IS_CHANGED(cls, evidence_path):
         try:
-            path = _evidence_path(evidence_path)  # Confined to the plugin output root.
+            path = _evidence_path(evidence_path)
             return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Let run() report actionable path errors.

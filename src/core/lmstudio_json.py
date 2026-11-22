@@ -103,6 +103,9 @@ def _complete_json_prefix(text: str) -> str | None:
 def _qwen35_compact_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Compact prose without reducing entity coverage or visual identity limits."""
     compact = copy.deepcopy(schema)
+    # Targeted corrections must be able to echo unaffected names, aliases and evidence.
+    if schema["name"] == "chapter_reference_candidates_v3":
+        return compact
 
     def limit(node: dict[str, Any], field_name: str = "") -> None:
         if node.get("type") == "string" and "maxLength" in node and field_name in COMPACT_FIELD_LIMITS:

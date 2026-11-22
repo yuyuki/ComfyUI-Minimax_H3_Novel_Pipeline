@@ -16,6 +16,44 @@ from minimax_h3_novel_pipeline.nodes.load_spatial_continuity import LoadSpatialC
 from tests.test_path_access import link_to
 
 
+@pytest.mark.parametrize("cls,filename", [
+    (LoadChapterCatalogsNode, "chapter_references.json"),
+    (LoadCinematicChaptersNode, "chapter.cinematic.json"),
+    (LoadConsolidatedReferencesNode, "consolidated_references.json"),
+    (LoadCharacterEvidenceNode, "character_evidence.json"),
+    (LoadCharacterProfilesNode, "character_profiles.json"),
+    (LoadCharacterVisualProfilesNode, "character_visual_profiles.json"),
+    (LoadSpatialContinuityNode, "spatial_continuity.json"),
+])
+@pytest.mark.parametrize("kind", ["input", "output"])
+def test_all_loaders_track_relative_folder_and_file(cls, filename, kind, tmp_path, monkeypatch):
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output" / "minimax_h3_novel"
+    monkeypatch.setattr(path_access, "storage_root", lambda name: input_root if name == "input" else output_root)
+    root = input_root / "minimax_h3_novel" if kind == "input" else output_root
+    folder = root / "saved"
+    folder.mkdir(parents=True)
+    file = folder / filename
+    file.write_text("{}", encoding="utf-8")
+    folder_digest = cls.IS_CHANGED("saved")
+    assert not isinstance(folder_digest, float)
+    assert cls.IS_CHANGED(f"saved/{filename}") == folder_digest
+    file.write_text('{"edited": true}', encoding="utf-8")
+    assert cls.IS_CHANGED("saved") != folder_digest
+
+
+def test_loader_rejects_ambiguous_relative_path(tmp_path, monkeypatch):
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output" / "minimax_h3_novel"
+    monkeypatch.setattr(path_access, "storage_root", lambda name: input_root if name == "input" else output_root)
+    for root in (input_root / "minimax_h3_novel", output_root):
+        (root / "saved").mkdir(parents=True)
+        (root / "saved" / "character_visual_profiles.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="both input and output"):
+        LoadCharacterVisualProfilesNode().run("saved")
+    assert isinstance(LoadCharacterVisualProfilesNode.IS_CHANGED(str(output_root / "saved")), str)
+
+
 @pytest.fixture(params=[
     (LoadChapterCatalogsNode, "chapter_references.json"),
     (LoadCinematicChaptersNode, "chapter.cinematic.json"),

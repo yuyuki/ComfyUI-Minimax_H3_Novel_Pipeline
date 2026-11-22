@@ -24,7 +24,7 @@ class LoadChapterCatalogsNode:
                         "tooltip": (
                             "Folder containing *_references.json files, or one "
                             "such JSON file saved by Extract Chapter References. "
-                            "Must be inside output/minimax_h3_novel; relative paths start there."
+                            "Must be inside input or output/minimax_h3_novel; relative paths start there."
                         ),
                     },
                 ),
@@ -39,13 +39,13 @@ class LoadChapterCatalogsNode:
     @classmethod
     def IS_CHANGED(cls, catalog_path):
         try:
-            path = util.output_path(catalog_path.strip())
+            path = util.loader_path(catalog_path.strip())
             paths = ([path] if path.is_file() else
                      sorted(p for p in path.glob("*_references.json")
                             if p.is_file() and p.name != "consolidated_references.json"))
             if not paths:
                 return float("nan")
-            return tuple((str(p), configuration_snapshot.file_digest(util.output_path(p))) for p in paths)
+            return tuple((str(p), configuration_snapshot.file_digest(util.loader_path(p))) for p in paths)
         except (OSError, ValueError):
             # Invalid imports are reported by run(), not global cache inspection.
             return float("nan")
@@ -55,7 +55,7 @@ class LoadChapterCatalogsNode:
         if not isinstance(catalog_path, str) or not catalog_path.strip():
             raise ValueError("catalog_path must name a saved chapter catalog JSON file or folder.")
 
-        path = util.output_path(catalog_path.strip())
+        path = util.loader_path(catalog_path.strip())
         if path.is_file():
             paths = [path]
         elif path.is_dir():
@@ -75,6 +75,7 @@ class LoadChapterCatalogsNode:
 
         catalogs: list[dict[str, Any]] = []
         for json_path in progress.steps(paths):
+            json_path = util.loader_path(json_path)
             data = util.load_json(json_path)
             util.require_schema(data, util.CHAPTER_SCHEMA)
             if not isinstance(data, dict):

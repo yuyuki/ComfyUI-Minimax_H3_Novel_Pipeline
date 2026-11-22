@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .path_access import input_path, output_path
+from .path_access import loader_path as loader_path
 from .source_text import read_source
 
 CHAPTER_SCHEMA = "minimax-h3-novel-refs.chapter.v5"

@@ -11,9 +11,9 @@ from .spatial_continuity import validate_plan
 def _plan_path(value: str) -> Path:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("spatial_path must name a spatial JSON file or its folder.")
-    path = util.output_path(value.strip())
+    path = util.loader_path(value.strip())
     if path.is_dir():
-        path = util.output_path(path / "spatial_continuity.json")
+        path = util.loader_path(path / "spatial_continuity.json")
     if not path.is_file():
         raise ValueError(f"Spatial continuity file does not exist: {path}")
     return path
@@ -27,7 +27,7 @@ class LoadSpatialContinuityNode:
         return {"required": {
             "spatial_path": ("STRING", {"default": "", "tooltip": (
                 "JSON file (including renamed copies), or folder containing spatial_continuity.json. "
-                "Must be inside output/minimax_h3_novel; relative paths start there. "
+                "Must be inside input or output/minimax_h3_novel; relative paths start there. "
                 "Saved edits are detected on the next workflow execution."
             )}),
             "consolidated_references": ("MINIMAX_REGISTRY",),
@@ -43,7 +43,7 @@ class LoadSpatialContinuityNode:
         # Hash content rather than timestamps: editors can preserve size and mtime.
         # Upstream socket changes are tracked separately by ComfyUI.
         try:
-            path = _plan_path(spatial_path)  # Confined to the plugin output root.
+            path = _plan_path(spatial_path)
             return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Force run() to report missing/invalid paths.

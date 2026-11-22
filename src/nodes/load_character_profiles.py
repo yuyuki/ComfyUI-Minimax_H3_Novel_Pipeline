@@ -11,9 +11,9 @@ from ..core.character_profile_document import validate_document
 def _profiles_path(value: str) -> Path:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("profiles_path must name a saved character profiles JSON file or its directory.")
-    path = util.output_path(value.strip())
+    path = util.loader_path(value.strip())
     if path.is_dir():
-        path = util.output_path(path / "character_profiles.json")
+        path = util.loader_path(path / "character_profiles.json")
     if not path.is_file():
         raise ValueError(f"Character profiles file does not exist: {path}. Select a saved JSON file or its directory.")
     return path
@@ -29,7 +29,7 @@ class LoadCharacterProfilesNode:
         return {"required": {"profiles_path": ("STRING", {"default": "", "tooltip": (
             "Saved character profiles JSON file (including renamed copies), or a directory containing "
             "character_profiles.json. Must be inside "
-            "output/minimax_h3_novel; relative paths start there. Edits reload on the next execution."
+            "input or output/minimax_h3_novel; relative paths start there. Edits reload on the next execution."
         )})}}
 
     RETURN_TYPES = ("MINIMAX_CHARACTER_PROFILES", "STRING")
@@ -40,7 +40,7 @@ class LoadCharacterProfilesNode:
     @classmethod
     def IS_CHANGED(cls, profiles_path):
         try:
-            path = _profiles_path(profiles_path)  # Confined to the plugin output root.
+            path = _profiles_path(profiles_path)
             return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Let run() report actionable path errors.

@@ -14,7 +14,7 @@ class LoadCinematicChaptersNode:
                 "default": "",
                 "tooltip": (
                     "Folder containing *.cinematic.json files, or one saved cinematic chapter JSON file. "
-                    "Must be inside output/minimax_h3_novel; relative paths start there."
+                    "Must be inside input or output/minimax_h3_novel; relative paths start there."
                 ),
             }),
         }}
@@ -27,11 +27,11 @@ class LoadCinematicChaptersNode:
     @classmethod
     def IS_CHANGED(cls, cinematic_path):
         try:
-            path = util.output_path(cinematic_path.strip())
+            path = util.loader_path(cinematic_path.strip())
             paths = [path] if path.is_file() else sorted(p for p in path.glob("*.cinematic.json") if p.is_file())
             if not paths:
                 return float("nan")
-            return tuple((str(p), configuration_snapshot.file_digest(util.output_path(p))) for p in paths)
+            return tuple((str(p), configuration_snapshot.file_digest(util.loader_path(p))) for p in paths)
         except (OSError, ValueError):
             # Invalid imports are reported by run(), not global cache inspection.
             return float("nan")
@@ -40,7 +40,7 @@ class LoadCinematicChaptersNode:
     def run(self, cinematic_path: str) -> tuple[list[dict], str]:
         if not isinstance(cinematic_path, str) or not cinematic_path.strip():
             raise ValueError("cinematic_path must name a saved cinematic chapter JSON file or folder.")
-        path = util.output_path(cinematic_path.strip())
+        path = util.loader_path(cinematic_path.strip())
         if path.is_file():
             paths = [path]
         elif path.is_dir():
@@ -55,7 +55,7 @@ class LoadCinematicChaptersNode:
 
         chapters, saved_files = [], []
         for json_path in progress.steps(paths):
-            json_path = util.output_path(json_path)
+            json_path = util.loader_path(json_path)
             try:
                 chapter = cinematic_references.parse_chapters([util.load_json(json_path)])[0]
             except ValueError as exc:

@@ -56,3 +56,19 @@ def input_path(value: str | Path) -> Path:
 
 def output_path(value: str | Path) -> Path:
     return confined_path(value, storage_root("output"))
+
+
+def loader_path(value: str | Path) -> Path:
+    """Resolve saved loader inputs under either plugin root, without guessing collisions."""
+    roots = (storage_root("output"), confined_path("minimax_h3_novel", storage_root("input")))
+    path = Path(value)
+    if path.is_absolute():
+        for root in roots:
+            if path.is_relative_to(root.resolve()):
+                return confined_path(path, root)
+        raise ValueError("Loader path must stay inside an input or output minimax_h3_novel folder.")
+    candidates = [confined_path(value, root) for root in roots]
+    existing = list(dict.fromkeys(candidate for candidate in candidates if candidate.exists()))
+    if len(existing) > 1:
+        raise ValueError("Loader path exists in both input and output minimax_h3_novel folders; use an absolute path to select one.")
+    return existing[0] if existing else candidates[0]

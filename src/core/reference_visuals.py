@@ -21,11 +21,12 @@ APPEARANCE_RULES = """Apply the image-reference rules independently to each cate
   garment or garment property. Omit temporary dirt, wetness, damage, holes and tears.
   Omit bodily appearance, injuries, marks from interactions, props and equipment.
   Timeless physical identity comes from the independent character visual profiles.
-- Objects: extract only the object's explicitly described physical design, including
-  material, size, shape, construction, texture, color and markings. Use intrinsic
-  scope. Record material as its own attribute (qualify by part when applicable).
-  Omit temporary condition, damage, handling, attachment, tension, placement and
-  orientation. Omit the material trait entirely when the source does not specify it.
+- Objects: use intrinsic scope for explicitly described material, size, shape,
+  construction, texture, color and markings. Record material as its own attribute
+  (qualify by part when applicable). Use scene scope for established visible physical
+  conditions of the object and fixed geometry as installed or formed in the scene.
+  Retain the full spatial qualifier. Omit handling, incidental placement, tension
+  from an interaction, momentary pose and illumination cast onto the object.
 - Locations: extract the visible environment, including durable terrain, architecture,
   layout, surfaces and fixed features. Use scene scope for established temporary
   conditions of the backdrop, including local light, weather, fog and visible changes
@@ -105,13 +106,11 @@ def validate_observation(observation, kind=None):
             trait["scope"] != "scene" or not re.fullmatch(r"wardrobe_[a-z0-9]+(?:_[a-z0-9]+)*", trait["attribute"])
         ):
             raise ValueError("Character visual traits require scene scope and a wardrobe_ attribute.")
-        if kind == "objects" and trait["scope"] != "intrinsic":
-            raise ValueError("Object visual traits require intrinsic scope.")
 
 
 def evidence_index(source_input):
-    return PassageIndex(source_input["text"], f"reference:{source_input['sequence']}:{source_input.get('chunk', 1)}",
-                        offset=source_input.get("offset", 0))
+    return PassageIndex(source_input["text"], f"reference-sentence:{source_input['sequence']}:{source_input.get('chunk', 1)}",
+                        offset=source_input.get("offset", 0), whole_sentences=True)
 
 
 def resolve_evidence(result, source_input, *, rejected=None):
@@ -123,7 +122,8 @@ def resolve_evidence(result, source_input, *, rejected=None):
     result = deepcopy(result)
 
     def selections(row):
-        return [{**span, "chunk": chunk} for span in index.resolve(row.pop("evidence_passage_ids", None))]
+        spans = index.resolve(row.pop("evidence_passage_ids", None))
+        return [{**span, "chunk": chunk} for span in sorted(spans, key=lambda span: span["start"])]
 
     def reject(path, error):
         if rejected is None:

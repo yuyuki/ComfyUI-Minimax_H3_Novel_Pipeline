@@ -222,6 +222,11 @@ The reference contract and validation cases are documented in
 - Preserve local-route checks before body parsing or filesystem mutations.
 - Pass dictionaries/lists between nodes. The current three stages also require
   `out_dir` and save results; loaders support resuming from those files.
+- All `load_` nodes accept a saved JSON file or its containing folder. Resolve
+  relative paths under input/minimax_h3_novel or output/minimax_h3_novel; if a
+  path exists in both, require an absolute path to disambiguate. Preserve path
+  confinement and detect edits for both file and folder inputs. Chapter loaders
+  load all matching chapter files in the selected folder, without recursion.
 - Registry briefs describe image/audio assets; do not fabricate media or
   introduce video references. Preserve scene-local H3 binding order.
 - Preserve streaming cancellation checks and existing cache/schema behavior.

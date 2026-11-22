@@ -11,10 +11,12 @@ from ..core.character_profile_document import validate_document as validate_prof
 
 def _profile_path(value: str) -> Path:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("profiles_path must name a saved character visual profiles JSON file.")
-    path = util.output_path(value.strip())
+        raise ValueError("profiles_path must name a character visual profiles JSON file or its folder.")
+    path = util.loader_path(value.strip())
+    if path.is_dir():
+        path = util.loader_path(path / "character_visual_profiles.json")
     if not path.is_file():
-        raise ValueError(f"Character visual profiles file does not exist: {path}. Select a saved JSON file.")
+        raise ValueError(f"Character visual profiles file does not exist: {path}. Select a saved JSON file or its folder.")
     return path
 
 
@@ -58,8 +60,8 @@ class LoadCharacterVisualProfilesNode:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"profiles_path": ("STRING", {"default": "", "tooltip": (
-            "Saved character visual profiles JSON file, including renamed copies. Must be inside "
-            "output/minimax_h3_novel; relative paths start there. Edits reload on the next execution."
+            "Folder containing character_visual_profiles.json, or a saved JSON file, including renamed copies. "
+            "Use a path relative to input or output/minimax_h3_novel. Edits reload on the next execution."
         )})}}
 
     RETURN_TYPES = ("MINIMAX_CHARACTER_VISUAL_PROFILES", "STRING")
@@ -70,7 +72,7 @@ class LoadCharacterVisualProfilesNode:
     @classmethod
     def IS_CHANGED(cls, profiles_path):
         try:
-            path = _profile_path(profiles_path)  # Confined to the plugin output root.
+            path = _profile_path(profiles_path)
             return configuration_snapshot.file_digest(path)
         except (OSError, ValueError):
             return float("nan")  # Let run() report actionable path errors.

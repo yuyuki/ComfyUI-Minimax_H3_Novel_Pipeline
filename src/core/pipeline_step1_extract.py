@@ -92,8 +92,6 @@ def entity_schema(kind: str) -> dict[str, Any]:
     if kind == "character":
         trait_properties["attribute"] = {"type": "string", "pattern": r"^wardrobe_[a-z0-9]+(?:_[a-z0-9]+)*$"}
         trait_properties["scope"] = {"type": "string", "enum": ["scene"]}
-    if kind == "object":
-        trait_properties["scope"] = {"type": "string", "enum": ["intrinsic"]}
     props.update({
         "presence": {"type": "string", "enum": ["visible", "offscreen", "mentioned"]},
         "visual_traits": {"type": "array", "items": {**TRAIT_SCHEMA, "properties": trait_properties, "required": list(trait_properties)}},
@@ -177,9 +175,16 @@ Off-screen speech does not establish visibility. Speech evidence should preserve
 actual words and attribution. Summaries follow source event order.
 Locations: actual filming environments with architecture, layout and surfaces. Group
 features of one setting unless a distinct filming space is established. Effects and
-geographic labels alone are not places. Objects: concrete visually relevant props with
-useful appearance, not actions, effects or metaphorical manifestations. Distinct physical
-instances require distinct supported names even when their generic nouns match.
+geographic labels alone are not places. Objects are concrete visually relevant props.
+Include each depicted prop whose use, physical state or relation establishes its presence,
+even when no useful appearance is described. Use visual_traits: [] in that case. An
+appearance description is needed for image eligibility, not for retaining the occurrence.
+An independently used fixture can be a prop; an explicitly described constituent part
+can be a trait of its parent. Never promote a bare interaction surface into a filming
+space. Distinct physical instances require distinct supported names even when their generic
+nouns match. Add an alias only when the local passage establishes that both names refer to
+the same instance. When coreference is uncertain, record separately supported occurrences
+without asserting an alias or inventing a distinction beyond the evidence.
 {APPEARANCE_RULES}
 Allowed character views: {', '.join(CHARACTER_VIEWS)}.
 Allowed location views: {', '.join(LOCATION_VIEWS)}.

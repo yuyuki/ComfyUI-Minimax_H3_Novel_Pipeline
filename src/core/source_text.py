@@ -111,11 +111,16 @@ def source_units(text):
 class PassageIndex:
     """Select exact slices by occurrence within a particular authoritative text."""
 
-    def __init__(self, text, scope, *, offset=0):
+    def __init__(self, text, scope, *, offset=0, whole_sentences=False):
         self.text = text
         self.offset = offset
         key = hashlib.sha256(f"{PASSAGE_VERSION}\0{scope}\0{offset}\0{text}".encode()).hexdigest()[:16]
         self.ranges = {}
+        if whole_sentences:
+            sentences = re.finditer(r"\S.*?(?:[。！？]|[.!?…](?=\s|$)|(?=\n|$))", text)
+            self.ranges = {f"{key}:{number}": sentence.span()
+                           for number, sentence in enumerate(sentences, 1)}
+            return
         clauses = re.finditer(r"\S.*?(?:[。！？；，、]|[.!?;,:…](?=\s|$)|(?=\n|$))", text)
         for clause in clauses:
             words = source_units(clause.group())
