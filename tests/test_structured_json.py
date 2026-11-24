@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
-from openai import APIError, OpenAI
+from openai import APIError, APITimeoutError, OpenAI
 
 from minimax_h3_novel_pipeline.core import lmstudio_json, lmstudio_pipeline, util
 
@@ -54,6 +54,18 @@ def client_for(*streams, passage_fixtures=False):
     else:
         create = Mock(side_effect=streams)
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))), create
+
+
+def test_stream_read_timeout_uses_the_sdk_error_type_and_closes_stream():
+    class TimedOutStream(Stream):
+        def __iter__(self):
+            raise httpx.ReadTimeout("stream stalled", request=httpx.Request("POST", "http://127.0.0.1:1234"))
+
+    stream = TimedOutStream([])
+    client, _ = client_for(stream)
+    with pytest.raises(APITimeoutError):
+        lmstudio_json.chat_json(client, "gemma", "system", "source", SCHEMA, 0.1, 2048)
+    assert stream.closed
 
 
 @pytest.mark.parametrize("model", ["gemma", "qwen3.5"])

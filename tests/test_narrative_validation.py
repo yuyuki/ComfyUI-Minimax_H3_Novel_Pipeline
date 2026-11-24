@@ -274,7 +274,7 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
             rejected = data["extraction"]["chunk_summary"] == "bad"
             return {"issues": [{"target": 1, "message": "Separate the basket rope from the support rope."}]
                     if rejected else []}
-        if schema == cr.chapter_reference_identity.SCHEMA:
+        if schema["name"] == cr.chapter_reference_identity.SCHEMA["name"]:
             assert all(row["text"] in chapter["sequences"][0]["adaptation"]["event"] for row in data["source_passages"])
             return {"groups": []}
         assert schema == cr.lmstudio_pipeline.load("extract").CHUNK_SCHEMA

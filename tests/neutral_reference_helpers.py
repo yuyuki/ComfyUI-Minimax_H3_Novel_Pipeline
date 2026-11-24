@@ -15,8 +15,14 @@ def observation(item, text="Fixture evidence.", kind="characters"):
 
 
 def candidates(result, text):
-    return {**result, **{kind: [observation(item, text, kind) for item in result.get(kind, [])]
-                        for kind in ("characters", "locations", "objects")}}
+    rows = {}
+    for kind in ("characters", "locations", "objects"):
+        defaults = {"aliases": [], "importance": "minor", "reference_priority": "optional",
+                    "reference_view_hints": []}
+        if kind == "characters":
+            defaults.update(speaks=False, voice_description="")
+        rows[kind] = [observation({**defaults, **item}, text, kind) for item in result.get(kind, [])]
+    return {**result, **rows}
 
 
 def entity(item, chapters=("chapter",), sequences=(1, 2, 3)):

@@ -257,7 +257,7 @@ def test_extraction_traits_and_identity_keep_local_offsets_through_consumer_and_
         if schema == identity.IDENTITY_REVIEW_SCHEMA:
             return validate_reply(schema, {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"}
                                                          for row in data["decisions"]]})
-        if schema == identity.SCHEMA:
+        if schema["name"] == identity.SCHEMA["name"]:
             offered = data["source_passages"]
             assert {row["sequence"] for row in offered} == {1, 2}
             return validate_reply(schema, {"groups": [{"member_ids": [e["id"] for e in data["entities"]],

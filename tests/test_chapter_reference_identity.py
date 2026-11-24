@@ -11,6 +11,7 @@ from minimax_h3_novel_pipeline.core import chapter_reference_identity as identit
 def job(sequence, source, *names):
     return {"sequence": sequence, "chunk": 1, "text": source, "result": {
         "characters": [{"canonical_name": name, "aliases": [], "presence": "visible", "visual_traits": [],
+                        "reference_view_hints": [], "voice_description": "", "speaks": False,
                         "importance": "major", "reference_priority": "required", "evidence": [source], "evidence_passages": [{"chunk": 1, "start": 0, "end": len(source), "text": source}]}
                        for name in names], "locations": [], "objects": [],
     }}
@@ -28,9 +29,20 @@ def run(tmp_path, monkeypatch, jobs, reply):
         if schema == identity.IDENTITY_REVIEW_SCHEMA:
             return {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"}
                                   for row in json.loads(user)["decisions"]]}
-        assert schema == identity.SCHEMA and schema["strict"] is True
+        assert schema["name"] == identity.SCHEMA["name"] and schema["strict"] is True
         assert "adaptation" not in json.loads(user)
         payload = json.loads(user)
+        fields = schema["schema"]["properties"]["groups"]["items"]["properties"]
+        offered = [entity["id"] for entity in payload["entities"]]
+        assert fields["member_ids"]["items"]["enum"] == offered
+        assert fields["canonical_member_id"]["enum"] == offered
+        assert fields["passage_ids"]["items"]["enum"] == [p["id"] for p in payload["source_passages"]]
+        passages_by_id = {p["id"]: p for p in payload["source_passages"]}
+        for entity in payload["entities"]:
+            for occurrence in entity["occurrences"]:
+                for identifier in occurrence.get("evidence_passage_ids", []):
+                    passage = passages_by_id[identifier]
+                    assert (passage["sequence"], passage["chunk"]) == (occurrence["sequence"], occurrence["chunk"])
         calls.append(payload)
         return reply(payload, len(calls))
     monkeypatch.setattr(step, "chat_json", chat)
@@ -49,14 +61,18 @@ def test_pronouns_and_named_aliases_merge_without_changing_observations(tmp_path
     def reply(payload, count):
         assert {p["sequence"] for p in payload["source_passages"]} == {1, 2, 3}
         assert [e["canonical_name"] for e in payload["entities"]] == ["Indy", "l'homme", "Jones", "Doriane"]
-        return {"groups": [group(["REF_00003", "REF_00001", "REF_00002"], "REF_00001",
-                                 [p["id"] for p in payload["source_passages"]])]}
+        passages = [p["id"] for p in payload["source_passages"]]
+        assert payload["entities"][0]["occurrences"][0]["evidence_passage_ids"] == passages[:1]
+        return {"groups": [group(["REF_00003", "REF_00001", "REF_00003", "REF_00002"], "REF_00001",
+                                 [*passages, passages[-1]])]}
     catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
     indy, doriane = catalog["characters"]
     assert (indy["canonical_name"], set(indy["aliases"]), doriane["canonical_name"]) == ("Indy", {"Jones", "l'homme"}, "Doriane")
     assert indy["first_sequence"] == 1
     assert [indy["state_by_sequence"][str(n)]["source"][0]["canonical_name"] for n in (1, 2, 3)] == ["Indy", "l'homme", "Jones"]
     assert len(diagnostics["identity_occurrences"]) == 4
+    proof = diagnostics["identity_consolidation"][0]["groups"][0]
+    assert len(proof["passage_ids"]) == len(set(proof["passage_ids"])) == len(proof["source_passages"])
     assert len(calls) == 1
     cached, _, cached_calls = run(tmp_path, monkeypatch, jobs, lambda *a: pytest.fail("Identity cache should be reused"))
     assert cached == catalog and cached_calls == []
@@ -113,7 +129,10 @@ def test_invalid_merge_is_retried_and_preserves_every_occurrence(tmp_path, monke
     assert len(calls) == 2 and calls[0]["entities"] == calls[1]["entities"]
     assert len(catalog["characters"]) == 2 and len(catalog["objects"]) == 1
     assert diagnostics["identity_consolidation"][0]["status"] == "incomplete"
-    assert diagnostics["identity_consolidation"][0]["windows"][0]["attempts"][-1]["failures"]
+    failures = diagnostics["identity_consolidation"][0]["windows"][0]["attempts"][-1]["failures"]
+    assert failures
+    if defect == "duplicate_id":
+        assert failures[0]["reason"] == "insufficient_distinct_members"
     assert calls[1]["correction"]["reason"]
     assert "rejected_response" not in calls[1]["correction"]
     assert "private" not in json.dumps(diagnostics)
@@ -215,6 +234,35 @@ def test_invalid_and_overlapping_groups_leave_disjoint_confirmed_group(tmp_path,
     assert resumed == catalog
     assert diagnostics["identity_consolidation"][0]["status"] == "incomplete"
     assert len(diagnostics["identity_occurrences"]) == 6
+
+
+def test_missing_member_evidence_retries_only_unconfirmed_candidates(tmp_path, monkeypatch):
+    jobs = [job(1, "Mara is nicknamed Vale.", "Mara", "Vale"),
+            job(2, "Ivo, also called Ren, enters beside a guard.", "Ivo", "guard"),
+            job(3, "Ren stays by the door.", "Ren")]
+
+    def reply(payload, count):
+        passages = {p["sequence"]: p["id"] for p in payload["source_passages"]}
+        if count == 1:
+            return {"groups": [
+                group(["REF_00001", "REF_00002"], "REF_00001", [passages[1]]),
+                group(["REF_00003", "REF_00003", "REF_00005"], "REF_00003", [passages[2]]),
+            ]}
+        assert [e["id"] for e in payload["entities"]] == ["REF_00003", "REF_00005"]
+        assert set(passages) == {1, 2, 3}
+        failure, = payload["correction"]["failures"]
+        assert failure["reason"] == "missing_member_evidence"
+        assert failure["uncovered_occurrences"] == {"REF_00005": [{"sequence": 3, "chunk": 1}]}
+        return {"groups": [group(["REF_00003", "REF_00005"], "REF_00003", [passages[2], passages[3]])]}
+
+    catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
+    assert len(calls) == 2
+    assert diagnostics["identity_consolidation"][0]["status"] == "passed"
+    mara, ivo, guard = catalog["characters"]
+    assert mara["state_by_sequence"]["1"]["source"] == jobs[0]["result"]["characters"]
+    assert ivo["state_by_sequence"]["2"]["source"] == [jobs[1]["result"]["characters"][0]]
+    assert ivo["state_by_sequence"]["3"]["source"] == jobs[2]["result"]["characters"]
+    assert guard["canonical_name"] == "guard"
 
 
 def test_oversized_rejected_response_is_not_echoed_in_retry(tmp_path, monkeypatch):

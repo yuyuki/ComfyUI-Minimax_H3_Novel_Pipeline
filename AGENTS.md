@@ -258,5 +258,9 @@ The reference contract and validation cases are documented in
 - Add focused regression coverage for affected behavior; mock network work.
   Tests must run without ComfyUI or a live LM Studio server. Check root
   registration, installed imports and bundled assets after file moves.
+- When fixing an error caused by an LM Studio call, targeted integration tests
+  may query the configured trusted LM Studio endpoint directly to confirm
+  whether the fix works with the live service. Keep these checks separate from
+  the offline test suite, and report their live runtime results separately.
 - Do not hide lint failures in the active package. Report live runtime
   validation separately from offline checks.

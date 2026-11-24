@@ -115,6 +115,9 @@ Read the passage first and account for every depicted character, filming space a
 independently depicted prop. Check all arrays, including empty ones. Report each
 missing entity separately even when named in the summary. Visible use, physical state
 or a physical relation can establish presence without a usable appearance description.
+Require a concrete physical prop. A glow, moving shadow, sound or other effect is
+not a missing prop, even when it moves or a character reacts to it. Do not infer
+what emits light if the local text does not identify the physical source.
 Include unnamed, silent, partly visible and briefly shown characters. A name or voice
 alone does not show a character. Keep speech and its attribution separate from visibility.
 Do not infer presence from another sequence or require unspecified visual traits.
@@ -133,6 +136,13 @@ ID for a missing trait or a defect in an existing observation's category, presen
 identity, aliases, prose or occurrence evidence. Use a visual_trait_targets ID for
 each existing trait that must be removed or rewritten. The target addresses use
 zero-based entity and trait indices. Treat the summary as a claim, not as evidence.
+For each finding name the affected field or missing row and state what is wrong,
+missing or misattributed in the extraction. A description of the passage alone is
+not a diagnosis. Distinguish intrinsic appearance, established local physical
+condition or fixed geometry, and incidental staging or a change during the event.
+A character's gaze or pose and a temporary object shape caused by motion or
+handling are staging. Do not report them as missing or reclassify them as intrinsic.
+Report independent defects separately and cite passages that distinguish their referents.
 Names and descriptive prose must use the source narration's language. Write technical
 review messages in English and keep source quotations in their original language.
 Return issues with target, message and passage_ids, or an empty list if none is supported."""
@@ -339,11 +349,17 @@ For each finding verify that its selected quotations actually establish the whol
 diagnosis, including its referent, scope and every asserted detail. Use the local
 source to read quotations in context. Do not supply missing premises from context
 outside the selected evidence. Compare omission claims against the actual arrays,
-even when empty. For claimed unsupported presence, compare the row's citation
-with the full local source and verify that it does not establish the named entity.
+even when empty. Check whether the targeted field already records the fact. A
+quotation that shows a feature only supports a defect if the diagnosis identifies
+what the extraction omits, misstates or misattributes. For claimed unsupported
+presence, compare the row's citation with the full local source and verify that it
+does not establish the named entity.
 For a requested removal or reassignment, verify that the targeted observation or
-trait is actually invalid under the supplied rules. If the
-quotation is authentic but only partially supports the claim, omit that finding.
+trait is actually invalid under the supplied rules. Use reference_state to distinguish
+established local appearance from incidental placement and changes to animate.
+For a missing prop or trait, require a concrete object or a qualifying appearance
+fact. Effects, a character's gaze and transient shapes from motion do not qualify.
+If the quotation is authentic but only partially supports the claim, omit the finding.
 Return the number of each fully supported finding once. Do not rewrite findings."""
 EXTRACTION_FINDINGS_SCHEMA = {"name": "reference_extraction_finding_support", "strict": True, "schema": {
     "type": "object", "additionalProperties": False, "required": ["supported"],
@@ -352,7 +368,7 @@ EXTRACTION_FINDINGS_SCHEMA = {"name": "reference_extraction_finding_support", "s
 }}
 
 
-def supported_extraction_findings(chat, client, model, source, extraction, targets, findings, rules, max_tokens):
+def supported_extraction_findings(chat, client, model, source_input, extraction, targets, findings, rules, max_tokens):
     if not findings:
         return set()
     requested = []
@@ -360,12 +376,14 @@ def supported_extraction_findings(chat, client, model, source, extraction, targe
         address = targets.get(finding["target"])
         row = {"number": number, **finding}
         if address:
+            row["address"] = address
             observation = extraction[address["kind"]][address["entity_index"]]
             row["observation"] = observation
             if "trait_index" in address:
                 row["trait"] = observation["visual_traits"][address["trait_index"]]
         requested.append(row)
-    payload = {"source": source, "extraction": extraction, "findings": requested}
+    payload = {"source": source_input["text"], "reference_state": source_input.get("reference_state", ""),
+               "extraction": extraction, "findings": requested}
     system = EXTRACTION_FINDINGS_SYSTEM + "\n" + rules
     if not continuity_context.fits(system, payload, EXTRACTION_FINDINGS_SCHEMA):
         raise ValueError("Extraction finding verification exceeds the request budget.")

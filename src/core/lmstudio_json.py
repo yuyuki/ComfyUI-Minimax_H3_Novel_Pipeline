@@ -8,7 +8,8 @@ import re
 import time
 from typing import Any
 
-from openai import OpenAI
+from httpx import TimeoutException
+from openai import APITimeoutError, OpenAI
 
 from . import lmstudio_model_qwen, lmstudio_models
 from .source_text import normalize_data
@@ -271,6 +272,9 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                     break
         except BaseException as error:
             local_stop = "interrupted_or_error"
+            if isinstance(error, TimeoutException):
+                # The SDK wraps request setup, but stream reads can raise HTTPX errors directly.
+                raise APITimeoutError(request=error.request) from error
             if (allow_chatml and not raw_chatml
                     and not _is_comfy_interrupt(error) and lmstudio_model_qwen.is_thinking_grammar_error(error)):
                 raw_chatml = True

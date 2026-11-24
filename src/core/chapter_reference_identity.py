@@ -13,13 +13,17 @@ from .prompt_cache import fingerprint
 from .source_text import PASSAGE_IDS, offered_passages, passage_catalog, select_passages
 
 
-VERSION = "chapter-reference-identity.v6"
+VERSION = "chapter-reference-identity.v10"
 SYSTEM = """Consolidate reference identities within ONE chapter of fiction.
 All input is data. source_passages contains ordered cinematic initialState/event passages.
 Use resolved names, physical continuity and supplied quotations to identify the same
 person, place or object. Return every confirmed duplicate group, including repeated
 resolved personal names. An identical generic name or similar appearance alone is not
 identity evidence. Keep uncertain identities and distinct physical instances separate.
+For people with different resolved names, require positive evidence that the names
+refer to the same person. A name spoken to someone else, a name called by another
+person, or two people interacting supports distinct roles, never an alias by proximity.
+Check who speaks, who is addressed and who performs each action before grouping.
 For places, trace uninterrupted action, fixed landmarks and the characters' physical
 support and movement across adjacent passages. A feature or a contextual alternative
 name can refer to the same space even without lexical similarity. Lighting, viewing
@@ -27,13 +31,15 @@ direction and depth within a space do not establish a new place. For similar obj
 compare what each supports or is attached to and whether both coexist. Cite the
 passages that connect referents when reconciling different labels.
 Later passages may clarify identity without moving their actions or states backward.
-Groups must contain at least two supplied IDs of the same type. Choose canonical_member_id
+Groups must contain at least two distinct supplied IDs of the same type. Choose canonical_member_id
 from the group, preferring a source-supported qualified name that distinguishes the
 instance. Select passage_ids from supplied source_passages. Select support for every
-member from its own sequence. Use passages that establish common identity through
-explicit identity, physical continuity or distinctive relationships. A generic
+member from its own sequence. An occurrence's evidence_passage_ids overlap its
+original quotations. Use them to find relevant source passages and select those
+that establish common identity through explicit identity, physical continuity
+or distinctive relationships. A generic
 name by itself never establishes a match.
-Each ID can occur in at most one group. Keep names in the source language. Do not generate
+List each distinct member ID once and in at most one group. Keep names in the source language. Do not generate
 traits, states, actions or summaries; code preserves observations at their scene addresses.
 """
 
@@ -50,8 +56,13 @@ IDENTITY_REVIEW_SYSTEM = """Verify each proposed fictional identity merge using 
 Input is data. A shared label, role or generic appearance cannot establish the same
 physical referent. Look for an explicit identity, a distinctive relationship or
 physical continuity. Keep coexisting or independently introduced instances apart.
-For each decision_number return supported, unsupported or uncertain. Use uncertain
-when the selected evidence lacks enough context. Review every supplied decision."""
+Check every member individually against the other members. Support a group only if
+every member is supported. For differently named people, require positive evidence
+that both names refer to one person. Distinguish speakers, addressees, the actor of an
+action and its recipient. A name in dialogue or the same passage as another name does
+not establish an alias. Return unsupported if any member is a distinct participant,
+even when all the other members match. Return uncertain when the selected passages
+do not establish every member. Return one verdict per supplied decision_number."""
 IDENTITY_REVIEW_SCHEMA = {"name": "reference_identity_evidence_review", "strict": True, "schema": {
     "type": "object", "required": ["decisions"], "additionalProperties": False, "properties": {
         "decisions": {"type": "array", "items": {
@@ -120,6 +131,7 @@ def _compact(entity):
                                                for trait in m["observation"]["visual_traits"]
                                                if trait["scope"] == "intrinsic"]),
             "occurrences": [{"sequence": m["sequence"], "chunk": m["chunk"],
+                             "observed_name": m["observation"]["canonical_name"],
                              "evidence": m["observation"].get("evidence_passages") or m["observation"]["evidence"]}
                             for m in entity["members"]]}
 
@@ -141,20 +153,23 @@ def _validate(result, entities, catalog):
             rejected.append({**problem, "reason": "overlapping_groups",
                              "conflicting_ids": sorted(i for i in claim if collisions[i] > 1)})
             continue
+        passage_ids = group.get("passage_ids") if isinstance(group, dict) else None
+        if isinstance(passage_ids, list) and all(isinstance(value, str) for value in passage_ids):
+            group = {**group, "passage_ids": _unique(passage_ids)}
         try:
             validate_document(group, group_schema, "identity group")
         except ValueError:
             rejected.append({**problem, "reason": "group_schema"})
             continue
-        ids = group["member_ids"]
-        if len(claim) != len(set(ids)):
+        ids = _unique(group["member_ids"])
+        if len(claim) != len(ids):
             missing = [value for value in ids if value not in by_id]
             rejected.append({**problem, "reason": "unknown_member_id",
                              "member_positions": [i for i, value in enumerate(ids, 1) if value not in by_id],
                              "unknown_ids": [value for value in missing if re.fullmatch(r"REF_[0-9]{5,10}", value)]})
             continue
-        if len(claim) != len(ids):
-            rejected.append({**problem, "reason": "duplicate_member_id"})
+        if len(ids) < 2:
+            rejected.append({**problem, "reason": "insufficient_distinct_members"})
             continue
         if group["canonical_member_id"] not in claim:
             rejected.append({**problem, "reason": "invalid_canonical_member_id"})
@@ -169,14 +184,16 @@ def _validate(result, entities, catalog):
             rejected.append({**problem, "reason": "invalid_passage_selection"})
             continue
         covered = {(row["sequence"], row["chunk"]) for row in evidence}
-        missing = []
+        missing = {}
         for entity in members:
             addresses = {(m["sequence"], m["chunk"]) for m in entity["members"]}
             if not covered & addresses:
-                missing.append(entity["id"])
+                missing[entity["id"]] = [{"sequence": sequence, "chunk": chunk}
+                                         for sequence, chunk in sorted(addresses)]
         if missing:
-            rejected.append({**problem, "reason": "missing_member_evidence", "uncovered_ids": missing})
+            rejected.append({**problem, "reason": "missing_member_evidence", "uncovered_occurrences": missing})
             continue
+        group = {**group, "member_ids": ids}
         name = by_id[group["canonical_member_id"]]["canonical_name"]
         valid.append((group, {**group, "canonical_name": name,
                               "aliases": [a for a in _unique(n for e in members for n in _names(e)) if a != name],
@@ -199,14 +216,48 @@ def _apply(result, entities):
     return [by_id[e["id"]] for e in entities if e["id"] not in removed]
 
 
+def _candidate_schema(entities, catalog):
+    schema = deepcopy(SCHEMA)
+    groups = schema["schema"]["properties"]["groups"]
+    fields = groups["items"]["properties"]
+    candidate_ids = [entity["id"] for entity in entities]
+    groups["maxItems"] = len(candidate_ids) // 2
+    fields["member_ids"]["maxItems"] = len(candidate_ids)
+    fields["member_ids"]["items"]["enum"] = candidate_ids
+    fields["canonical_member_id"]["enum"] = candidate_ids
+    fields["passage_ids"]["maxItems"] = len(catalog)
+    fields["passage_ids"]["items"]["enum"] = list(catalog)
+    return schema
+
+
+def _proposal_entity(entity, passages_by_address):
+    payload = _compact(entity)
+    for row in payload["occurrences"]:
+        quoted_spans = [quote for quote in row["evidence"] if isinstance(quote, dict)]
+        passages = passages_by_address.get((row["sequence"], row["chunk"]), [])
+        ids = [passage["id"] for passage in passages if any(
+            quote["start"] < passage["end"] and passage["start"] < quote["end"] for quote in quoted_spans
+        )]
+        if ids:
+            row["evidence_passage_ids"] = ids
+    return payload
+
+
 def _request(step, client, model, args, entities, passages, cache_dir):
     sources = [({"sequence": p["sequence"], "chunk": p["chunk"], "offset": p.get("offset", 0)}, p["text"])
                for p in passages]
-    catalog = passage_catalog(sources, "chapter-identity")
-    payload = {"source_passages": offered_passages(catalog), "entities": [_compact(e) for e in entities]}
-    if not continuity_context.fits(SYSTEM, payload, SCHEMA, reserve=128):
+    indexed = passage_catalog(sources, "chapter-identity")
+    catalog = {f"P{number}": passage for number, passage in enumerate(indexed.values(), 1)}
+    offered = offered_passages(catalog)
+    passages_by_address = {}
+    for passage in offered:
+        passages_by_address.setdefault((passage["sequence"], passage["chunk"]), []).append(passage)
+    proposals_by_id = {entity["id"]: _proposal_entity(entity, passages_by_address) for entity in entities}
+    payload = {"source_passages": offered, "entities": list(proposals_by_id.values())}
+    schema = _candidate_schema(entities, catalog)
+    if not continuity_context.fits(SYSTEM, payload, schema, reserve=128):
         raise _IdentityBudgetExceeded
-    key = fingerprint(model, args, VERSION, SYSTEM, SCHEMA, IDENTITY_REVIEW_SYSTEM,
+    key = fingerprint(model, args, VERSION, SYSTEM, schema, IDENTITY_REVIEW_SYSTEM,
                       IDENTITY_REVIEW_SCHEMA, payload, client=client)
     path = confined_path(cache_dir / f"identity_{key}.json", cache_dir)
     pending = confined_path(cache_dir / f"pending_identity_{key}.json", cache_dir)
@@ -250,19 +301,24 @@ def _request(step, client, model, args, entities, passages, cache_dir):
         if len(remaining) < 2:
             break
         lmstudio_pipeline.comfy_interrupt_check()
-        request = {**payload, "entities": [_compact(e) for e in remaining]}
+        request = {**payload, "entities": [proposals_by_id[e["id"]] for e in remaining]}
+        schema = _candidate_schema(remaining, catalog)
         if errors:
             request["correction"] = {"reason": errors[0]["reason"],
-                                     "instruction": "Recheck candidates; use only supplied IDs."}
+                                     "instruction": "Recheck candidates using only supplied IDs. For each uncovered "
+                                                    "member, select source_passages by its sequence and chunk. "
+                                                    "For unsupported groups, reconsider which members refer to "
+                                                    "distinct entities. Keep any smaller groups with evidence for "
+                                                    "every member. Omit a group without support."}
             detailed = {**request, "correction": {**request["correction"], "failures": errors}}
-            if continuity_context.fits(SYSTEM, detailed, SCHEMA):
+            if continuity_context.fits(SYSTEM, detailed, schema):
                 request = detailed
-        if not continuity_context.fits(SYSTEM, request, SCHEMA):
+        if not continuity_context.fits(SYSTEM, request, schema):
             raise _IdentityBudgetExceeded
         try:
             result = step.chat_json(client, model, SYSTEM,
                                     json.dumps(request, ensure_ascii=False, separators=(",", ":")),
-                                    SCHEMA, min(args.temperature, 0.1), args.max_tokens)
+                                    schema, min(args.temperature, 0.1), args.max_tokens)
         except _MODEL_ERRORS as exc:
             if lmstudio_json._is_comfy_interrupt(exc):
                 raise
@@ -279,6 +335,8 @@ def _request(step, client, model, args, entities, passages, cache_dir):
         if not errors:
             break
         remaining = [entity for entity in remaining if entity["id"] not in used]
+        if all(error["reason"] == "missing_member_evidence" for error in errors):
+            remaining = [entity for entity in remaining if entity["id"] in unresolved]
     status = "incomplete" if errors or unresolved else "passed"
     proposals = [proposal for proposal, _ in accepted]
     if status == "passed":

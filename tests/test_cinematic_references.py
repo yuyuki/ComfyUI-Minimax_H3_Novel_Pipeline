@@ -94,7 +94,7 @@ def test_review_recovers_omitted_visible_character_without_appearance(execution,
             assert opening in data["source_input"]["text"]
             extraction["characters"].append({"canonical_name": "Mina", "presence": "visible",
                                              "evidence": [opening], "visual_traits": []})
-        return extraction
+        return neutral_candidates(extraction, opening)
 
     monkeypatch.setattr(step, "chat_json", with_passage_ids(chat))
     catalogs, _ = ExtractChapterReferencesNode().run(config, [chapter_input], **params)["result"]
@@ -234,6 +234,104 @@ def _reference_row(name, passages, quote, *, aliases=(), traits=()):
             "evidence_passage_ids": [passage_id], "visual_traits": [
                 {"attribute": key, "description": value, "scope": scope, "evidence_passage_ids": [passage_id]}
                 for key, value, scope in traits]}
+
+
+@pytest.mark.parametrize("invalid", [None, "schema", "evidence", "preservation"])
+def test_correction_reassigns_trait_and_restores_distinct_occurrence(execution, monkeypatch, tmp_path, invalid):
+    _, params, config = execution
+    opening = "A plain cord supports the basket beside a brass bell."
+    event = "A frayed cord lifts the shutter."
+    value = {"chapter_name": "Workshop", "sequences": [
+        _reference_scene(1, opening, event), _reference_scene(2, "A cedar chest stands nearby.", ""),
+    ]}
+    step = lmstudio_pipeline.load("extract")
+    repairs = []
+
+    def chat(client, model, system, user, schema, *args):
+        assert schema["strict"]
+        data, end = json.JSONDecoder().raw_decode(user)
+        if schema == cr.narrative_validation.SCHEMA:
+            if data["source_input"]["sequence"] == 2:
+                return {"issues": []}
+            objects = data["extraction"]["objects"]
+            opening_id, event_id = [passage["id"] for passage in data["review_passages"]]
+            bell = next(int(target) for target, address in data["observation_targets"].items()
+                        if objects[address["entity_index"]]["canonical_name"] == "bell")
+            # An exact quotation supports the bell's material, which the row already records.
+            findings = [{"target": bell, "message": "The bell is brass.", "passage_ids": [opening_id]}]
+            if objects[0]["visual_traits"]:
+                findings += [
+                    {"target": 1, "message": "The shutter cord has no observation.", "passage_ids": [event_id]},
+                    {"target": 2, "message": "The fraying belongs to the shutter cord, not the basket cord.",
+                     "passage_ids": [opening_id, event_id]},
+                ]
+            return {"issues": findings}
+        if schema == cr.narrative_validation.EXTRACTION_FINDINGS_SCHEMA:
+            assert data["reference_state"] == opening and "Excluded" not in user
+            bell, *findings = data["findings"]
+            assert bell["observation"]["visual_traits"][0]["description"] == "brass"
+            assert bell["source_passages"][0]["text"] == opening
+            return {"supported": [finding["number"] for finding in findings]}
+        if schema["name"] == "chapter_reference_identity":
+            return {"groups": []}
+        assert schema == step.CHUNK_SCHEMA
+        source = data.get("source_input", data)
+        passages = source["source_passages"]
+        result = {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
+        if source["sequence"] == 2:
+            result["objects"] = [_reference_row("chest", passages, "cedar chest")]
+            return result
+        if "defects_to_correct" in data:
+            repairs.append(user[end:])
+            assert {finding["target"] for finding in data["defects_to_correct"]} == {1, 2}
+            result = deepcopy(data["rejected_extraction"])
+            basket_cord, bell = result["objects"]
+            trait, = basket_cord["visual_traits"]
+            assert trait["evidence_passage_ids"] == [passages[1]["id"]]
+            basket_cord["visual_traits"] = []
+            shutter_cord = _reference_row("shutter cord", passages, event)
+            shutter_cord["visual_traits"] = [trait]
+            result["objects"].append(shutter_cord)
+            if invalid == "schema":
+                bell["unexpected"] = "private response"
+            elif invalid == "evidence":
+                trait["evidence_passage_ids"] = ["private response"]
+            elif invalid == "preservation":
+                result["objects"].remove(bell)
+            return result
+        basket_cord = _reference_row("basket cord", passages, opening)
+        basket_cord["visual_traits"] = _reference_row(
+            "shutter cord", passages, event, traits=[("condition", "frayed", "scene")])["visual_traits"]
+        bell = _reference_row("bell", passages, opening, traits=[("material", "brass", "intrinsic")])
+        result["objects"] = [basket_cord, bell]
+        return result
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    catalog, = ExtractChapterReferencesNode().run(config, [value], **params)["result"][0]
+    observations = {row["canonical_name"]: observation
+                    for row in catalog["objects"] for state in row["state_by_sequence"].values()
+                    for observation in state["source"]}
+    assert not observations["basket cord"]["visual_traits"]
+    assert observations["bell"]["visual_traits"][0]["description"] == "brass"
+    assert "chest" in observations
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    assert "private response" not in diagnostic.read_text(encoding="utf-8")
+    first, second = [row for row in util.load_json(diagnostic)["checks"]
+                     if row["stage"] == "source_extraction_review"]
+    assert first["status"] == "incomplete" and second["status"] == "passed"
+    if invalid is None:
+        assert len(repairs) == 1
+        assert observations["shutter cord"]["visual_traits"][0]["evidence"] == event
+        assert first["history"][-1]["failures"][0]["reason"] == "diagnosis_not_fully_supported"
+    else:
+        assert len(repairs) == 2 and "Previous response was invalid" in repairs[1]
+        assert "private response" not in repairs[1] and "shutter cord" not in observations
+        failure = first["history"][-1]
+        assert failure["sequence"] == 1 and failure["stage"] == "source_extraction_correction"
+        assert failure["reason"] == "InvalidResponse"
+        assert {"schema": "schema at objects[1]", "evidence": "objects[2].visual_traits[0]",
+                "preservation": "Preserve the unaffected fields, traits and evidence of objects[1]"}[invalid] in failure["detail"]
 
 
 @pytest.mark.parametrize(("opening", "event", "specs"), [

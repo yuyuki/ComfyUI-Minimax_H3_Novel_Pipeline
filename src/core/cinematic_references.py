@@ -136,9 +136,31 @@ _REVIEW_ERRORS = (ValueError, RuntimeError, APIConnectionError, InternalServerEr
 _REFERENCE_KINDS = ("characters", "locations", "objects")
 _CORRECTION_RULES = """Return the complete extraction with only the verified defects corrected.
 Use observation_targets and visual_trait_targets to locate addressed rows and traits.
-Copy all untargeted observations, unaffected traits and evidence selections unchanged.
-You may add supported missing observations and traits. A summary or omission finding
-does not authorize deleting or rewriting existing observations."""
+Copy unaffected fields, traits and evidence_passage_ids directly from rejected_extraction.
+Add a separate row for each supported missing physical occurrence, even if it resembles
+an existing one. When a trait belongs to a different occurrence, remove it from the
+wrong row and use its evidence on the correct row if the trait qualifies as appearance.
+A summary or omission finding does not authorize deleting existing observations."""
+
+
+class _CorrectionValidationError(ValueError):
+    """Validation detail safe to include in correction retry instructions and diagnostics."""
+
+
+def _correction_input(extraction, index):
+    """Copy the observations in the same evidence-ID format the model must return."""
+    ids = {(start + index.offset, end + index.offset): key for key, (start, end) in index.ranges.items()}
+
+    def with_ids(row):
+        fields = {key: value for key, value in row.items() if key not in ("evidence", "evidence_passages")}
+        fields["evidence_passage_ids"] = [ids[p["start"], p["end"]] for p in row["evidence_passages"]]
+        return fields
+
+    return {**extraction, **{
+        kind: [{**with_ids(row), "visual_traits": [with_ids(trait) for trait in row["visual_traits"]]}
+               for row in extraction[kind]]
+        for kind in _REFERENCE_KINDS
+    }}
 
 
 def _preserve_observations(previous, corrected, targets):
@@ -159,7 +181,8 @@ def _preserve_observations(previous, corrected, targets):
                     available.remove(candidate)
                     break
             else:
-                raise ValueError(f"Preserve the unaffected fields, traits and evidence of {kind}[{index}].")
+                raise _CorrectionValidationError(
+                    f"Preserve the unaffected fields, traits and evidence of {kind}[{index}].")
 
 
 def _extract_source(step, client, model, system, user, args, checkpoint=None, save_checkpoint=None):
@@ -170,7 +193,19 @@ def _extract_source(step, client, model, system, user, args, checkpoint=None, sa
 
     def extract(prompt, *, previous=None, targets=()):
         def validate(data):
-            resolved = reference_visuals.resolve_evidence(data, source_input)
+            if previous is not None:
+                try:
+                    validate_document(data, step.CHUNK_SCHEMA["schema"], step.CHUNK_SCHEMA["name"])
+                except ValueError as exc:
+                    # Schema error text can contain arbitrary values from the reply.
+                    path = str(exc).split(": ", 2)[1]
+                    raise _CorrectionValidationError(f"Correction failed the extraction schema at {path}.") from exc
+            try:
+                resolved = reference_visuals.resolve_evidence(data, source_input)
+            except ValueError as exc:
+                if previous is not None:
+                    raise _CorrectionValidationError(str(exc)) from exc
+                raise
             if previous is not None:
                 _preserve_observations(previous, resolved, targets)
 
@@ -193,8 +228,6 @@ def _extract_source(step, client, model, system, user, args, checkpoint=None, sa
             save_checkpoint({"extraction": result, "history": history, "context_incomplete": context_incomplete})
     if any(entry["stage"] == "source_evidence_validation" for entry in history):
         source_input.pop("chapter_context", None)
-    baseline = result
-    baseline_rejections = set()
     pending_findings = []
     retry = {}
     for attempt in range(1, 4):
@@ -227,7 +260,7 @@ def _extract_source(step, client, model, system, user, args, checkpoint=None, sa
             )
             stage = "finding_support"
             supported = narrative_validation.supported_extraction_findings(
-                step.chat_json, client, model, source_input["text"], result, targets, cited_findings,
+                step.chat_json, client, model, source_input, result, targets, cited_findings,
                 reference_visuals.APPEARANCE_RULES, args.max_tokens)
         except _REVIEW_ERRORS as exc:
             if lmstudio_json._is_comfy_interrupt(exc):
@@ -245,16 +278,14 @@ def _extract_source(step, client, model, system, user, args, checkpoint=None, sa
         rejected_targets = sorted({f["target"] for f in verified if f["target"] in trait_targets}, reverse=True)
         history.append({"attempt": attempt, "status": "incomplete" if failures else "issues" if verified else "passed",
                         "failures": failures, "cited_findings": cited_findings,
-                        "rejected_visual_traits": [trait_targets[t] for t in rejected_targets] if result is baseline else []})
+                        "rejected_visual_traits": [trait_targets[t] for t in rejected_targets]})
         if not failures and not verified:
             return result, history, "incomplete" if context_incomplete else "passed"
-        if result is baseline:
-            for target in rejected_targets:
-                address = trait_targets[target]
-                baseline_rejections.add((address["kind"], address["entity_index"], address["trait_index"]))
         if attempt == 3:
             break
-        if failures:
+        # Allow one full retry to gather better evidence, then apply the independent
+        # verified findings even if another diagnosis remains unsubstantiated.
+        if failures and (attempt == 1 or not verified):
             pending_findings = verified
             retry = {"review_retry": {"reasons": sorted({failure["reason"] for failure in failures}),
                                       "invalid_citations": [failure for failure in failures
@@ -265,29 +296,48 @@ def _extract_source(step, client, model, system, user, args, checkpoint=None, sa
                 source_input.pop("chapter_context")
                 context_incomplete = True
             continue
-        correction = {"source_input": source_input, "rejected_extraction": result,
+        correction = {"source_input": source_input, "rejected_extraction": _correction_input(result, source_index),
                       "defects_to_correct": verified,
                       "visual_trait_targets": trait_targets, "observation_targets": observation_targets,
                       "rejected_visual_traits": [trait_targets[t] for t in rejected_targets]}
         try:
             edits = [targets[f["target"]] for f in verified if f["target"] in targets]
-            result = extract(json.dumps(correction, ensure_ascii=False, separators=(",", ":")),
-                             previous=result, targets=edits)
+            prompt = json.dumps(correction, ensure_ascii=False, separators=(",", ":"))
+            if "chapter_context" in source_input and not continuity_context.fits(
+                    system + "\n" + _CORRECTION_RULES, prompt, step.CHUNK_SCHEMA, reserve=256):
+                correction["source_input"] = {key: value for key, value in source_input.items()
+                                              if key != "chapter_context"}
+                prompt = json.dumps(correction, ensure_ascii=False, separators=(",", ":"))
+            result = extract(prompt, previous=result, targets=edits)
         except _REVIEW_ERRORS as exc:
             if lmstudio_json._is_comfy_interrupt(exc):
                 raise
             lmstudio_pipeline.comfy_interrupt_check()
-            history.append({"attempt": attempt, "stage": "source_extraction_correction", "status": "incomplete",
+            detail = {
+                APIConnectionError: "LM Studio could not be reached during correction.",
+                InternalServerError: "LM Studio returned a server error during correction.",
+                RateLimitError: "LM Studio rate-limited the correction request.",
+            }.get(type(exc), "The model request failed during correction.")
+            if isinstance(exc, InvalidResponse):
+                cause = exc.__cause__
+                detail = (str(cause) if isinstance(cause, _CorrectionValidationError)
+                          else "The correction or its validation retry exceeded the request budget.")
+            elif isinstance(exc, lmstudio_json.StructuredOutputError):
+                detail = str(exc)  # The transport constructs this from stream metadata only.
+            history.append({"attempt": attempt, "sequence": source_input["sequence"],
+                            "stage": "source_extraction_correction", "status": "incomplete",
                             "reason": type(exc).__name__,
+                            "detail": detail,
                             "message": "Source correction failed; previous valid extraction retained."})
             break
         retry = {}
         pending_findings = []
-    if baseline_rejections:
-        baseline = deepcopy(baseline)
-        for kind, entity_index, trait_index in sorted(baseline_rejections, reverse=True):
-            del baseline[kind][entity_index]["visual_traits"][trait_index]
-    return baseline, history, "incomplete"
+    if rejected_targets:
+        result = deepcopy(result)
+        for target in rejected_targets:
+            address = trait_targets[target]
+            del result[address["kind"]][address["entity_index"]]["visual_traits"][address["trait_index"]]
+    return result, history, "incomplete"
 
 
 def _recover_extraction(first, source_input, extract, history):
@@ -346,7 +396,7 @@ def process_chapter(chapter, output, client, model, args, chapter_id):
     step = lmstudio_pipeline.load("extract")
     period = temporal_context.normalize(getattr(args, "default_temporal_context", ""))
     system = step.EXTRACT_SYSTEM + "\n" + SOURCE_SYSTEM + "\n" + temporal_context.RULES
-    review_key = fingerprint(model, args, "source-extraction-review.v3", narrative_validation.EXTRACTION_REVIEW_SYSTEM,
+    review_key = fingerprint(model, args, "source-extraction-review.v4", narrative_validation.EXTRACTION_REVIEW_SYSTEM,
                              narrative_validation.SCHEMA, narrative_validation.EXTRACTION_FINDINGS_SYSTEM,
                              narrative_validation.EXTRACTION_FINDINGS_SCHEMA, reference_visuals.APPEARANCE_RULES,
                              _CORRECTION_RULES,
