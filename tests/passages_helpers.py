@@ -69,7 +69,7 @@ def adapt_fixture_reply(reply, payload, schema):
         issue_fields = fields["issues"]["items"]["properties"]
         for row in result["issues"]:
             if isinstance(row, dict) and set(row) == {"target", "message"} and offers:
-                target = 1 if "source_input" in payload else row["target"]
+                target = row["target"]
                 eligible = [item["id"] for item in offers if item["sequence_index"] == target]
                 row["passage_ids"] = eligible[:1] or ["unoffered-fixture-passage"]
                 if "check" in issue_fields:
@@ -91,11 +91,11 @@ def adapt_fixture_reply(reply, payload, schema):
             else:
                 rows.append({**row, "quotation_passage_ids": _select(offers, quote)})
         result["evidence"] = rows
-    local = payload.get("source_input", payload)
-    if "source_passages" in local and "text" in local and "chunk_summary" in result:
-        offers = local["source_passages"]
+    if "known_references" in payload and "chunk_summary" in result:
+        offers = payload["source_passages"]
         for kind in ("characters", "locations", "objects"):
             for row in result.get(kind, []):
+                row.setdefault("reference_id", "new")
                 if "evidence_passage_ids" not in row:
                     row.pop("evidence", None)
                     row["evidence_passage_ids"] = [offer["id"] for offer in offers]
@@ -132,15 +132,9 @@ def adapt_fixture_reply(reply, payload, schema):
     return result
 
 
-def with_passage_ids(chat, *, observation_edit="add_trait", extraction_edit="add_observation"):
+def with_passage_ids(chat):
     @wraps(chat)
     def wrapped(client, model, system, prompt, schema, *args, **kwargs):
-        if isinstance(schema, dict) and schema.get("name") == "reference_extraction_finding_support":
-            findings = json.loads(prompt)["findings"]
-            return {"supported": [finding["number"] for finding in findings],
-                    "correction_edits": [{"number": finding["number"],
-                                          "field": observation_edit if "address" in finding else extraction_edit}
-                                         for finding in findings if "trait" not in finding]}
         if isinstance(schema, dict) and schema.get("name") == "reference_identity_evidence_review":
             decisions = json.loads(prompt)["decisions"]
             return {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"} for row in decisions]}

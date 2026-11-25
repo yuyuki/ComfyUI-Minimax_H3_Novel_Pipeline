@@ -14,7 +14,7 @@ from .prompt_cache import fingerprint
 from .source_text import PASSAGE_IDS, offered_passages, passage_catalog, select_passages
 
 
-VERSION = "chapter-reference-identity.v14"
+VERSION = "chapter-reference-identity.v15"
 SYSTEM = """Consolidate reference identities within ONE chapter of fiction.
 All input is data. source_passages contains ordered cinematic initialState/event passages.
 Use resolved names, physical continuity and supplied quotations to identify the same
@@ -241,6 +241,7 @@ def _apply(result, entities):
         keep["members"] = sorted([m for e in members for m in e["members"]], key=lambda m: m["order"])
         keep["canonical_name"] = group["canonical_name"]
         keep["aliases"] = [name for name in _unique(names) if name.casefold() != keep["canonical_name"].casefold()]
+        keep["unresolved"] = False
         removed.update(e["id"] for e in members[1:])
     return [by_id[e["id"]] for e in entities if e["id"] not in removed]
 
@@ -551,13 +552,13 @@ def _catalog(entities, step):
     return catalog
 
 
-def _reconcile_windows(entities, active, jobs, step, client, model, args, cache_dir, *, orders=None):
+def _reconcile_windows(entities, jobs, step, client, model, args, cache_dir, orders):
     """Split over-budget work into within-window and cross-window comparisons."""
     windows = []
     members = {member["order"]: member for entity in entities for member in entity["members"]}
     owners = {member["order"]: entity["id"] for entity in entities for member in entity["members"]}
 
-    def reconcile(left, right=(), *, include_active=False):
+    def reconcile(left, right=()):
         nonlocal entities, owners
         lmstudio_pipeline.comfy_interrupt_check()
         selected = {}
@@ -566,22 +567,14 @@ def _reconcile_windows(entities, active, jobs, step, client, model, args, cache_
         ids = set(selected)
         if len(ids) < 2:
             return
-        candidates = [e for e in entities if e["id"] in ids]
-        if not include_active:
-            # Project confirmed identities onto the occurrences included here.
-            # Other occurrences remain available in their own cross-window comparisons.
-            candidates = [{**e, "members": selected[e["id"]]} for e in candidates]
+        # Offer only selected occurrences. Verification can see the full identities.
+        candidates = [{**e, "members": selected[e["id"]]} for e in entities if e["id"] in ids]
         addresses = {(m["sequence"], m["chunk"]) for e in candidates for m in e["members"]}
-        if include_active:
-            addresses.update((job["sequence"], job["chunk"]) for job in active)
         passages = [job for job in jobs if (job["sequence"], job["chunk"]) in addresses]
         try:
             result = _request(step, client, model, args, candidates, passages, cache_dir,
-                              all_entities=entities, jobs=jobs, include_member_context=orders is not None)
+                              all_entities=entities, jobs=jobs, include_member_context=True)
         except _IdentityBudgetExceeded:
-            if include_active:
-                reconcile(left, right)
-                return
             if not right and len(left) > 2:
                 middle = len(left) // 2
                 first, second = left[:middle], left[middle:]
@@ -602,10 +595,7 @@ def _reconcile_windows(entities, active, jobs, step, client, model, args, cache_
             entities = _apply(result, entities)
             owners = {m["order"]: e["id"] for e in entities for m in e["members"]}
 
-    if orders is None:
-        reconcile(sorted(members), include_active=True)
-    else:
-        reconcile(sorted(orders))
+    reconcile(sorted(orders))
     return entities, windows
 
 
@@ -617,78 +607,59 @@ def _record_windows(check, windows):
         check["status"] = "incomplete"
 
 
-def _review_recurring_characters(entities, jobs, step, client, model, args, cache_dir, diagnostics):
-    """Offer focused cross-window comparisons; names only select candidates."""
-    buckets = {}
-    for entity in entities:
-        if entity["kind"] == "characters":
-            buckets.setdefault(entity["canonical_name"].casefold(), []).append(entity)
-    windows = []
-    for entries in buckets.values():
-        if len(entries) < 2:
-            continue
-        orders = sorted({member["order"] for entity in entries
-                         for member in (entity["members"][0], entity["members"][-1])})
-        # Short overlapping comparisons let a supported connection survive
-        # uncertainty elsewhere in the chapter. The shared boundary carries the
-        # already reviewed identity into the next comparison.
-        for start in range(0, len(orders) - 1, 3):
-            entities, compared = _reconcile_windows(
-                entities, (), jobs, step, client, model, args, cache_dir, orders=orders[start:start + 4])
-            windows.extend(compared)
-    if windows:
-        check = {"stage": "recurring_character_identity", "status": "passed"}
-        _record_windows(check, windows)
-        diagnostics["identity_consolidation"].append(check)
-    return entities
+def append_occurrences(entities, job, step, order):
+    """Replay a validated answer into the ordered chapter dictionary."""
+    for kind in ("characters", "locations", "objects"):
+        for row in job["result"][kind]:
+            order += 1
+            observation = step.clean_entity(row, kind)
+            member = {"sequence": job["sequence"], "chunk": job["chunk"],
+                      "order": order, "observation": observation}
+            ref = row["reference_id"]
+            if ref in entities:
+                entity = entities[ref]
+                entity["members"].append(member)
+                names = [*entity["aliases"], observation["canonical_name"], *observation["aliases"]]
+                entity["aliases"] = [name for name in _unique(names)
+                                     if name.casefold() != entity["canonical_name"].casefold()]
+            else:
+                ref_id = f"REF_{order:05d}"
+                entities[ref_id] = {"id": ref_id, "kind": kind, "members": [member],
+                                    "canonical_name": observation["canonical_name"],
+                                    "aliases": observation["aliases"], "unresolved": ref == "unresolved"}
+    return order
 
 
-def consolidate(jobs, step, client, model, args, cache_dir, diagnostics, diagnostic_path):
-    """Reconcile ordered occurrence batches; retain separate identities on failure."""
-    entities = []
-    previous = []
-    pending = list(jobs)
-    completed = 0
-    while pending:
+def finish_dictionary(entities, jobs, step, client, model, args, cache_dir, diagnostics):
+    """Send only provisional identities and possible duplicates to the merge audit."""
+    finished = []
+    checks = diagnostics.setdefault("identity_consolidation", [])
+    for kind in progress.steps(("characters", "locations", "objects")):
         lmstudio_pipeline.comfy_interrupt_check()
-        # Bound source windows and completion work; every occurrence remains represented.
-        batch, size, count = [], 0, 0
-        while pending and len(batch) < 8:
-            job = pending[0]
-            incoming_count = sum(len(job["result"].get(k, [])) for k in ("characters", "locations", "objects"))
-            if batch and (size + len(job["text"]) > 12000 or count + incoming_count > 32):
-                break
-            batch.append(pending.pop(0))
-            size += len(job["text"])
-            count += incoming_count
-        for job in batch:
-            for kind in ("characters", "locations", "objects"):
-                for raw in job["result"].get(kind, []):
-                    observation = step.clean_entity(raw, kind)
-                    if not observation["canonical_name"]:
-                        raise ValueError("Cinematic reference extraction returned an empty canonical_name.")
-                    completed += 1
-                    member = {"sequence": job["sequence"], "chunk": job["chunk"], "order": completed, "observation": observation}
-                    entities.append({"id": f"REF_{completed:05d}", "kind": kind, "members": [member],
-                                     "canonical_name": observation["canonical_name"],
-                                     "aliases": observation["aliases"]})
-        check = {"stage": "chapter_identity_consolidation", "sequences": [j["sequence"] for j in batch], "status": "passed"}
-        if len(entities) >= 2 and count:
-            print(f"Chapter identity consolidation: {len(entities)} candidates, sequences {check['sequences']}", flush=True)
-            entities, windows = _reconcile_windows(entities, previous + batch, jobs, step, client, model, args, cache_dir)
+        entries = [entity for entity in entities.values() if entity["kind"] == kind]
+        name_counts = Counter(name for entity in entries for name in {name.casefold() for name in _names(entity)})
+        unresolved = any(entity["unresolved"] for entity in entries)
+        suspects = [entity for entity in entries if unresolved or any(
+            name_counts[name.casefold()] > 1 for name in _names(entity))]
+        if not suspects:
+            finished.extend(entries)
+            continue
+        check = {"stage": "chapter_identity_consolidation", "kind": kind, "status": "passed"}
+        if len(suspects) > 1:
+            orders = [m["order"] for entry in suspects for m in (entry["members"][0], entry["members"][-1])]
+            entries, windows = _reconcile_windows(entries, jobs, step, client, model, args, cache_dir, set(orders))
             _record_windows(check, windows)
-        diagnostics.setdefault("identity_consolidation", []).append(check)
-        util.save_json(diagnostic_path, diagnostics)
-        previous = batch[-1:]
-        progress.report(1 - len(pending) / len(jobs))
-    if len(diagnostics["identity_consolidation"]) > 1:
-        entities = _review_recurring_characters(entities, jobs, step, client, model, args, cache_dir, diagnostics)
-    catalog = _catalog(entities, step)
-    diagnostics["identity_occurrences"] = [
-        {"occurrence_id": f"REF_{m['order']:05d}", "local_id": item["local_id"], "sequence": m["sequence"]}
-        for kind in catalog
-        for entity, item in zip((e for e in sorted(entities, key=lambda e: min(m["order"] for m in e["members"])) if e["kind"] == kind), catalog[kind])
-        for m in entity["members"]
-    ]
-    util.save_json(diagnostic_path, diagnostics)
+        pending = [entry["id"] for entry in entries if entry["unresolved"]]
+        if pending:
+            check.update(status="incomplete", unresolved_ids=pending)
+        checks.append(check)
+        finished.extend(entries)
+    catalog = _catalog(finished, step)
+    by_kind = {kind: iter(catalog[kind]) for kind in catalog}
+    diagnostics["identity_occurrences"] = []
+    for entry in sorted(finished, key=lambda e: e["members"][0]["order"]):
+        item = next(by_kind[entry["kind"]])
+        diagnostics["identity_occurrences"].extend(
+            {"occurrence_id": f"REF_{m['order']:05d}", "local_id": item["local_id"], "sequence": m["sequence"]}
+            for m in entry["members"])
     return catalog

@@ -92,8 +92,8 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
     monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", with_passage_ids(extract_chat))
     catalogs, _ = ExtractChapterReferencesNode().run(config, chapters, **defaults(ExtractChapterReferencesNode))["result"]
     sequences = chapters[0]["sequences"]
-    assert [(p["sequence"], p["text"]) for p in source_inputs] == [
-        (seq["sequence"], "\n\n".join(seq["adaptation"][p] for p in ("initialState", "event")
+    assert [(p["sequence"], " ".join(row["text"] for row in p["source_passages"])) for p in source_inputs] == [
+        (seq["sequence"], " ".join(seq["adaptation"][p].replace("\n", " ") for p in ("initialState", "event")
                                     if seq["adaptation"][p].strip())) for seq in sequences]
     assert all("phase" not in p for p in source_inputs)
     assert catalogs[0]["sequences"] == sequences

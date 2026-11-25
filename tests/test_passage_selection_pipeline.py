@@ -249,21 +249,15 @@ def test_extraction_traits_and_identity_keep_local_offsets_through_consumer_and_
             identifiers = [row["id"] for row in local["source_passages"]]
             ids = ["unknown"] if requests.count(schema["name"]) == 1 else identifiers
             return validate_reply(schema, {"chunk_summary": "Une cloche.", "characters": [], "locations": [],
-                "objects": [{"canonical_name": "La cloche", "aliases": [], "importance": "major",
+                "objects": [{"canonical_name": "cloche",
+                    "aliases": [], "importance": "major",
                     "reference_priority": "required", "reference_view_hints": [], "evidence_passage_ids": ids,
-                    "presence": "visible", "visual_traits": [] if local["sequence"] == 2 else [{
+                    "presence": "visible", "reference_id": (
+                        local["known_references"][0]["reference_id"] if local["sequence"] == 2 else "new"),
+                    "visual_traits": [] if local["sequence"] == 2 else [{
                         "attribute": "material", "description": "en bronze", "scope": "intrinsic",
                         "evidence_passage_ids": [identifiers[0]]}]}]})
-        if schema == identity.IDENTITY_REVIEW_SCHEMA:
-            return validate_reply(schema, {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"}
-                                                         for row in data["decisions"]]})
-        if schema["name"] == identity.SCHEMA["name"]:
-            offered = data["source_passages"]
-            assert {row["sequence"] for row in offered} == {1, 2}
-            return validate_reply(schema, {"groups": [{"member_ids": [e["id"] for e in data["entities"]],
-                "canonical_member_id": data["entities"][0]["id"],
-                "passage_ids": [next(row["id"] for row in offered if row["sequence"] == n) for n in (1, 2)]}]})
-        return validate_reply(schema, {"issues": []})
+        pytest.fail(f"Unexpected request for a known reference: {schema['name']}")
 
     monkeypatch.setattr(step, "chat_json", chat)
     args = SimpleNamespace(temperature=0.15, max_tokens=8192, chunk_chars=4000, force=False, max_attempts=2)
@@ -275,8 +269,7 @@ def test_extraction_traits_and_identity_keep_local_offsets_through_consumer_and_
     assert trait["evidence"] == source_text.normalize("La cloche d’Élise est en bronze.")
     assert trait["evidence_passages"] == [{"chunk": 1, "start": 0, "end": len(trait["evidence"]), "text": trait["evidence"]}]
     report = json.loads((tmp_path / "chapter_references.diagnostics.json").read_text(encoding="utf-8"))
-    group, = report["identity_consolidation"][0]["groups"]
-    assert [row["sequence"] for row in group["source_passages"]] == [1, 2]
+    assert report["status"] == "passed"
     assert "passage_ids" not in saved.read_text(encoding="utf-8")
     assert requests.count(step.CHUNK_SCHEMA["name"]) == 3
 
@@ -345,7 +338,7 @@ def test_identity_with_exact_but_unsupported_passages_stays_incomplete(tmp_path,
     step = lmstudio_pipeline.load("extract")
     jobs = [{"sequence": seq, "chunk": 1, "text": text, "result": {
         "characters": [], "locations": [], "objects": [{
-            "canonical_name": "La cloche", "aliases": [], "presence": "visible",
+            "canonical_name": "La cloche", "aliases": [], "presence": "visible", "reference_id": "new",
             "evidence": [text], "visual_traits": [],
         }],
     }} for seq, text in enumerate(["Une cloche tinte.", "Ailleurs, une cloche tinte."], 1)]
@@ -367,7 +360,10 @@ def test_identity_with_exact_but_unsupported_passages_stays_incomplete(tmp_path,
     monkeypatch.setattr(step, "chat_json", chat)
     diagnostics = {}
     args = SimpleNamespace(temperature=0.15, max_tokens=8192, force=False)
-    result = identity.consolidate(jobs, step, None, "mock", args, tmp_path, diagnostics, tmp_path / "diagnostics.json")
+    entities, order = {}, 0
+    for job in jobs:
+        order = identity.append_occurrences(entities, job, step, order)
+    result = identity.finish_dictionary(entities, jobs, step, None, "mock", args, tmp_path, diagnostics)
     assert len(result["objects"]) == 2
     assert len(proposals) == 2
     assert proposals[-1]["correction"]["reason"] == "evidence_unsupported"

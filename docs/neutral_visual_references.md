@@ -13,69 +13,48 @@ scene numbers and passages belong in input data, never story-specific instructio
 
 ## Extraction and identity
 
-Extraction reads each sequence's resolved `adaptation.initialState` and
-`adaptation.event`. `reference_state` supplies initial-condition context, without
-prescribing image composition. An entity first depicted during an event can have
-its established wardrobe or appearance described there. Results of transformations
-to animate must not be treated as already completed appearance.
+Extraction reads the numbered sentences of each sequence's resolved
+`adaptation.initialState` and `adaptation.event`. Opening passage IDs mark the
+starting state. An entity first depicted during an event can have its established
+wardrobe or appearance described there. Transformations during the clip belong in
+the animation.
 
 Each source observation records `presence` (`visible`, `offscreen`, `mentioned`)
 and `visual_traits`. Every trait has a consistent attribute key, a source-language
-description, `intrinsic` or `scene` scope, and local source evidence. Extraction
-and correction requests select passage IDs. Review uses the same local passage
-IDs. Python resolves them to exact, sentence-level quotes with offsets in the
-combined initialState/event source, in source order. The existing quote field
-contains the first selected quote, and `evidence_passages` retains each selected
-passage individually. The catalog loader checks addressed citations against their
-sequence. Before extraction is accepted,
-semantic review checks coverage against the passage, even for empty arrays, and
-checks each occurrence and trait against its actual referent. An independent
-audit checks an approved extraction against the local sentences, including
-category, trait coverage and language. A separate
-structured check verifies that the selected quotations support the full diagnosis
-before it can trigger a correction or remove a trait. Malformed or unsupported
-findings are retried with local evidence and recorded in the diagnostic sidecar.
-Targeted corrections preserve unaffected observations, traits and evidence.
-Chapter context disambiguates referents and categories only; it cannot establish
-local presence or import changing traits. Actions remain in adaptation.
+description quoted from a selected local sentence and an `intrinsic` or `scene`
+scope. Python
+resolves selected passage IDs to exact sentence-level quotes with offsets in
+source order. `evidence_passages` retains each selected sentence. The loader
+checks addressed citations against their sequence. A bounded retry addresses
+invalid IDs or response structure. Incomplete results retain valid observations
+and record rejected fields in the diagnostic sidecar.
 
-- A visible prop is retained even when only its use or physical relationship
-  establishes presence. A distinct fixture can be a prop; a constituent detail
-  stays a trait of its parent with its local citation, even when revealed by use.
-  An interaction surface alone is insufficient
-  evidence of a separate place. Local aliases require source-supported coreference.
+- New objects and filming spaces require visible appearance details. A described
+  reference can be reused when the current passage identifies the same visible
+  entity. A distinct fixture can be a prop. A constituent detail stays with its
+  parent even when revealed by use. Local aliases require source-supported coreference.
 - Objects record intrinsic design such as shape, construction, color, texture,
   markings and explicitly stated material. Established visible physical conditions
   and fixed installed geometry are local traits. Depicted light sources retain their
   physical design. Scene lighting, handling, incidental placement and
   transformations taking place during the clip remain in the cinematic adaptation.
-- Characters record only neutral wardrobe and footwear at the sequence address.
-  Character visual profiles supply timeless physical appearance. Injuries, marks
-  from interactions, dirt and torn or perforated garments stay in the adaptation.
+- Depicted characters are recorded even without local appearance, and identifiable
+  offscreen speakers are recorded for audio. Character observations describe only
+  neutral wardrobe and footwear. Consolidation can match them to the whole-book
+  character profiles supplied through `visual_designs.json` or the profile socket.
+  Injuries, marks from interactions, dirt and torn garments stay in the adaptation.
 - Locations record durable setting details and the visible conditions established
   for each sequence, including weather, fog and already visible physical changes to
   the backdrop. A fixed opening belongs to the setting geometry.
 
-Chapter identity decisions group confirmed physical identities and retain their
-observations at `state_by_sequence[sequence].source`. Generic labels do not prove
-identity. Incomplete identity decisions remain explicit in diagnostics; uncertain
-physical instances stay separate rather than being silently merged.
-The model selects candidate IDs, one canonical member ID and supporting passage
-IDs. Python derives the names from the confirmed members and supplies their
-validated extraction citations when a selection omits a member. The semantic
-review still checks whether the evidence connects the referents. Same-sequence
-checks use the full identities, including occurrences outside a projected
-window. Explicitly coordinated distinct objects in a handling clause can block
-a merge directly. Other cases use the dedicated coexistence review. Independent supported groups survive
-invalid proposals, and overlapping supported claims are retried together.
-When an ordered window exceeds the request budget, smaller windows compare
-occurrences within and across their boundaries using the corresponding passages.
-A focused pass compares still-separated recurring characters in short overlapping
-windows with their local sentences. Their shared names select candidates for
-evidence review, and a confirmed boundary occurrence connects successive windows.
-An uninterrupted action can establish that a contextual alias or a visible wall
-belongs to the same space. A visible location can be recorded with empty local
-traits and use supported shared geometry once its identity is confirmed.
+The chapter dictionary grows in sequence order. Extraction receives a bounded list
+of known IDs, names, aliases and defining traits for identification. Local
+sentences establish current presence and appearance. A shared generic label alone
+does not confirm identity. A reused object cites its local name. A new alias also
+needs an identifying appearance detail from the passage. The chapter audit checks
+provisional identities and possible duplicates with cited merge groups. Unresolved identities remain separate
+and are reported in diagnostics. Confirmed identities retain all observations at
+`state_by_sequence[sequence].source`.
 
 ## Shared traits and local states
 
@@ -102,9 +81,8 @@ appearance through functional `excluded_attributes`. A source-grounded review ca
 retain multiple values under a scene attribute when the quotations establish
 compatible spatial scopes. Those values stay local to the scene.
 
-Objects and places require useful visual description. Name-only entries do not
-produce empty image references, and their observations remain available for identity
-reconciliation. Visible characters may rely on their independent
+New objects and places require useful visual description. A known reference may have
+visible observations without new traits. Visible characters may rely on their independent
 Character Visual Profile Generator output, including `visual_designs.json`, for
 physical identity. Offscreen speech is retained independently for audio needs.
 
@@ -112,10 +90,9 @@ To resume extraction in a new run, set `resume_run` on Extract Chapter Reference
 to the previous timestamp and keep `out_dir`, source data and extraction settings
 the same, with `force` disabled. The previous run's
 `<out_dir>/.cache/<chapter_id>/` is read-only. Compatible completed extractions and
-confirmed identity decisions are reused. Open identity decisions remain pending.
-A saved evidence-validated extraction draft can resume at review. Sequences
-without a compatible draft or completed extraction are extracted again. New
-files go to the current run.
+confirmed identity decisions are reused. Replaying the cached answers in sequence
+order reconstructs the dictionary. Missing or invalid answers are requested again.
+New files go to the current run.
 
 ## Consolidation and image binding
 

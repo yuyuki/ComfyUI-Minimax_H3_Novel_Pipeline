@@ -174,7 +174,7 @@ def test_bindings_select_the_exact_scene_state_and_exclude_absent_entities():
 
 
 def resolve_candidate(kind, candidate, source):
-    data = {"sequence": 1, "text": source}
+    data = {"sequence": 1, "text": source, "known_references": []}
     data["source_passages"] = visual.evidence_index(data).passages()
     wire = adapt_fixture_reply({"chunk_summary": "", kind: [
         {**observation(candidate), "canonical_name": "Subject"}]}, data, lmstudio_pipeline.load("extract").CHUNK_SCHEMA)
@@ -216,20 +216,19 @@ def test_established_object_condition_stays_at_its_source_scene():
 
 def test_extraction_retries_with_structured_schema_and_full_evidence(monkeypatch):
     step = lmstudio_pipeline.load("extract")
-    source = {"sequence": 1, "text": "A brass surface.", "reference_state": "A brass surface."}
+    source = {"sequence": 1, "text": "A brass surface.", "offset": 0, "opening_end": 16,
+              "default_temporal_context": "", "known_references": []}
     calls = []
     def chat(client, model, system, user, schema, *args):
-        if schema["name"] == "narrative_semantic_review":
-            return {"issues": []}
         calls.append((schema, user))
         quote = "Future text." if len(calls) == 1 else source["text"]
         return {"chunk_summary": "", "characters": [], "locations": [], "objects": [
-            {**observation(trait("material", "Brass.", evidence=quote)), "canonical_name": "Surface"}]}
+            {**observation(trait("material", "Brass.", evidence=quote)), "canonical_name": "Surface",
+             "aliases": [], "importance": "minor", "reference_priority": "optional", "reference_view_hints": []}]}
     monkeypatch.setattr(step, "chat_json", with_passage_ids(chat))
     args = SimpleNamespace(temperature=0.1, max_tokens=2000, max_attempts=2)
-    result, _, status = extraction._extract_source(step, None, "mock", extraction.SOURCE_SYSTEM,
-                                                  json.dumps(source), args)
-    assert status == "passed" and len(calls) == 2
+    result, rejected = extraction._extract_source(step, None, "mock", extraction.SOURCE_SYSTEM, source, args)
+    assert not rejected and len(calls) == 2
     assert all(schema == step.CHUNK_SCHEMA and schema["strict"] for schema, _ in calls)
     assert all(source["text"] in user for _, user in calls)
     assert result["objects"][0]["visual_traits"][0]["description"] == "Brass."

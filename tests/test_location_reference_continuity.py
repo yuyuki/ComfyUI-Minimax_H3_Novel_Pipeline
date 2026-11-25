@@ -31,7 +31,7 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
     }
     events = {
         4: "Mina regarde vers l'ouverture.",
-        5: "Un filin de soie abaisse la lampe tandis que la corde principale soutient Mina.",
+        5: "Un filin de soie abaisse la lampe tandis que la corde principale en chanvre soutient Mina.",
         6: "Mina saisit le filin de la lampe et se tourne vers la paroi.",
         7: "Le faisceau effleure la paroi.",
         8: "Mina tire deux fois sur la corde principale.",
@@ -59,26 +59,9 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
     def extract_reply(client, model, system, user, schema, *settings):
         assert schema["strict"]
         payload = json.loads(user)
-        if schema["name"] == "narrative_semantic_review":
-            return {"issues": []}
-        if schema["name"] == "chapter_reference_identity":
-            entities = payload["entities"]
-            clusters = [
-                ("Puits du nord", {"Puits du nord", "L'abîme"}, [opening[4], opening[5]]),
-                ("Corde principale", {"Corde principale"}, [events[5], opening[6]]),
-                ("Filin de la lampe", {"Filin de la lampe"}, [events[5], events[6]]),
-            ]
-            assert {entity["canonical_name"] for entity in entities if entity["entity_type"] == "locations"} == {
-                "Puits du nord", "L'abîme", "Puits méridional",
-            }
-            return {"groups": [
-                {"member_ids": [e["id"] for e in entities if e["canonical_name"] in names],
-                 "canonical_name": canonical, "aliases": [], "source_quotes": quotes}
-                for canonical, names, quotes in clusters
-            ]}
         assert schema == extract.CHUNK_SCHEMA
         n = payload["sequence"]
-        assert payload["text"] == f"{opening[n]}\n\n{events[n]}"
+        assert " ".join(p["text"] for p in payload["source_passages"]) == f"{opening[n]} {events[n]}"
         assert "Mina s'immobilise." not in user
         location = {
             4: observation("Puits du nord", geometry, "layout", geometry),
@@ -86,11 +69,17 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
             10: observation("Puits méridional", southern_geometry, "walls", southern_geometry),
         }.get(n, observation("Puits du nord", opening[n]))
         props = {
-            5: [observation("Corde principale", events[5]),
+            5: [observation("Corde principale", events[5], "material", "Chanvre."),
                 observation("Filin de la lampe", events[5], "material", "Soie.")],
             6: [observation("Corde principale", opening[6], "material", "Chanvre."),
                 observation("Filin de la lampe", events[6])],
         }
+        known = {row["name"]: row["reference_id"] for row in payload["known_references"]}
+        if n == 5:
+            location["reference_id"] = known["Puits du nord"]
+        for row in [location, *props.get(n, [])]:
+            row.setdefault("reference_id", known.get(row["canonical_name"], "new"))
+            row.update(aliases=[], importance="minor", reference_priority="recommended", reference_view_hints=[])
         return {"chunk_summary": events[n], "characters": [], "locations": [location], "objects": props.get(n, [])}
 
     monkeypatch.setattr(extract, "chat_json", with_passage_ids(extract_reply))

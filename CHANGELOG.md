@@ -8,6 +8,11 @@ by later entries.
 
 ## Unreleased
 
+- Build a chapter reference dictionary during sequence extraction. Require local
+  evidence for reuse and useful visual detail for new objects or filming spaces.
+  Preserve depicted characters and identifiable offscreen speech, and audit
+  ambiguous identities separately from extraction.
+
 - Remove obsolete chapter-reference local links, first-phase fields and phase-based
   readers/tests. Require source-only catalogs through consolidation and H3, reject
   older outputs without migration, and update associated documentation and agent

@@ -21,7 +21,7 @@ def group(ids, name_id, passage_ids):
     return {"member_ids": ids, "canonical_member_id": name_id, "passage_ids": passage_ids}
 
 
-def run(tmp_path, monkeypatch, jobs, reply, *, review=None, resume=None):
+def run(tmp_path, monkeypatch, jobs, reply, *, review=None, resume=None, ambiguous=True):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path if resume is None else tmp_path.parent)
     step = lmstudio_pipeline.load("extract")
     calls = []
@@ -50,7 +50,18 @@ def run(tmp_path, monkeypatch, jobs, reply, *, review=None, resume=None):
     args = SimpleNamespace(temperature=0.18, max_tokens=8192, force=False, resume_cache_dir=resume)
     diagnostics = {}
     original = deepcopy(jobs)
-    catalog = identity.consolidate(jobs, step, None, "mock", args, tmp_path, diagnostics, tmp_path / "diagnostics.json")
+    candidate_jobs = deepcopy(jobs)
+    for kind in ("characters", "locations", "objects"):
+        rows = [row for job in candidate_jobs for row in job["result"][kind]]
+        for row in rows:
+            row.setdefault("reference_id", "new")
+        if ambiguous and len(rows) > 1 and len({row["canonical_name"] for row in rows}) == len(rows):
+            rows[0]["reference_id"] = "unresolved"
+    entities, order = {}, 0
+    for row in candidate_jobs:
+        order = identity.append_occurrences(entities, row, step, order)
+    catalog = identity.finish_dictionary(entities, candidate_jobs, step, None, "mock", args, tmp_path, diagnostics)
+    util.save_json(tmp_path / "diagnostics.json", diagnostics)
     assert jobs == original
     return catalog, diagnostics, calls
 
@@ -88,22 +99,6 @@ def test_same_generic_name_and_identical_object_names_do_not_force_merge(tmp_pat
     assert len(catalog["characters"]) == len(catalog["objects"]) == 2
     assert [e["first_sequence"] for e in catalog["characters"]] == [1, 2]
     assert diagnostics["identity_consolidation"][0]["status"] == "passed"
-
-
-def test_later_batch_can_unify_previously_separate_identities(tmp_path, monkeypatch):
-    jobs = [job(1, "Indy avance.", "Indy"), job(2, "Un homme attend.", "l'homme")]
-    jobs += [job(n, "Le silence persiste.") for n in range(3, 9)]
-    jobs.append(job(9, "L'homme est Indy, que Doriane appelle Jones.", "Jones"))
-    def reply(payload, count):
-        if count == 1:
-            return {"groups": []}
-        assert {p["sequence"] for p in payload["source_passages"]} == {1, 2, 8, 9}
-        assert {e["canonical_name"] for e in payload["entities"]} == {"Indy", "l'homme", "Jones"}
-        return {"groups": [group([e["id"] for e in payload["entities"]], "REF_00001",
-                                 [p["id"] for p in payload["source_passages"]])]}
-    catalog, _, calls = run(tmp_path, monkeypatch, jobs, reply)
-    assert len(calls) == 2 and len(catalog["characters"]) == 1
-    assert list(catalog["characters"][0]["state_by_sequence"]) == ["1", "2", "9"]
 
 
 @pytest.mark.parametrize("defect", ["unknown_id", "duplicate_id", "cross_type", "invalid_canonical", "invented_quote", "overlap", "schema"])
@@ -168,7 +163,7 @@ def test_invalid_cached_identity_is_corrected_with_all_evidence(tmp_path, monkey
 
     catalog, diagnostics, repaired = run(tmp_path, monkeypatch, jobs, reply)
     assert len(repaired) == 1 and len(catalog["characters"]) == 2
-    assert diagnostics["identity_consolidation"][0]["status"] == "passed"
+    assert diagnostics["identity_consolidation"][0]["status"] == "incomplete"
 
 
 @pytest.mark.parametrize("error", [OSError("disk"), KeyboardInterrupt(),
@@ -291,6 +286,8 @@ def test_split_windows_compare_occurrences_across_batches(tmp_path, monkeypatch)
         scene["result"]["objects"] = [{"canonical_name": name, "aliases": [], "presence": "visible",
                                        "visual_traits": []} for name in names]
 
+    jobs[-1]["result"]["objects"][0]["reference_id"] = "unresolved"
+
     def reply(payload, count):
         ids = {e["id"] for e in payload["entities"]}
         if {"REF_00001", "REF_00009"} <= ids:
@@ -324,26 +321,27 @@ def test_prologue_coexistence_blocks_merge_between_confirmed_groups(tmp_path, mo
                                                                 "text": row["text"]}]} for name in names]
         jobs.append(row)
 
+    for row in jobs[-2:]:
+        for index, occurrence in enumerate(row["result"]["objects"], 1):
+            occurrence["reference_id"] = f"REF_{index:05d}"
+    jobs[-3]["result"]["objects"][0]["reference_id"] = "unresolved"
+
     def reply(payload, count):
         ids = [e["id"] for e in payload["entities"]]
         proof = [p["id"] for p in payload["source_passages"]]
-        if count in (1, 3):
-            return {"groups": [group(ids[::2], ids[0], proof), group(ids[1::2], ids[1], proof)]}
-        return {"groups": [group(ids[:2], ids[0], proof[:1]), group(ids[2:], ids[2], proof[-1:])]}
+        return {"groups": [group(ids, ids[0], proof)]}
 
     def review(system, decision):
         assert system != identity.COEXISTENCE_SYSTEM
         return "supported"
 
-    catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply, review=review)
-    assert len(calls) == 3
+    catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply, review=review, ambiguous=False)
+    assert len(calls) == 2
     assert [row["canonical_name"] for row in catalog["objects"]] == names
-    assert all({source["canonical_name"] for scene in row["state_by_sequence"].values()
-                for source in scene["source"]} == {row["canonical_name"]} for row in catalog["objects"])
     assert [list(row["state_by_sequence"]) for row in catalog["objects"]] == [["10", "11", "12"]] * 2
     assert any(f.get("stage") == "coexistence_review" and f["reason"] == "evidence_distinct_instances"
                and f["evidence"] in sentences
-               for w in diagnostics["identity_consolidation"][1]["windows"]
+               for w in diagnostics["identity_consolidation"][0]["windows"]
                for a in w["attempts"] for f in a["failures"])
 
 
@@ -416,45 +414,3 @@ def test_resume_rechecks_identity_decisions_from_previous_validation_version(tmp
 
     catalog, _, calls = run(resumed, monkeypatch, jobs, reply, resume=older)
     assert len(calls) == 1 and len(catalog["characters"]) == 1
-
-
-def test_recurring_character_crosses_windows_on_source_evidence(tmp_path, monkeypatch):
-    jobs = [job(1, "Indy se suspend à une corde.", "Indy")]
-    jobs.extend(job(number, f"Un témoin attend à l'arrêt {number}.", f"Témoin {number}")
-                for number in range(2, 9))
-    jobs.extend([job(9, "Toujours suspendu à la même corde, Indy lève les yeux.", "Indy"),
-                 job(10, "Un autre homme prénommé Indy attend à la surface.", "Indy"),
-                 job(11, "L'Indy suspendu à la corde remonte un peu.", "Indy"),
-                 job(12, "Sur cette même corde, Indy reprend son ascension.", "Indy"),
-                 job(13, "Indy atteint le sommet de la corde.", "Indy")])
-
-    def reply(payload, count):
-        if count < 3:
-            return {"groups": []}
-        ids = [row["id"] for row in payload["entities"]]
-        if count == 3:
-            assert ids == ["REF_00001", "REF_00009", "REF_00010", "REF_00011"]
-            passage, = [p["id"] for p in payload["source_passages"] if p["sequence"] == 9]
-            return {"groups": [group([ids[0], ids[1], ids[3]], ids[0], [passage])]}
-        assert ids == ["REF_00001", "REF_00012", "REF_00013"]
-        assert [row["sequence"] for row in payload["entities"][0]["occurrences"]] == [11]
-        passages = [p["id"] for p in payload["source_passages"]]
-        return {"groups": [group(ids, ids[0], passages)]}
-
-    catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
-    assert len(calls) == 4
-    assert [list(row["state_by_sequence"]) for row in catalog["characters"]
-            if row["canonical_name"] == "Indy"] == [["1", "9", "11", "12", "13"], ["10"]]
-    check = diagnostics["identity_consolidation"][-1]
-    assert check["stage"] == "recurring_character_identity"
-    assert [[p["sequence"] for p in decision["source_passages"]] for decision in check["groups"]] == [
-        [1, 9, 11], [11, 12, 13]]
-
-    previous_cache = {path.name: path.read_bytes() for path in tmp_path.glob("identity_*.json")}
-    resumed_cache = tmp_path / "resumed"
-    resumed_cache.mkdir()
-    monkeypatch.setattr(identity, "VERSION", "changed-identity-contract")
-    rebuilt, _, requests = run(resumed_cache, monkeypatch, jobs, reply, resume=tmp_path)
-    assert rebuilt == catalog and len(requests) == 4
-    assert previous_cache and previous_cache == {path.name: path.read_bytes()
-                                                 for path in tmp_path.glob("identity_*.json")}

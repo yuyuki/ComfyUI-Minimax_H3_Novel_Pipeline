@@ -289,15 +289,16 @@ def test_extraction_requests_attributed_speech_from_original_prose(monkeypatch):
     def chat(client, model, system, user, schema, *unused):
         if schema["name"] == "narrative_semantic_review":
             return {"issues": []}
-        assert json.loads(user)["text"] == excerpt
-        assert "Off-screen" in system
+        assert all(p["text"] in excerpt for p in json.loads(user)["source_passages"])
+        assert "offscreen speaker" in system
         assert "actual words and attribution" in system
-        assert "Summaries follow source event order" in system
-        return {"chunk_summary": "Indy calls for a torch; Doriane calls back.",
+        assert "in source order" in system
+        return {"chunk_summary": "Indy demande une torche. Doriane lui répond.",
                 "characters": [], "locations": [], "objects": []}
 
     monkeypatch.setattr(extract, "chat_json", chat)
-    result, _, _ = cr._extract_source(extract, None, "model", extract.EXTRACT_SYSTEM + cr.SOURCE_SYSTEM,
-                                      json.dumps({"sequence": 1, "text": excerpt, "reference_state": ""}),
-                                      SimpleNamespace(temperature=0.12, max_tokens=8000))
-    assert "Doriane calls back" in result["chunk_summary"]
+    source = {"sequence": 1, "text": excerpt, "offset": 0, "opening_end": 0,
+              "default_temporal_context": "", "known_references": []}
+    result, rejected = cr._extract_source(extract, None, "model", extract.EXTRACT_SYSTEM + cr.SOURCE_SYSTEM,
+                                          source, SimpleNamespace(temperature=0.12, max_tokens=8000))
+    assert not rejected and "Doriane lui répond" in result["chunk_summary"]

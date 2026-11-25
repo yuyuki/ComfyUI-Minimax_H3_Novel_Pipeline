@@ -18,7 +18,7 @@ def test_chapter_identity_batches_resume_and_preserve_order(tmp_path, monkeypatc
         return {"groups": []}
     catalog, _, _ = run(tmp_path, monkeypatch, jobs, reply)
     assert [e["canonical_name"] for e in catalog["characters"]] == [f"Person {i}" for i in range(1, 10)]
-    assert len(calls) == 2
+    assert len(calls) == 1
     cached, _, _ = run(tmp_path, monkeypatch, jobs, lambda *a: pytest.fail("Identity cache should be reused"))
     assert cached == catalog
 
@@ -88,7 +88,7 @@ def test_extraction_uses_node_chunk_size(tmp_path, monkeypatch, model, chunk_cha
     def extract(client, model, system, user, schema, *unused):
         if schema["name"] == "narrative_semantic_review":
             return {"issues": []}
-        extracted.append(json.loads(user)["text"])
+        extracted.append(" ".join(p["text"] for p in json.loads(user)["source_passages"]))
         return {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
     monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", with_passage_ids(extract))
     args = SimpleNamespace(force=False, chunk_chars=chunk_chars, temperature=0.1, max_tokens=3000)

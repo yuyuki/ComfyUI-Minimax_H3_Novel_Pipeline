@@ -1,7 +1,5 @@
-from tests.neutral_reference_helpers import candidates as neutral_candidates
 """Semantic review orchestration with mocked LM Studio responses."""
 from copy import deepcopy
-from types import SimpleNamespace
 import json
 
 import pytest
@@ -11,8 +9,7 @@ pytestmark = pytest.mark.usefixtures("mock_scene_planning")
 from tests.passages_helpers import with_passage_ids
 
 from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
-from minimax_h3_novel_pipeline.core import cinematic_references as cr
-from minimax_h3_novel_pipeline.core import narrative_validation as nv, narrative_choices as nc, path_access, util
+from minimax_h3_novel_pipeline.core import narrative_validation as nv, narrative_choices as nc
 
 
 @pytest.mark.parametrize("source,bad,good", [
@@ -251,55 +248,6 @@ def test_cancellation_before_review_prevents_request(monkeypatch):
     monkeypatch.setattr(nv.lmstudio_pipeline, "comfy_interrupt_check", stop)
     with pytest.raises(KeyboardInterrupt):
         nv.review(lambda *a: pytest.fail("Network call after cancellation"), None, "mock", {}, 1, 1000)
-
-
-@pytest.mark.parametrize("persistent_defect", [False, True])
-def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persistent_defect):
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
-    output = tmp_path / "catalogs"
-    output.mkdir()
-    chapter = {"chapter_name": "scene", "sequences": [{"sequence": 1,
-               "source": "NOT EXTRACTION INPUT",
-               "adaptation": {"initialState": "", "event": "Mara, called Vale, shouts. A basket descends on another rope.",
-                              "endingState": "NOT EXTRACTION INPUT"}}]}
-    args = SimpleNamespace(chunk_chars=4000, temperature=0.1, max_tokens=2000, force=False)
-    calls, reviews = [], []
-
-    def chat(client, model, system, prompt, schema, *rest):
-        data = json.loads(prompt)
-        assert "NOT EXTRACTION INPUT" not in prompt
-        if schema["name"] == nv.SCHEMA["name"]:
-            reviews.append(data)
-            assert data["source_input"]["text"] == chapter["sequences"][0]["adaptation"]["event"]
-            rejected = data["extraction"]["chunk_summary"] == "bad"
-            return {"issues": [{"target": 1, "message": "The summary omits the descent of the basket."}]
-                    if rejected else []}
-        if schema["name"] == cr.chapter_reference_identity.SCHEMA["name"]:
-            assert all(row["text"] in chapter["sequences"][0]["adaptation"]["event"] for row in data["source_passages"])
-            return {"groups": []}
-        assert schema == cr.lmstudio_pipeline.load("extract").CHUNK_SCHEMA
-        calls.append(data)
-        bad = persistent_defect or "defects_to_correct" not in data
-        return neutral_candidates({"chunk_summary": "bad" if bad else "A basket descends on a rope.", "locations": [],
-                "characters": [{"canonical_name": "Mara", "aliases": ["Vale"], "speaks": True}],
-                "objects": [{"canonical_name": name, "aliases": ["rope"]}
-                            for name in ("support rope", "basket rope")]}, data.get("source_input", data)["text"])
-
-    monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json",
-                        with_passage_ids(chat, extraction_edit="chunk_summary"))
-    saved = cr.process_chapter(chapter, output, None, "mock", args, "scene")
-    catalog = util.load_json(saved)
-    assert len(catalog["objects"]) == 2
-    person = catalog["characters"][0]
-    assert person["speaks"] is True and person["aliases"] == ["Vale"]
-    assert list(person["state_by_sequence"]["1"]) == ["source"]
-    assert "extraction_issues" not in catalog["narrative_review"]
-    diagnostics = util.load_json(output / "scene_references.diagnostics.json")
-    assert diagnostics["status"] == ("incomplete" if persistent_defect else "passed")
-    assert len(calls) == (3 if persistent_defect else 2)
-    assert len(reviews) == 3
-    cr.process_chapter(chapter, output, None, "mock", args, "scene")
-    assert (len(calls), len(reviews)) == ((5, 6) if persistent_defect else (2, 3))
 
 
 def proposal_response():

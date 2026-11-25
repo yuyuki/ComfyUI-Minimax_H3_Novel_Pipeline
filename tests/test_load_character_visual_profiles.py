@@ -67,12 +67,14 @@ def test_invalid_paths(saved, value):
     assert math.isnan(Loader.IS_CHANGED(value))
 
 
-def test_directory_and_external_paths_rejected(saved):
-    path, _ = saved
-    for value in (str(path.parent), str(path.parent.parent / "outside.json")):
-        with pytest.raises(ValueError):
-            Loader().run(value)
-        assert math.isnan(Loader.IS_CHANGED(value))
+def test_containing_directory_loads_and_external_path_is_rejected(saved):
+    path, data = saved
+    assert Loader().run(str(path.parent)) == (data, str(path))
+    assert Loader.IS_CHANGED(str(path.parent)) == Loader.IS_CHANGED(str(path))
+    external_path = str(path.parent.parent / "outside.json")
+    with pytest.raises(ValueError):
+        Loader().run(external_path)
+    assert math.isnan(Loader.IS_CHANGED(external_path))
 
 
 @pytest.mark.parametrize("contents, message", [

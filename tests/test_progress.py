@@ -174,10 +174,10 @@ def test_identity_batches_report_progress_on_fresh_and_cached_runs(bars, tmp_pat
     def run():
         return consolidate(tmp_path, monkeypatch, jobs, reply)[0]
     first = run()
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert bars[0].values[0] == 0 and bars[0].values[-1] == 100
     assert len(bars[0].values) >= 4 and bars[0].values == sorted(bars[0].values)
-    assert run() == first and len(calls) == 2
+    assert run() == first and len(calls) == 1
     assert bars[1].values == bars[0].values
 
 

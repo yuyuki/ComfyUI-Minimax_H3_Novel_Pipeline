@@ -175,11 +175,20 @@ The reference contract and validation cases are documented in
   Validate scene-local trait quotations before accepting extraction. Keep actions
   in cinematic adaptation, not appearance. Keep adaptation and editable choices
   available to downstream nodes; move technical reviews to the diagnostic sidecar.
-- Consolidate chapter-local identities after extraction using ordered initialState/event
-  passages and validated, passage-quoted LLM merge groups. Keep occurrences separate
-  until confirmed; identical generic names are not identity evidence. Preserve all
-  original observations losslessly at their sequence addresses. Cache identity
-  decisions independently from extraction and record incomplete decisions in diagnostics.
+- Walk sequences in order with a chapter-local reference dictionary. Send Gemma the
+  current indexed sentences and a short list of known candidates. Accept an existing
+  identifier only with evidence of the same physical entity in the current passage.
+  An identical generic name is insufficient. Keep eligible ambiguous occurrences
+  separate and audit them and possible duplicates with passage-quoted merge groups.
+  Preserve accepted observations at their sequence addresses. Cache validated extraction
+  requests and merge decisions separately. Record incomplete decisions in diagnostics.
+- Record depicted characters systematically, even without a local appearance trait.
+  Record identifiable offscreen speakers for audio. At consolidation, when the whole-book
+  character design document (`visual_designs.json`) is supplied, match registry characters
+  to its validated physical profiles. Keep local wardrobe and visibility sequence-specific.
+  A new object or filming location needs a visible useful appearance detail. Keep a known
+  object or location with no new detail only when current evidence identifies that same
+  entity as visible. Omit undescribed new instances and references merely mentioned.
   Do not emit or accept obsolete `link_to_local_id`, `first_phase` or extracted
   adaptation-phase observations. Reject old catalogs and registries with a clear
   re-extraction/reconsolidation message; do not convert them or add fallback readers.

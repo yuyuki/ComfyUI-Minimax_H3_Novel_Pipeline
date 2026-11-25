@@ -180,6 +180,15 @@ class ConsolidateReferencesNode:
             with progress.scope(0.15, design_start):
                 character_enrichment, args.character_designs = character_visual_integration.apply(
                     imported_designs, chapters, registry, output, client, resolved_model, args)
+            if has_profiles:
+                for entity in registry:
+                    if (entity["entity_type"] == "character" and entity["global_id"] not in args.character_designs
+                            and any(state["presence"] == "visible"
+                                    for scenes in entity["visual_reference"]["scenes"].values()
+                                    for state in scenes.values())):
+                        visual_checks.append({"stage": "character_visual_profile", "entity_id": entity["global_id"],
+                                              "status": "incomplete",
+                                              "message": "No matching character visual profile was available."})
             for chapter_id, local in character_enrichment.items():
                 by_id = {e["global_id"]: e for e in registry}
                 for row in local["sequences"]:
