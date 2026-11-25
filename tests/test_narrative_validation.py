@@ -272,7 +272,7 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
             reviews.append(data)
             assert data["source_input"]["text"] == chapter["sequences"][0]["adaptation"]["event"]
             rejected = data["extraction"]["chunk_summary"] == "bad"
-            return {"issues": [{"target": 1, "message": "Separate the basket rope from the support rope."}]
+            return {"issues": [{"target": 1, "message": "The summary omits the descent of the basket."}]
                     if rejected else []}
         if schema["name"] == cr.chapter_reference_identity.SCHEMA["name"]:
             assert all(row["text"] in chapter["sequences"][0]["adaptation"]["event"] for row in data["source_passages"])
@@ -280,12 +280,13 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
         assert schema == cr.lmstudio_pipeline.load("extract").CHUNK_SCHEMA
         calls.append(data)
         bad = persistent_defect or "defects_to_correct" not in data
-        return neutral_candidates({"chunk_summary": "bad" if bad else "", "locations": [],
+        return neutral_candidates({"chunk_summary": "bad" if bad else "A basket descends on a rope.", "locations": [],
                 "characters": [{"canonical_name": "Mara", "aliases": ["Vale"], "speaks": True}],
                 "objects": [{"canonical_name": name, "aliases": ["rope"]}
                             for name in ("support rope", "basket rope")]}, data.get("source_input", data)["text"])
 
-    monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json", with_passage_ids(chat))
+    monkeypatch.setattr(cr.lmstudio_pipeline.load("extract"), "chat_json",
+                        with_passage_ids(chat, extraction_edit="chunk_summary"))
     saved = cr.process_chapter(chapter, output, None, "mock", args, "scene")
     catalog = util.load_json(saved)
     assert len(catalog["objects"]) == 2

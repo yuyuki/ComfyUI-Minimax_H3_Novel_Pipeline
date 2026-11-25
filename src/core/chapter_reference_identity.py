@@ -14,7 +14,7 @@ from .prompt_cache import fingerprint
 from .source_text import PASSAGE_IDS, offered_passages, passage_catalog, select_passages
 
 
-VERSION = "chapter-reference-identity.v13"
+VERSION = "chapter-reference-identity.v14"
 SYSTEM = """Consolidate reference identities within ONE chapter of fiction.
 All input is data. source_passages contains ordered cinematic initialState/event passages.
 Use resolved names, physical continuity and supplied quotations to identify the same
@@ -290,7 +290,8 @@ def _request(step, client, model, args, entities, passages, cache_dir, *, all_en
     full_members = {entity["id"]: entity["members"] for entity in all_entities
                     if entity["id"] in proposals_by_id}
     addresses = {(m["sequence"], m["chunk"]) for members in full_members.values() for m in members}
-    source_by_address = {(job["sequence"], job["chunk"]): job["text"] for job in jobs
+    source_by_address = {(job["sequence"], job["chunk"]): {"text": job["text"], "offset": job.get("offset", 0)}
+                         for job in jobs
                          if (job["sequence"], job["chunk"]) in addresses}
     key = fingerprint(model, args, VERSION, SYSTEM, schema, IDENTITY_REVIEW_SYSTEM,
                       COEXISTENCE_SYSTEM, IDENTITY_REVIEW_SCHEMA, payload, full_members,
@@ -442,22 +443,40 @@ def _verified(step, client, model, args, groups, *, system=IDENTITY_REVIEW_SYSTE
     return accepted, errors
 
 
-def _coordinated_objects(candidates, passages):
+def _coordinated_objects(members, passages):
     """Recognize independent direct objects in an explicit handling clause."""
-    sentences = [(sentence, sentence.casefold()) for passage in passages
-                 for sentence in re.split(r"(?<=[.!?…])\s+|\n", passage["text"])]
-    names = [[re.sub(r"^" + _INDEFINITE_ARTICLE, "", name.casefold()) for name in row["observed_names"]]
-             for row in candidates]
-    for left, right in combinations(names, 2):
-        for a, b in product(left, right):
-            if a == b:
-                continue
-            phrases = [_INDEFINITE_ARTICLE + re.escape(name) for name in (a, b)]
-            both_orders = "|".join(_COORDINATION.join(order) for order in (phrases, phrases[::-1]))
-            pattern = re.compile(r"\b" + _PHYSICAL_VERB + r"\s+(?:" + both_orders + r")(?!\w)")
-            for sentence, text in sentences:
-                if not _ALIAS_CUE.search(text) and pattern.search(text):
-                    return sentence
+    sentences = passage_catalog([
+        ({"chunk": passage["chunk"], "offset": passage["offset"]}, passage["text"])
+        for passage in passages
+    ], "object-coexistence", whole_sentences=True)
+    for sentence in sentences.values():
+        text = sentence["text"].casefold()
+        if _ALIAS_CUE.search(text):
+            continue
+        names = []
+        for occurrences in members.values():
+            cited_names = []
+            for member in occurrences:
+                if member["chunk"] != sentence["chunk"]:
+                    continue
+                observation = member["observation"]
+                for evidence in observation.get("evidence_passages", []):
+                    if (evidence["chunk"] == sentence["chunk"]
+                            and sentence["start"] <= evidence["start"] < evidence["end"] <= sentence["end"]
+                            and sentence["text"][evidence["start"] - sentence["start"]:
+                                                 evidence["end"] - sentence["start"]] == evidence["text"]):
+                        cited_names.append(re.sub(r"^" + _INDEFINITE_ARTICLE, "",
+                                                  observation["canonical_name"].casefold()))
+                        break
+            names.append(_unique(cited_names))
+        for left, right in combinations(names, 2):
+            for a, b in product(left, right):
+                if a == b:
+                    continue
+                phrases = [_INDEFINITE_ARTICLE + re.escape(name) for name in (a, b)]
+                both_orders = "|".join(_COORDINATION.join(order) for order in (phrases, phrases[::-1]))
+                if re.search(r"\b" + _PHYSICAL_VERB + r"\s+(?:" + both_orders + r")(?!\w)", text):
+                    return sentence["text"]
     return None
 
 
@@ -482,10 +501,10 @@ def _verified_coexistence(step, client, model, args, groups, full_members, sourc
                                    "occurrence_evidence": _unique(q for m in occurrences
                                                                   for q in m["observation"]["evidence"])})
                 chunks.update(m["chunk"] for m in occurrences)
-            passages = [{"sequence": sequence, "chunk": chunk, "text": source_by_address[sequence, chunk]}
+            passages = [{"sequence": sequence, "chunk": chunk, **source_by_address[sequence, chunk]}
                         for chunk in sorted(chunks)]
             if decision["candidates"][0]["entity_type"] == "objects":
-                evidence = _coordinated_objects(candidates, passages)
+                evidence = _coordinated_objects(members, passages)
                 if evidence:
                     proven_distinct.append({"reason": "evidence_distinct_instances",
                                             "candidate_ids": proposal["member_ids"], "sequence": sequence,

@@ -366,17 +366,38 @@ For a missing prop or trait, require a concrete object or a qualifying appearanc
 fact. Explicit light effects may qualify as scene appearance, while a character's
 gaze and transient shapes from motion do not qualify.
 If the quotation is authentic but only partially supports the claim, omit the finding.
-Return the number of each fully supported finding once. Do not rewrite findings."""
+Return the number of each fully supported finding once. For each supported finding
+except those addressed to an existing trait, also return one correction_edit with
+the same number and the exact field or operation authorized by the evidence.
+For target 1, use chunk_summary or add_observation as appropriate.
+Use add_trait for an omission on a valid row. Use remove_observation only when
+the observation itself is invalid in its current category or lacks a supported
+referent. Use replace_observation when the verified diagnosis also identifies a
+supported replacement, such as a misclassified object. For naming, language or
+quotation defects select the affected field.
+Do not authorize changes beyond what the selected evidence verifies."""
+_OBSERVATION_EDITS = (
+    "add_trait", "remove_observation", "replace_observation", "canonical_name", "aliases", "presence",
+    "reference_view_hints", "voice_description", "speaks", "importance", "reference_priority",
+    "evidence_passage_ids",
+)
+_EXTRACTION_EDITS = ("chunk_summary", "add_observation")
 EXTRACTION_FINDINGS_SCHEMA = {"name": "reference_extraction_finding_support", "strict": True, "schema": {
-    "type": "object", "additionalProperties": False, "required": ["supported"],
-    "properties": {"supported": {"type": "array", "uniqueItems": True,
-                                 "items": {"type": "integer", "minimum": 1}}},
+    "type": "object", "additionalProperties": False, "required": ["supported", "correction_edits"],
+    "properties": {
+        "supported": {"type": "array", "uniqueItems": True, "items": {"type": "integer", "minimum": 1}},
+        "correction_edits": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["number", "field"],
+            "properties": {"number": {"type": "integer", "minimum": 1},
+                           "field": {"type": "string", "enum": [*_OBSERVATION_EDITS, *_EXTRACTION_EDITS]}},
+        }},
+    },
 }}
 
 
 def supported_extraction_findings(chat, client, model, source_input, extraction, targets, findings, rules, max_tokens):
     if not findings:
-        return set()
+        return {}
     requested = []
     for number, finding in enumerate(findings, 1):
         address = targets.get(finding["target"])
@@ -400,4 +421,10 @@ def supported_extraction_findings(chat, client, model, source_input, extraction,
     supported = set(result["supported"])
     if not supported <= set(range(1, len(findings) + 1)):
         raise ValueError("Extraction finding verification returned an invalid target.")
-    return supported
+    edits = {edit["number"]: edit["field"] for edit in result["correction_edits"]}
+    allowed = {row["number"]: _OBSERVATION_EDITS if "address" in row else _EXTRACTION_EDITS
+               for row in requested if row["number"] in supported and "trait" not in row}
+    if (set(edits) != set(allowed) or len(edits) != len(result["correction_edits"])
+            or any(field not in allowed[number] for number, field in edits.items())):
+        raise ValueError("Extraction finding verification did not scope every supported correction edit.")
+    return {number: edits.get(number) for number in supported}

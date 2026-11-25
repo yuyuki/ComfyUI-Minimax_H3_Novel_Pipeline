@@ -364,6 +364,60 @@ def test_same_sentence_object_aliases_can_merge(tmp_path, monkeypatch):
     assert [o["canonical_name"] for o in merged["state_by_sequence"]["1"]["source"]] == ["brooch", "clasp"]
 
 
+@pytest.mark.parametrize("citing_distinction", [0, 1, 2])
+def test_coordinated_objects_require_citations_from_both_occurrences(tmp_path, monkeypatch, citing_distinction):
+    alias = "Mara calls her heirloom a brooch or a clasp."
+    distinction = "In the play, Mara holds a brooch and a clasp."
+    source = f"{alias} {distinction}"
+    offset = 190
+    scene = {**job(1, source), "offset": offset}
+    for index, name in enumerate(("brooch", "clasp")):
+        quote = distinction if index < citing_distinction else alias
+        start = offset + source.index(quote)
+        scene["result"]["objects"].append(
+            {"canonical_name": name, "aliases": [], "presence": "visible", "visual_traits": [],
+             "evidence": [quote], "evidence_passages": [
+                 {"chunk": 1, "start": start, "end": start + len(quote), "text": quote}]})
+    coexistence = []
+
+    def reply(payload, count):
+        ids = [row["id"] for row in payload["entities"]]
+        return {"groups": [group(ids, ids[0], [p["id"] for p in payload["source_passages"]])]}
+
+    def review(system, decision):
+        if system == identity.COEXISTENCE_SYSTEM:
+            coexistence.append(decision)
+        return "supported"
+
+    catalog, diagnostics, _ = run(tmp_path, monkeypatch, [scene], reply, review=review)
+    if citing_distinction == 2:
+        assert len(catalog["objects"]) == 2 and not coexistence
+        failures = diagnostics["identity_consolidation"][0]["windows"][0]["attempts"][0]["failures"]
+        assert any(f["reason"] == "evidence_distinct_instances" and f["evidence"] == distinction for f in failures)
+    else:
+        assert len(catalog["objects"]) == 1 and len(coexistence) == 1
+        assert coexistence[0]["source_passages"][0]["text"] == source
+
+
+def test_resume_rechecks_identity_decisions_from_previous_validation_version(tmp_path, monkeypatch):
+    jobs = [job(1, "Mara opens a gate.", "Mara"), job(2, "Mara walks through it.", "Mara")]
+    older = tmp_path / "older"
+    resumed = tmp_path / "resumed"
+    older.mkdir()
+    resumed.mkdir()
+    with monkeypatch.context() as old_rules:
+        old_rules.setattr(identity, "VERSION", "chapter-reference-identity.v13")
+        _, _, calls = run(older, old_rules, jobs, lambda *args: {"groups": []})
+    assert len(calls) == 1 and list(older.glob("identity_*.json"))
+
+    def reply(payload, count):
+        identifiers = [row["id"] for row in payload["entities"]]
+        return {"groups": [group(identifiers, identifiers[0], [p["id"] for p in payload["source_passages"]])]}
+
+    catalog, _, calls = run(resumed, monkeypatch, jobs, reply, resume=older)
+    assert len(calls) == 1 and len(catalog["characters"]) == 1
+
+
 def test_recurring_character_crosses_windows_on_source_evidence(tmp_path, monkeypatch):
     jobs = [job(1, "Indy se suspend à une corde.", "Indy")]
     jobs.extend(job(number, f"Un témoin attend à l'arrêt {number}.", f"Témoin {number}")

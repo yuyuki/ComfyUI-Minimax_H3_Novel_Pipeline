@@ -256,7 +256,16 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
         if schema["name"] == "chapter_reference_identity":
             return {"groups": []}
         if schema == cr.narrative_validation.EXTRACTION_FINDINGS_SCHEMA:
-            return {"supported": [finding["number"] for finding in data["findings"]]}
+            findings = data["findings"]
+            edits = []
+            for finding in findings:
+                if "trait" in finding:
+                    continue
+                name = finding["observation"]["canonical_name"]
+                field = ("remove_observation" if name == "lueur vacillante"
+                         else "canonical_name" if sequence == 25 else "add_trait")
+                edits.append({"number": finding["number"], "field": field})
+            return {"supported": [finding["number"] for finding in findings], "correction_edits": edits}
         if schema == cr.narrative_validation.SCHEMA:
             if not system.startswith(cr._SOURCE_AUDIT_SYSTEM):
                 return {"issues": []}
@@ -271,14 +280,19 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
                 17: {"sac": "The bag lacks the explicitly described side pocket."},
                 25: dict.fromkeys(("crevasse rock wall", "stone slab", "rope"), "Use the French generic name."),
             }[sequence]
+            if sequence in (5, 12, 17):
+                for kind in ("locations", "objects"):
+                    for row in data["extraction"][kind]:
+                        if row["visual_traits"] and row["canonical_name"] in diagnoses:
+                            del diagnoses[row["canonical_name"]]
             quote = opening if sequence == 25 else event
             passage_id, = [row["id"] for row in data["review_passages"] if quote in row["text"]]
             issues = [{"target": number, "message": diagnoses[name], "passage_ids": [passage_id]}
                       for number, name in targets if name in diagnoses]
             if sequence == 12:
-                target, = data["visual_trait_targets"]
-                issues.append({"target": int(target), "message": "The light is attributed to the wrong recipient.",
-                               "passage_ids": [passage_id]})
+                issues.extend({"target": int(target), "message": "The light is attributed to the wrong recipient.",
+                               "passage_ids": [passage_id]}
+                              for target, row in data["visual_trait_targets"].items() if row["kind"] == "locations")
             return {"issues": issues}
         assert schema == step.CHUNK_SCHEMA
         source = data.get("source_input", data)
@@ -286,9 +300,12 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
         corrected = "defects_to_correct" in data
         reply = {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
         if sequence == 5:
-            reply["locations"] = [_reference_row("crevasse", passages, event if corrected else opening,
-                                                 traits=[("lighting", "lueur vacillante", "scene")] if corrected else [])]
-            if not corrected:
+            location = _reference_row("crevasse", passages, opening)
+            reply["locations"] = [location]
+            if corrected:
+                location["visual_traits"] = _reference_row(
+                    "crevasse", passages, event, traits=[("lighting", "lueur vacillante", "scene")])["visual_traits"]
+            else:
                 reply["objects"] = [_reference_row("lueur vacillante", passages, event)]
         elif sequence == 12:
             light = [("lighting", "éclairée par la torchère", "scene")]
@@ -312,7 +329,11 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
     ExtractChapterReferencesNode().run(config, [chapter], **{**params, "thinking": False})
     path, = tmp_path.rglob("Prologue_references.json")
     catalog = util.load_json(path)
-    assert len(audits) == 1
+    assert len(audits) == 2
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    check, = [row for row in util.load_json(diagnostic)["checks"] if row["stage"] == "source_extraction_review"]
+    assert check["status"] == "passed"
+    assert [row["source_audit_status"] for row in check["history"]] == ["issues", "passed"]
     objects = {row["canonical_name"]: row for row in catalog["objects"]}
     locations = {row["canonical_name"]: row for row in catalog["locations"]}
 
@@ -339,6 +360,89 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
         assert set(locations) == {"paroi rocheuse"}
         assert all(row["state_by_sequence"]["25"]["source"][0]["evidence"] == [opening]
                    for row in [*objects.values(), *locations.values()])
+
+
+@pytest.mark.parametrize("repair", [
+    "delete_row", "delete_trait", "change_evidence", "change_summary", "add_unrelated_row", "unchanged", "fixed",
+])
+def test_verified_missing_trait_preserves_observation_and_requires_audit(
+        execution, monkeypatch, tmp_path, repair):
+    _, params, config = execution
+    opening = "Mara porte un sac en cuir."
+    event = "Une poche latérale est visible sur le sac."
+    step = lmstudio_pipeline.load("extract")
+    original = {}
+    audits = []
+    corrections = []
+
+    def chat(client, model, system, user, schema, *args):
+        data, _ = json.JSONDecoder().raw_decode(user)
+        if schema == cr.narrative_validation.SCHEMA:
+            if not system.startswith(cr._SOURCE_AUDIT_SYSTEM):
+                return {"issues": []}
+            bag, = data["extraction"]["objects"]
+            audits.append(bag)
+            if any(trait["attribute"] == "side_pocket" for trait in bag["visual_traits"]):
+                assert "previous_audit_findings" in data
+                return {"issues": []}
+            target, = data["observation_targets"]
+            return {"issues": [{"target": int(target), "message": "The bag lacks its side pocket.",
+                                "passage_ids": [data["review_passages"][-1]["id"]]}]}
+        if schema == cr.narrative_validation.EXTRACTION_FINDINGS_SCHEMA:
+            return {"supported": [1], "correction_edits": [{"number": 1, "field": "add_trait"}]}
+        assert schema == step.CHUNK_SCHEMA
+        if "rejected_extraction" not in data:
+            original.update({"chunk_summary": opening, "characters": [], "locations": [], "objects": [
+                _reference_row("sac", data["source_passages"], opening, traits=[("material", "cuir", "intrinsic")])
+            ]})
+            return original
+        corrections.append(data)
+        assert data["defects_to_correct"][0]["correction_edit"] == "add_trait"
+        result = deepcopy(data["rejected_extraction"])
+        bag, = result["objects"]
+        passages = data["source_input"]["source_passages"]
+        pocket, = _reference_row("sac", passages, event, traits=[
+            ("side_pocket", "poche latérale", "intrinsic")])["visual_traits"]
+        if repair == "delete_row":
+            result["objects"].clear()
+        elif repair == "delete_trait":
+            bag["visual_traits"] = [pocket]
+        elif repair == "change_evidence":
+            bag["visual_traits"][0]["evidence_passage_ids"] = pocket["evidence_passage_ids"]
+            bag["visual_traits"].append(pocket)
+        elif repair == "change_summary":
+            result["chunk_summary"] = event
+            bag["visual_traits"].append(pocket)
+        elif repair == "add_unrelated_row":
+            result["objects"].append(_reference_row("poche", passages, event))
+            bag["visual_traits"].append(pocket)
+        elif repair == "fixed":
+            bag["visual_traits"].append(pocket)
+        return result
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
+    chapter = {"chapter_name": "Bag", "sequences": [_reference_scene(1, opening, event)]}
+    catalog, = ExtractChapterReferencesNode().run(config, [chapter], **params)["result"][0]
+    bag, = catalog["objects"]
+    observation, = bag["state_by_sequence"]["1"]["source"]
+    diagnostic, = tmp_path.rglob("*.diagnostics.json")
+    check, = [row for row in util.load_json(diagnostic)["checks"] if row["stage"] == "source_extraction_review"]
+    if repair == "fixed":
+        assert len(audits) == 2 and len(corrections) == 1
+        assert observation["visual_traits"][1]["evidence"] == event
+        assert check["status"] == "passed"
+    else:
+        assert observation == audits[0] and check["status"] == "incomplete"
+        assert len(corrections) == 2
+        if repair == "unchanged":
+            assert len(audits) == 3
+            assert check["history"][-1]["failures"][0]["reason"] == "unresolved_verified_findings"
+        else:
+            assert len(audits) == 1
+            assert check["history"][-1]["reason"] == "InvalidResponse"
+    assert observation["visual_traits"][0] == audits[0]["visual_traits"][0]
+    assert observation["evidence_passages"] == audits[0]["evidence_passages"]
 
 
 @pytest.mark.parametrize("invalid", [None, "schema", "evidence", "preservation"])
@@ -376,7 +480,9 @@ def test_correction_reassigns_trait_and_restores_distinct_occurrence(execution, 
             bell, *findings = data["findings"]
             assert bell["observation"]["visual_traits"][0]["description"] == "brass"
             assert bell["source_passages"][0]["text"] == opening
-            return {"supported": [finding["number"] for finding in findings]}
+            return {"supported": [finding["number"] for finding in findings],
+                    "correction_edits": [{"number": finding["number"], "field": "add_observation"}
+                                         for finding in findings if finding["target"] == 1]}
         if schema["name"] == "chapter_reference_identity":
             return {"groups": []}
         assert schema == step.CHUNK_SCHEMA
@@ -604,7 +710,11 @@ def test_review_repairs_multiple_omissions_and_wrong_referent_after_retries(exec
             assert lighting["observation"]["canonical_name"] == "roc"
             assert lighting["trait"]["evidence"] == seq["adaptation"]["event"]
             assert lighting["source_passages"][0]["text"] == seq["adaptation"]["event"]
-            reply = {"supported": [row["number"] for row in findings]}
+            rock, = [row for row in findings if "observation" in row and "trait" not in row]
+            reply = {"supported": [row["number"] for row in findings],
+                     "correction_edits": [
+                         {"number": row["number"], "field": "remove_observation" if row == rock else "add_observation"}
+                         for row in findings if row == rock or row["target"] == 1]}
         else:
             assert schema["name"] == "chapter_reference_identity"
             reply = {"groups": []}
@@ -657,7 +767,8 @@ def test_review_removes_location_supported_only_by_other_sequence(execution, mon
             finding, = data["findings"]
             assert finding["observation"]["evidence"] == ["Indy est contracté par l'excitation."]
             assert "crevasse" not in data["source"]
-            return {"supported": [finding["number"]]}
+            return {"supported": [finding["number"]],
+                    "correction_edits": [{"number": finding["number"], "field": "remove_observation"}]}
         assert schema == step.CHUNK_SCHEMA
         source = data.get("source_input", data)
         offers = source["source_passages"]
@@ -828,7 +939,7 @@ def test_category_correction_keeps_context_schema_and_source_observations(execut
         return neutral_candidates({"chunk_summary": "", "characters": [], "objects": [], "locations": [
             {"canonical_name": name, "aliases": []}]}, source["text"])
 
-    monkeypatch.setattr(step, "chat_json", with_passage_ids(chat))
+    monkeypatch.setattr(step, "chat_json", with_passage_ids(chat, observation_edit="replace_observation"))
     result, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
     assert [e["canonical_name"] for e in result[0]["locations"]] == ["la crevasse"]
     correction, = [d for _, d in calls if "defects_to_correct" in d]
@@ -927,6 +1038,44 @@ def test_old_catalog_reuses_source_chunk_cache(execution, tmp_path):
     assert "chapter_summary" not in util.load_json(saved)
     assert "cache_key" not in regenerated[0]
     assert len(calls) == count
+
+
+def test_resume_reaudits_old_extraction_verdict_but_reuses_draft(execution, monkeypatch, tmp_path):
+    calls, params, config = execution
+    node = ExtractChapterReferencesNode()
+    value = chapter()
+    value["sequences"] = value["sequences"][:1]
+    fingerprint = cr.fingerprint
+
+    def previous_fingerprint(model, args, version, *parts, **kwargs):
+        if version == "source-extraction-review.v6":
+            version = "source-extraction-review.v5"
+        return fingerprint(model, args, version, *parts, **kwargs)
+
+    with monkeypatch.context() as old_rules:
+        old_rules.setattr(cr, "fingerprint", previous_fingerprint)
+        node.run(config, [value], **params)
+    old_verdict, = [path for path in tmp_path.rglob(".cache/*/*.json")
+                    if "review_key" in util.load_json(path)]
+    old_content = old_verdict.read_bytes()
+    assert len(calls) == 1
+
+    step = lmstudio_pipeline.load("extract")
+    chat = step.chat_json
+    audits = []
+
+    def observe(client, model, system, user, schema, *args):
+        if system.startswith(cr._SOURCE_AUDIT_SYSTEM):
+            audits.append(json.loads(user)["extraction"])
+        return chat(client, model, system, user, schema, *args)
+
+    monkeypatch.setattr(step, "chat_json", observe)
+    new_config = {**config, "run_folder": "20261003120100"}
+    node.run(new_config, [value], resume_run=config["run_folder"], **params)
+    assert len(audits) == 1 and len(calls) == 1
+    node.run(new_config, [value], resume_run=config["run_folder"], **params)
+    assert len(audits) == 1 and len(calls) == 1
+    assert old_verdict.read_bytes() == old_content
 
 
 def test_catalog_schema_is_copied_and_validates_local_links(execution, tmp_path):
@@ -1043,7 +1192,7 @@ def test_partial_support_and_unknown_passage_do_not_change_valid_observation(exe
         if schema == cr.narrative_validation.EXTRACTION_FINDINGS_SCHEMA:
             assert schema["strict"] and data["findings"][0]["source_passages"][0]["text"] == local
             assert "Excluded" not in user
-            return {"supported": []}
+            return {"supported": [], "correction_edits": []}
         assert schema == step.CHUNK_SCHEMA and "defects_to_correct" not in data
         return {"chunk_summary": "", "characters": [], "locations": [], "objects": [
             {"canonical_name": "Panel", "presence": "visible", "aliases": [],
@@ -1137,7 +1286,8 @@ def test_language_and_spatial_defects_are_corrected(execution, monkeypatch, tmp_
         return neutral_candidates({"chunk_summary": "La torche est inclinee." if corrected else "English summary.",
                 "characters": [], "locations": [] if corrected else [entity],
                 "objects": [entity] if corrected else []}, data.get("source_input", data)["text"])
-    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json", with_passage_ids(chat))
+    monkeypatch.setattr(lmstudio_pipeline.load("extract"), "chat_json",
+                        with_passage_ids(chat, observation_edit="replace_observation", extraction_edit="chunk_summary"))
     results, _ = ExtractChapterReferencesNode().run(config, [value], **params)["result"]
     assert len(calls) == 2
     assert results[0]["locations"] == [] and len(results[0]["objects"]) == 1

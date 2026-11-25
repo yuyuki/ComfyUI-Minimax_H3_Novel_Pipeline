@@ -132,12 +132,15 @@ def adapt_fixture_reply(reply, payload, schema):
     return result
 
 
-def with_passage_ids(chat):
+def with_passage_ids(chat, *, observation_edit="add_trait", extraction_edit="add_observation"):
     @wraps(chat)
     def wrapped(client, model, system, prompt, schema, *args, **kwargs):
         if isinstance(schema, dict) and schema.get("name") == "reference_extraction_finding_support":
             findings = json.loads(prompt)["findings"]
-            return {"supported": [finding["number"] for finding in findings]}
+            return {"supported": [finding["number"] for finding in findings],
+                    "correction_edits": [{"number": finding["number"],
+                                          "field": observation_edit if "address" in finding else extraction_edit}
+                                         for finding in findings if "trait" not in finding]}
         if isinstance(schema, dict) and schema.get("name") == "reference_identity_evidence_review":
             decisions = json.loads(prompt)["decisions"]
             return {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"} for row in decisions]}
