@@ -42,6 +42,8 @@ def test_thinking_matches_snapshot_requests_and_logs(tmp_path, monkeypatch, caps
                                              "chat_template_kwargs": {"reasoning_effort": effort}}
         else:
             assert request["extra_body"]["chat_template_kwargs"]["enable_thinking"] is thinking
+            if family == "Gemma" and not thinking:
+                assert request["extra_body"]["reasoning_effort"] == "none"
         assert request["extra_body"] == snapshot["model_controls"]["request_extra_body"]
     log = capsys.readouterr().out
     assert log.count(f"thinking={thinking}") == 2
