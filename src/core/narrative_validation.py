@@ -116,9 +116,7 @@ independently depicted prop. Check all arrays, including empty ones. Report each
 missing entity separately even when named in the summary. Visible use, physical state
 or a physical relation can establish presence without a usable appearance description.
 Require a concrete physical prop. Flag a row representing only a glow, shadow or
-other effect as a category defect. Check for missing scene appearance on the
-environment or explicitly stated recipient. Do not infer what emits light if
-the local text does not identify the physical source.
+other effect as a category defect. Leave scene lighting to the adaptation.
 Include unnamed, silent, partly visible and briefly shown characters. A name or voice
 alone does not show a character. Keep speech and its attribution separate from visibility.
 Do not infer presence from another sequence or require unspecified visual traits.
@@ -363,8 +361,7 @@ For a requested removal or reassignment, verify that the targeted observation or
 trait is actually invalid under the supplied rules. Use reference_state to distinguish
 established local appearance from incidental placement and changes to animate.
 For a missing prop or trait, require a concrete object or a qualifying appearance
-fact. Explicit light effects may qualify as scene appearance, while a character's
-gaze and transient shapes from motion do not qualify.
+fact. Reject requests to add scene lighting, gaze or transient shapes from motion.
 If the quotation is authentic but only partially supports the claim, omit the finding.
 Return the number of each fully supported finding once. For each supported finding
 except those addressed to an existing trait, also return one correction_edit with

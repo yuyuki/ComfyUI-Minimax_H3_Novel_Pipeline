@@ -46,17 +46,15 @@ local presence or import changing traits. Actions remain in adaptation.
   evidence of a separate place. Local aliases require source-supported coreference.
 - Objects record intrinsic design such as shape, construction, color, texture,
   markings and explicitly stated material. Established visible physical conditions
-  and fixed installed geometry are local traits. Explicitly stated illumination
-  is local to its recipient. Handling, incidental placement and
+  and fixed installed geometry are local traits. Depicted light sources retain their
+  physical design. Scene lighting, handling, incidental placement and
   transformations taking place during the clip remain in the cinematic adaptation.
 - Characters record only neutral wardrobe and footwear at the sequence address.
   Character visual profiles supply timeless physical appearance. Injuries, marks
   from interactions, dirt and torn or perforated garments stay in the adaptation.
 - Locations record durable setting details and the visible conditions established
-  for each sequence, including light, weather, fog and already visible changes to
-  the backdrop. A visible light effect of unknown origin is a local appearance
-  detail. A fixed opening belongs to the setting geometry. The movement of a
-  light and ongoing transformations remain in the adaptation.
+  for each sequence, including weather, fog and already visible physical changes to
+  the backdrop. A fixed opening belongs to the setting geometry.
 
 Chapter identity decisions group confirmed physical identities and retain their
 observations at `state_by_sequence[sequence].source`. Generic labels do not prove

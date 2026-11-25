@@ -274,9 +274,8 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
             targets = [(int(number), data["extraction"][row["kind"]][row["entity_index"]]["canonical_name"])
                        for number, row in data["observation_targets"].items()]
             diagnoses = {
-                5: {"lueur vacillante": "The glow is an effect, not a prop.",
-                    "crevasse": "The location lacks the depicted flickering light."},
-                12: {"tablette": "The tablet lacks the stated local illumination."},
+                5: {"lueur vacillante": "The glow is an effect, not a prop."},
+                12: {},
                 17: {"sac": "The bag lacks the explicitly described side pocket."},
                 25: dict.fromkeys(("crevasse rock wall", "stone slab", "rope"), "Use the French generic name."),
             }[sequence]
@@ -290,7 +289,8 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
             issues = [{"target": number, "message": diagnoses[name], "passage_ids": [passage_id]}
                       for number, name in targets if name in diagnoses]
             if sequence == 12:
-                issues.extend({"target": int(target), "message": "The light is attributed to the wrong recipient.",
+                assert "Its omission from visual traits is valid" in system
+                issues.extend({"target": int(target), "message": "Scene lighting belongs to the adaptation.",
                                "passage_ids": [passage_id]}
                               for target, row in data["visual_trait_targets"].items() if row["kind"] == "locations")
             return {"issues": issues}
@@ -302,17 +302,15 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
         if sequence == 5:
             location = _reference_row("crevasse", passages, opening)
             reply["locations"] = [location]
-            if corrected:
-                location["visual_traits"] = _reference_row(
-                    "crevasse", passages, event, traits=[("lighting", "lueur vacillante", "scene")])["visual_traits"]
-            else:
+            if not corrected:
                 reply["objects"] = [_reference_row("lueur vacillante", passages, event)]
         elif sequence == 12:
             light = [("lighting", "éclairée par la torchère", "scene")]
             reply["locations"] = [_reference_row("roc", passages, opening)]
             reply["objects"] = [_reference_row("tablette", passages, opening)]
-            addressed = reply["objects" if corrected else "locations"][0]
-            addressed["visual_traits"] = _reference_row("tablette", passages, event, traits=light)["visual_traits"]
+            reply["objects"].append(_reference_row("torchère", passages, opening))
+            if not corrected:
+                reply["locations"][0]["visual_traits"] = _reference_row("roc", passages, event, traits=light)["visual_traits"]
         elif sequence == 17:
             traits = [("side_pocket", "poche latérale", "intrinsic")] if corrected else []
             reply["objects"] = [_reference_row("support de la torche", passages, "fixée dans son support"),
@@ -343,13 +341,11 @@ def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatc
 
     if sequence == 5:
         assert not objects
-        row = locations["crevasse"]
-        assert row["visual_reference"]["scenes"]["Prologue"]["5"]["traits"][0]["description"] == "lueur vacillante"
-        assert traits(row)[0]["evidence"] == event
+        assert not traits(locations["crevasse"])
     elif sequence == 12:
         assert not traits(locations["roc"])
-        light, = traits(objects["tablette"])
-        assert (light["scope"], light["evidence"]) == ("scene", event)
+        assert not traits(objects["tablette"])
+        assert "torchère" in objects
     elif sequence == 17:
         assert "support de la torche" in objects
         pocket, = traits(objects["sac"])

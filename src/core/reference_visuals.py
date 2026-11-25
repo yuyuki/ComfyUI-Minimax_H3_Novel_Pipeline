@@ -26,18 +26,14 @@ APPEARANCE_RULES = """Apply the image-reference rules independently to each cate
   (qualify by part when applicable). Use scene scope for established visible physical
   conditions of the object and fixed geometry as installed or formed in the scene.
   Retain the full spatial qualifier. Omit handling, incidental placement, tension
-  from an interaction and momentary pose. Record explicitly described illumination
-  on its stated recipient as scene scope, even when revealed during the event.
-  Describe the light reaching that subject without inferring illumination on
-  nearby surfaces. Omit changes in illumination caused by movement or handling.
+  from an interaction and momentary pose.
 - Locations: extract the visible environment, including durable terrain, architecture,
   layout, surfaces and fixed features. Use scene scope for established temporary
-  conditions of the backdrop, including local light, weather, fog and visible changes
-  already present, including a depicted light effect of unknown origin. Record
-  the effect on the visible environment without inventing a prop or its emitter.
+  conditions of the backdrop, including weather, fog and visible physical changes already present.
   Keep different conditions at their own sequence addresses.
   Omit characters, separately tracked props, camera staging and ongoing actions.
-In all categories, an interaction alone does not establish a visual trait. Details
+In all categories, omit scene lighting from visual traits. Include depicted physical light
+sources with their own supported features. An interaction alone does not establish a visual trait. Details
 revealed during an event may be used if already applicable when the subject appears;
 the result of a transformation happening in the sequence belongs to its animation.
 Keep one visual fact per attribute and select the local evidence passage IDs."""
