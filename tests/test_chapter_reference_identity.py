@@ -21,13 +21,14 @@ def group(ids, name_id, passage_ids):
     return {"member_ids": ids, "canonical_member_id": name_id, "passage_ids": passage_ids}
 
 
-def run(tmp_path, monkeypatch, jobs, reply):
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
+def run(tmp_path, monkeypatch, jobs, reply, *, review=None, resume=None):
+    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path if resume is None else tmp_path.parent)
     step = lmstudio_pipeline.load("extract")
     calls = []
     def chat(client, model, system, user, schema, *args):
         if schema == identity.IDENTITY_REVIEW_SCHEMA:
-            return {"decisions": [{"decision_number": row["decision_number"], "verdict": "supported"}
+            return {"decisions": [{"decision_number": row["decision_number"],
+                                   "verdict": review(system, row) if review else "supported"}
                                   for row in json.loads(user)["decisions"]]}
         assert schema["name"] == identity.SCHEMA["name"] and schema["strict"] is True
         assert "adaptation" not in json.loads(user)
@@ -46,7 +47,7 @@ def run(tmp_path, monkeypatch, jobs, reply):
         calls.append(payload)
         return reply(payload, len(calls))
     monkeypatch.setattr(step, "chat_json", chat)
-    args = SimpleNamespace(temperature=0.18, max_tokens=8192, force=False)
+    args = SimpleNamespace(temperature=0.18, max_tokens=8192, force=False, resume_cache_dir=resume)
     diagnostics = {}
     original = deepcopy(jobs)
     catalog = identity.consolidate(jobs, step, None, "mock", args, tmp_path, diagnostics, tmp_path / "diagnostics.json")
@@ -236,28 +237,24 @@ def test_invalid_and_overlapping_groups_leave_disjoint_confirmed_group(tmp_path,
     assert len(diagnostics["identity_occurrences"]) == 6
 
 
-def test_missing_member_evidence_retries_only_unconfirmed_candidates(tmp_path, monkeypatch):
+def test_validated_occurrence_citation_repairs_missing_member_evidence(tmp_path, monkeypatch):
     jobs = [job(1, "Mara is nicknamed Vale.", "Mara", "Vale"),
             job(2, "Ivo, also called Ren, enters beside a guard.", "Ivo", "guard"),
             job(3, "Ren stays by the door.", "Ren")]
 
     def reply(payload, count):
         passages = {p["sequence"]: p["id"] for p in payload["source_passages"]}
-        if count == 1:
-            return {"groups": [
-                group(["REF_00001", "REF_00002"], "REF_00001", [passages[1]]),
-                group(["REF_00003", "REF_00003", "REF_00005"], "REF_00003", [passages[2]]),
-            ]}
-        assert [e["id"] for e in payload["entities"]] == ["REF_00003", "REF_00005"]
-        assert set(passages) == {1, 2, 3}
-        failure, = payload["correction"]["failures"]
-        assert failure["reason"] == "missing_member_evidence"
-        assert failure["uncovered_occurrences"] == {"REF_00005": [{"sequence": 3, "chunk": 1}]}
-        return {"groups": [group(["REF_00003", "REF_00005"], "REF_00003", [passages[2], passages[3]])]}
+        assert count == 1
+        return {"groups": [
+            group(["REF_00001", "REF_00002"], "REF_00001", [passages[1]]),
+            group(["REF_00003", "REF_00003", "REF_00005"], "REF_00003", [passages[2]]),
+        ]}
 
     catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
-    assert len(calls) == 2
-    assert diagnostics["identity_consolidation"][0]["status"] == "passed"
+    assert len(calls) == 1
+    decision = diagnostics["identity_consolidation"][0]
+    assert decision["status"] == "passed"
+    assert [p["sequence"] for p in decision["groups"][1]["source_passages"]] == [2, 3]
     mara, ivo, guard = catalog["characters"]
     assert mara["state_by_sequence"]["1"]["source"] == jobs[0]["result"]["characters"]
     assert ivo["state_by_sequence"]["2"]["source"] == [jobs[1]["result"]["characters"][0]]
@@ -309,3 +306,101 @@ def test_split_windows_compare_occurrences_across_batches(tmp_path, monkeypatch)
     assert list(second["state_by_sequence"]) == ["9"]
     assert first["canonical_name"] == "Northern gate bell"
     assert len(diagnostics["identity_occurrences"]) == 10
+
+
+def test_prologue_coexistence_blocks_merge_between_confirmed_groups(tmp_path, monkeypatch):
+    names = ["maillet", "bâton enflammé"]
+    sentences = [
+        "Il porte un sac à dos et tient un maillet ainsi qu'un bâton enflammé.",
+        "Indy est devant la tablette, tenant un bâton enflammé et un maillet, avec une torchère plantée dans le roc.",
+    ]
+    jobs = []
+    for number in range(4, 13):
+        row = job(number, sentences[number != 10] if number >= 10 else "Il attend.")
+        if number >= 10:
+            row["result"]["objects"] = [
+                {"canonical_name": name, "aliases": [], "presence": "visible", "visual_traits": [],
+                 "evidence": [row["text"]], "evidence_passages": [{"chunk": 1, "start": 0, "end": len(row["text"]),
+                                                                "text": row["text"]}]} for name in names]
+        jobs.append(row)
+
+    def reply(payload, count):
+        ids = [e["id"] for e in payload["entities"]]
+        proof = [p["id"] for p in payload["source_passages"]]
+        if count in (1, 3):
+            return {"groups": [group(ids[::2], ids[0], proof), group(ids[1::2], ids[1], proof)]}
+        return {"groups": [group(ids[:2], ids[0], proof[:1]), group(ids[2:], ids[2], proof[-1:])]}
+
+    def review(system, decision):
+        assert system != identity.COEXISTENCE_SYSTEM
+        return "supported"
+
+    catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply, review=review)
+    assert len(calls) == 3
+    assert [row["canonical_name"] for row in catalog["objects"]] == names
+    assert all({source["canonical_name"] for scene in row["state_by_sequence"].values()
+                for source in scene["source"]} == {row["canonical_name"]} for row in catalog["objects"])
+    assert [list(row["state_by_sequence"]) for row in catalog["objects"]] == [["10", "11", "12"]] * 2
+    assert any(f.get("stage") == "coexistence_review" and f["reason"] == "evidence_distinct_instances"
+               and f["evidence"] in sentences
+               for w in diagnostics["identity_consolidation"][1]["windows"]
+               for a in w["attempts"] for f in a["failures"])
+
+
+def test_same_sentence_object_aliases_can_merge(tmp_path, monkeypatch):
+    source = "Mara holds a brooch and a clasp, two names for the same object."
+    scene = job(1, source)
+    scene["result"]["objects"] = [{"canonical_name": name, "aliases": [], "presence": "visible",
+                                  "visual_traits": [], "evidence": [source]}
+                                 for name in ("brooch", "clasp")]
+
+    def reply(payload, count):
+        ids = [row["id"] for row in payload["entities"]]
+        return {"groups": [group(ids, ids[0], [payload["source_passages"][0]["id"]])]}
+
+    catalog, _, _ = run(tmp_path, monkeypatch, [scene], reply)
+    merged, = catalog["objects"]
+    assert merged["aliases"] == ["clasp"]
+    assert [o["canonical_name"] for o in merged["state_by_sequence"]["1"]["source"]] == ["brooch", "clasp"]
+
+
+def test_recurring_character_crosses_windows_on_source_evidence(tmp_path, monkeypatch):
+    jobs = [job(1, "Indy se suspend à une corde.", "Indy")]
+    jobs.extend(job(number, f"Un témoin attend à l'arrêt {number}.", f"Témoin {number}")
+                for number in range(2, 9))
+    jobs.extend([job(9, "Toujours suspendu à la même corde, Indy lève les yeux.", "Indy"),
+                 job(10, "Un autre homme prénommé Indy attend à la surface.", "Indy"),
+                 job(11, "L'Indy suspendu à la corde remonte un peu.", "Indy"),
+                 job(12, "Sur cette même corde, Indy reprend son ascension.", "Indy"),
+                 job(13, "Indy atteint le sommet de la corde.", "Indy")])
+
+    def reply(payload, count):
+        if count < 3:
+            return {"groups": []}
+        ids = [row["id"] for row in payload["entities"]]
+        if count == 3:
+            assert ids == ["REF_00001", "REF_00009", "REF_00010", "REF_00011"]
+            passage, = [p["id"] for p in payload["source_passages"] if p["sequence"] == 9]
+            return {"groups": [group([ids[0], ids[1], ids[3]], ids[0], [passage])]}
+        assert ids == ["REF_00001", "REF_00012", "REF_00013"]
+        assert [row["sequence"] for row in payload["entities"][0]["occurrences"]] == [11]
+        passages = [p["id"] for p in payload["source_passages"]]
+        return {"groups": [group(ids, ids[0], passages)]}
+
+    catalog, diagnostics, calls = run(tmp_path, monkeypatch, jobs, reply)
+    assert len(calls) == 4
+    assert [list(row["state_by_sequence"]) for row in catalog["characters"]
+            if row["canonical_name"] == "Indy"] == [["1", "9", "11", "12", "13"], ["10"]]
+    check = diagnostics["identity_consolidation"][-1]
+    assert check["stage"] == "recurring_character_identity"
+    assert [[p["sequence"] for p in decision["source_passages"]] for decision in check["groups"]] == [
+        [1, 9, 11], [11, 12, 13]]
+
+    previous_cache = {path.name: path.read_bytes() for path in tmp_path.glob("identity_*.json")}
+    resumed_cache = tmp_path / "resumed"
+    resumed_cache.mkdir()
+    monkeypatch.setattr(identity, "VERSION", "changed-identity-contract")
+    rebuilt, _, requests = run(resumed_cache, monkeypatch, jobs, reply, resume=tmp_path)
+    assert rebuilt == catalog and len(requests) == 4
+    assert previous_cache and previous_cache == {path.name: path.read_bytes()
+                                                 for path in tmp_path.glob("identity_*.json")}

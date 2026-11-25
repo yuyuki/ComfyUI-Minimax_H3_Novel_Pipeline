@@ -29,8 +29,9 @@ contains the first selected quote, and `evidence_passages` retains each selected
 passage individually. The catalog loader checks addressed citations against their
 sequence. Before extraction is accepted,
 semantic review checks coverage against the passage, even for empty arrays, and
-checks each occurrence and trait against its actual referent. It also checks
-neutrality, language and chronology. A separate
+checks each occurrence and trait against its actual referent. An independent
+audit checks an approved extraction against the local sentences, including
+category, trait coverage and language. A separate
 structured check verifies that the selected quotations support the full diagnosis
 before it can trigger a correction or remove a trait. Malformed or unsupported
 findings are retried with local evidence and recorded in the diagnostic sidecar.
@@ -40,29 +41,40 @@ local presence or import changing traits. Actions remain in adaptation.
 
 - A visible prop is retained even when only its use or physical relationship
   establishes presence. A distinct fixture can be a prop; a constituent detail
-  can be a trait of its parent. An interaction surface alone is insufficient
+  stays a trait of its parent with its local citation, even when revealed by use.
+  An interaction surface alone is insufficient
   evidence of a separate place. Local aliases require source-supported coreference.
 - Objects record intrinsic design such as shape, construction, color, texture,
   markings and explicitly stated material. Established visible physical conditions
-  and fixed installed geometry are local traits. Handling, incidental placement and
+  and fixed installed geometry are local traits. Explicitly stated illumination
+  is local to its recipient. Handling, incidental placement and
   transformations taking place during the clip remain in the cinematic adaptation.
 - Characters record only neutral wardrobe and footwear at the sequence address.
   Character visual profiles supply timeless physical appearance. Injuries, marks
   from interactions, dirt and torn or perforated garments stay in the adaptation.
 - Locations record durable setting details and the visible conditions established
   for each sequence, including light, weather, fog and already visible changes to
-  the backdrop. A fixed opening belongs to the setting geometry. Transient light
-  cast by a moving source and ongoing transformations remain in the adaptation.
+  the backdrop. A visible light effect of unknown origin is a local appearance
+  detail. A fixed opening belongs to the setting geometry. The movement of a
+  light and ongoing transformations remain in the adaptation.
 
 Chapter identity decisions group confirmed physical identities and retain their
 observations at `state_by_sequence[sequence].source`. Generic labels do not prove
 identity. Incomplete identity decisions remain explicit in diagnostics; uncertain
 physical instances stay separate rather than being silently merged.
 The model selects candidate IDs, one canonical member ID and supporting passage
-IDs. Python derives the names from the confirmed members. Independent supported
-groups survive invalid proposals, and overlapping claims are retried together.
+IDs. Python derives the names from the confirmed members and supplies their
+validated extraction citations when a selection omits a member. The semantic
+review still checks whether the evidence connects the referents. Same-sequence
+checks use the full identities, including occurrences outside a projected
+window. Explicitly coordinated distinct objects in a handling clause can block
+a merge directly. Other cases use the dedicated coexistence review. Independent supported groups survive
+invalid proposals, and overlapping supported claims are retried together.
 When an ordered window exceeds the request budget, smaller windows compare
 occurrences within and across their boundaries using the corresponding passages.
+A focused pass compares still-separated recurring characters in short overlapping
+windows with their local sentences. Their shared names select candidates for
+evidence review, and a confirmed boundary occurrence connects successive windows.
 An uninterrupted action can establish that a contextual alias or a visible wall
 belongs to the same space. A visible location can be recorded with empty local
 traits and use supported shared geometry once its identity is confirmed.

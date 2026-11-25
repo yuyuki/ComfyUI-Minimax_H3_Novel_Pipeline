@@ -295,9 +295,10 @@ def test_source_repair_identity_speech_and_cache(tmp_path, monkeypatch, persiste
     assert "extraction_issues" not in catalog["narrative_review"]
     diagnostics = util.load_json(output / "scene_references.diagnostics.json")
     assert diagnostics["status"] == ("incomplete" if persistent_defect else "passed")
-    assert len(calls) == len(reviews) == (3 if persistent_defect else 2)
+    assert len(calls) == (3 if persistent_defect else 2)
+    assert len(reviews) == 3
     cr.process_chapter(chapter, output, None, "mock", args, "scene")
-    assert (len(calls), len(reviews)) == ((5, 6) if persistent_defect else (2, 2))
+    assert (len(calls), len(reviews)) == ((5, 6) if persistent_defect else (2, 3))
 
 
 def proposal_response():

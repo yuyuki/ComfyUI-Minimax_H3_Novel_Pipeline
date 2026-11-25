@@ -236,6 +236,111 @@ def _reference_row(name, passages, quote, *, aliases=(), traits=()):
                 for key, value, scope in traits]}
 
 
+@pytest.mark.parametrize("sequence,opening,event", [
+    (5, "Indy est suspendu par la corde dans l'obscurité de la crevasse.",
+     "Il lève les yeux et voit une lueur vacillante descendre vers lui en tressautant sur une corde sinueuse."),
+    (12, "Indy est devant la tablette, tenant un bâton enflammé et un maillet, avec une torchère plantée dans le roc.",
+     "La lumière de la torchère éclaire la tablette."),
+    (17, "La torche est fixée dans son support sur le roc. Indy porte un sac avec une poche latérale.",
+     "Il tire un carnet d'une poche latérale de son sac."),
+    (25, "Indy est suspendu par une corde devant la paroi rocheuse, juste sous la tablette de pierre.",
+     "L'inscription est nettoyée et le roc présente des marques d'arrachement."),
+])
+def test_prologue_source_audit_repairs_approved_extraction(execution, monkeypatch, tmp_path, sequence, opening, event):
+    _, params, config = execution
+    step = lmstudio_pipeline.load("extract")
+    audits = []
+
+    def chat(client, model, system, user, schema, *unused):
+        data = json.loads(user)
+        if schema["name"] == "chapter_reference_identity":
+            return {"groups": []}
+        if schema == cr.narrative_validation.EXTRACTION_FINDINGS_SCHEMA:
+            return {"supported": [finding["number"] for finding in data["findings"]]}
+        if schema == cr.narrative_validation.SCHEMA:
+            if not system.startswith(cr._SOURCE_AUDIT_SYSTEM):
+                return {"issues": []}
+            audits.append(data["extraction"])
+            assert "chapter_context" not in data["source_input"]
+            targets = [(int(number), data["extraction"][row["kind"]][row["entity_index"]]["canonical_name"])
+                       for number, row in data["observation_targets"].items()]
+            diagnoses = {
+                5: {"lueur vacillante": "The glow is an effect, not a prop.",
+                    "crevasse": "The location lacks the depicted flickering light."},
+                12: {"tablette": "The tablet lacks the stated local illumination."},
+                17: {"sac": "The bag lacks the explicitly described side pocket."},
+                25: dict.fromkeys(("crevasse rock wall", "stone slab", "rope"), "Use the French generic name."),
+            }[sequence]
+            quote = opening if sequence == 25 else event
+            passage_id, = [row["id"] for row in data["review_passages"] if quote in row["text"]]
+            issues = [{"target": number, "message": diagnoses[name], "passage_ids": [passage_id]}
+                      for number, name in targets if name in diagnoses]
+            if sequence == 12:
+                target, = data["visual_trait_targets"]
+                issues.append({"target": int(target), "message": "The light is attributed to the wrong recipient.",
+                               "passage_ids": [passage_id]})
+            return {"issues": issues}
+        assert schema == step.CHUNK_SCHEMA
+        source = data.get("source_input", data)
+        passages = source["source_passages"]
+        corrected = "defects_to_correct" in data
+        reply = {"chunk_summary": "", "characters": [], "locations": [], "objects": []}
+        if sequence == 5:
+            reply["locations"] = [_reference_row("crevasse", passages, event if corrected else opening,
+                                                 traits=[("lighting", "lueur vacillante", "scene")] if corrected else [])]
+            if not corrected:
+                reply["objects"] = [_reference_row("lueur vacillante", passages, event)]
+        elif sequence == 12:
+            light = [("lighting", "éclairée par la torchère", "scene")]
+            reply["locations"] = [_reference_row("roc", passages, opening)]
+            reply["objects"] = [_reference_row("tablette", passages, opening)]
+            addressed = reply["objects" if corrected else "locations"][0]
+            addressed["visual_traits"] = _reference_row("tablette", passages, event, traits=light)["visual_traits"]
+        elif sequence == 17:
+            traits = [("side_pocket", "poche latérale", "intrinsic")] if corrected else []
+            reply["objects"] = [_reference_row("support de la torche", passages, "fixée dans son support"),
+                                _reference_row("sac", passages, "Indy porte un sac", traits=traits)]
+        else:
+            wall, slab, rope = ("paroi rocheuse", "tablette de pierre", "corde") if corrected else (
+                "crevasse rock wall", "stone slab", "rope")
+            reply["locations"] = [_reference_row(wall, passages, opening)]
+            reply["objects"] = [_reference_row(name, passages, opening) for name in (slab, rope)]
+        return reply
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    chapter = {"chapter_name": "Prologue", "sequences": [_reference_scene(sequence, opening, event)]}
+    ExtractChapterReferencesNode().run(config, [chapter], **{**params, "thinking": False})
+    path, = tmp_path.rglob("Prologue_references.json")
+    catalog = util.load_json(path)
+    assert len(audits) == 1
+    objects = {row["canonical_name"]: row for row in catalog["objects"]}
+    locations = {row["canonical_name"]: row for row in catalog["locations"]}
+
+    def traits(row):
+        observation, = row["state_by_sequence"][str(sequence)]["source"]
+        return observation["visual_traits"]
+
+    if sequence == 5:
+        assert not objects
+        row = locations["crevasse"]
+        assert row["visual_reference"]["scenes"]["Prologue"]["5"]["traits"][0]["description"] == "lueur vacillante"
+        assert traits(row)[0]["evidence"] == event
+    elif sequence == 12:
+        assert not traits(locations["roc"])
+        light, = traits(objects["tablette"])
+        assert (light["scope"], light["evidence"]) == ("scene", event)
+    elif sequence == 17:
+        assert "support de la torche" in objects
+        pocket, = traits(objects["sac"])
+        assert (pocket["description"], pocket["evidence"]) == (
+            "poche latérale", "Indy porte un sac avec une poche latérale.")
+    else:
+        assert set(objects) == {"tablette de pierre", "corde"}
+        assert set(locations) == {"paroi rocheuse"}
+        assert all(row["state_by_sequence"]["25"]["source"][0]["evidence"] == [opening]
+                   for row in [*objects.values(), *locations.values()])
+
+
 @pytest.mark.parametrize("invalid", [None, "schema", "evidence", "preservation"])
 def test_correction_reassigns_trait_and_restores_distinct_occurrence(execution, monkeypatch, tmp_path, invalid):
     _, params, config = execution
@@ -518,7 +623,7 @@ def test_review_repairs_multiple_omissions_and_wrong_referent_after_retries(exec
     monkeypatch.setattr(step, "chat_json", lmstudio_json.chat_json)
     catalog, = ExtractChapterReferencesNode().run(config, [{"chapter_name": "Passage", "sequences": [seq]}],
                                                  **params)["result"][0]
-    assert len(reviews) == len(repairs) == 3 and repairs[0] == repairs[1] == repairs[2]
+    assert len(reviews) == 4 and len(repairs) == 3 and repairs[0] == repairs[1] == repairs[2]
     assert catalog["locations"] == []
     objects = {entity["canonical_name"]: entity for entity in catalog["objects"]}
     for index, name in enumerate(("torchère", "sac")):
@@ -979,7 +1084,7 @@ def test_review_contract_change_reuses_valid_extraction_drafts(execution, monkey
     node.run(config, [chapter()], **params)
     monkeypatch.setattr(cr.narrative_validation, "EXTRACTION_FINDINGS_SYSTEM", "Revised finding verification.")
     node.run(config, [chapter()], **params)
-    assert reviewed == [1, 2, 3, 1, 2, 3]
+    assert reviewed == [1, 1, 2, 2, 3, 3] * 2
     assert len(extractions) == 3
 
 
@@ -1018,7 +1123,7 @@ def test_language_and_spatial_defects_are_corrected(execution, monkeypatch, tmp_
     def chat(client, model, system, user, schema, *args):
         data = json.loads(user)
         if schema["name"] == "narrative_semantic_review":
-            assert "source narration" in system
+            assert "source narration" in system or "narration's language" in system
             bad = data["extraction"]["chunk_summary"] == "English summary."
             return {"issues": [
                 {"target": 1, "message": "Use French prose in the summary."},

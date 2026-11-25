@@ -139,13 +139,13 @@ class PassageIndex:
         return select_passages(records, ids, allow_empty=allow_empty)
 
 
-def passage_catalog(sources, scope):
+def passage_catalog(sources, scope, *, whole_sentences=False):
     """Address passages across distinct source texts and retain each one's provenance."""
     catalog = {}
     for provenance, text in sources:
         label = json.dumps(provenance, ensure_ascii=False, sort_keys=True)
         offset = provenance.get("offset", 0)
-        index = PassageIndex(text, scope + ":" + label, offset=offset)
+        index = PassageIndex(text, scope + ":" + label, offset=offset, whole_sentences=whole_sentences)
         for passage in index.passages():
             start, end = index.ranges[passage["id"]]
             catalog[passage["id"]] = {**{k: v for k, v in provenance.items() if k != "offset"},

@@ -115,9 +115,10 @@ Read the passage first and account for every depicted character, filming space a
 independently depicted prop. Check all arrays, including empty ones. Report each
 missing entity separately even when named in the summary. Visible use, physical state
 or a physical relation can establish presence without a usable appearance description.
-Require a concrete physical prop. A glow, moving shadow, sound or other effect is
-not a missing prop, even when it moves or a character reacts to it. Do not infer
-what emits light if the local text does not identify the physical source.
+Require a concrete physical prop. Flag a row representing only a glow, shadow or
+other effect as a category defect. Check for missing scene appearance on the
+environment or explicitly stated recipient. Do not infer what emits light if
+the local text does not identify the physical source.
 Include unnamed, silent, partly visible and briefly shown characters. A name or voice
 alone does not show a character. Keep speech and its attribution separate from visibility.
 Do not infer presence from another sequence or require unspecified visual traits.
@@ -354,11 +355,16 @@ quotation that shows a feature only supports a defect if the diagnosis identifie
 what the extraction omits, misstates or misattributes. For claimed unsupported
 presence, compare the row's citation with the full local source and verify that it
 does not establish the named entity.
+For a category finding, classify the exact named referent. A visible light effect
+remains an effect even if it moves or is seen near a physical object. Unless the
+passage identifies the emitter, do not infer a prop from the effect. Treat carried
+equipment and its design as object appearance, independent of character wardrobe.
 For a requested removal or reassignment, verify that the targeted observation or
 trait is actually invalid under the supplied rules. Use reference_state to distinguish
 established local appearance from incidental placement and changes to animate.
 For a missing prop or trait, require a concrete object or a qualifying appearance
-fact. Effects, a character's gaze and transient shapes from motion do not qualify.
+fact. Explicit light effects may qualify as scene appearance, while a character's
+gaze and transient shapes from motion do not qualify.
 If the quotation is authentic but only partially supports the claim, omit the finding.
 Return the number of each fully supported finding once. Do not rewrite findings."""
 EXTRACTION_FINDINGS_SCHEMA = {"name": "reference_extraction_finding_support", "strict": True, "schema": {
