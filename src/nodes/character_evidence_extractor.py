@@ -12,7 +12,7 @@ from .chapter_selection import chapter_path_list
 
 
 class CharacterEvidenceExtractorNode:
-    DESCRIPTION = "Extract physical appearance only (including age and scars); audit concise verdicts separately."
+    DESCRIPTION = "Extract physical appearance and explicit identity evidence; audit observations separately."
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -84,7 +84,7 @@ class CharacterEvidenceExtractorNode:
             lmstudio_pipeline.comfy_interrupt_check()
             sources.append(character_evidence.read_source(path))
         occurrences = character_evidence.index_names(sources) if character_scope == "proper_names" else [[] for _ in paths]
-        diagnostics = {"extraction_focus": "physical_appearance", "thinking": bool(thinking),
+        diagnostics = {"extraction_focus": "physical_appearance_and_identity", "thinking": bool(thinking),
                        "audit_thinking": bool(audit_thinking), "character_scope": character_scope, "resume_run": resume_run,
                        "chapters": [], "llm_requests": 0,
                        "estimated_input_tokens": 0, "estimated_output_tokens": 0,
@@ -120,17 +120,11 @@ class CharacterEvidenceExtractorNode:
                     chapter_stats["status"] = "interrupted_or_failed"
             checkpoint()
         data = {"format_version": character_evidence.VERSION,
-                "location_convention": "Zero-based Unicode character offsets, exclusive end; one-based lines in normalized source_text.",
+                "location_convention": "Zero-based Unicode character offsets, exclusive end; one-based lines in normalized chapter text.",
                 "chapters": chapters}
-        review = character_evidence.review_report(data)
-        for chapter in chapters:
-            chapter["evidence"] = [
-                {key: value for key, value in row.items() if key not in {"semantic_review", "warnings"}}
-                for row in chapter["evidence"] if not row.get("warnings")
-            ]
+        character_evidence.validate_document(data)
         saved = output / "character_evidence.json"
         util.save_json(saved, data)
-        util.save_json(output / "character_evidence_review.json", review)
         diagnostics["elapsed_seconds"] = round(time.perf_counter() - started, 3)
         util.save_json(output / "character_evidence_diagnostics.json", diagnostics)
         return {"ui": {"text": [str(saved)]}, "result": (data, str(saved))}

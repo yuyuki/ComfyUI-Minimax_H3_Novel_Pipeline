@@ -138,10 +138,10 @@ def test_batches_reconcile_distant_values_no_loss_and_resume(workspace, monkeypa
                     observation("Élise avait les yeux bleus. " + "x" * 2500, value="yeux bleus"))
     # One chapter, large enough to split the identity and trait passes.
     first = data["chapters"][0]
-    text = "\n".join(c["source_text"] for c in data["chapters"])
+    text = "\n".join(cp.character_evidence.read_verified_source(c) for c in data["chapters"])
     # Separate chapters also exercise cross-chapter reconciliation; full source
     # locations remain attached to the original chapters, rather than flattened.
-    assert len(text) > len(first["source_text"])
+    assert len(text) > len(cp.character_evidence.read_verified_source(first))
     result, _, chat = run(data, workspace, monkeypatch, context_tokens=24000, max_tokens=1024)
     records = cp.prepare_evidence(data)
     profile = result["profiles"][0]
@@ -189,11 +189,19 @@ def test_alias_reconciliation_requires_connecting_quote(workspace, monkeypatch):
 
 
 @pytest.mark.parametrize("relation", ["change", "uncertain"])
-def test_explicit_chronology_and_uncertainty_are_not_global(workspace, monkeypatch, relation):
-    data = document(observation("Élise avait une marque rouge.", value="marque rouge"),
-                    observation("Après la guérison, sa marque rouge devint une cicatrice blanche.", value="cicatrice blanche"))
+@pytest.mark.parametrize("before,after,trait", [
+    (("Élise avait une marque rouge.", "marque rouge"),
+     ("Après la guérison, sa marque rouge devint une cicatrice blanche.", "cicatrice blanche"), "distinguishing_mark"),
+    (("Élise avait 10 ans.", "10 ans"),
+     ("Des années plus tard, Élise avait 40 ans.", "40 ans"), "age"),
+])
+def test_explicit_chronology_and_uncertainty_are_not_global(workspace, monkeypatch, relation, before, after, trait):
+    data = document(*(observation(quote, value=value) for quote, value in (before, after)))
     def chronology(*args):
         result = fake_model(*args)
+        if args[4] == batches.TRAITS:
+            for row in result["observations"]:
+                row["traits"][0]["trait"] = trait
         if args[4] == batches.RELATIONS:
             payload = request_payload(args[3])
             for decision, job in zip(result["decisions"], payload["jobs"]):
@@ -210,6 +218,8 @@ def test_explicit_chronology_and_uncertainty_are_not_global(workspace, monkeypat
     assert not profile["unresolved_conflicts"]
     assert bool(profile["chronological_changes"]) == (relation == "change")
     assert profile["trait_relations"][0]["relation"] == relation
+    if relation == "change":
+        assert profile["chronological_changes"][0]["trait"] == trait
 
 
 @pytest.mark.parametrize("contract,payload,response", [
@@ -313,7 +323,7 @@ def test_inferred_identity_support_warns_and_consolidation_continues(workspace, 
     result, saved = cp.consolidate(data, records, workspace, None, "qwen", settings(correction_attempts=2))
     assert Path(saved).is_file()
     assert validate_document(result) is result
-    reason = "Identity support must cite explicit physical evidence."
+    reason = "Identity support must cite explicit evidence."
     assert reason in caplog.text
     report = json.loads((workspace / "character_profiles_requests.json").read_text())
     assert any(w["reason"] == reason and w["attempts"] == 3 for w in report["warnings"])

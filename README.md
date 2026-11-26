@@ -57,14 +57,21 @@ After this reference-contract update, rerun extraction, consolidation and H3 pro
 | **Generate H3 Prompts** | Builds scene prompts and reference instructions for MiniMax H3. |
 | **Spatial Continuity** | Plans character, object, location and camera positions across scenes. |
 | **Load Spatial Continuity** | Loads and checks an edited spatial-continuity plan. |
-| **Character Evidence Extractor** | Collects quoted, chapter-linked evidence about character appearance. |
+| **Character Evidence Extractor** | Collects exact, chapter-linked evidence about appearance and explicit character identities. |
 | **Load Character Evidence** | Loads saved or manually edited character evidence. |
-| **Consolidate Character Profiles** | Groups evidence into source-linked character profiles. |
+| **Consolidate Character Profiles** | Resolves source-supported aliases and keeps appearance changes tied to their narrative time. |
 | **Load Character Profiles** | Loads and validates saved character profiles. |
-| **Character Visual Profile Generator** | Creates permanent physical designs, then uses LM Studio to review possible duplicate identities and update the same files. |
+| **Character Visual Profile Generator** | Projects consolidated identities and permanent physical traits into visual designs. |
 | **Load Character Visual Profiles** | Loads saved physical character profiles for Consolidate References. |
 
-The visual generator first writes `visual_designs.json`, then checks possible duplicate identities against source evidence. Confirmed links update that file, `character_visual_profiles.json`, and the node output together. The upstream character profiles remain unchanged. Uncertain cases and conflicting edited defaults are listed in `character_visual_identity_review.json`; existing manual identity links are preserved. Review requests use the generator's `.cache/` folder and its optional token, context and retry controls.
+Keep the original chapters in ComfyUI's input directory. The character pipeline
+checks each source fingerprint before using its quotations and locations.
+Regenerate older character evidence, profiles and visual designs in node order.
+If an evidence audit is unavailable, its diagnostics report an incomplete
+review and usable source-checked observations continue through the pipeline.
+See [Normalized source text](docs/normalized_source.md).
+
+The visual generator writes `visual_designs.json` and `character_visual_profiles.json` from the consolidated profiles. Review unresolved identities in `character_profiles_requests.json` before editing the character profiles.
 
 
 ## Major changes by release

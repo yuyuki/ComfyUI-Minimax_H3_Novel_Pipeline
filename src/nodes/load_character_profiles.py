@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..core import configuration_snapshot, progress, util
+from ..core import character_evidence, configuration_snapshot, progress, util
 from ..core.character_profile_document import validate_document
 
 
@@ -41,8 +41,15 @@ class LoadCharacterProfilesNode:
     def IS_CHANGED(cls, profiles_path):
         try:
             path = _profiles_path(profiles_path)
-            return configuration_snapshot.file_digest(path)
-        except (OSError, ValueError):
+            digest = configuration_snapshot.file_digest(path)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8-sig"))
+            except ValueError:
+                return digest
+            if isinstance(data, dict) and "source_document" in data:
+                return configuration_snapshot.content_digest([digest, character_evidence.source_fingerprint(data["source_document"])])
+            return digest
+        except (OSError, ValueError, KeyError, TypeError):
             return float("nan")  # Let run() report actionable path errors.
 
     @progress.node_progress

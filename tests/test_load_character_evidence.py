@@ -1,6 +1,5 @@
 """Saved evidence interchangeability, fidelity, validation and disk changes."""
 import json
-import hashlib
 import math
 import os
 from unittest.mock import Mock
@@ -59,13 +58,11 @@ def test_loads_actual_extractor_data_without_sources_or_writes(saved):
     assert sorted(p.name for p in path.parent.iterdir()) == [".cache", path.name]
 
 
-def test_manual_edits_metadata_quotes_and_provenance_are_unchanged(saved):
+def test_manual_evidence_edits_preserve_quotes_and_provenance(saved):
     path, data, _ = saved
-    data["review"] = {"author": "éditeur", "notes": ["keep all values"]}
     chapter = data["chapters"][0]
     item = chapter["evidence"][0]
-    item.update(value="vert sombre", confidence=0.4, classification="inferred", notes="manual")
-    item["provenance"]["review"] = "verified by reader"
+    item.update(value="vert sombre", confidence=0.4, classification="inferred", rationale="Attribution verified by reader.")
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8-sig")
     renamed = path.with_name("manually_corrected.json")
     path.rename(renamed)
@@ -94,7 +91,7 @@ def test_loads_run_directory_and_tracks_edits(saved):
         assert Loader().run(value) == (data, str(target))
         assert Loader.IS_CHANGED(value) == Loader.IS_CHANGED(str(target))
     before = Loader.IS_CHANGED(str(relative))
-    data["review"] = "manual edit"
+    data["chapters"][0]["evidence"][0]["value"] = "vert pâle"
     target.write_text(json.dumps(data), encoding="utf-8")
     assert Loader.IS_CHANGED(str(relative)) != before
     assert Loader().run(str(relative)) == (data, str(target))
@@ -128,14 +125,11 @@ def test_invalid_json(saved, contents, message):
 
 
 @pytest.mark.parametrize("change, message", [
-    (lambda d: d.update(format_version=999), "Unsupported.*format_version.*expected 2"),
+    (lambda d: d.update(format_version=999), "Unsupported.*format_version.*expected 3"),
     (lambda d: d.update(format_version=True), "format_version must be int"),
     (lambda d: d.update(chapters={}), "chapters must be list"),
-    (lambda d: d["chapters"][0].pop("source_text"), "missing required field 'source_text'"),
-    (lambda d: d["chapters"][0]["evidence"][0].pop("provenance"), "missing required field 'provenance'"),
-    (lambda d: d["chapters"][0]["evidence"][0]["provenance"].update(locations={}), "locations must be list"),
-    (lambda d: d["chapters"][0]["evidence"][0]["provenance"]["locations"][0].pop("start_char"),
-     "missing required field 'start_char'"),
+    (lambda d: d["chapters"][0].pop("source_text_sha256"), "missing required field 'source_text_sha256'"),
+    (lambda d: d["chapters"][0]["evidence"][0].update(source_text="obsolete"), "Embedded chapter text"),
 ])
 def test_invalid_document_structure(saved, change, message):
     path, data, _ = saved
@@ -158,8 +152,6 @@ def test_content_hash_and_fresh_load_with_same_size_and_timestamp(saved):
     assert Loader.IS_CHANGED(str(path)) == before
     stat = path.stat()
     changed = json.loads(path.read_bytes().replace(b"verts", b"bleus"))
-    for chapter in changed["chapters"]:
-        chapter["source_text_sha256"] = hashlib.sha256(chapter["source_text"].encode("utf-8")).hexdigest()
     path.write_text(json.dumps(changed, ensure_ascii=False), encoding="utf-8")
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     assert path.stat().st_size == stat.st_size

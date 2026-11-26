@@ -105,12 +105,13 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
         return original_requests(output, client, model, args)
     monkeypatch.setattr(integration, 'Requests', configured_requests)
     extra = {'visual_designs_path': str(root / 'visual/visual_designs.json')} if disk else {'character_visual_profiles': result}
-    with nullcontext() if mapped else pytest.warns(UserWarning), \
-            nullcontext() if mapped else pytest.raises(ValueError, match='no unique validated registry mapping'):
+    with nullcontext() if mapped else pytest.warns(UserWarning):
         payload, _ = node.ConsolidateReferencesNode().run([chapter], {'api_url': 'http://127.0.0.1:1234/v1', 'run_folder': '20261028120000'}, **options, **extra)['result']
     if not mapped:
-        assert not (root / 'references/visual_designs.json').exists()
-        assert not (root / 'references/consolidated_references.json').exists()
+        assert 'character_id' not in payload['entities'][0]
+        assert payload['character_enrichment']['chapter1']['registry_ids'] == {}
+        report = util.load_json(root / 'references/consolidated_references.diagnostics.json')
+        assert report['status'] == 'incomplete'
         return
     assert payload['entities'][0]['stable_visual_description'] == 'green eyes'
     assert payload['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'green eyes'
@@ -160,9 +161,10 @@ def test_no_arbitrary_identity_mapping(setup, monkeypatch, kind):
         designs['character_profiles']['profiles'][0]['identity_status'] = 'ambiguous'
     else:
         entities.append({**entity, 'global_id': 'CHAR_043'})
-    with pytest.warns(UserWarning), pytest.raises(ValueError, match='no unique validated registry mapping'):
-        integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
-    assert util.load_json(root / 'refs/chapter1/character_chapter_enrichment.json')['validation']['confidence'] == 'low'
+    with pytest.warns(UserWarning):
+        _, imported = integration.apply(designs, [chapter], entities, root / 'refs', None, 'mock', settings())
+    assert imported == {}
+    assert util.load_json(root / 'refs/chapter1/character_chapter_enrichment.diagnostics.json')['status'] == 'incomplete'
     assert all('character_id' not in e for e in entities)
 
 
@@ -224,8 +226,9 @@ def test_shared_alias_between_profiles_is_not_chosen_arbitrarily(setup):
         for field in ('global_traits', 'temporary_states'):
             target[field] = [r for r in target[field] if set(r['evidence_ids']) <= keep]
     designs['character_profiles']['profiles'].append(other)
-    with pytest.warns(UserWarning), pytest.raises(ValueError, match='no unique validated registry mapping'):
-        integration.apply(designs, [chapter], [entity], root / 'refs', None, 'mock', settings())
+    with pytest.warns(UserWarning):
+        _, imported = integration.apply(designs, [chapter], [entity], root / 'refs', None, 'mock', settings())
+    assert imported == {}
     assert 'character_id' not in entity
 
 
@@ -246,7 +249,7 @@ def test_manual_defaults_are_separate_and_ignored_fields_cannot_return(setup):
 def test_wrong_source_identity_fails_instead_of_ignoring_facts(setup):
     root, data, result, chapter, entity, calls = setup
     chapter['source']['file'] = 'another/chapter1.txt'
-    with pytest.raises(ValueError, match='source must resolve uniquely'):
+    with pytest.raises(ValueError, match='no matching character source'):
         integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None, 'mock', settings())
     assert calls == []
 

@@ -1407,23 +1407,11 @@
         "Node name for S&R": "CharacterVisualProfileGeneratorNode"
       },
       "widgets_values": [
-        true,
-        32768,
-        0.12,
         "",
-        65536,
-        2,
-        false,
         "character_visual_profiles"
       ],
       "widgets_values_named": {
-        "thinking": true,
-        "max_tokens": 32768,
-        "temperature": 0.12,
         "visual_designs_path": "",
-        "context_tokens": 65536,
-        "correction_attempts": 2,
-        "force": false,
         "out_dir": "character_visual_profiles"
       }
     },

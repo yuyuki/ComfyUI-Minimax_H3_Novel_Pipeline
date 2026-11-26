@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
 
 from ..core import character_profiles, configuration_snapshot, lmstudio_pipeline, progress
 from ..core.run_output import stage_output
@@ -28,7 +27,7 @@ class ConsolidateCharacterProfilesNode:
             "correction_attempts": ("INT", {"default": 0, "min": 0, "max": 10,
                 "tooltip": "0 skips invalid decisions immediately, without correction or subdivision requests."}),
             "persistence_filter": (["persistent", "everything"], {"default": "persistent",
-                "tooltip": "Consolidate only persistent observations, or include temporary and unknown observations too."}),
+                "tooltip": "Filter appearance observations by persistence. Explicit identity evidence is always kept."}),
             "force": ("BOOLEAN", {"default": False}),
             "out_dir": ("STRING", {"default": "character_profiles"}),
         }, "optional": {
@@ -60,14 +59,6 @@ class ConsolidateCharacterProfilesNode:
         if persistence_filter not in {"persistent", "everything"}:
             raise ValueError("persistence_filter must be persistent or everything.")
         records = character_profiles.prepare_evidence(character_evidence)
-        if persistence_filter == "persistent":
-            # Keep the saved source document and its coverage contract aligned with
-            # the selected observations, without mutating the upstream evidence.
-            character_evidence = deepcopy(character_evidence)
-            for chapter in character_evidence["chapters"]:
-                chapter["evidence"] = [item for item in chapter["evidence"]
-                                       if isinstance(item, dict) and item.get("persistence") == "persistent"]
-            records = {key: item for key, item in records.items() if item.get("persistence") == "persistent"}
         config = {**lmstudio_config, "thinking": bool(thinking)}
         output = stage_output(config, out_dir.strip())
         if not isinstance(resume_run, str):
@@ -95,7 +86,8 @@ class ConsolidateCharacterProfilesNode:
                 inputs={'character_evidence_sha256': configuration_snapshot.content_digest(character_evidence)},
                 extra={'persistence_filter': persistence_filter, 'resume_run': resume_run.strip()},
             )
-            data, saved = character_profiles.consolidate(character_evidence, records, output, client, model, args)
+            data, saved = character_profiles.consolidate(
+                character_evidence, records, output, client, model, args, persistence_filter=persistence_filter)
             configuration_snapshot.complete(snapshot, [output / name for name in (
                 'character_profiles.json', 'character_profiles.schema.json',
                 'character_profiles_validation.json', 'character_profiles_requests.json',

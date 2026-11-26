@@ -10,19 +10,25 @@ SCHEMA = json.loads((SCHEMA_DIR / "character_profiles.schema.json").read_text(en
 
 
 def make_document(data, records, profiles):
+    retained = {item["_source_index"] for item in cp._usable(records).values()}
+    source = deepcopy(data)
+    for chapter in source["chapters"]:
+        chapter["evidence"] = [row for index, row in enumerate(chapter["evidence"])
+                               if (chapter["chapter"], index) in retained]
     return {"$schema": "./character_profiles.schema.json", "format_version": cp.VERSION,
-            "source_digest": cp._digest(data), "source_document": deepcopy(data),
-            "profiles": profiles, "excluded_evidence": [
-                {"evidence_id": key, "observation": deepcopy(item)} for key, item in records.items()
-                if item["validation_confidence"] == "low"]}
+            "source_digest": cp._digest(source), "source_document": source, "profiles": profiles}
 
 
-def validate_document(data):
+def validate_document(data, *, texts=None):
     """Validate edits without rebuilding model decisions or normalizing selections."""
+    if not isinstance(data, dict) or type(data.get("format_version")) is not int or data["format_version"] != cp.VERSION:
+        raise ValueError("Unsupported character profiles format. Regenerate with Consolidate Character Profiles.")
     validate_schema(data, SCHEMA, "character_profiles.json")
-    records = cp.prepare_evidence(data["source_document"])
     if data["source_digest"] != cp._digest(data["source_document"]):
         raise ValueError("source_digest: source_document was altered; reconsolidate the edited evidence file.")
+    records = cp.prepare_evidence(data["source_document"], texts=texts)
+    if len(records) != len(cp._usable(records)):
+        raise ValueError("source_document contains invalid evidence. Regenerate with Consolidate Character Profiles.")
     profiles = {p["local_id"]: p for p in data["profiles"]}
     if len(profiles) != len(data["profiles"]):
         raise ValueError("profiles.local_id: duplicate identifier.")
@@ -85,10 +91,6 @@ def validate_document(data):
                 validate_change(row, own, where, references)
     if assigned != set(cp._usable(records)):
         raise ValueError("profiles.supporting_evidence: every valid observation must appear exactly once.")
-    expected_excluded = {k: v for k, v in records.items() if v["validation_confidence"] == "low"}
-    excluded = data["excluded_evidence"]
-    if len(excluded) != len(expected_excluded) or {r["evidence_id"]: r["observation"] for r in excluded} != expected_excluded:
-        raise ValueError("excluded_evidence: must preserve all invalid observations separately.")
     return data
 
 

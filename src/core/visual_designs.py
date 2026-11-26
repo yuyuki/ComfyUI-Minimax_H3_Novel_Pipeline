@@ -15,7 +15,7 @@ IMAGE_STYLES = (
     "realistic photographic", "cinematic photographic", "digital illustration",
     "anime", "watercolor", "3D render",
 )
-DESIGN_SCHEMA_VERSION = "minimax-h3-visual-designs.v1"
+DESIGN_SCHEMA_VERSION = "minimax-h3-visual-designs.v2"
 DESIGN_TRAITS = TRAITS
 
 
@@ -109,7 +109,9 @@ def resolve_designs_path(path):
             "Clear visual_designs_path to generate new designs, or select an existing edited file. "
             "Consolidation creates visual_designs.json in its output folder automatically."
         )
-    validate_document(util.load_json(resolved), FILE_SCHEMA, "visual_designs.json")
+    payload = util.load_json(resolved)
+    util.require_schema(payload, DESIGN_SCHEMA_VERSION)
+    validate_document(payload, FILE_SCHEMA, "visual_designs.json")
     return resolved
 
 

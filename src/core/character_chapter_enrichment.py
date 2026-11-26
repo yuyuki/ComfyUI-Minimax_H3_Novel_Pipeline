@@ -2,9 +2,8 @@
 from copy import deepcopy
 import json
 import re
-from pathlib import PureWindowsPath
-
 from . import character_profiles as cp, util, progress
+from .character_evidence import source_key as source_key
 from .character_profile_batches import schema, TEXT, encoded
 from .editable_schemas import SCHEMA_DIR, export_schema, validate_document
 from .source_text import PASSAGE_IDS, PassageIndex, contiguous_passage
@@ -78,12 +77,8 @@ array is valid when no temporary visual detail is explicitly attested for this c
 Return issues with an English message and supporting current-source passage_ids, or an empty array."""
 
 
-def source_key(path):
-    return str(PureWindowsPath(path)).casefold()
-
-
 def timeline_digest(chapter):
-    return cp._digest({'source_file': source_key(chapter.get('source_file') or chapter.get('source', {}).get('file', '')),
+    return cp._digest({'source_file': str(source_key(chapter.get('source_file') or chapter.get('source', {}).get('file', ''))),
                        'sequences': [{k: s[k] for k in ('sequence', 'source', 'adaptation')} for s in chapter['sequences']]})
 
 
@@ -127,12 +122,12 @@ def review_issues(requests, system, context, index, fallback):
         row["text"] for row in index.resolve(issue["passage_ids"])) for issue in response["issues"]]
 
 
-def source_offsets(chapter):
+def source_offsets(chapter, text):
     cursor = 0
     for sequence in chapter["sequences"]:
-        text, excerpt = chapter["_source_text"], sequence["source"]
+        excerpt = sequence["source"]
         start = text.find(excerpt, cursor)
-        if start < 0 or (text[cursor:start].strip() and text.find(excerpt, start + 1) >= 0):
+        if not excerpt.strip() or start < 0 or (text[cursor:start].strip() and text.find(excerpt, start + 1) >= 0):
             raise ValueError(f"Cinematic source does not match a unique ordered passage: sequence {sequence['sequence']}.")
         yield start
         cursor = start + len(sequence["source"])
@@ -213,14 +208,13 @@ def chapter_candidates(profiles, chapter):
     return candidates
 
 
-def enrich(data, profiles, chapter, requests):
-    result = {'$schema': './character_chapter_enrichment.schema.json', 'format_version': 1,
+def enrich(data, profiles, chapter, requests, offsets):
+    result = {'$schema': './character_chapter_enrichment.schema.json', 'format_version': 2,
               'source_file': chapter['source_file'], 'chapter_name': chapter['chapter_name'],
               'chapter_digest': timeline_digest(chapter),
               'profiles_digest': cp._digest(data), 'sequences': []}
     candidates = chapter_candidates(profiles, chapter)
     prior = []
-    offsets = list(source_offsets(chapter))
     for seq, offset in zip(progress.steps(chapter['sequences'], label="Character enrichment sequences"), offsets):
         index = PassageIndex(seq["source"], f"casting:{chapter['source_file']}:{seq['sequence']}:{offset}")
         source_passages = index.passages()
@@ -377,6 +371,17 @@ def state_candidates(profile, chapter, seq, offset):
 
 def save(result, output):
     contract = json.loads((SCHEMA_DIR / 'character_chapter_enrichment.schema.json').read_text(encoding='utf-8'))
-    validate_document(result, contract, 'character_chapter_enrichment.json')
+    content = {k: v for k, v in result.items() if k not in {'validation', 'sequences'}}
+    content['sequences'] = [{k: v for k, v in seq.items() if k not in {'validation', 'unresolved'}}
+                            for seq in result['sequences']]
+    validate_document(content, contract, 'character_chapter_enrichment.json')
     export_schema(output, 'character_chapter_enrichment')
-    util.save_json(output / 'character_chapter_enrichment.json', result)
+    util.save_json(output / 'character_chapter_enrichment.json', content)
+    util.save_json(output / 'character_chapter_enrichment.diagnostics.json', {
+        'source_file': result['source_file'],
+        'status': 'incomplete' if result['validation']['confidence'] == 'low' else 'complete',
+        'issues': result['validation']['issues'],
+        'sequences': [{'sequence': seq['sequence'], 'validation': seq['validation'], 'unresolved': seq['unresolved']}
+                      for seq in result['sequences']],
+    })
+    return content

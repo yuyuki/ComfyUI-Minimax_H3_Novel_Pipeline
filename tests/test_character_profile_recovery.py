@@ -17,7 +17,7 @@ def narrative_document(text, *items):
     items = [normalize_data(item) for item in items]
     data = document(*items)
     chapter = data["chapters"][0]
-    chapter["source_text"] = text
+    cp.character_evidence.source_key(chapter["source_file"]).write_text(text, encoding="utf-8")
     chapter["source_text_sha256"] = hashlib.sha256(text.encode()).hexdigest()
     rows = []
     for item in items:
@@ -59,12 +59,13 @@ def test_verbatim_context_connects_short_quotes_and_aliases(tmp_path, monkeypatc
     assert validate_document(result) is result
 
 
-def test_source_context_is_recomputed_not_trusted():
+def test_saved_observation_with_injected_context_is_excluded():
     text = "Élise entra. Élise avait les yeux verts. Elle sourit."
     item = observation(source_context=[{"text": "Invented alias"}])
     data = narrative_document(text, item)
     record = next(iter(cp.prepare_evidence(data).values()))
-    assert "Invented alias" not in str(record["_source_context"])
+    assert record["validation_confidence"] == "low"
+    assert "Unexpected or missing saved observation fields." in record["validation_warnings"]
     assert data["chapters"][0]["evidence"][0]["source_context"] == [{"text": "Invented alias"}]
 
 

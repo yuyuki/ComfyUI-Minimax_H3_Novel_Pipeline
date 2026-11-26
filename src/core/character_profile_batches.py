@@ -17,7 +17,7 @@ from .editable_schemas import validate_document
 from .source_text import PASSAGE_IDS, PassageIndex, contains, contiguous_passage
 
 logger = logging.getLogger(__name__)
-DECISION_VERSION = 8
+DECISION_VERSION = 9
 RESERVE = 8192  # ChatML, compact retry instructions and bounded semantic corrections.
 TEXT = {"type": "string", "minLength": 1}
 CONTEXT_INSTRUCTION = (
@@ -43,9 +43,9 @@ uncertain or different. Different labels require explicit connecting name/alias
 quotations or supplied verbatim source_context with explicit alias wording or a
 full name containing the short name. Two separate given-name/surname labels can
 be linked by their verbatim full name in cited source_context, even if that full
-name is not a supplied label (for example Ada / Lovelace via Ada Lovelace).
+name is not a supplied label.
 A short name and nickname can likewise connect through an explicitly aliased
-full name in source_context (Jones / Indy via Henry Jones Jr., surnommé Indy).
+full name in source_context. Identity observations may provide that explicit link.
 This requires contextual confirmation of one person, not adjacent names in a list.
 left_identity and right_identity describe the complete provisional dossiers,
 including already grouped aliases. Their references may be only one evidence
@@ -308,17 +308,15 @@ class Requests:
                 lmstudio_pipeline.comfy_interrupt_check()
                 util.save_json(cache, result)
                 return result
-            except APIError:
-                raise RuntimeError(f"Character profile request failed ({contract['name']}, "
-                                   f"input={len(prompt.encode())} bytes, context_tokens={self.context}, "
-                                   f"max_tokens={self.args.max_tokens}). Check the trusted LM Studio connection "
-                                   "and loaded model context; lower context_tokens to make smaller batches. "
-                                   "Completed batches are cached; no evidence was truncated.") from None
-            except (ValueError, RuntimeError) as exc:
+            except (APIError, ValueError, RuntimeError) as exc:
                 if lmstudio_json._is_comfy_interrupt(exc):
                     raise
-                if isinstance(exc, RuntimeError) and not str(exc).startswith("Invalid structured JSON after "):
+                if isinstance(exc, APIError) and getattr(exc, "status_code", None) in {401, 403}:
                     raise
+                if isinstance(exc, RuntimeError) and not isinstance(exc, lmstudio_json.StructuredOutputError):
+                    raise
+                reason = (f"LM Studio request unavailable ({type(exc).__name__})."
+                          if isinstance(exc, APIError) else str(exc)[:1200])
                 partial = None
                 inspect_identity = contract == IDENTITY_PAIR and salvage is not None
                 if inspect_identity and result is not None:
@@ -332,7 +330,7 @@ class Requests:
                         'early_recovery_enabled': recover_partial,
                         'corrections_remaining': attempts - attempt - 1,
                         'response_received': result is not None,
-                        'reason': str(exc)[:1200],
+                        'reason': reason,
                     })
                 if recover_partial and attempt < attempts - 1 and salvage is not None and result is not None:
                     if not inspect_identity:
@@ -349,7 +347,7 @@ class Requests:
                             self.stats['identity_jobs_preserved'] += len(partial[field])
                         self.stats['warnings'].append({
                             'schema': contract['name'], 'attempts': attempt + 1,
-                            'reason': str(exc)[:1200], 'input': payload, 'response': deepcopy(result),
+                            'reason': reason, 'input': payload, 'response': deepcopy(result),
                             'recovery': 'retry_missing_identity_jobs' if contract == IDENTITY_PAIR else 'retry_missing_profiles',
                         })
                         logger.info('Character profiles: preserving %s validated %s; retrying unresolved inputs only.',
@@ -357,20 +355,20 @@ class Requests:
                         return partial
                 if attempt == attempts - 1:
                     warning = {"schema": contract["name"], "attempts": attempt + 1,
-                               "reason": str(exc)[:1200], "input": payload, "response": deepcopy(result)}
+                               "reason": reason, "input": payload, "response": deepcopy(result)}
                     self.stats["warnings"].append(warning)
                     logger.warning("Character profiles: ignoring invalid model decision (%s) after %s "
                                    "attempt(s): %s. Sources retained; see character_profiles_requests.json.",
-                                   contract["name"], attempt + 1, str(exc)[:1200])
+                                   contract["name"], attempt + 1, reason)
                     if not inspect_identity:
                         partial = salvage(result) if salvage is not None and result is not None else None
                     if partial:
                         self.stats["partial_responses_salvaged"] = self.stats.get("partial_responses_salvaged", 0) + 1
                     return partial
                 logger.warning("Character profiles: %s response rejected on attempt %s/%s: %s",
-                               contract["name"], attempt + 1, attempts, str(exc)[:1200])
+                               contract["name"], attempt + 1, attempts, reason)
                 # Only the error prose is bounded; the original independent observations are untouched.
-                correction = "\nRejected: " + str(exc)[:1200] + "\nReturn every input ID in the corrected response."
+                correction = "\nRejected: " + reason + "\nReturn every input ID in the corrected response."
 
     def decisions(self, jobs, system, contract, validate=None):
         system += "\nJobs reference the shared observations table by evidence_id; inspect their complete quotations."
@@ -632,7 +630,7 @@ def _identity_components(records):
     This only rejects impossible merges. It never confirms an identity. Use all
     explicit input evidence so a bridge discovered in a later dossier is retained.
     """
-    names = sorted({item['character'] for item in records.values()})
+    names = sorted(set().union(*(cp.identity_labels(item) for item in records.values())))
     parent = {name: name for name in names}
     def root(name):
         while parent[name] != name:
@@ -673,11 +671,12 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared, compo
             i = parent[i]
         return i
     signatures, identities = [], []
-    labels_in_evidence = {item["character"] for item in records.values()}
+    labels_in_evidence = set(components)
     for group in groups:
         ids = cp._refs(group["evidence"], records)
         identities.append({"canonical_name": group["canonical_name"],
-                           "aliases": sorted({records[k]["character"] for k in ids} - {group["canonical_name"]}),
+                           "aliases": sorted(set().union(*(cp.identity_labels(records[k]) for k in ids))
+                                             - {group["canonical_name"]}),
                            "identity_status": group["identity_status"]})
         selected = {ids[0], *cp._refs(group["identity_support"], records)}
         selected.update(key for key in ids if records[key]["classification"] == "explicit"
@@ -699,7 +698,7 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared, compo
         compared.add(dossier_pair)
         # Do not discard alias candidates: a connecting quotation can contain a
         # label absent from a group's canonical name. Names only select comparisons.
-        labels = [{records[r["evidence_id"]]["character"] for r in groups[i]["evidence"]}
+        labels = [set().union(*(cp.identity_labels(records[r["evidence_id"]]) for r in groups[i]["evidence"]))
                   | {groups[i]["canonical_name"]} for i in (left, right)]
         quotes = [" ".join(identity_text(records[row["evidence_id"]]) for row in signatures[i])
                   for i in (left, right)]
@@ -762,6 +761,11 @@ def _reconcile_identity_pass(groups, records, requests, blocked, compared, compo
     for (left, right), decisions in candidates.items():
         positive = [d for d in decisions if d["relation"] == "same"]
         if not positive or any(d["relation"] == "different" for d in decisions):
+            if not decisions or not any(d["relation"] == "different" for d in decisions):
+                requests.stats.setdefault("unresolved_identities", []).append({
+                    "evidence_ids": [[r["evidence_id"] for r in groups[i]["evidence"]] for i in (left, right)],
+                    "reason": "Identity comparison did not establish a unique link.",
+                })
             continue
         a, b = root(left), root(right)
         if any({root(x), root(y)} == {a, b} for x, y in forbidden):
@@ -779,8 +783,7 @@ def merge_groups(groups, records, extra_support=()):
     ids = {r["evidence_id"] for group in groups for r in group["evidence"]}
     support = {r["evidence_id"] for group in groups for r in group["identity_support"]}
     support.update(k for k in extra_support if k in ids and records[k]["classification"] == "explicit")
-    names = {records[key]["character"] for key in ids}
-    canonical_name = max(names, key=lambda name: (len(name.split()), len(name), name))
+    canonical_name = cp.canonical_name(set().union(*(cp.identity_labels(records[key]) for key in ids)))
     return {"canonical_name": canonical_name,
             "identity_status": "confirmed" if len(groups) > 1 else groups[0]["identity_status"],
             "evidence": [{"evidence_id": k} for k in records if k in ids],
@@ -901,7 +904,8 @@ def validate_trait_subject(item, assignment):
 
 def classify_traits(records, requests):
     assignments = {}
-    rows = [compact_record(key, item, identity_context=False) for key, item in records.items()]
+    rows = [compact_record(key, item, identity_context=False) for key, item in records.items()
+            if item["attribute"] != "identity"]
     def resolve(batch, recover=True):
         allowed = {row["evidence_id"] for row in batch}
         def check_trait(key, trait):
@@ -1072,6 +1076,12 @@ def reconcile(records, output, client, model, args):
             subset = {row["evidence_id"]: row["observation"] for row in profile["supporting_evidence"]}
             analyse_traits(profile, subset, requests, assignments)
         lmstudio_pipeline.comfy_interrupt_check()
+        requests.stats["ambiguous_profile_ids"] = [p["local_id"] for p in profiles if p["identity_status"] == "ambiguous"]
+        if not profiles:
+            requests.stats["empty_reason"] = "There were no usable character observations to group."
+        requests.stats["status"] = "incomplete" if any(requests.stats.get(key) for key in (
+            "warnings", "ambiguous_profile_ids", "unresolved_identities", "unclassified_evidence_ids")) else "complete"
         return deepcopy(profiles)
     finally:
+        requests.stats.setdefault("status", "interrupted_or_failed")
         util.save_json(output / "character_profiles_requests.json", requests.stats)

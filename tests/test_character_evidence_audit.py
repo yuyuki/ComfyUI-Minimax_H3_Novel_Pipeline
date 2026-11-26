@@ -7,9 +7,8 @@ import pytest
 from tests.passages_helpers import with_passage_ids
 
 from minimax_h3_novel_pipeline.core import character_evidence as evidence
-from minimax_h3_novel_pipeline.core import character_profiles, path_access
+from minimax_h3_novel_pipeline.core import path_access
 from tests.test_character_evidence import observation, settings
-from tests.test_character_profiles import document
 from tests.test_structured_json import Stream, client_for
 
 
@@ -24,16 +23,13 @@ def verdicts(*issues):
     ("Élise était assise.", "sitting", "Pose is not persistent anatomy."),
     ("Élise portait une chemise blanche.", "blonde hair", "Quotation does not support hair color."),
 ])
-def test_rejected_exact_quote_cannot_enter_consolidation(monkeypatch, quote, value, issue):
+def test_semantic_rejection_is_distinct_from_source_integrity(monkeypatch, quote, value, issue):
     chat = Mock(return_value=verdicts([issue]))
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     items = evidence.audit_observations([observation(quote, value=value)], [quote],
                                        None, "qwen", settings(), {"llm_calls": 0})
-    assert items[0]["warnings"]
-    records = character_profiles.prepare_evidence(document(*items))
-    assert all(r["validation_confidence"] == "low" for r in records.values())
-    assert evidence._batch_observations({"evidence": [
-        {k: v for k, v in items[0].items() if k != "warnings"}]}, [quote])[0]["warnings"]
+    assert items[0]["semantic_review"]["verdict"] == "invalid"
+    assert not items[0].get("warnings")
 
 
 def test_audit_transport_retry_preserves_all_observations_and_schema():
@@ -42,7 +38,7 @@ def test_audit_transport_retry_preserves_all_observations_and_schema():
                                 Stream([json.dumps(verdicts([], ["Unsupported value"]))]))
     result = evidence.audit_observations(items, [items[0]["quotation"]], client, "qwen3.5",
                                          settings(), {"llm_calls": 0})
-    assert not result[0].get("warnings") and result[1]["warnings"]
+    assert [row["semantic_review"]["verdict"] for row in result] == ["valid", "invalid"]
     assert create.call_count == 2
     for call in create.call_args_list:
         assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.AUDIT_SCHEMA}
@@ -89,13 +85,13 @@ def test_exact_unsupported_observation_is_rechecked_and_stays_incomplete(tmp_pat
     diagnostics = []
     result = evidence.extract_chapter(tmp_path / "chapter.txt", tmp_path, None, "qwen", args, 1,
                                       source=(quote, "normalized_utf8_text"), diagnostics=diagnostics)
-    assert result["evidence"][0]["warnings"]
+    assert result["evidence"] == []
+    assert diagnostics[0]["observations_for_review"][0]["status"] == "excluded"
+    assert diagnostics[0]["empty_reason"]
     assert diagnostics[0]["status"] == "incomplete"
     assert diagnostics[0]["semantic_support_checks"][0]["status"] == "incomplete"
     assert not list((tmp_path / ".cache").glob("*.json"))
     assert chat.call_count == 4
-    assert next(iter(character_profiles.prepare_evidence({"format_version": evidence.VERSION,
-        "location_convention": "offsets", "chapters": [result]}).values()))["validation_confidence"] == "low"
 
 
 
@@ -128,7 +124,7 @@ def test_audit_rejects_inconsistent_verdicts(monkeypatch, status, issue):
     item = evidence.audit_observations([observation()], ["source"], None, "qwen",
                                        settings(correction_attempts=0), {"llm_calls": 0})[0]
     assert item["semantic_review"]["verdict"] == "uncertain"
-    assert item["warnings"]
+    assert item["semantic_review"]["issue"] == "unavailable"
 
 
 def test_audit_thinking_override_is_scoped_and_restored(monkeypatch):

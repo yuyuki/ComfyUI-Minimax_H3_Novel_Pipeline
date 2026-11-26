@@ -415,8 +415,10 @@ and the path to `character_evidence/character_evidence.json` in the current run.
 all chapters and batches each occurrence with one preceding/following paragraph,
 bounded by `chunk_chars`, without extending through chains of pronouns. Single
 newlines delimit paragraphs; oversized lines use sentence boundaries.
-The extraction schema is restricted to `physical_appearance`, including age, scars
-and visible injuries. Clothing, accessories, actions and expressions are excluded.
+The extraction schema accepts physical appearance, including age, scars and visible
+injuries, plus explicit identity statements. Keep short naming passages even when
+they contain no physical description. Clothing, accessories, actions and expressions
+are excluded from appearance evidence.
 Separate temporary hairstyles from enduring hair color/texture and anatomy.
 Use `thinking=True` for extraction and leave `audit_thinking=False` for the shorter
 semantic audit. Enable audit thinking only if its verdict quality requires it.
@@ -426,7 +428,7 @@ Choose `all_characters` for full-text coverage of unnamed people, role labels, a
 descriptions that precede identification. Proper-name selection uses capitalization
 heuristics; it can miss distant pronoun context and names without capitalization.
 Completed batch caches are reused within the current run in
-`output/minimax_h3_novel/<timestamp>/character_evidence/.cache`; diagnostics alongside the evidence
+`output/minimax_h3_novel/<timestamp>/character_evidence/.cache/<chapter_id>/`. Diagnostics alongside the evidence
 report timing, passage selection, cache hits, requests/retries and estimated tokens.
 To continue a failed extraction from a previous run, set `resume_run` to just its
 folder name, for example `20261025154413`, and keep `force=False` and the original
@@ -436,16 +438,17 @@ extraction. New outputs belong to the current run; the previous run is unchanged
 Leave `resume_run` empty to disable reuse from a previous run.
 Edit that file manually. Use `force` to regenerate compatible cached batches;
 adjust `chunk_chars`, `max_tokens` or `correction_attempts` if validation fails.
-`correction_attempts` bounds malformed extraction/audit response retries. Citation
-repairs now use local, unambiguous typography/whitespace matching, with no LLM calls.
-No name, word or negation is substituted. Unrepairable quotations remain flagged.
-The audit returns a compact verdict and issue code per observation. Rejected or
-uncertain observations stay available for review but are excluded from consolidation.
-Inspect `character_evidence_review.json` for issues and original quotations.
-Consolidation writes its exclusion
-details to `character_profiles_validation.json` even if its later LLM request fails.
-The embedded original source text supports exact quotation checks; PDF locations
-refer to extracted text. Recurring characters retain evidence in every chapter.
+`correction_attempts` bounds extraction and semantic audit retries. Passage IDs
+resolve into exact quotations and positions in the normalized chapter. The audit
+returns a verdict and issue code per observation. An unavailable or unusable
+audit keeps observations that pass deterministic checks and marks the review
+incomplete in `character_evidence_diagnostics.json`. Definite rejections are recorded
+there. Consolidation records its own exclusions in `character_profiles_validation.json`.
+
+Keep the original chapters under ComfyUI's input directory. The evidence file
+contains their references and normalized fingerprints. Consolidation reopens the
+files to verify their fingerprints, exact quotations and positions. PDF positions
+refer to normalized extracted text. Regenerate earlier character formats in node order.
 To resume after editing, use **Load Character Evidence** with `evidence_path` set
 to the evidence output folder, such as `20261024163701/character_evidence`
 (relative to `output/minimax_h3_novel`, or an absolute path inside it).
@@ -460,8 +463,8 @@ To consolidate characters, connect either evidence node's `character_evidence`
 output to **Consolidate Character Profiles**, together with **LM Studio
 Configuration** using Qwen. Include all novel chapters. `persistence_filter` defaults
 to `persistent`; select `everything` to include temporary and unknown observations.
-Only selected evidence is consolidated and embedded in the saved source document;
-the original evidence stays unchanged. `thinking` defaults to `false` for this node.
+The filter applies to appearance evidence. The saved source document retains
+selected appearance observations and explicit identity evidence. `thinking` defaults to `false` for this node.
 Set it manually on existing nodes that retain `true`. Keep `out_dir` at
 `character_profiles` to save `character_profiles/character_profiles.json` and its
 JSON Schema in the current run. Set `context_tokens` at or below LM Studio's
@@ -496,8 +499,8 @@ clothing, accessories, injuries, expressions, poses and actions are excluded.
 
 The output folder contains:
 
-- `character_visual_profiles.json`: selected profiles, the original document and
-  embedded visual designs; `saved_file` points here.
+- `character_visual_profiles.json` contains selected profiles and embedded
+  visual designs. The `saved_file` socket points to this file.
 - `visual_designs.json` and schemas: stable `source_facts`, separate editable physical
   `added_details`, and validated `character_profiles` with identity and provenance.
 
@@ -514,13 +517,11 @@ never imply visibility. H3 planning and prompts receive these local states along
 the stable physical facts. Local enrichment files are saved beneath
 `references/<chapter_id>/`; their cache is `references/.cache/<chapter_id>/`.
 
-Each chapter enrichment and sequence includes `validation.confidence` (`high` or `low`)
-and `validation.issues`. These describe validation status, not a numerical probability.
-Consolidation continues when identity, presence or local-state checks exhaust their retries.
-Unverified mappings and details are left unapplied, and the rejected responses and source
-context remain in `references/character_profiles_requests.json`. Review low-confidence
-results before generating final prompts. Invalid input files and connection failures still
-report errors.
+Each `character_chapter_enrichment.diagnostics.json` records chapter and sequence
+findings. Consolidation continues with usable results when identity, presence or
+local-state checks exhaust their retries. Unresolved mappings remain distinct.
+Missing, changed or ambiguous source files stop source verification with an
+actionable error.
 
 For another chapter, pass edited `visual_designs.json` to the generator's optional
 input to reuse compatible physical defaults. Only selected identities are exported.

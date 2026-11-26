@@ -106,7 +106,8 @@ def test_both_readers_model_prompts_and_saved_locations_use_the_same_source(tmp_
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     monkeypatch.setattr(evidence, "audit_observations", lambda rows, *args: rows)
     chapter = evidence.extract_chapter(path, tmp_path / "output", None, "qwen", settings(), 1)
-    assert chapter["source_text"] == expected
+    assert "source_text" not in chapter
+    assert evidence.read_verified_source(chapter) == expected
     assert chapter["source_text_sha256"] == hashlib.sha256(expected.encode("utf-8")).hexdigest()
     assert chapter["location_basis"] == "normalized_utf8_text"
     assert calls
@@ -132,9 +133,9 @@ def test_pdf_and_text_use_the_identical_normalized_basis(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("change,reason", [
     (lambda d: d.update(format_version=1), "Regenerate evidence"),
-    (lambda d: d["chapters"][0].update(source_text="L’homme."), "normalized source_text"),
-    (lambda d: d["chapters"][0].update(location_basis="utf8_decoded_text"), "normalized source_text"),
-    (lambda d: d["chapters"][0].update(source_text_sha256="0" * 64), "source_text_sha256"),
+    (lambda d: d["chapters"][0].update(source_text="L’homme."), "unexpected chapter fields"),
+    (lambda d: d["chapters"][0].update(location_basis="utf8_decoded_text"), "normalized location_basis"),
+    (lambda d: d["chapters"][0].update(source_text_sha256="invalid"), "source_text_sha256"),
 ])
 def test_old_or_inconsistent_source_bases_are_rejected_without_rebasing(change, reason):
     data = document(observation("L'homme."))

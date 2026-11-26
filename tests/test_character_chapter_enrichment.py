@@ -16,9 +16,13 @@ from tests.test_character_evidence import observation
 from minimax_h3_novel_pipeline.core.source_text import normalize
 
 
+def enrich(data, profiles, chapter, requests):
+    return ce.enrich(data, profiles, chapter, requests, list(ce.source_offsets(chapter, chapter['_source_text'])))
+
+
 def selected_chapter(data, chapters):
     chapter = deepcopy(chapters[0])
-    chapter['_source_text'] = next(c['source_text'] for c in data['source_document']['chapters']
+    chapter['_source_text'] = next(vp.character_evidence.read_verified_source(c) for c in data['source_document']['chapters']
                                    if c['source_file'] == chapter['source_file'])
     return chapter
 
@@ -59,7 +63,7 @@ def test_temporary_clothing_stays_in_attested_source_and_not_design(output, monk
     mock_chat(monkeypatch, data)
     p = vp.prepare_profiles(data)[0]
     requests = batches.Requests(output, None, 'qwen', settings())
-    result = ce.enrich(data, [p], chapter, requests)
+    result = enrich(data, [p], chapter, requests)
     assert result['sequences'][0]['states'][0]['value'] == 'red evening dress'
     elsewhere = {**chapter['sequences'][0], 'source': 'The next morning.'}
     assert ce.state_candidates(p, chapter, elsewhere, len(chapter["_source_text"])) == []
@@ -76,13 +80,13 @@ def test_contextual_pronouns_offscreen_and_mentions(output, monkeypatch):
         'adaptation': {'initialState': 'She waits.', 'event': 'A voice is heard.', 'endingState': 'She waits.'}})
     chapter['_source_text'] += ' She waits.'
     calls = mock_chat(monkeypatch, data, 'offscreen')
-    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+    result = enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings()))
     assert [s['characters'][0]['presence'] for s in result['sequences']] == ['offscreen', 'offscreen']
     presence_calls = [p for schema, p in calls if schema == ce.PRESENCE]
     assert presence_calls[1]['previous_context'][0]['characters'][0]['local_id'] == data['profiles'][0]['local_id']
     mock_chat(monkeypatch, data, 'mentioned')
-    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+    result = enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(force=True)))
     assert all(not s['states'] for s in result['sequences'])
 
@@ -121,7 +125,7 @@ def test_chronological_scar_requires_sequence_evidence_not_chapter_order(output,
     p = vp.prepare_profiles(data)[0]
     assert not p['effective_traits']
     mock_chat(monkeypatch, data)
-    local = ce.enrich(data, [p], chapter, batches.Requests(output, None, 'qwen', settings()))
+    local = enrich(data, [p], chapter, batches.Requests(output, None, 'qwen', settings()))
     assert not local['sequences'][0]['states']
     rows = ce.state_candidates(p, chapter, chapter['sequences'][0], 0)
     assert {r['chronology']['side'] for r in rows} == {'before_id', 'after_id'}
@@ -139,7 +143,7 @@ def test_attested_chronology_selects_only_the_matching_state(output, monkeypatch
     source = data['source_document']['chapters'][chapter_index]
     chapter = cinematic(data)
     chapter[0].update(source_file=source['source_file'], chapter_name=source['chapter_name'])
-    chapter[0]['sequences'][0]['source'] = source['source_text']
+    chapter[0]['sequences'][0]['source'] = vp.character_evidence.read_verified_source(source)
     chapter = selected_chapter(data, chapter)
     mock_chat(monkeypatch, data)
     default_chat = batches.lmstudio_json.chat_json
@@ -148,10 +152,10 @@ def test_attested_chronology_selects_only_the_matching_state(output, monkeypatch
             return default_chat(client, model, system, prompt, schema, *args)
         payload = json.loads(prompt)
         return {'states': [{'state_id': r['state_id'], 'applies': r['chronology']['side'] == side,
-                            'source_quote': source['source_text'] if r['chronology']['side'] == side else '', 'reason': 'Explicit before/after source wording.'}
+                            'source_quote': vp.character_evidence.read_verified_source(source) if r['chronology']['side'] == side else '', 'reason': 'Explicit before/after source wording.'}
                            for r in payload['states']]}
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
-    local = ce.enrich(data, vp.prepare_profiles(data), chapter,
+    local = enrich(data, vp.prepare_profiles(data), chapter,
                       batches.Requests(output, None, 'qwen', settings()))
     states = local['sequences'][0]['states']
     assert len(states) == 1
@@ -179,7 +183,7 @@ def test_presence_correction_identifies_row_and_preserves_candidates(output, mon
                 'source_quote': 'Invented quote.' if len(prompts) == 1 else chapter['sequences'][0]['source']}],
                 'unresolved': []}
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
-    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+    result = enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
     assert result['sequences'][0]['characters'][0]['presence'] == 'mentioned'
     assert len(prompts) == 2
@@ -194,7 +198,7 @@ def test_invalid_presence_saves_low_confidence_and_continues(output, monkeypatch
     response = {'characters': [{'local_id': pid, 'presence': 'uncertain', 'source_quote': '',
                                 'label': 'Hero'}], 'unresolved': []}
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(lambda *args: deepcopy(response)))
-    result = ce.enrich(data, vp.prepare_profiles(data), selected_chapter(data, cinematic(data)),
+    result = enrich(data, vp.prepare_profiles(data), selected_chapter(data, cinematic(data)),
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
     assert result['validation']['confidence'] == 'low'
     assert result['sequences'][0]['validation']['confidence'] == 'low'
@@ -240,7 +244,7 @@ def test_exhausted_semantic_validation_retains_findings_and_continues(output, mo
         return original_chat(client, model, system, prompt, schema, *args)
 
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
-    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+    result = enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=1)))
     assert len(result['sequences']) == 2
     assert result['validation']['confidence'] == 'low'
@@ -251,7 +255,10 @@ def test_exhausted_semantic_validation_retains_findings_and_continues(output, mo
     assert not any(s['state_id'].startswith(prefix) for s in result['sequences'][0]['states'])
     ce.save(result, output)
     saved = util.load_json(output / 'character_chapter_enrichment.json')
-    assert saved['validation'] == result['validation']
+    assert 'validation' not in saved
+    report = json.loads((output / 'character_chapter_enrichment.diagnostics.json').read_text())
+    assert report['status'] == 'incomplete'
+    assert report['issues'] == result['validation']['issues']
     warnings = util.load_json(output / 'character_profiles_requests.json')['warnings']
     assert warnings and all(w['attempts'] == 2 for w in warnings)
     assert any(w['input']['sequence']['sequence'] == 1 for w in warnings)
@@ -273,7 +280,7 @@ def test_presence_bounds_48_candidates_without_losing_any(output, monkeypatch):
                 'label': c['canonical_name'], 'source_quote': payload['sequence']['source']}
                 for c in payload['candidates']], 'unresolved': []}
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
-    result = ce.enrich(data, profiles, chapter, batches.Requests(output, None, 'qwen', settings()))
+    result = enrich(data, profiles, chapter, batches.Requests(output, None, 'qwen', settings()))
     assert seen == [p['local_id'] for p in profiles]
     assert [r['local_id'] for r in result['sequences'][0]['characters']] == seen
 
@@ -320,7 +327,7 @@ def test_presence_compact_retry_uses_schema_and_complete_candidates(output):
     client, create = client_for(Stream(['{"characters":']), Stream([json.dumps(presence)]),
                                 Stream(['{"observations": []}']), Stream(['{"issues": []}']),
                                  passage_fixtures=True)
-    ce.enrich(data, vp.prepare_profiles(data), chapter, batches.Requests(output, client, 'qwen', settings()))
+    enrich(data, vp.prepare_profiles(data), chapter, batches.Requests(output, client, 'qwen', settings()))
     assert create.call_count == 4
     for call in create.call_args_list:
         assert call.kwargs['response_format']['type'] == 'json_schema'
@@ -364,7 +371,7 @@ def test_local_quote_repair_and_precise_corrections(output, monkeypatch, defect)
             'trait': 'injury', 'value': 'Burned arm',
             'source_quote': 'Her arm is injured.' if first and defect == 'wording' else 'Her arm is burned.'}]}
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
-    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+    result = enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings()))
     state = result['sequences'][0]['states'][0]
     assert state['source_quote'] == 'Her arm\nis burned.'
@@ -382,7 +389,7 @@ def test_ambiguous_speaker_does_not_become_multiple_cast_identities(output, monk
     profiles = [{**deepcopy(profile), 'local_id': f'char_{i}', 'canonical_name': name}
                 for i, name in enumerate(['Shannon (Jack)', 'Ted Conrad', 'Un homme'])]
     mock_chat(monkeypatch, data, 'uncertain')
-    result = ce.enrich(data, profiles, chapter, batches.Requests(output, None, 'qwen', settings()))
+    result = enrich(data, profiles, chapter, batches.Requests(output, None, 'qwen', settings()))
     seq = result['sequences'][0]
     assert seq['characters'] == []
     assert seq['states'] == []
@@ -398,7 +405,7 @@ def test_no_candidates_still_detects_unresolved_mentions(output, monkeypatch):
         assert json.loads(prompt)['candidates'] == []
         return {'characters': [], 'unresolved': [{'label': 'Élise', 'source_quote': quote}]}
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
-    result = ce.enrich(data, [], chapter, batches.Requests(output, None, 'qwen', settings()))
+    result = enrich(data, [], chapter, batches.Requests(output, None, 'qwen', settings()))
     assert result['sequences'][0]['unresolved'] == [{'label': 'Élise', 'source_quote': quote}]
 
 
@@ -451,6 +458,6 @@ def test_temporary_states_restore_source_apostrophes(output, monkeypatch, existi
                 state['source_quote'] = quote.replace('’', "'")
         return response
     monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
-    result = ce.enrich(data, vp.prepare_profiles(data), chapter,
+    result = enrich(data, vp.prepare_profiles(data), chapter,
                        batches.Requests(output, None, 'qwen', settings(correction_attempts=0)))
     assert result['sequences'][0]['states'][0]['source_quote'] == normalize(quote)

@@ -4,9 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..core import character_evidence, character_profiles, character_visual_profiles, configuration_snapshot, progress, util
-from ..core.editable_schemas import DESIGN_SCHEMA, validate_document
-from ..core.character_profile_document import validate_document as validate_profiles
+from ..core import character_evidence, character_visual_integration, character_visual_profiles, configuration_snapshot, progress, util
 
 
 def _profile_path(value: str) -> Path:
@@ -31,19 +29,14 @@ def _fields(obj, expected, location):
             raise ValueError(f"{location}.{key} must be {kind.__name__}.")
 
 
-def _validate_profiles(data, location, visual=False):
-    _fields(data, {"format_version": int, "source_digest": str, "source_document": dict, "profiles": list}, location)
-    version = character_visual_profiles.VERSION if visual else character_profiles.VERSION
+def _validate_profiles(data, location):
+    _fields(data, {"format_version": int}, location)
+    version = character_visual_profiles.VERSION
     if data["format_version"] != version:
         raise ValueError(f"{location}: unsupported format_version {data['format_version']}; expected {version}. "
-                         "Select output from the current Character Visual Profile Generator.")
-    if visual:
-        _validate_profiles(data["source_document"], f"{location}.source_document")
-        _fields(data, {"visual_designs": dict}, location)
-        validate_document(data['visual_designs'], DESIGN_SCHEMA, 'visual_designs.json')
-        validate_profiles(data['visual_designs']['character_profiles'])
-    else:
-        character_evidence.validate_document(data["source_document"])
+                         "Regenerate with Character Visual Profile Generator.")
+    _fields(data, {"profiles": list, "visual_designs": dict}, location)
+    character_visual_integration.validate_input(data)
     for index, profile in enumerate(data["profiles"]):
         where = f"{location}.profiles[{index}]"
         _fields(profile, {"local_id": str, "canonical_name": str, "aliases": list,
@@ -73,8 +66,16 @@ class LoadCharacterVisualProfilesNode:
     def IS_CHANGED(cls, profiles_path):
         try:
             path = _profile_path(profiles_path)
-            return configuration_snapshot.file_digest(path)
-        except (OSError, ValueError):
+            digest = configuration_snapshot.file_digest(path)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8-sig"))
+            except ValueError:
+                return digest
+            if isinstance(data, dict) and "visual_designs" in data:
+                sources = data["visual_designs"]["character_profiles"]["source_document"]
+                return configuration_snapshot.content_digest([digest, character_evidence.source_fingerprint(sources)])
+            return digest
+        except (OSError, ValueError, KeyError, TypeError):
             return float("nan")  # Let run() report actionable path errors.
 
     @progress.node_progress
@@ -89,7 +90,7 @@ class LoadCharacterVisualProfilesNode:
         except OSError as exc:
             raise ValueError(f"Cannot read character visual profiles file {path}. Check file access permissions.") from exc
         try:
-            _validate_profiles(data, "document", visual=True)
+            _validate_profiles(data, "document")
         except ValueError as exc:
             raise ValueError(f"{path.name}: {exc}") from exc
         return data, str(path)

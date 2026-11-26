@@ -2,7 +2,7 @@
 from copy import deepcopy
 from types import SimpleNamespace
 import warnings
-from . import progress
+from . import character_evidence, progress, util, visual_designs
 
 from . import character_chapter_enrichment as enrichment, character_visual_profiles as visual
 from .character_profile_batches import Requests
@@ -15,9 +15,13 @@ def validate_input(data):
     if data is None:
         return
     if not isinstance(data, dict) or data.get('format_version') != visual.VERSION:
-        raise ValueError('Use current Character Visual Profile Generator output.')
+        raise ValueError('Unsupported character visual profiles format. Regenerate with Character Visual Profile Generator.')
+    if not isinstance(data.get('visual_designs'), dict):
+        raise ValueError('Character visual profiles require a visual_designs object.')
+    character_evidence.reject_embedded_source(data)
+    util.require_schema(data['visual_designs'], visual_designs.DESIGN_SCHEMA_VERSION)
     validate_document(data['visual_designs'], DESIGN_SCHEMA, 'visual_designs.json')
-    validate_profiles(data['visual_designs']['character_profiles'])
+    validate_profiles(data['visual_designs'].get('character_profiles'))
 
 
 def _names(item):
@@ -28,9 +32,14 @@ def _names(item):
 def apply(designs, chapters, registry, output, client, model, args):
     if not designs or 'character_profiles' not in designs:
         return {}, {}
+    util.require_schema(designs, visual_designs.DESIGN_SCHEMA_VERSION)
     validate_document(designs, DESIGN_SCHEMA, 'visual_designs.json')
     document = designs['character_profiles']
-    validate_profiles(document)
+    sources = document['source_document']
+    character_evidence.validate_document(sources)
+    sources = {character_evidence.source_key(c['source_file']): c for c in sources['chapters']}
+    texts = {key: character_evidence.read_verified_source(chapter) for key, chapter in sources.items()}
+    validate_profiles(document, texts=texts)
     profiles = visual.prepare_profiles(document)
     items = {d['character_id']: d for d in designs['entities'] if d['entity_type'] == 'character' and 'character_id' in d}
     if len(items) != sum('character_id' in d for d in designs['entities'] if d['entity_type'] == 'character'):
@@ -49,18 +58,16 @@ def apply(designs, chapters, registry, output, client, model, args):
         # profile, including permanent observations omitted from that snapshot.
         items[profile['local_id']] = {**items[profile['local_id']], 'source_facts': visual.source_facts(profile)}
     local_results, imported, assigned_profiles, assigned_registry = {}, {}, {}, {}
-    required_mappings = set()
     options = SimpleNamespace(**{**vars(args), 'force': getattr(args, 'force', False),
                                  'correction_attempts': getattr(args, 'max_attempts', 3) - 1})
     for chapter_index, chapter in enumerate(chapters):
         progress.report(chapter_index / len(chapters))
         print(f"[minimax_h3_novel] Character enrichment: chapter {chapter_index + 1}/{len(chapters)} starting", flush=True)
         key = enrichment.source_key(chapter.get('source_file') or chapter.get('source', {}).get('file', ''))
-        sources = [c for c in document['source_document']['chapters'] if enrichment.source_key(c['source_file']) == key]
-        if len(sources) != 1:
-            raise ValueError('Character source must resolve uniquely.')
-        chapter = {**chapter, 'source_file': sources[0]['source_file'], '_source_text': sources[0]['source_text']}
-        list(enrichment.source_offsets(chapter))
+        if key not in sources:
+            raise ValueError(f'Cinematic chapter has no matching character source: {key}. Regenerate character evidence for this chapter.')
+        chapter = {**chapter, 'source_file': sources[key]['source_file']}
+        offsets = list(enrichment.source_offsets(chapter, texts[key]))
         current_entities = [e for e in registry
                             if e['entity_type'] == 'character' and chapter['chapter_id'] in e.get('chapters_seen', [])]
         candidate_names = set().union(*(_names(e) for e in current_entities))
@@ -68,8 +75,6 @@ def apply(designs, chapters, registry, output, client, model, args):
         selected = [p for p in profiles if _names(p) & candidate_names or any(
             enrichment.source_key(r['observation']['provenance']['file']) == key
             for r in p['supporting_evidence'])]
-        required_mappings.update(e['global_id'] for e in current_entities
-                                 if any(_names(e) & _names(p) for p in selected))
         if not selected:
             continue
         cid = chapter['chapter_id']
@@ -89,6 +94,11 @@ def apply(designs, chapters, registry, output, client, model, args):
             elif matches:
                 contested.update(p['local_id'] for p in matches)
                 warnings.warn('Ambiguous character registry mapping; no facts imported.', UserWarning, stacklevel=2)
+                if hasattr(args, 'reference_diagnostics'):
+                    args.reference_diagnostics.append({'stage': 'character_registry_identity', 'status': 'incomplete',
+                        'chapter_id': cid, 'entity_id': entity['global_id'],
+                        'profile_ids': [p['local_id'] for p in matches],
+                        'message': 'No unique character profile matches this registry identity.'})
         for profile in selected:
             lid = profile['local_id']
             entities = proposed.get(lid, [])
@@ -114,22 +124,15 @@ def apply(designs, chapters, registry, output, client, model, args):
             imported[gid] = {**deepcopy(item), 'source_facts': facts, 'added_details': approved}
         # Current cinematic data determines presence and local states at consolidation time.
         with progress.scope(chapter_index / len(chapters), (chapter_index + 1) / len(chapters)):
-            local = enrichment.enrich(document, selected, chapter, requests)
+            local = enrichment.enrich(document, selected, chapter, requests, offsets)
         for profile in selected:
             if profile['local_id'] not in mapped:
                 local['validation']['confidence'] = 'low'
                 local['validation']['issues'].append({'stage': 'character_registry_identity',
                     'local_id': profile['local_id'], 'reason': 'No unique validated registry mapping.'})
-        enrichment.save(local, output / cid)
-        local_results[cid] = {**local, 'registry_ids': mapped,
+        content = enrichment.save(local, output / cid)
+        local_results[cid] = {**content, 'registry_ids': mapped,
             'ignored_traits': {mapped[p['local_id']]: p['ignored_traits'] for p in selected if p['local_id'] in mapped}}
-    unresolved = required_mappings - imported.keys()
-    if unresolved:
-        raise ValueError('Character visual evidence has no unique validated registry mapping for '
-                      + ', '.join(sorted(unresolved))
-                      + '; reference generation stopped to avoid discarding physical facts. '
-                      + 'Review character_chapter_enrichment.json and character_profiles identity links, '
-                      + 'then retry consolidation.')
     return local_results, imported
 
 

@@ -83,7 +83,7 @@ def test_installed_package_import_outside_checkout(tmp_path):
          "from pathlib import Path; import minimax_h3_novel_pipeline as p; "
          "from minimax_h3_novel_pipeline.nodes.load_character_profiles import LoadCharacterProfilesNode; "
          "from minimax_h3_novel_pipeline.core.character_profile_document import SCHEMA; "
-         "assert SCHEMA['properties']['format_version']['const'] == 2; "
+         "assert SCHEMA['properties']['format_version']['const'] == 3; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCharacterProfilesNode'] is LoadCharacterProfilesNode; "
          "from minimax_h3_novel_pipeline.nodes.load_character_evidence import LoadCharacterEvidenceNode; "
          "assert p.NODE_CLASS_MAPPINGS['LoadCharacterEvidenceNode'] is LoadCharacterEvidenceNode; "

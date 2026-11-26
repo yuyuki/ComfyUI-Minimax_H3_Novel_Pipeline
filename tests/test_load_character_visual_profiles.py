@@ -20,7 +20,7 @@ def saved(tmp_path, monkeypatch):
     data = consolidated()
     result, filename = vp.generate(data, ['chapter1.txt'], tmp_path / "output")
     for module, name in ((vp, "generate"), (vp, "prepare_profiles"),
-                         (vp.source, "build_profiles"), (util, "save_json")):
+                         (util, "save_json")):
         monkeypatch.setattr(module, name, Mock(side_effect=AssertionError("Unexpected generation or write")))
     return Path(filename), result
 
@@ -36,11 +36,10 @@ def test_registered_contract_matches_generator():
     assert node_mappings["LoadCharacterVisualProfilesNode"] is Loader
 
 
-def test_loads_generator_output_without_writes_or_sources(saved):
+def test_loads_generator_output_without_writes(saved):
     path, data = saved
     before = path.read_bytes(), path.stat().st_mtime_ns
     files = sorted(path.parent.rglob("*"))
-    # The embedded source path does not exist; all needed evidence is retained in JSON.
     for name in (str(path), path.name, f"  {path.name}  "):
         assert Loader().run(name) == (data, str(path))
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
@@ -49,7 +48,7 @@ def test_loads_generator_output_without_writes_or_sources(saved):
 
 def test_preserves_all_manual_edits_and_metadata(saved):
     path, data = saved
-    data.update(review={"author": "éditeur", "notes": ["retain everything"]}, source_digest="manual-digest")
+    data.update(review={"author": "éditeur", "notes": ["retain everything"]})
     profile = data["profiles"][0]
     profile.update(local_id="my-character", canonical_name="Élise, reviewed", review={"approved": True})
     data["visual_designs"]["entities"][0]["added_details"]["hair"] = "Manual hair."
@@ -90,10 +89,9 @@ def test_invalid_json(saved, contents, message):
 
 
 @pytest.mark.parametrize("change, message", [
-    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 4"),
+    (lambda d: d.update(format_version=999), "unsupported format_version.*expected 5"),
     (lambda d: d.update(format_version=True), "format_version must be int"),
     (lambda d: d.update(profiles={}), "profiles must be list"),
-    (lambda d: d.update(source_document={}), "missing required field 'format_version'"),
     (lambda d: d["profiles"].append(None), "must be an object"),
     (lambda d: d["profiles"][0].pop("local_id"), "missing required field 'local_id'"),
     (lambda d: d["profiles"][0].update(supporting_evidence=[{}]), "missing required field 'evidence_id'"),
@@ -135,7 +133,6 @@ def test_same_size_and_timestamp_edits_are_detected_and_reloaded(saved):
 def test_empty_generated_document(saved):
     path, data = saved
     data["profiles"] = []
-    data["source_document"]["profiles"] = []
-    data["source_document"]["source_document"]["chapters"] = []
+    data["visual_designs"]["entities"] = []
     path.write_text(json.dumps(data), encoding="utf-8")
     assert Loader().run(str(path)) == (data, str(path))

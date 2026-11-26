@@ -32,6 +32,20 @@ def test_full_name_bridge_does_not_connect_other_people(text):
     assert not cp._alias_link('Jones', 'Indy', [text])
 
 
+def test_shared_surname_cannot_connect_two_full_names():
+    first = "Robin Park had black hair."
+    second = "Morgan Park had grey eyes."
+    surname = "Park was tall."
+    data = narrative_document(" ".join((first, second, surname)),
+        observation(first, character="Robin Park", value="black hair"),
+        observation(second, character="Morgan Park", value="grey eyes"),
+        observation(surname, character="Park", value="tall"))
+    records = cp.prepare_evidence(data)
+    refs = [{"evidence_id": key} for key in records]
+    with pytest.raises(ValueError, match="connecting quotations"):
+        cp.build_profiles({"profiles": [group(records, canonical_name="Robin Park", identity_support=refs)]}, records)
+
+
 def test_pair_consolidation_accepts_bridge_without_inventing_canonical_label(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
     text = ('Henry Jones Jr. Mais ceux qui le connaissaient l’appelaient Indy. '

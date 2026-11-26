@@ -22,8 +22,11 @@ def document(*items):
         item = normalize_data(item)
         text = item["quotation"]
         name = f"chapter{index}"
+        path = path_access.input_path(name + ".txt")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
         chapters.append({"chapter": index, "chapter_name": name, "source_file": name + ".txt",
-                         "source_text": text, "source_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                         "source_text_sha256": hashlib.sha256(text.encode()).hexdigest(),
                          "location_basis": "normalized_utf8_text", "evidence": [{**item, "provenance": {
                              "chapter": index, "chapter_name": name, "file": name + ".txt", "passage": 1,
                              "locations": [{"start_char": 0, "end_char": len(text), "start_line": 1,
@@ -75,7 +78,7 @@ def test_aliases_all_chapters_provenance_and_stable_ids():
     assert result["aliases"] == ["Lise"]
     assert len(result["supporting_evidence"]) == 3
     assert [s["observation"] for s in result["supporting_evidence"]] == [
-        {**c["evidence"][0], "validation_confidence": "high", "validation_warnings": []}
+        c["evidence"][0]
         for c in data["chapters"]]
     response["profiles"][0]["evidence"].reverse()
     data["chapters"].reverse()
@@ -167,14 +170,15 @@ def test_invalid_input_is_retained_with_low_confidence(field, value, caplog):
     assert profiles.build_profiles({"profiles": []}, records) == []
 
 
-def test_validation_report_survives_failed_consolidation(workspace, monkeypatch):
+def test_validation_report_survives_unavailable_requests(workspace, monkeypatch):
     data = document(observation(), observation("invalid"))
     data["chapters"][1]["evidence"][0]["quotation"] = "invented"
     records = profiles.prepare_evidence(data)
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(side_effect=APIConnectionError(
         request=httpx.Request("POST", "http://localhost/v1"))))
-    with pytest.raises(RuntimeError, match="request failed"):
-        profiles.consolidate(data, records, workspace, None, "qwen", settings())
+    result, _ = profiles.consolidate(data, records, workspace, None, "qwen", settings())
+    assert len(result["profiles"]) == 1
+    assert json.loads((workspace / "character_profiles_requests.json").read_text())["status"] == "incomplete"
     report = json.loads((workspace / "character_profiles_validation.json").read_text(encoding="utf-8"))
     assert report["observations"] == 2
     assert report["usable_observations"] == report["excluded_observations"] == 1
@@ -196,12 +200,10 @@ def test_empty_evidence_saves_empty_profiles_without_request(workspace, monkeypa
     assert Path(saved).is_file()
 
 
-@pytest.mark.parametrize("kind", ["network", "interrupt"])
-def test_failures_do_not_save_or_cache(workspace, monkeypatch, kind):
+def test_interruption_does_not_save_or_cache(workspace, monkeypatch):
     class InterruptProcessingException(RuntimeError):
         pass
-    error = {"network": APIConnectionError(message="private server detail", request=httpx.Request("POST", "http://localhost")),
-             "interrupt": InterruptProcessingException(), "invalid": ValueError("invalid JSON")}[kind]
+    error = InterruptProcessingException()
     chat = Mock(side_effect=error)
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
     data = document(observation())
@@ -218,17 +220,15 @@ def test_failures_do_not_save_or_cache(workspace, monkeypatch, kind):
     "E\u0301lise avait les yeux verts.",
     "Élise\tavait les yeux verts.",
 ])
-def test_normalized_quotation_retains_original_source_and_confidence(quotation):
+def test_nonverbatim_quotation_is_isolated(quotation):
     data = document(observation("Élise  avait\r\nles yeux verts."))
     data["chapters"][0]["evidence"][0]["quotation"] = quotation
     original = deepcopy(data)
     records = profiles.prepare_evidence(data)
-    result = profiles.build_profiles(plan(records), records)[0]
-    evidence = result["supporting_evidence"][0]["observation"]
-    assert evidence["validation_confidence"] == "medium"
-    assert evidence["quotation"] == quotation
-    assert evidence["provenance"] == original["chapters"][0]["evidence"][0]["provenance"]
-    assert len(result["attributes"]["stable_physical"]) == 1
+    assert profiles.build_profiles(plan([]), records) == []
+    excluded = profiles.validation_report(records)["excluded_evidence"][0]["observation"]
+    assert excluded["quotation"] == quotation
+    assert excluded["provenance"] == original["chapters"][0]["evidence"][0]["provenance"]
     assert data == original
 
 
@@ -242,7 +242,9 @@ def test_malformed_item_does_not_block_valid_siblings(workspace, monkeypatch, ba
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", respond)
     result, _ = profiles.consolidate(data, records, workspace, None, "qwen3.5", settings())
     assert len(result["profiles"][0]["supporting_evidence"]) == 1
-    assert len(result["excluded_evidence"]) == 1
+    assert "excluded_evidence" not in result
+    report = json.loads((workspace / "character_profiles_validation.json").read_text())
+    assert report["excluded_observations"] == 1
 
 
 def test_all_unusable_evidence_skips_model(workspace, monkeypatch):
@@ -251,12 +253,14 @@ def test_all_unusable_evidence_skips_model(workspace, monkeypatch):
     monkeypatch.setattr(batches.lmstudio_json, "chat_json", Mock(side_effect=AssertionError))
     result, _ = profiles.consolidate(data, profiles.prepare_evidence(data), workspace, None, "qwen3.5", settings())
     assert result["profiles"] == []
-    assert result["excluded_evidence"][0]["observation"]["validation_confidence"] == "low"
+    report = json.loads((workspace / "character_profiles_validation.json").read_text())
+    assert report["excluded_evidence"][0]["observation"]["validation_confidence"] == "low"
+    assert report["empty_reason"]
 
 
 def test_structural_document_failure_remains_blocking():
     data = document(observation())
-    del data["chapters"][0]["source_text"]
+    del data["chapters"][0]["source_text_sha256"]
     with pytest.raises(ValueError, match="source_text"):
         profiles.prepare_evidence(data)
 

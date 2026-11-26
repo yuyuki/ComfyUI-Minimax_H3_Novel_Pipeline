@@ -26,9 +26,10 @@ def consolidated(*items):
 
 def cinematic(data):
     source = data['source_document']['chapters'][0]
+    text = cp.character_evidence.read_verified_source(source)
     return [{'source_file': source['source_file'], 'chapter_name': source['chapter_name'],
-             'sequences': [{'sequence': 1, 'source': source['source_text'],
-                            'adaptation': {p: source['source_text'] for p in ('initialState', 'event', 'endingState')}}]}]
+             'sequences': [{'sequence': 1, 'source': text,
+                            'adaptation': {p: text for p in ('initialState', 'event', 'endingState')}}]}]
 
 
 def test_persistent_scar_cannot_disappear_from_visual_profile(tmp_path, monkeypatch):
@@ -47,7 +48,7 @@ def test_persistent_scar_cannot_disappear_from_visual_profile(tmp_path, monkeypa
 def test_node_uses_selection_without_model_or_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path / kind)
     source = tmp_path / 'input' / 'chapter1.txt'
-    source.parent.mkdir()
+    source.parent.mkdir(exist_ok=True)
     source.write_text('Élise avait les yeux verts.', encoding='utf-8')
     data = consolidated()
     chapter = data['source_document']['chapters'][0]
@@ -99,7 +100,11 @@ def test_homonymous_source_paths_do_not_select_by_name():
     # Change source identities before building the validated profile document.
     evidence = data['source_document']
     for c, folder in zip(evidence['chapters'], ['one', 'two']):
+        text = cp.character_evidence.read_verified_source(c)
         c['source_file'] = folder + '/same.txt'
+        path = path_access.input_path(c['source_file'])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding='utf-8')
         c['chapter_name'] = 'same'
         c['evidence'][0]['provenance'].update(file=c['source_file'], chapter_name='same')
     records = cp.prepare_evidence(evidence)

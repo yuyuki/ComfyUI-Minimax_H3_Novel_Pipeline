@@ -126,12 +126,12 @@ def test_node_keeps_every_chapter_and_exact_source(workspace, monkeypatch, famil
     assert [c["chapter_name"] for c in data["chapters"]] == ["chapter2", "chapter10"]
     assert chat.call_count == 2
     for i, chapter in enumerate(data["chapters"], 1):
-        assert chapter["source_text"] == evidence.normalize(text.removeprefix("\ufeff"))
+        assert evidence.read_verified_source(chapter) == evidence.normalize(text.removeprefix("\ufeff"))
         assert len(chapter["evidence"]) == 2
         for item in chapter["evidence"]:
             assert item["provenance"]["chapter"] == i
             loc, = item["provenance"]["locations"]
-            assert chapter["source_text"][loc["start_char"]:loc["end_char"]] == item["quotation"]
+            assert evidence.read_verified_source(chapter)[loc["start_char"]:loc["end_char"]] == item["quotation"]
 
 
 def test_cache_force_source_settings_and_corruption(workspace, monkeypatch):
@@ -151,7 +151,7 @@ def test_cache_force_source_settings_and_corruption(workspace, monkeypatch):
     path.write_text("Élise avait les yeux verts. Elle attend.", encoding="utf-8")
     run()
     assert chat.call_count == 4
-    for cache in (output / ".cache").glob("*.json"):
+    for cache in (output / ".cache").rglob("*.json"):
         cache.write_text('{"broken": true}', encoding="utf-8")
     run()
     assert chat.call_count == 5
@@ -184,7 +184,7 @@ def test_resume_run_reuses_completed_work_and_copies_cache(workspace, monkeypatc
     diagnostics = json.loads((output / new_stamp / out_dir / "character_evidence_diagnostics.json").read_text())
     assert diagnostics["resume_run"] == old_stamp
     assert sum(c["resumed_cache_hits"] for c in diagnostics["chapters"]) == expected_hits
-    assert len(list((output / new_stamp / out_dir / ".cache").glob("*.json"))) == 2
+    assert len(list((output / new_stamp / out_dir / ".cache").rglob("*.json"))) == 2
     assert not (output / new_stamp / ".cache").exists()
     assert original == {p.relative_to(previous): p.read_bytes() for p in previous.rglob("*") if p.is_file()}
     # The new run contains both recovered and newly extracted batches, so it can
@@ -219,14 +219,14 @@ def test_resume_corrupt_cache_recomputed_without_changing_source(workspace, monk
     monkeypatch.setattr(evidence.lmstudio_json, "chat_json", with_passage_ids(chat))
     previous = output / "20261025154413/character_evidence/.cache"
     evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1, cache_dir=previous)
-    cached_file = next(previous.glob("*.json"))
+    cached_file = next(previous.rglob("*.json"))
     cached_file.write_text("broken", encoding="utf-8")
     current = output / "20261025160000/character_evidence/.cache"
     evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1,
                              cache_dir=current, resume_cache_dir=previous)
     assert chat.call_count == 2
     assert cached_file.read_text() == "broken"
-    cached, = json.loads(next(current.glob("*.json")).read_text(encoding="utf-8"))
+    cached, = json.loads(next(current.rglob("*.json")).read_text(encoding="utf-8"))
     row, = cached["evidence"]
     assert row.pop("_selected_location") == [0, len(observation()["quotation"])]
     assert row == observation()
@@ -374,7 +374,7 @@ def test_pdf_locations_use_extracted_text(workspace, monkeypatch):
         observation(classification="inferred", confidence=0.4, persistence="unknown")]}))
     result = evidence.extract_chapter(path, output, None, "qwen3.5", settings(), 1)
     assert result["location_basis"] == "normalized_pdf_extracted_text"
-    assert result["source_text"] == "Page one.\n\n" + quote
+    assert evidence.read_verified_source(result) == "Page one.\n\n" + quote
     assert result["evidence"][0]["classification"] == "inferred"
     assert result["evidence"][0]["provenance"]["locations"][0]["start_line"] == 3
 
@@ -472,7 +472,7 @@ def test_node_persists_diagnostics_and_completed_cache_on_interruption(workspace
     assert chapter["status"] == "interrupted_or_failed"
     assert chapter["selected_fraction"] == 1
     assert chapter["completed_batches"] == len(chapter["batch_seconds"]) == 1
-    assert len(list((run / "character_evidence/.cache").glob("*.json"))) == 1
+    assert len(list((run / "character_evidence/.cache").rglob("*.json"))) == 1
 
 
 def test_unnamed_scope_and_validation(workspace, monkeypatch):
@@ -509,12 +509,12 @@ def test_disjoint_batch_offsets_cache_and_conflicts(workspace, monkeypatch):
     first = evidence.extract_chapter(path, output, None, "qwen3.5", args, 1, diagnostics=diagnostics)
     assert mocked.call_count == 1  # Both disjoint windows fit one request.
     assert len(first["evidence"]) == 2
-    assert diagnostics[0]["selected_chars"] < len(first["source_text"])
+    assert diagnostics[0]["selected_chars"] < len(evidence.read_verified_source(first))
     for item in first["evidence"]:
         loc = item["provenance"]["locations"][0]
-        assert first["source_text"][loc["start_char"]:loc["end_char"]] == item["quotation"]
+        assert evidence.read_verified_source(first)[loc["start_char"]:loc["end_char"]] == item["quotation"]
     # An edit outside the selected context shifts offsets and invalidates the old addresses.
-    text = first["source_text"]
+    text = evidence.read_verified_source(first)
     cut = text.index("\n\n", len(green) + 3) + 2
     path.write_bytes((text[:cut] + "the extra rain.\n\n" + text[cut:]).encode("utf-8"))
     second = evidence.extract_chapter(path, output, None, "qwen3.5", args, 1, diagnostics=diagnostics)
@@ -537,7 +537,7 @@ def test_node_cache_isolated_per_run_and_reused_within_run(workspace, monkeypatc
         node.CharacterEvidenceExtractorNode().run(
             {"api_url": "http://127.0.0.1:1234/v1", "run_folder": stamp}, {"chapter_paths": [str(source)]})
         assert chat.call_count == expected_calls
-        assert len(list((output / stamp / "character_evidence/.cache").glob("*.json"))) == 1
+        assert len(list((output / stamp / "character_evidence/.cache").rglob("*.json"))) == 1
         stats = json.loads((output / stamp / "character_evidence/character_evidence_diagnostics.json").read_text())
         assert stats["chapters"][0]["cache_hits"] == expected_hits
         assert stats["chapters"][0]["llm_calls"] == 1 - expected_hits
@@ -573,7 +573,7 @@ def test_completed_batch_survives_interruption(workspace, monkeypatch):
     args = settings(character_scope="all_characters")
     with pytest.raises(InterruptProcessingException):
         evidence.extract_chapter(path, output, None, "qwen3.5", args, 1)
-    assert len(list((output / ".cache").glob("*.json"))) == 1
+    assert len(list((output / ".cache").rglob("*.json"))) == 1
     chat.side_effect = None
     chat.return_value = {"evidence": []}
     diagnostics = []
@@ -598,6 +598,6 @@ def test_overlap_dedup_preserves_conflicting_observations(workspace, monkeypatch
     assert all(len(item["provenance"]["locations"]) == 1 for item in result["evidence"])
 
 
-def test_extraction_schema_focuses_on_physical_appearance():
+def test_extraction_schema_supports_appearance_and_identity():
     assert evidence.EXTRACTION_SCHEMA["schema"]["properties"]["evidence"]["items"]["properties"]["attribute"]["enum"] == [
-        "physical_appearance"]
+        "physical_appearance", "identity"]

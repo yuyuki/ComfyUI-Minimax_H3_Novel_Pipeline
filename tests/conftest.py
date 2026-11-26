@@ -43,3 +43,12 @@ def cinematic_registry():
                         "endingState": "The character stops."}}]}},
                 "chapter_entity_map": {}, **extra}
     return make
+
+
+@pytest.fixture(autouse=True)
+def character_source_root(request, tmp_path, monkeypatch):
+    """Keep synthetic chapter files inside each character test's confined root."""
+    if request.module.__name__.split(".")[-1].startswith(("test_character_", "test_load_character_", "test_source_text")):
+        from minimax_h3_novel_pipeline.core import path_access
+
+        monkeypatch.setattr(path_access, "_FALLBACK_BASE", tmp_path)

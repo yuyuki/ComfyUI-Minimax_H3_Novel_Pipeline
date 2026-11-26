@@ -6,7 +6,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "minimax-h3-visual-designs.v1"
+      "const": "minimax-h3-visual-designs.v2"
     },
     "image_style": {
       "type": "string",
@@ -88,8 +88,12 @@
         ],
         "additionalProperties": false,
         "dependentRequired": {
-          "character_id": ["identity_status"],
-          "identity_status": ["character_id"]
+          "character_id": [
+            "identity_status"
+          ],
+          "identity_status": [
+            "character_id"
+          ]
         },
         "allOf": [
           {
@@ -270,8 +274,7 @@
         "format_version",
         "source_digest",
         "source_document",
-        "profiles",
-        "excluded_evidence"
+        "profiles"
       ],
       "properties": {
         "$schema": {
@@ -279,14 +282,14 @@
         },
         "format_version": {
           "type": "integer",
-          "const": 2
+          "const": 3
         },
         "source_digest": {
           "type": "string",
           "minLength": 1
         },
         "source_document": {
-          "type": "object"
+          "$ref": "#/$defs/characterEvidence"
         },
         "profiles": {
           "type": "array",
@@ -518,7 +521,7 @@
                       "minLength": 1
                     },
                     "observation": {
-                      "type": "object"
+                      "$ref": "#/$defs/characterObservation"
                     }
                   }
                 },
@@ -762,26 +765,6 @@
               }
             }
           }
-        },
-        "excluded_evidence": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "evidence_id",
-              "observation"
-            ],
-            "properties": {
-              "evidence_id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "observation": {
-                "type": "object"
-              }
-            }
-          }
         }
       }
     }
@@ -791,5 +774,193 @@
     "image_style",
     "entities"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "characterObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "character",
+        "attribute",
+        "value",
+        "classification",
+        "confidence",
+        "persistence",
+        "quotation",
+        "rationale",
+        "provenance"
+      ],
+      "properties": {
+        "character": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attribute": {
+          "enum": [
+            "physical_appearance",
+            "age",
+            "clothing",
+            "accessory",
+            "distinguishing_feature",
+            "identity"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "enum": [
+            "explicit",
+            "inferred"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "persistence": {
+          "enum": [
+            "persistent",
+            "temporary",
+            "unknown"
+          ]
+        },
+        "quotation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "chapter",
+            "chapter_name",
+            "file",
+            "passage",
+            "locations"
+          ],
+          "properties": {
+            "chapter": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "chapter_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "passage": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "locations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "start_char",
+                  "end_char",
+                  "start_line",
+                  "end_line"
+                ],
+                "properties": {
+                  "start_char": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "end_char": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "start_line": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "end_line": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "minItems": 1
+            }
+          }
+        }
+      }
+    },
+    "characterEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format_version",
+        "location_convention",
+        "chapters"
+      ],
+      "properties": {
+        "format_version": {
+          "type": "integer",
+          "const": 3
+        },
+        "location_convention": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chapters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "chapter",
+              "chapter_name",
+              "source_file",
+              "source_text_sha256",
+              "location_basis",
+              "evidence"
+            ],
+            "properties": {
+              "chapter": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "chapter_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source_file": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source_text_sha256": {
+                "type": "string",
+                "minLength": 64,
+              "maxLength": 64
+              },
+              "location_basis": {
+                "enum": [
+                  "normalized_utf8_text",
+                  "normalized_pdf_extracted_text"
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/characterObservation"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }

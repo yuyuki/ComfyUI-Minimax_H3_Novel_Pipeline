@@ -108,7 +108,7 @@ def test_configuration_records_effective_controls_and_resume_without_changing_ca
 
 def test_configuration_survives_failure_without_recording_secrets(setup, monkeypatch):
     _, _, _, root = setup
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise RuntimeError('secret-must-not-be-saved')
     monkeypatch.setattr(node.character_profiles, 'consolidate', fail)
     with pytest.raises(RuntimeError):

@@ -11,7 +11,7 @@ import argparse
 from typing import Any, Iterable
 
 from ..core import configuration_snapshot, lmstudio_pipeline, util
-from ..core import character_visual_integration
+from ..core import character_evidence, character_visual_integration
 from ..core.run_output import stage_output
 from ..core.visual_designs import IMAGE_STYLES, prepare_designs, resolve_designs_path
 from ..core.image_prompt_export import export_image_prompts
@@ -68,14 +68,21 @@ class ConsolidateReferencesNode:
 
     @classmethod
     def IS_CHANGED(cls, **params):
-        # ComfyUI must rerun when the contents of an imported file change.
         path = params.get("visual_designs_path", "").strip()
-        if not path:
-            return ""
-        resolved = util.output_path(path)
+        visual = params.get("character_visual_profiles")
         try:
-            return configuration_snapshot.file_digest(resolved)
-        except OSError:
+            if path:
+                resolved = util.output_path(path)
+                digest = configuration_snapshot.file_digest(resolved)
+                designs = util.load_json(resolved)
+            else:
+                digest = ""
+                designs = visual["visual_designs"] if visual is not None else {}
+            if "character_profiles" in designs:
+                sources = designs["character_profiles"]["source_document"]
+                return configuration_snapshot.content_digest([digest, character_evidence.source_fingerprint(sources)])
+            return digest
+        except (OSError, ValueError, KeyError, TypeError):
             # Cache inspection may include nodes outside the requested branch.
             # Invalidate unavailable imports; run() validates them if executed.
             return float("nan")
