@@ -15,7 +15,7 @@ from minimax_h3_novel_pipeline.nodes.spatial_continuity import SpatialContinuity
 
 @pytest.mark.parametrize("cls,default", [
     (CinematicChapterAdapterNode, True),
-    (ExtractChapterReferencesNode, True),
+    (ExtractChapterReferencesNode, False),
     (ConsolidateReferencesNode, True),
     (SpatialContinuityNode, True),
     (GenerateH3PromptsNode, True),

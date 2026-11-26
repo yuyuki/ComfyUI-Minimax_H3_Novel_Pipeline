@@ -26,7 +26,7 @@ class ExtractChapterReferencesNode:
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "cinematic_chapters": ("MINIMAX_CINEMATIC_CHAPTERS", {"tooltip": "Ordered chapter timelines from Cinematic Chapter Adapter or Load Cinematic Chapters."}),
-            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768, "tooltip": "JSON output budget per extraction or chapter identity consolidation request. Dense catalogs may need more tokens."}),
             "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 1000000}),
             "temperature": ("FLOAT", {"default": 0.18, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
@@ -44,7 +44,7 @@ class ExtractChapterReferencesNode:
     OUTPUT_NODE = True
 
     @progress.node_progress
-    def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, thinking: bool = True, **params: Any) -> dict[str, Any]:
+    def run(self, lmstudio_config: dict[str, Any], cinematic_chapters: Any, out_dir: str, thinking: bool = False, **params: Any) -> dict[str, Any]:
         if not isinstance(out_dir, str) or not out_dir.strip():
             raise ValueError("out_dir must be a non-empty string.")
         period = temporal_context.normalize(params.get("default_temporal_context", ""))

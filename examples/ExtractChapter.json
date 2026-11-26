@@ -490,10 +490,10 @@
       "title": "Note for Chapter Extraction",
       "properties": {},
       "widgets_values": [
-        "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (32768) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input.\n\n**Observed runtime:** 1 h 08 min 07 s for one prologue (20 Nov 2026, completed)."
+        "### 2. Chapter reference extraction\n**Extract Chapter References** analyzes the opening state and event of each cinematic sequence. It uses a growing chapter dictionary to recognize recurring characters, objects, and locations, and saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` (false) = request reasoning on supported LM Studio models (Qwen, Gemma, and Mistral); `temperature` (0.18) = output variability; `max_tokens` (32768) = JSON token budget per extraction or chapter identity request; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input.\n\n**Observed runtime:** 1 h 08 min 07 s for one prologue (20 Nov 2026, completed)."
       ],
       "widgets_values_named": {
-        "text": "### 2. Chapter reference extraction\n**Extract Chapter References** uses LM Studio to analyze cinematic chapters: characters, locations, objects, timelines, and source provenance. It saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.18) = output variability; `max_tokens` (32768) = JSON token budget per sequence-phase extraction call; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input.\n\n**Observed runtime:** 1 h 08 min 07 s for one prologue (20 Nov 2026, completed)."
+        "text": "### 2. Chapter reference extraction\n**Extract Chapter References** analyzes the opening state and event of each cinematic sequence. It uses a growing chapter dictionary to recognize recurring characters, objects, and locations, and saves per-chapter catalogs (`*_references.json`) for consolidation.\n\n**Parameters:** `chunk_chars` (5500) = chunk size in characters; `thinking` (false) = request reasoning on supported LM Studio models (Qwen, Gemma, and Mistral); `temperature` (0.18) = output variability; `max_tokens` (32768) = JSON token budget per extraction or chapter identity request; `force` = ignore compatible cached results and recompute; `out_dir` (`chapter_catalogs`) = subfolder within the timestamped run; `default_temporal_context` (`1922`) = default date or era when the narrative provides none; explicit dates and flashbacks take precedence.\n\n**Load Cinematic Chapters:** `cinematic_path` points to a folder of `.cinematic.json` files or a single file saved by adaptation. It also reloads edited narrative choices without rerunning adaptation. Paths are relative to `ComfyUI/output/minimax_h3_novel` (currently `20261023222027/cinematic_chapters`). Update the path to select the intended result; the output feeds the extractor's `cinematic_chapters` input.\n\n**Observed runtime:** 1 h 08 min 07 s for one prologue (20 Nov 2026, completed)."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -1037,7 +1037,7 @@
         "Node name for S&R": "ExtractChapterReferencesNode"
       },
       "widgets_values": [
-        true,
+        false,
         32768,
         5500,
         0.18,
@@ -1047,7 +1047,7 @@
         ""
       ],
       "widgets_values_named": {
-        "thinking": true,
+        "thinking": false,
         "max_tokens": 32768,
         "chunk_chars": 5500,
         "temperature": 0.18,
