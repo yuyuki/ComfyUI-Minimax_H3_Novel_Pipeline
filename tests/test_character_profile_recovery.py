@@ -86,6 +86,24 @@ def test_invalid_identity_does_not_fragment_valid_neighbor(tmp_path, monkeypatch
     assert not list(tmp_path.rglob("*.json"))  # Never cache a partial response as complete.
 
 
+def test_local_naming_statement_recovers_a_fragment_without_merging_remote_homonym():
+    alias = "Élise, aussi appelée Lise, entra."
+    scar = "Elle avait une cicatrice au menton."
+    remote = "Élise avait les yeux bleus."
+    data = narrative_document(alias + " " + scar + " La nuit passa." * 100 + " " + remote,
+        observation(alias, attribute="identity", value="Lise", persistence="unknown"),
+        observation(scar, value="cicatrice au menton"),
+        observation(remote, value="yeux bleus"))
+    records = cp.prepare_evidence(data)
+    alias_id, scar_id, remote_id = records
+    groups = [group([key], identity_status="ambiguous") for key in records]
+    anchored = batches.attach_locally_anchored_traits(groups, records, set(), {})
+    assert [{ref["evidence_id"] for ref in row["evidence"]} for row in anchored] == [
+        {alias_id, scar_id}, {remote_id}]
+    assert anchored[0]["identity_status"] == "confirmed"
+    assert cp.build_profiles({"profiles": anchored}, records)[0]["aliases"] == ["Lise"]
+
+
 def test_partial_identity_pairs_keep_valid_decision(tmp_path, monkeypatch):
     records = cp.prepare_evidence(document(observation(), observation("Élise avait les yeux bleus.")))
     rows = [batches.compact_record(k, v) for k, v in records.items()]

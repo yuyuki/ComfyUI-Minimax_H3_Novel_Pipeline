@@ -19,12 +19,12 @@ class CharacterEvidenceExtractorNode:
         return {"required": {
             "lmstudio_config": ("MINIMAX_LMSTUDIO_CONFIG",),
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
-            "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
+            "thinking": ("BOOLEAN", {"default": False, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768}),
-            "chunk_chars": ("INT", {"default": 5500, "min": 1000, "max": 30000}),
-            "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
+            "chunk_chars": ("INT", {"default": 12000, "min": 1000, "max": 30000}),
+            "temperature": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10}),
-            "character_scope": (list(character_evidence.SCOPES), {"default": "proper_names"}),
+            "character_scope": (list(character_evidence.SCOPES), {"default": "all_characters"}),
             "force": ("BOOLEAN", {"default": False}),
             "out_dir": ("STRING", {"default": "character_evidence"}),
         }, "optional": {
@@ -48,8 +48,8 @@ class CharacterEvidenceExtractorNode:
 
     @progress.node_progress
     def run(self, lmstudio_config, chapter_selection, out_dir="character_evidence",
-            chunk_chars=5500, thinking=True, temperature=0.15, max_tokens=32768,
-            correction_attempts=2, force=False, character_scope="proper_names", resume_run="", audit_thinking=False):
+            chunk_chars=12000, thinking=False, temperature=0.1, max_tokens=32768,
+            correction_attempts=2, force=False, character_scope="all_characters", resume_run="", audit_thinking=False):
         started = time.perf_counter()
         if character_scope not in character_evidence.SCOPES:
             raise ValueError("Invalid character_scope.")
@@ -98,24 +98,55 @@ class CharacterEvidenceExtractorNode:
             util.save_json(output / "character_evidence_diagnostics.json", diagnostics)
 
         token = lmstudio_json.REQUEST_METRICS.set(diagnostics)
+        completed = False
         try:
             with client:
                 for index, path in enumerate(paths):
                     lmstudio_pipeline.comfy_interrupt_check()
-                    with progress.scope(index / len(paths), (index + 1) / len(paths)):
+                    with progress.scope(0.95 * index / len(paths), 0.95 * (index + 1) / len(paths)):
                         chapters.append(character_evidence.extract_chapter(
                             path, output, client, model, args, index + 1,
                             source=sources[index], occurrences=occurrences[index],
                             cache_dir=cache_dir, resume_cache_dir=resume_cache_dir,
                             diagnostics=diagnostics["chapters"], checkpoint=checkpoint))
+                diagnostics["appearance_coverage"] = []
+                if character_scope == "all_characters":
+                    for index, (path, chapter, source) in enumerate(zip(paths, chapters, sources), 1):
+                        lmstudio_pipeline.comfy_interrupt_check()
+                        windows = character_evidence.uncovered_appearance_passages(
+                            source[0], chapter["evidence"], args.chunk_chars)
+                        if not windows:
+                            continue
+                        extra = character_evidence.extract_chapter(
+                            path, output, client, model, args, index, source=source,
+                            cache_dir=cache_dir, resume_cache_dir=resume_cache_dir,
+                            diagnostics=diagnostics["appearance_coverage"], checkpoint=checkpoint,
+                            appearance_passages=windows)
+                        for row in extra["evidence"]:
+                            if row["attribute"] != "identity" and not any(
+                                row["character"] == known["character"] and row["value"] == known["value"]
+                                and any(a["start_char"] < b["end_char"] and b["start_char"] < a["end_char"]
+                                        for a in row["provenance"]["locations"] for b in known["provenance"]["locations"])
+                                for known in chapter["evidence"]
+                            ):
+                                # Supplementary batch numbering follows the original chapter batches.
+                                row["provenance"]["passage"] += diagnostics["chapters"][index - 1]["batches"]
+                                chapter["evidence"].append(row)
+                review_started = time.perf_counter()
+                diagnostics["neutral_appearance_review"] = character_evidence.review_neutral_appearance(
+                    chapters, client, model, args)
+                diagnostics["neutral_review_seconds"] = round(time.perf_counter() - review_started, 3)
+                completed = True
         finally:
             lmstudio_json.REQUEST_METRICS.reset(token)
-            if len(chapters) != len(paths):
+            if not completed:
                 diagnostics["status"] = "interrupted_or_failed"
             else:
                 diagnostics["status"] = "incomplete" if any(
-                    row["status"] == "incomplete" for row in diagnostics["chapters"]) else "complete"
-            for chapter_stats in diagnostics["chapters"]:
+                    row["status"] == "incomplete"
+                    for row in diagnostics["chapters"] + diagnostics["appearance_coverage"]
+                    + diagnostics["neutral_appearance_review"]) else "complete"
+            for chapter_stats in diagnostics["chapters"] + diagnostics.get("appearance_coverage", []):
                 if chapter_stats["status"] == "running":
                     chapter_stats["status"] = "interrupted_or_failed"
             checkpoint()

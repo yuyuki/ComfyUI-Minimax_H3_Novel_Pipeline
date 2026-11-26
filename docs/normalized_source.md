@@ -22,10 +22,15 @@ Consolidate Character Profiles, Character Visual Profile Generator, and
 Consolidate References. Keep the original chapters accessible under ComfyUI's
 input directory. Previous character response caches use a different fingerprint.
 
-Character evidence includes short, explicit naming statements. The persistence
-filter applies to appearance evidence and preserves identity evidence.
+Character Evidence Extractor reads all selected chapter text by default and
+keeps enduring visual traits and explicit naming statements. It reviews the
+passages around uncovered appearance cues and checks the extracted descriptions
+in compact batches. Excluded or trimmed wording is recorded in the diagnostic
+file. Identity evidence is retained for alias resolution.
 Consolidate Character Profiles verifies citations and locations and resolves
-source-supported aliases. An unavailable semantic audit leaves deterministically
+source-supported aliases. A selected chapter can use an enduring trait attested
+elsewhere when a unique confirmed name or alias identifies the profile there.
+An unavailable semantic audit leaves deterministically
 valid observations usable and records an incomplete audit in
 `character_evidence_diagnostics.json`. Invalid evidence and failed decisions
 are reported in the corresponding diagnostic files. Sequence-level findings

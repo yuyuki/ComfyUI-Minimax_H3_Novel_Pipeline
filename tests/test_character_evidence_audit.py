@@ -17,6 +17,10 @@ def verdicts(*issues):
                           "issue": "unsupported" if issue else "none"} for i, issue in enumerate(issues)]}
 
 
+def keyed_verdicts(*codes):
+    return {"verdicts": {str(i): code for i, code in enumerate(codes)}}
+
+
 @pytest.mark.parametrize("quote,value,issue", [
     ("Vous êtes séduisant, dit Élise à Paul.", "attractive", "Describes Paul, not the speaker."),
     ("Élise ne se trouvait pas au bar.", "present in bar", "Negation and nonphysical fact."),
@@ -54,21 +58,48 @@ def test_failed_audit_retains_every_observation_for_review(monkeypatch):
     assert result[0]["semantic_review"]["issues"] == ["Semantic audit unavailable or invalid."]
 
 
+def test_neutral_review_trims_only_literal_values_and_retries_unresolved_rows(monkeypatch):
+    mixed = observation("Élise avait les cheveux noirs en désordre.", value="cheveux noirs en désordre")
+    scar = observation("Elle avait une cicatrice au menton.", value="cicatrice au menton")
+    dirt = observation("Elle avait de la boue sur les mains.", value="mains boueuses")
+    injury = observation("Elle s'écorcha le bras.", value="bras écorché", persistence="temporary")
+    identity = observation("Élise, aussi appelée Lise.", value="Lise", attribute="identity", persistence="unknown")
+    chapters = [{"chapter": 1, "evidence": [mixed, scar, dirt, injury, identity]}]
+    chat = Mock(side_effect=[
+        {"values": {"1": "cheveux noirs", "2": "cicatrice profonde", "3": ""}},
+        {"values": {"2": "cicatrice au menton"}},
+    ])
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    findings = evidence.review_neutral_appearance(chapters, None, "gemma-4", settings())
+    assert [row["value"] for row in chapters[0]["evidence"]] == ["cheveux noirs", "cicatrice au menton", "Lise"]
+    assert [row["status"] for row in findings] == ["excluded", "trimmed", "excluded"]
+    assert mixed["quotation"] == "Élise avait les cheveux noirs en désordre."
+    for call, keys in zip(chat.call_args_list, (["1", "2", "3"], ["2"])):
+        schema = call.args[4]
+        assert schema["strict"] and schema["name"] == "character_neutral_appearance"
+        assert schema["schema"]["properties"]["values"]["required"] == keys
+        assert list(json.loads(call.args[3])) == keys
+
+
 def test_gemma_audit_constrains_coverage_and_corrects_invalid_verdicts():
-    invalid = {"verdicts": [{"observation_index": 0, "verdict": "valid", "issue": "unsupported"}]}
-    client, create = client_for(Stream([json.dumps(invalid)]), Stream([json.dumps(verdicts([]))]))
-    items = evidence.audit_observations([observation()], ["source"], client, "google/gemma-3-12b-it",
+    invalid = keyed_verdicts("valid:none")
+    corrected = keyed_verdicts("valid:none", "invalid:set_persistent")
+    client, create = client_for(Stream([json.dumps(invalid)]), Stream([json.dumps(corrected)]))
+    scar = observation("Élise avait une cicatrice au menton.", value="cicatrice au menton",
+                       persistence="temporary")
+    items = evidence.audit_observations([observation(), scar], ["source"], client, "google/gemma-3-12b-it",
                                         settings(), {"llm_calls": 0})
-    assert items[0]["semantic_review"]["verdict"] == "valid"
+    assert all(row["semantic_review"]["verdict"] == "valid" for row in items)
+    assert items[1]["persistence"] == "persistent"
     assert not items[0].get("warnings")
     assert create.call_count == 2
     for call in create.call_args_list:
         response = call.kwargs["response_format"]
         assert response["type"] == "json_schema"
         rows = response["json_schema"]["schema"]["properties"]["verdicts"]
-        assert rows["minItems"] == rows["maxItems"] == 1
-        assert rows["items"]["properties"]["observation_index"]["maximum"] == 0
-        assert '"observation_index": 0' in call.kwargs["messages"][-1]["content"]
+        assert rows["required"] == ["0", "1"]
+        assert not rows["additionalProperties"]
+        assert '"observation_index":0' in call.kwargs["messages"][-1]["content"]
     assert create.call_args_list[0].kwargs["max_tokens"] == 1024
     assert create.call_args_list[1].kwargs["max_tokens"] == settings().max_tokens
     assert "Validation error:" in create.call_args_list[1].kwargs["messages"][-1]["content"]
@@ -113,7 +144,7 @@ def test_audit_compact_transport_retry_keeps_all_observations(monkeypatch):
     assert create.call_count == 2
     for call in create.call_args_list:
         assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": evidence.AUDIT_SCHEMA}
-        assert all(f'"observation_index": {i}' in call.kwargs["messages"][-1]["content"] for i in range(3))
+        assert all(f'"observation_index":{i}' in call.kwargs["messages"][-1]["content"] for i in range(3))
 
 
 @pytest.mark.parametrize("status,issue", [("valid", "unsupported"), ("invalid", "none"),
@@ -143,7 +174,8 @@ def test_audit_thinking_override_is_scoped_and_restored(monkeypatch):
 @pytest.mark.parametrize("family,model", [("Qwen", "qwen3.5"), ("Gemma", "gemma-4"), ("Mistral", "mistral-small-4")])
 def test_audit_transport_uses_separate_thinking_and_restores_client(audit_thinking, family, model):
     from minimax_h3_novel_pipeline.core import lmstudio_models
-    client, create = client_for(Stream([json.dumps(verdicts([]))]), Stream(['{"evidence": []}']))
+    response = keyed_verdicts("valid:none") if family == "Gemma" else verdicts([])
+    client, create = client_for(Stream([json.dumps(response)]), Stream(['{"evidence": []}']))
     client._minimax_h3_profile = lmstudio_models.get_profile(family)
     client._minimax_h3_settings = client._minimax_h3_profile.settings_from_config({"thinking": True})
     args = settings(audit_thinking=audit_thinking)

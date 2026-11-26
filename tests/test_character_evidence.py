@@ -22,6 +22,7 @@ def isolate_semantic_audit(monkeypatch):
     # These tests exercise extraction, repair and transport independently.
     # Full semantic-audit integration is covered in test_character_evidence_audit.
     monkeypatch.setattr(evidence, "audit_observations", lambda observations, *args: observations)
+    monkeypatch.setattr(evidence, "review_neutral_appearance", lambda *args: [])
 
 
 def observation(quote="Élise avait les yeux verts.", **overrides):
@@ -67,10 +68,10 @@ def test_output_overflow_splits_with_overlap_and_preserves_cache(workspace, monk
         schema = call.kwargs["response_format"]
         assert schema == {"type": "json_schema", "json_schema": evidence.EXTRACTION_SCHEMA}
         assert call.kwargs["max_tokens"] == args.max_tokens
-    left, right = [json.loads(call.kwargs["messages"][-1]["content"])["passages"][0]
+    left, right = [json.loads(call.kwargs["messages"][-1]["content"])["source_passages"]
                    for call in create.call_args_list[-2:]]
-    assert text.startswith(left) and text.endswith(right)
-    assert len(left) + len(right) > len(text)
+    assert [row["text"] for row in left] == [quote, quote]
+    assert [row["text"] for row in right] == [quote, quote]
     locations = [loc for item in result["evidence"] for loc in item["provenance"]["locations"]]
     assert len(locations) == 3
     assert all(text[loc["start_char"]:loc["end_char"]] == quote for loc in locations)
@@ -100,8 +101,38 @@ def test_overflow_splits_disjoint_parts_without_joining_them(monkeypatch):
     result = evidence._extract_parts(None, "qwen3.8", evidence.SYSTEM, "chapter",
                                      [(0, "first"), (10, "second")], settings(), {"llm_calls": 0})
     assert [item["quotation"] for item in result] == ["first", "second"]
-    assert [json.loads(call.args[3])["passages"] for call in chat.call_args_list] == [
+    assert [[row["text"] for row in json.loads(call.args[3])["source_passages"]]
+            for call in chat.call_args_list] == [
         ["first", "second"], ["first"], ["second"]]
+
+
+def test_compact_quotation_range_cannot_cross_disjoint_inputs(monkeypatch):
+    row = {k: v for k, v in observation().items() if k != "quotation"}
+    chat = Mock(return_value={"evidence": [
+        {**row, "quotation_passage_ids": ["1-2"]},
+        {**row, "quotation_passage_ids": ["2-3"]},
+    ]})
+    monkeypatch.setattr(evidence.lmstudio_json, "chat_json", chat)
+    first = "Élise entra. Elle avait les yeux verts."
+    with pytest.raises(evidence._InvalidPassageSelection) as failure:
+        evidence._extract_parts(None, "gemma-4", evidence.SYSTEM, "chapter",
+                                [(10, first), (80, "Elle sortit.")], settings(), {"llm_calls": 0})
+    assert failure.value.rejected == [2]
+    valid, = failure.value.observations
+    assert valid["quotation"] == first
+    assert valid["_selected_location"] == [10, 10 + len(first)]
+
+
+def test_appearance_coverage_revisits_an_unnamed_person_without_repeating_cited_passage():
+    cited = "Élise avait les yeux verts."
+    missed = "Une passagère aux cheveux bruns se pencha vers lui."
+    text = cited + "\n" + "Il pleuvait.\n" * 200 + missed
+    evidence_rows = [{**observation(cited), "provenance": {
+        "locations": [{"start_char": 0, "end_char": len(cited)}],
+    }}]
+    windows = evidence.uncovered_appearance_passages(text, evidence_rows, 2000)
+    assert any(missed in part for _, part in windows)
+    assert all(cited not in part and text[start:start + len(part)] == part for start, part in windows)
 
 
 @pytest.mark.parametrize('family,model', [('Qwen', 'qwen3.5'), ('GPT-OSS', 'gpt-oss-20b'),
@@ -499,7 +530,7 @@ def test_disjoint_batch_offsets_cache_and_conflicts(workspace, monkeypatch):
     path.write_bytes((green + "\n\n" + middle + "\n\n" + blue).encode("utf-8"))
 
     def chat(*args):
-        passages = json.loads(args[3])["passages"]
+        passages = [row["text"] for row in json.loads(args[3])["source_passages"]]
         return {"evidence": [observation(q, value=q) for q in (green, blue) if any(q in p for p in passages)]}
 
     mocked = Mock(side_effect=chat)

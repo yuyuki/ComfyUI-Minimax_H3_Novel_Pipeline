@@ -99,7 +99,7 @@ def test_both_readers_model_prompts_and_saved_locations_use_the_same_source(tmp_
     def chat(client, model, system, prompt, schema, *args):
         payload = json.loads(prompt)
         calls.append(payload)
-        assert all(part in expected for part in payload["passages"])
+        assert all(part["text"] in expected for part in payload["source_passages"])
         assert "\r" not in prompt and "’" not in prompt
         return {"evidence": [observation(quote)]}
 

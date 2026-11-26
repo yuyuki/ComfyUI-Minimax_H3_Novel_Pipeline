@@ -81,7 +81,7 @@ def adapt_fixture_reply(reply, payload, schema):
             if isinstance(row, dict) and "check" in row and "field" in issue_fields:
                 row.setdefault("field", "sequence")
                 row.setdefault("disposition", "repair")
-    if "evidence" in result and "passages" in payload and "source_passages" in payload:
+    if "evidence" in result and schema["name"] == "character_evidence" and "source_passages" in payload:
         offers = payload["source_passages"]
         rows = []
         for row in result["evidence"]:

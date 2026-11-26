@@ -18,7 +18,7 @@ from minimax_h3_novel_pipeline.nodes.spatial_continuity import SpatialContinuity
     (ConsolidateReferencesNode, True),
     (SpatialContinuityNode, True),
     (GenerateH3PromptsNode, True),
-    (CharacterEvidenceExtractorNode, True),
+    (CharacterEvidenceExtractorNode, False),
     (ConsolidateCharacterProfilesNode, False),
 ])
 @pytest.mark.parametrize("thinking", [None, True, False])

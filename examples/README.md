@@ -411,22 +411,21 @@ Connect **Select Chapters** and **Provider Configuration** (Qwen) to
 **Character Evidence Extractor**. Select all novel chapter files (one chapter per
 file) or their containing folder. The node returns the complete evidence dictionary
 and the path to `character_evidence/character_evidence.json` in the current run.
-`character_scope=proper_names` (default) indexes named-character candidates across
+`character_scope=all_characters` (default) reads the full text, including unnamed
+people and descriptions that precede identification.
+`character_scope=proper_names` indexes named-character candidates across
 all chapters and batches each occurrence with one preceding/following paragraph,
 bounded by `chunk_chars`, without extending through chains of pronouns. Single
 newlines delimit paragraphs; oversized lines use sentence boundaries.
-The extraction schema accepts physical appearance, including age, scars and visible
-injuries, plus explicit identity statements. Keep short naming passages even when
-they contain no physical description. Clothing, accessories, actions and expressions
-are excluded from appearance evidence.
-Separate temporary hairstyles from enduring hair color/texture and anatomy.
-Use `thinking=True` for extraction and leave `audit_thinking=False` for the shorter
-semantic audit. Enable audit thinking only if its verdict quality requires it.
+Extraction keeps enduring physical appearance, including age and established
+scars, and explicit identity statements. It retains naming evidence for alias
+resolution and reviews descriptions to remove temporary states and staging.
+The default batch size is 12,000 characters. Both reasoning settings default to
+false. They can be enabled independently for extraction and attribution audit.
 Diagnostics are saved after each batch and on interruption, with selected text
 fraction, extraction/audit call counts and per-batch durations.
-Choose `all_characters` for full-text coverage of unnamed people, role labels, and
-descriptions that precede identification. Proper-name selection uses capitalization
-heuristics; it can miss distant pronoun context and names without capitalization.
+Proper-name selection uses capitalization heuristics. It can miss distant
+pronoun context and names without capitalization.
 Completed batch caches are reused within the current run in
 `output/minimax_h3_novel/<timestamp>/character_evidence/.cache/<chapter_id>/`. Diagnostics alongside the evidence
 report timing, passage selection, cache hits, requests/retries and estimated tokens.
@@ -438,7 +437,8 @@ extraction. New outputs belong to the current run; the previous run is unchanged
 Leave `resume_run` empty to disable reuse from a previous run.
 Edit that file manually. Use `force` to regenerate compatible cached batches;
 adjust `chunk_chars`, `max_tokens` or `correction_attempts` if validation fails.
-`correction_attempts` bounds extraction and semantic audit retries. Passage IDs
+`correction_attempts` bounds extraction, semantic audit and neutral appearance
+review retries. Passage IDs
 resolve into exact quotations and positions in the normalized chapter. The audit
 returns a verdict and issue code per observation. An unavailable or unusable
 audit keeps observations that pass deterministic checks and marks the review

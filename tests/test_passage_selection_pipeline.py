@@ -310,7 +310,7 @@ def test_character_evidence_resolves_selected_occurrence_and_invalidates_source_
     assert record["provenance"]["locations"][0]["start_char"] == len(quote) + 1
     path.write_text(f"Lina parlait. {quote}", encoding="utf-8")
     assert run()["evidence"][0]["provenance"]["locations"][0]["start_char"] == len("Lina parlait. ")
-    assert len(calls) == 2 and calls[0] != calls[1]
+    assert calls == ["2", "2"]  # Request-local IDs are reassigned against the changed source.
 
 
 

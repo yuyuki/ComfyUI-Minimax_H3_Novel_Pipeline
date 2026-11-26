@@ -1,5 +1,6 @@
 """Deterministic stable physical facts from the editable character document."""
 from copy import deepcopy
+import re
 
 from . import character_visual_selection as selection
 from . import character_evidence, lmstudio_pipeline, util, visual_designs
@@ -43,14 +44,38 @@ def prepare_profiles(data):
 def select_profiles(data, paths):
     source_key = character_evidence.source_key
     keys = {source_key(path) for path in paths}
-    chapters = data['source_document']['chapters']
+    chapters = {key: [] for key in keys}
+    for chapter in data['source_document']['chapters']:
+        key = source_key(chapter['source_file'])
+        if key in chapters:
+            chapters[key].append(chapter)
     for key in keys:
-        if sum(source_key(c['source_file']) == key for c in chapters) != 1:
+        if len(chapters[key]) != 1:
             raise ValueError(f'Selected source does not identify exactly one evidence chapter: {key}. Regenerate character evidence.')
     if not keys:
         raise ValueError('Select at least one chapter.')
-    return [p for p in prepare_profiles(data) if any(
-        source_key(r['observation']['provenance']['file']) in keys for r in p['supporting_evidence'])]
+    profiles = prepare_profiles(data)
+    owners = {}
+    for profile in profiles:
+        for label in (profile['canonical_name'], *profile['aliases']):
+            name = character_evidence.normalize(label, collapse_whitespace=True).casefold()
+            owners.setdefault(name, set()).add(profile['local_id'])
+    selected = {p['local_id'] for p in profiles if any(
+        source_key(r['observation']['provenance']['file']) in keys for r in p['supporting_evidence'])}
+    candidates = {p['local_id'] for p in profiles if p['identity_status'] == 'confirmed'
+                  and p['effective_traits']} - selected
+    names = {name: next(iter(ids)) for name, ids in owners.items()
+             if name and len(ids) == 1 and ids <= candidates}
+    if names:
+        # A selected chapter can name a character without describing them.
+        # Offer the verified design while leaving scene visibility to consolidation.
+        pattern = re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, sorted(names, key=len, reverse=True)))
+                             + r")(?![\w-])")
+        for key in sorted(keys):
+            text = character_evidence.read_verified_source(chapters[key][0])
+            text = character_evidence.normalize(text, collapse_whitespace=True).casefold()
+            selected.update(names[match.group()] for match in pattern.finditer(text))
+    return [p for p in profiles if p['local_id'] in selected]
 
 
 def source_facts(profile):

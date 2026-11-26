@@ -59,6 +59,8 @@ def test_saved_character_pipeline_reopens_source_and_keeps_usable_proof(tmp_path
             if audit_failure == "unavailable":
                 raise APIConnectionError(request=httpx.Request("POST", "http://localhost/v1"))
             reply = {"verdicts": []}
+        elif contract["name"] == "character_neutral_appearance":
+            reply = {"values": {key: row["value"] for key, row in payload.items()}}
         elif contract == profiles.SCHEMA:
             reply = {"profiles": [group([row["evidence_id"]], canonical_name=row["observation"]["character"])
                                   for row in payload["observations"]]}

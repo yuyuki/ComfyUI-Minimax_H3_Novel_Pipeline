@@ -44,6 +44,26 @@ def test_persistent_scar_cannot_disappear_from_visual_profile(tmp_path, monkeypa
     assert 'cicatrice sur le menton' in recovered['visual_designs']['entities'][0]['source_facts']['stable_visual_description']
 
 
+def test_earlier_chapter_can_use_a_later_physical_description_via_alias(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    appearance = 'Élise avait une cicatrice au menton depuis son enfance.'
+    identity = 'Élise, aussi appelée Lise, entra.'
+    source = document(observation('Lise entra dans la pièce.'),
+                      observation(identity, attribute='identity', value='Lise', persistence='unknown'),
+                      observation(appearance, value='cicatrice au menton'))
+    source['chapters'][0]['evidence'] = []
+    records = cp.prepare_evidence(source)
+    from minimax_h3_novel_pipeline.core.character_profile_document import make_document
+    group, = plan(records)['profiles']
+    group['identity_support'] = [{'evidence_id': next(iter(records))}]
+    profiles = cp.build_profiles({'profiles': [group]}, records)
+    data = make_document(source, records, profiles)
+    result, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'prologue')
+    design, = result['visual_designs']['entities']
+    assert 'Lise' in design['aliases']
+    assert design['source_facts']['stable_visual_description'] == 'cicatrice au menton'
+
+
 
 def test_node_uses_selection_without_model_or_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path / kind)

@@ -83,8 +83,9 @@ trait keys: eye_color, height, hair_color, etc. Never use physical_appearance as
 trait for unrelated characteristics. One observation can describe multiple traits.
 global: explicit persistent physical characteristics/age; temporary: clothing,
 equipment, injuries or temporary states; context: inference or
-uncertain persistence. An acquired scar is not a retroactive global trait: use
-context until a source-supported chronological change establishes its onset.
+uncertain persistence. An established persistent scar is a global distinguishing_mark
+when its origin is reported as backstory. Keep it local if the supplied evidence
+establishes a change during the depicted story; do not infer a change from chapter order.
 Use distinguishing_mark for scars and injury for wounds; never invent a key.
 Describe only the supplied observation, not other features present in its quotation.
 Never infer a scar or healing date from a wound. Stable anatomy described in a later
@@ -658,12 +659,59 @@ def reconcile_identities(groups, records, requests):
     # Preserve explicit negative decisions across passes, including transitively.
     blocked, compared = set(), set()
     components = _identity_components(records)
+    groups = attach_locally_anchored_traits(groups, records, blocked, requests.stats)
     while True:
         merged = _reconcile_identity_pass(groups, records, requests, blocked, compared, components)
-        profiles = cp.build_profiles({"profiles": merged}, records)
         if len(merged) == len(groups):
-            return profiles
+            merged = attach_locally_anchored_traits(merged, records, blocked, requests.stats)
+            return cp.build_profiles({"profiles": merged}, records)
+        cp.build_profiles({"profiles": merged}, records)
         groups = merged
+
+
+def attach_locally_anchored_traits(groups, records, blocked, stats):
+    """Recover orphan traits when their verified context contains a unique naming statement."""
+    anchors = defaultdict(dict)
+    for index, group in enumerate(groups):
+        for ref in group["evidence"]:
+            item = records[ref["evidence_id"]]
+            if item["attribute"] != "identity":
+                continue
+            provenance = item["provenance"]
+            labels = frozenset(cp.identity_labels(item))
+            spans = tuple((loc["start_char"], loc["end_char"]) for loc in provenance["locations"])
+            # Opposite directions of the same explicit local alias are one anchor.
+            for name in labels:
+                anchors[provenance["file"], name].setdefault((labels, spans), index)
+
+    attached = defaultdict(list)
+    remaining = {}
+    for index, group in enumerate(groups):
+        remaining[index] = group
+        if group["identity_status"] != "ambiguous" or len(group["evidence"]) != 1:
+            continue
+        evidence_id = group["evidence"][0]["evidence_id"]
+        item = records[evidence_id]
+        if item["attribute"] == "identity" or item["classification"] != "explicit":
+            continue
+        key = (item["provenance"]["file"], item["character"])
+        nearby = [target for (_, spans), target in anchors[key].items()
+                  if any(ctx["start_char"] <= start < end <= ctx["end_char"]
+                         for ctx in item.get("_source_context", []) for start, end in spans)]
+        if len(nearby) != 1:
+            continue
+        target = nearby[0]
+        if any(frozenset((evidence_id, ref["evidence_id"])) in blocked
+               for ref in groups[target]["evidence"]):
+            continue
+        if any(frozenset((evidence_id, other["evidence"][0]["evidence_id"])) in blocked
+               for other in attached[target]):
+            continue
+        attached[target].append(remaining.pop(index))
+    if attached:
+        stats["locally_anchored_traits"] = stats.get("locally_anchored_traits", 0) + sum(map(len, attached.values()))
+    return [merge_groups([group, *attached[index]], records) if index in attached else group
+            for index, group in remaining.items()]
 
 
 def _reconcile_identity_pass(groups, records, requests, blocked, compared, components):
