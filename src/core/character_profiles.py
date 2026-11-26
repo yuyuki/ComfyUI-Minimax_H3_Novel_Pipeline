@@ -175,6 +175,36 @@ def _shared_name_fragments(labels):
     return fragments
 
 
+def attested_label_links(records):
+    """Find differently worded labels for the single name at one exact occurrence."""
+    by_occurrence = defaultdict(dict)
+    for key, item in records.items():
+        if item["classification"] != "explicit" or item["attribute"] == "identity":
+            continue
+        provenance = item["provenance"]
+        for loc in provenance["locations"]:
+            address = (provenance["file"], loc["start_char"], loc["end_char"],
+                       item["attribute"], _normalized(item["value"]).casefold(), item["quotation"])
+            by_occurrence[address].setdefault(item["character"], set()).add(key)
+    links = defaultdict(set)
+    for address, labels in by_occurrence.items():
+        if len(labels) != 2:
+            continue
+        short, qualified = sorted(labels, key=lambda label: len(label.split()))
+        first, words = short.casefold(), qualified.casefold().split()
+        if len(first.split()) != 1 or len(words) < 2 or words.count(first) != 1:
+            continue
+        quote = _normalized(address[-1]).casefold()
+        token = rf"(?<!\w){re.escape(first)}(?!\w)"
+        if len(re.findall(token, quote)) != 1:
+            continue
+        qualifiers = [word for word in words if word != first]
+        phrases = (" ".join(words), " ".join([first, *qualifiers]), " ".join([*qualifiers, first]))
+        if any(re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", quote) for phrase in phrases):
+            links[frozenset(labels)].update(labels[short] | labels[qualified])
+    return links
+
+
 def validation_report(records):
     reasons = defaultdict(int)
     excluded = []
@@ -302,6 +332,9 @@ def build_profiles(plan, records):
             raise ValueError("Identity support must cite explicit evidence.")
         support = sorted(set(support) | {key for key in ids if records[key]["attribute"] == "identity"}, key=rank.get)
         shared_fragments = _shared_name_fragments(labels)
+        occurrence_links = {pair: keys for pair, keys in attested_label_links({key: records[key] for key in ids}).items()
+                            if not pair & shared_fragments}
+        support = sorted(set(support).union(*occurrence_links.values()), key=rank.get)
         # Require an explicit connected name chain, not just the model's confidence.
         connected = {records[ids[0]]["character"]}
         while True:
@@ -311,7 +344,8 @@ def build_profiles(plan, records):
                             *(part["text"] for part in records[key].get("_source_context", []))]
                 for name in labels - connected:
                     if any(any(character_evidence.explicit_alias(known, name, quote) for quote in contexts)
-                           if {known, name} & shared_fragments else _alias_link(known, name, contexts)
+                           if {known, name} & shared_fragments else
+                           (frozenset((known, name)) in occurrence_links or _alias_link(known, name, contexts))
                            for known in connected):
                         connected.add(name)
             if before == connected:

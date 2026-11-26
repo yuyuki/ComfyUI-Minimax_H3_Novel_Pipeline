@@ -382,6 +382,26 @@ def test_local_quote_repair_and_precise_corrections(output, monkeypatch, defect)
         assert ('character.local_id' if defect == 'identity' else 'authorized source') in prompts[1].split('\nRejected:')[1]
 
 
+def test_established_physical_trait_cannot_be_reclassified_as_temporary(output, monkeypatch):
+    data = consolidated()
+    chapter = selected_chapter(data, cinematic(data))
+    profile, = vp.prepare_profiles(data)
+    mock_chat(monkeypatch, data)
+    default_chat = batches.lmstudio_json.chat_json
+
+    def chat(client, model, system, prompt, schema, *args):
+        if schema == ce.LOCAL_STATES:
+            value = json.loads(prompt)['established_physical_traits'][0]['value']
+            return {'observations': [{'local_id': profile['local_id'], 'trait': 'temporary_appearance',
+                                     'value': value, 'source_quote': chapter['sequences'][0]['source']}]}
+        return default_chat(client, model, system, prompt, schema, *args)
+
+    monkeypatch.setattr(batches.lmstudio_json, 'chat_json', with_passage_ids(chat))
+    result = enrich(data, [profile], chapter, batches.Requests(output, None, 'qwen', settings(correction_attempts=0)))
+    assert not result['sequences'][0]['states']
+    assert any('established physical trait' in issue['reason'] for issue in result['validation']['issues'])
+
+
 def test_ambiguous_speaker_does_not_become_multiple_cast_identities(output, monkeypatch):
     data = consolidated()
     chapter = selected_chapter(data, cinematic(data))

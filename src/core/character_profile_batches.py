@@ -17,7 +17,7 @@ from .editable_schemas import validate_document
 from .source_text import PASSAGE_IDS, PassageIndex, contains, contiguous_passage
 
 logger = logging.getLogger(__name__)
-DECISION_VERSION = 9
+DECISION_VERSION = 10
 RESERVE = 8192  # ChatML, compact retry instructions and bounded semantic corrections.
 TEXT = {"type": "string", "minLength": 1}
 CONTEXT_INSTRUCTION = (
@@ -636,6 +636,8 @@ def _identity_components(records):
         while parent[name] != name:
             name = parent[name]
         return name
+    for left, right in cp.attested_label_links(records):
+        parent[root(right)] = root(left)
     normalized = {name: cp._normalized(name) for name in names}
     contexts = dict.fromkeys(text for item in records.values() if item['classification'] == 'explicit'
                              for text in [item['quotation'], *(p['text'] for p in item.get('_source_context', []))])

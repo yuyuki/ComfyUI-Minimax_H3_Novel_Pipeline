@@ -39,7 +39,7 @@ def test_saved_character_pipeline_reopens_source_and_keeps_usable_proof(tmp_path
     path.write_text(text, encoding="utf-8")
     observations = [
         observation(young, character="Indy", value="yeux noisette"),
-        observation(identity, character="Henry Jones Jr.", value="Indy", attribute="identity", persistence="unknown"),
+        observation(identity, character="Henry Jones Jr.", value="Indy", attribute="identity", persistence="persistent"),
         observation(baker, character="Camille", value="yeux bleus"),
         observation(sailor, character="Camille", value="yeux verts"),
     ]
@@ -109,6 +109,8 @@ def test_saved_character_pipeline_reopens_source_and_keeps_usable_proof(tmp_path
         config, selection, correction_attempts=1, character_scope="all_characters")["result"]
     assert len(audit_inputs) == 2 and audit_inputs[0] == audit_inputs[1]
     assert len(audit_inputs[0]) == len(extracted["chapters"][0]["evidence"]) == 4
+    assert [row["persistence"] for row in extracted["chapters"][0]["evidence"]
+            if row["attribute"] == "identity"] == ["unknown"]
     diagnostic = util.load_json(Path(extracted_path).with_name("character_evidence_diagnostics.json"))
     assert diagnostic["status"] == "incomplete"
     assert all(row["status"] == "incomplete" for row in diagnostic["chapters"][0]["observations_for_review"])

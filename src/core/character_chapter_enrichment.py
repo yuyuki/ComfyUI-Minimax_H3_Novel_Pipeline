@@ -55,6 +55,7 @@ explicitly described; no pose, inferred garment, inferred scar, healing date or 
 Select consecutive passage_ids from source_passages that support each value and identity.
 Do not include ignored traits, infer persistence or carry states to another sequence.
 An empty observations array is valid. Do not duplicate supplied existing states.
+Do not repeat established physical traits as temporary appearance.
 These local observations are separate from global canon and apply only at the narrated moment."""
 LOCAL_SYSTEM += """
 Copy character.local_id exactly into every observation; never use its label as an ID.
@@ -279,8 +280,11 @@ def enrich(data, profiles, chapter, requests, offsets):
                         r = resolve_row(r, index)
                         states.append({**deepcopy(indexed[r['state_id']]), 'local_id': profile['local_id'],
                                        'source_quote': r['source_quote'], 'reason': r['reason']})
+            established = [{key: row[key] for key in ('trait', 'value')} for row in profile['effective_traits']]
+            stable_values = {normalized(row['value']).casefold() for row in established}
             local_context = {'sequence': seq, 'character': occurrence, 'previous_context': prior, 'source_passages': source_passages,
                              'ignored_traits': profile['ignored_traits'],
+                             'established_physical_traits': established,
                              'existing_states': [r for r in states if r['local_id'] == profile['local_id']]}
             def check_local(value):
                 if len({encoded(r) for r in value['observations']}) != len(value['observations']):
@@ -295,6 +299,8 @@ def enrich(data, profiles, chapter, requests, offsets):
                         raise ValueError(f"Local observation {i}, identity {profile['local_id']!r}: {exc}") from exc
                     if r['trait'] in profile['ignored_traits']:
                         raise ValueError('Do not recreate an ignored trait.')
+                    if r['trait'] == 'temporary_appearance' and normalized(r['value']).casefold() in stable_values:
+                        raise ValueError('Do not repeat an established physical trait as temporary appearance.')
                 issues = review_issues(requests, LOCAL_REVIEW_SYSTEM,
                     {**local_context, 'observations': [resolve_row(r, index) for r in value['observations']]},
                     index, 'Local observation review could not be validated.')

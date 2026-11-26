@@ -22,7 +22,7 @@ from .source_text import (PASSAGE_IDS, PASSAGE_VERSION, PassageIndex, contains, 
 logger = logging.getLogger(__name__)
 
 VERSION = 3
-SELECTION_VERSION = 3
+SELECTION_VERSION = 4
 SCOPES = ("proper_names", "all_characters")
 # Candidate detection is deliberately permissive: entity type and identity are
 # interpreted during evidence extraction/consolidation, never guessed from case.
@@ -431,6 +431,10 @@ def _extract_parts(client, model, system, chapter, parts, args, stats, correctio
             rejected.append(number)
             continue
         item = {k: v for k, v in row.items() if k != "quotation_passage_ids"}
+        if item["attribute"] == "identity":
+            # Persistence describes changes in appearance. Canonicalize the model's
+            # persistence label before auditing a naming statement.
+            item["persistence"] = "unknown"
         item["quotation"] = span["text"]
         item["_selected_location"] = [index.offset + span["start"], index.offset + span["end"]]
         observations.append(item)

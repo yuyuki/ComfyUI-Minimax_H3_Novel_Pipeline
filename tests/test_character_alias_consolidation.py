@@ -46,6 +46,31 @@ def test_shared_surname_cannot_connect_two_full_names():
         cp.build_profiles({"profiles": [group(records, canonical_name="Robin Park", identity_support=refs)]}, records)
 
 
+def test_one_attested_occurrence_connects_short_and_reordered_qualified_labels(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    baker = "Camille la boulangère avait les yeux bleus."
+    sailor = "Le marin Camille avait les yeux verts."
+    data = narrative_document(baker + " " + sailor,
+        observation(baker, character="Camille la boulangère", value="yeux bleus"),
+        observation(sailor, character="Camille", value="yeux verts"),
+        observation(sailor, character="Camille le marin", value="yeux verts"))
+
+    def chat(*args):
+        reply = fake_model(*args)
+        if args[4] == batches.IDENTITY_PAIR:
+            for job, decision in zip(request_payload(args[3])["jobs"], reply["decisions"]):
+                names = {job[side]["canonical_name"] for side in ("left_identity", "right_identity")}
+                if names != {"Camille", "Camille le marin"}:
+                    decision["relation"] = "different"
+        return reply
+
+    monkeypatch.setattr(batches.lmstudio_json, "chat_json", chat)
+    result, _ = cp.consolidate(data, cp.prepare_evidence(data), tmp_path, None, "qwen", settings())
+    assert {p["canonical_name"]: p["aliases"] for p in result["profiles"]} == {
+        "Camille la boulangère": [], "Camille le marin": ["Camille"],
+    }
+
+
 def test_pair_consolidation_accepts_bridge_without_inventing_canonical_label(tmp_path, monkeypatch):
     monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
     text = ('Henry Jones Jr. Mais ceux qui le connaissaient l’appelaient Indy. '
