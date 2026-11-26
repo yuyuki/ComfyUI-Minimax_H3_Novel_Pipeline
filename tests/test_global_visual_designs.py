@@ -254,6 +254,7 @@ def test_wrong_source_identity_fails_instead_of_ignoring_facts(setup):
 def test_consolidated_designs_can_be_imported_with_independent_registry_ids(setup):
     from minimax_h3_novel_pipeline.core.editable_schemas import DESIGN_SCHEMA, validate_document
     root, data, result, chapter, entity, calls = setup
+    result['visual_designs']['entities'][0]['exclude_image'] = True
     enrichment, imported = integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None, 'mock', settings())
     args = settings(image_style='cinematic photographic', character_designs=imported)
     designs = visual_designs.prepare_designs(lambda *a: pytest.fail('No invented character facts'), None, 'mock', [entity], args)
@@ -261,8 +262,19 @@ def test_consolidated_designs_can_be_imported_with_independent_registry_ids(setu
     validate_document(designs, DESIGN_SCHEMA, 'visual_designs.json')
     assert designs['entities'][0]['global_id'] == 'CHAR_042'
     assert designs['entities'][0]['character_id'] == data['profiles'][0]['local_id']
+    assert designs['entities'][0]['exclude_image'] is True
+    prop = {'global_id': 'OBJ_012', 'entity_type': 'object', 'canonical_name': 'Cloche'}
+    designs['entities'].append({**prop, 'global_id': 'OBJ_003', 'source_facts': visual_designs.source_facts(prop),
+                                'added_details': {}, 'exclude_image': True})
+    path = root / 'designs.json'
+    util.save_json(path, designs)
+    reimported = visual_designs.prepare_designs(lambda *a: pytest.fail('No new design requests'), None, 'mock',
+                                               [entity, prop], args, path)
+    assert reimported['entities'][1]['global_id'] == 'OBJ_012'
+    assert reimported['entities'][1]['exclude_image'] is True
     regenerated, _ = vp.generate(data, ['chapter1.txt'], root / 'next', designs)
     assert regenerated['visual_designs']['entities'][0]['source_facts']['stable_visual_description'] == 'green eyes'
+    assert regenerated['visual_designs']['entities'][0]['exclude_image'] is True
 
 
 def test_changed_source_snapshot_is_not_silently_ignored_or_trusted(setup):

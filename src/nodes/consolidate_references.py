@@ -198,11 +198,10 @@ class ConsolidateReferencesNode:
                             state = by_id[gid]["visual_reference"]["scenes"].get(chapter_id, {}).get(str(row["sequence"]))
                             if state is not None:
                                 state["presence"] = "offscreen" if character["presence"] == "offscreen" else "mentioned"
-            generic_designs_path = None if path_designs and 'character_profiles' in path_designs else designs_path
             _log(f"Preparing visual designs for {len(registry)} entities")
             with progress.scope(design_start, 0.5):
                 designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
-                                          generic_designs_path)
+                                          designs_path)
             if imported_designs and 'character_profiles' in imported_designs:
                 designs['character_profiles'] = imported_designs['character_profiles']
             util.save_json(output / "visual_designs.json", designs)

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from minimax_h3_novel_pipeline.core import image_prompt_export, lmstudio_json, lmstudio_pipeline, path_access, prompt_cache, reference_requests, run_output, util, visual_designs
+from minimax_h3_novel_pipeline.core import continuity_issues, image_prompt_export, lmstudio_json, lmstudio_pipeline, path_access, prompt_cache, reference_requests, run_output, util, visual_designs
 from minimax_h3_novel_pipeline.nodes.consolidate_references import ConsolidateReferencesNode
 from minimax_h3_novel_pipeline.nodes.generate_h3_prompts import GenerateH3PromptsNode
 from minimax_h3_novel_pipeline.nodes.lmstudio_config import LMStudioConfigurationNode
@@ -636,6 +636,43 @@ def test_edit_design_then_import_reuses_additions(output_root):
     edited = visual_designs.prepare_designs(chat, None, "model", [item], options(), "visual_designs.json")
     assert edited["entities"][0]["added_details"] == {"hair": "Black hair."}
     assert calls == ["visual_design_conflicts"]
+
+
+def test_exclude_image_round_trips_and_preserves_audio(output_root):
+    step = lmstudio_pipeline.load("consolidate")
+    entities = [entity(kind, gid) for kind, gid in (
+        ("character", "CHAR_001"), ("location", "LOC_001"), ("object", "OBJ_001"), ("object", "OBJ_002"),
+    )]
+    entities[-1]["canonical_name"] = "Brass bell"
+    entities[0]["speaks"] = True
+    args = options()
+    args.audio_threshold = "optional"
+    designs = visual_designs.prepare_designs(lambda *a: {"added_details": []}, None, "mock", entities, args)
+    assert all(row["exclude_image"] is False for row in designs["entities"])
+    for row in designs["entities"][:3]:
+        row["exclude_image"] = True
+    del designs["entities"][-1]["exclude_image"]
+    path = output_root / "visual_designs.json"
+    util.save_json(path, designs)
+
+    def unexpected_request(*args):
+        pytest.fail("An imported image exclusion should not make an LLM request.")
+
+    args.character_designs = {"CHAR_001": {"added_details": {}, "exclude_image": False}}
+    imported = visual_designs.prepare_designs(unexpected_request, None, "mock", entities, args, path)
+    args.visual_designs = {row["global_id"]: row for row in imported["entities"]}
+    assert [row["exclude_image"] for row in imported["entities"]] == [True, True, True, False]
+    specs = step.build_picture_specs(entities, args, model="mock")
+    assert {row["linked_global_id"] for row in specs} == {"OBJ_002"}
+    assert [row["linked_global_id"] for row in step.build_audio_specs(entities, args)] == ["CHAR_001"]
+    row = {"catalog": [{"global_id": "LOC_001", "entity_type": "location", "presence": "visible",
+                         "available_picture_views": []}]}
+    assert continuity_issues.location_coverage(row, {"subjects": []})
+    assert not continuity_issues.location_coverage(row, {"subjects": []}, {"LOC_001"})
+    designs["entities"][0]["exclude_image"] = "true"
+    util.save_json(path, designs)
+    with pytest.raises(ValueError, match="exclude_image"):
+        visual_designs.resolve_designs_path(path)
 
 
 @pytest.mark.parametrize("change", ["id", "duplicate", "conflict"])

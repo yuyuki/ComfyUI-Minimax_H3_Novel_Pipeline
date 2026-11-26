@@ -96,6 +96,13 @@ New files go to the current run.
 
 ## Consolidation and image binding
 
+Each character, location and object in `visual_designs.json` has an
+`exclude_image` flag. The default is `false`, including when the field is absent.
+Set it to `true` and import the edited file through `visual_designs_path` in
+Consolidate References to omit the entity's picture prompts and H3 picture bindings.
+The registry keeps the entity, and eligible voices still receive audio prompts.
+`image_prompts/image_prompts.json` lists the prompts for the current run.
+
 Consolidation recompiles shared and scene-local traits after global identity
 reconciliation and duplicate audit, then integrates validated character profiles.
 Profile-derived presence can further restrict character image applicability.

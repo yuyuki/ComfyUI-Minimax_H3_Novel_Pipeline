@@ -125,7 +125,7 @@ def visible_locations(row):
             if item["entity_type"] == "location" and item.get("presence") == "visible"]
 
 
-def location_coverage(row, bindings):
+def location_coverage(row, bindings, excluded_images=()):
     """Diagnose approved visibility and image coverage without estimating presence."""
     locations = visible_locations(row)
     spatial = (row.get("spatial_plan") or {}).get("location_id")
@@ -137,6 +137,8 @@ def location_coverage(row, bindings):
                                   "Check the resolved adaptation, extraction and consolidated identity."})
     for item in locations:
         gid = item["global_id"]
+        if gid in excluded_images:
+            continue
         expected = {view["asset_id"] for view in item["available_picture_views"]}
         if not expected:
             checks.append({"reason": "missing_scene_binding", "entity_id": gid,

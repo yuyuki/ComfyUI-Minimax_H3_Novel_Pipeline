@@ -118,8 +118,6 @@ def load_designs(path, entities):
     if path is None:
         return {}
     payload = util.load_json(path)
-    if 'character_profiles' in payload:
-        raise ValueError('Profile-backed visual designs require contextual consolidation before preparing assets.')
     util.require_schema(payload, DESIGN_SCHEMA_VERSION)
     items = payload.get("entities")
     if not isinstance(items, list):
@@ -134,6 +132,10 @@ def load_designs(path, entities):
     ids = [item["global_id"] for item in items]
     if len(ids) != len(set(ids)):
         raise ValueError("Duplicate visual design ID in visual_designs.json.")
+    if "character_profiles" in payload:
+        # Contextual profile integration owns character identity and design matching.
+        items = [item for item in items if item["entity_type"] != "character" and item.get("exclude_image", False)]
+        entities = [entity for entity in entities if entity["entity_type"] != "character"]
     imported = {}
     used = set()
     for entity in entities:
@@ -154,20 +156,20 @@ def load_designs(path, entities):
         if item["global_id"] in used:
             raise ValueError(f"Ambiguous visual design {item['global_id']} matches multiple chapter entities.")
         used.add(item["global_id"])
-        # Profile-backed files are joined contextually by character_visual_integration.
-        # This path handles registry design defaults only.
         imported[gid] = item
     return imported
 
 
 def prepare_designs(chat, client, model, entities, args, path=""):
-    imported = load_designs(path, entities)
-    imported.update(getattr(args, "character_designs", {}))
+    file_designs = load_designs(path, entities)
+    imported = {**file_designs, **getattr(args, "character_designs", {})}
     designs = []
     for entity in progress.steps(entities, label="Visual designs"):
         comfy_interrupt_check()
         gid = entity["global_id"]
         base = {key: entity[key] for key in ("global_id", "entity_type", "canonical_name")}
+        base["exclude_image"] = file_designs.get(gid, {}).get(
+            "exclude_image", imported.get(gid, {}).get("exclude_image", False))
         if entity.get("aliases"):
             base["aliases"] = list(entity["aliases"])
         base["source_facts"] = source_facts(entity)

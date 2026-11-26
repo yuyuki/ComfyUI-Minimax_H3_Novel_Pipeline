@@ -1698,6 +1698,8 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
     print(f"  selected {selected_count} scene(s)")
 
     visual_designs = bundle["visual_designs"]
+    excluded_images = {item["global_id"] for item in visual_designs.get("entities", [])
+                       if item.get("exclude_image", False)}
     continuity_states: list[dict[str, Any]] = []
     if sequence_plans:
         for scene in scenes:
@@ -1884,7 +1886,7 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
                     checks.append({"stage": "continuity_repair", "status": "incomplete", "reason": "repair_format",
                                    "message": "Continuity repair did not produce a structurally usable replacement."})
                 status = "approved" if candidate_validation.ok and candidate_format.ok else "incomplete"
-        checks.extend(continuity_issues.location_coverage(row, bindings))
+        checks.extend(continuity_issues.location_coverage(row, bindings, excluded_images))
         if checks and status in {"approved", "not_required"}:
             status = "incomplete"
         prompt_review = {"errors": continuity_errors, "repair_attempts_used": continuity_repairs,

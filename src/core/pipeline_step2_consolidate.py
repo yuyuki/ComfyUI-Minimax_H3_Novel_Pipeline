@@ -818,7 +818,10 @@ def plan_location_views(client, model, entity, group, args):
 def build_picture_specs(registry: list[dict[str, Any]], args: argparse.Namespace,
                         client=None, model=None) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
+    designs = getattr(args, "visual_designs", {})
     for e in registry:
+        if designs.get(e["global_id"], {}).get("exclude_image", False):
+            continue
         reference = e["visual_reference"]
         common_key = reference_visuals.signature(reference["common_traits"])
         appearances = {}
@@ -857,7 +860,7 @@ def build_picture_specs(registry: list[dict[str, Any]], args: argparse.Namespace
                 })
 
     for spec in specs:
-        design = getattr(args, "visual_designs", {}).get(spec["linked_global_id"], {})
+        design = designs.get(spec["linked_global_id"], {})
         spec["added_details"] = design.get("added_details", {}) if spec["entity_type"] == "character" else {}
         spec["image_style"] = getattr(args, "image_style", "realistic photographic")
     return specs

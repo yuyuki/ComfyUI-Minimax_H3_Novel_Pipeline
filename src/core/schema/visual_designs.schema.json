@@ -57,6 +57,11 @@
           "added_details": {
             "type": "object"
           },
+          "exclude_image": {
+            "type": "boolean",
+            "default": false,
+            "description": "Exclude this entity from image reference generation while retaining its other references."
+          },
           "aliases": {
             "type": "array",
             "items": {

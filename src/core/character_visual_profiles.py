@@ -74,6 +74,7 @@ def generate(data, paths, output, previous=None):
         entities.append({'global_id': profile['local_id'], 'character_id': profile['local_id'], 'entity_type': 'character',
             'canonical_name': profile['canonical_name'], 'aliases': profile['aliases'],
             'identity_status': profile['identity_status'],
+            'exclude_image': old.get('exclude_image', False),
             'source_facts': source_facts(profile),
             'added_details': details})
     designs = {'$schema': './visual_designs.schema.json',
