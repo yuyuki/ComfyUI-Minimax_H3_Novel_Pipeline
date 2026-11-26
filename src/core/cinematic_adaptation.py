@@ -109,6 +109,18 @@ established name when needed. Give fixed landmarks their precise relation to the
 space when the source supports it. Respect actual cuts and explicit concealment.
 Identify coexisting similar objects by their different functions or attachments
 whenever the current action depends on telling them apart.
+In initial_state or events, name each relevant visible location and recurring prop
+whose identity is established, using the same source-language name in neighboring
+scenes. Use supported functional qualifiers for distinct physical instances, even
+when the source alternates generic names. Keep fixed features in their established
+space and markings on the entity bearing them. Do not resolve an uncertain identity
+by guessing, or supply missing appearance traits. Reassess visibility and audibility
+after a cut, exit or concealment. Do not carry forward presence from a name alone.
+Identify speakers only when the source supports attribution. State when identified
+speech is offscreen; a name called out is an addressee and an anonymous cry is
+ambience. Silent offscreen action does not establish a voice or visual presence.
+Put relevant visible actions and audible speech in events. Use final_state for
+their result and the next scene's initial_state for supported carryover.
 Final states are snapshots of results, never summaries replaying completed actions.
 They must not perform an additional action or anticipate the next scene's event.
 Update illumination, attachments and possession after each relevant event. Do not
@@ -151,7 +163,7 @@ application reads the remaining tokens again with new text. Complete at least on
 
 # Bound recovery work; rebuild small passages with complete source coverage.
 _MIN_RECOVERY_CHARS = 1000
-_REVIEW_POLICY = "passage-planning-and-review-v12"
+_REVIEW_POLICY = "passage-planning-and-review-v14"
 CHECKPOINT_SCHEMA = "minimax-cinematic-checkpoint.v3"
 
 _REPAIR_SYSTEM = """
@@ -170,6 +182,11 @@ shorten wording, rush actions or claim a lower estimate. Cut source spans betwee
 actions inside a sentence as needed, maintaining exact concatenated coverage.
 For each corrected physical state, verify the source-supported transition causing
 it. Do not invent intermediate handling actions to reconcile an unsupported state.
+If fields_to_correct is supplied, return one complete sequence with the original
+source boundary. Change only those fields, using the cited source passages and
+rechecking their relationships with the untouched fields and neighboring source.
+Field names initialState, event and endingState map to initial_state, events and
+final_state. Following source is boundary context only, never new events.
 """
 
 
@@ -264,7 +281,9 @@ def _checkpoint_contract():
     contract = [_REVIEW_POLICY, PASSAGE_VERSION, SCHEMA, WINDOW_SCHEMA, SYSTEM,
                 scene_planning.SCHEMA, scene_planning.RESOLVED_SCHEMA, scene_planning.SYSTEM,
                 narrative_validation.SCHEMA, narrative_validation.SYSTEM,
-                narrative_validation.ADAPTATION_REVIEW_FOCUSES, narrative_validation.FIDELITY_GROUP]
+                narrative_validation.ADAPTATION_REVIEW_FOCUSES, narrative_validation.FIDELITY_GROUP,
+                narrative_validation.REFERENCE_RULES, _REPAIR_SYSTEM,
+                narrative_choices.PROPOSAL_SCHEMA, narrative_choices.PROPOSAL_SYSTEM]
     return hashlib.sha256(json.dumps(contract, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
@@ -298,10 +317,20 @@ def _resume_sequences(state, text, chapter_name, duration):
             if not text[cursor:].startswith(source):
                 raise ValueError("Pending source no longer matches.")
             _validated_sequences({"sequences": [{k: v for k, v in s.items()
-                                                 if k not in ("chosen_event", "planning", "planning_key")}
+                                                 if k not in ("chosen_event", "before_choice", "planning", "planning_key")}
                                                 for s in pending]}, source)
             if any("chosen_event" in s and s["events"] != [s["chosen_event"]] for s in pending):
                 raise ValueError("Chosen event does not match validated events.")
+            for item in pending:
+                if "before_choice" in item:
+                    if "chosen_event" not in item:
+                        raise ValueError("Proposal fallback requires a selected proposal.")
+                    original = item["before_choice"]
+                    _validated_sequences({"sequences": [
+                        {k: v for k, v in original.items() if k not in ("planning", "planning_key")}
+                    ]}, item["source"])
+                    if "planning" in original:
+                        scene_planning.validate(original["planning"], original, partial=True)
         issues = deepcopy(state["narrative_review"]["issues"])
         if not isinstance(issues, list) or any(not 1 <= i["sequence"] <= len(results) + len(pending) for i in issues):
             raise ValueError("Invalid narrative issue target.")
@@ -442,8 +471,21 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         item["planning_key"] = key
         return item["planning"]
 
+    def exported_adaptation(item):
+        return {
+            "initialState": item["initial_state"],
+            "event": item.get("chosen_event", "\n".join(
+                f"{i}. {event}" for i, event in enumerate(item["events"], start=1))),
+            "endingState": item["final_state"],
+        }
+
+    def following_source(item):
+        start = cursor + len(item["source"])
+        return text[start:start + 600]
+
     def review_payload(item):
         return {"stage": "adaptation", "sequences": [scene_planning.description(item)],
+                "exported_adaptation": exported_adaptation(item), "following_source": following_source(item),
                 "scene_plan": scene_planning._describe_plan(item.get("planning"), item["events"]), "maximum_seconds": duration,
                 "planning_status": "available" if set(item.get("planning", {})) == {"timing", "continuity"} else "incomplete",
                 "previous_final_state": previous_state, **previous_context()}
@@ -489,6 +531,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                        "assigned_events": indices, "scene_plan": None,
                        "sequences": [{**scene, "events": group}],
                        "other_event_context": [event for event in events if event["index"] not in indices]}
+            # The grouped review verifies the assigned event text against source,
+            # while the exact final rendering remains available for the states.
             try:
                 issues = narrative_validation.review(
                     request, client, model, grouped, 1, max_tokens, system=system, event_coverage=indices,
@@ -562,21 +606,37 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         return issues
 
     def review_planning_semantics(sequences, payload, sequence_id, *, phase="adaptation"):
-        issues = review_scene(payload, sequence_id)
         marker = narrative_validation.CONTINUITY_ISSUE
         unreliable = "could not be interpreted reliably"
-        if correction_attempts and any(unreliable in message for message in issues.get(1, [])):
-            issues = review_scene({**payload, "evidence_feedback":
-                "Use only supplied current-source passage IDs for any defect. Check their relevance to the affected field."},
-                sequence_id)
+
+        def checked_adaptation(issues):
+            unverified = any(unreliable in m for m in issues.get(1, []))
+            uncertain = [m.removeprefix(narrative_validation.UNCERTAIN_ISSUE)
+                         for m in issues.get(1, []) if m.startswith(narrative_validation.UNCERTAIN_ISSUE)]
+            supported = [m for m in issues.get(1, []) if unreliable not in m
+                         and not m.startswith((narrative_validation.UNCERTAIN_ISSUE, marker))]
+            supported_issues = {1: supported} if supported else {}
+            if unverified:
+                review_warning(ValueError(), sequence_id, "narrative_evidence", phase=phase)
+            if uncertain:
+                warning = review_warning(ValueError(), sequence_id, "source_uncertainty", phase=phase)
+                warning.update(reason="unresolved_source_evidence", issues=uncertain)
+            if unverified or uncertain:
+                raise _ReviewUnavailable(supported_issues)
+            return supported_issues
+
+        try:
+            issues = review_scene(payload, sequence_id)
+            if correction_attempts and any(unreliable in message for message in issues.get(1, [])):
+                issues = review_scene({**payload, "evidence_feedback":
+                    "Use supplied current-source passage IDs for every defect. Check their relevance to the affected field."},
+                    sequence_id)
+        except _ReviewUnavailable as exc:
+            raise _ReviewUnavailable(checked_adaptation(exc.issues)) from None
         defects = [message for message in issues.get(1, []) if message.startswith(marker)]
         item = sequences[0]
         if not defects:
-            if any(unreliable in message for message in issues.get(1, [])):
-                review_warning(ValueError(), sequence_id, "narrative_evidence", phase=phase)
-                supported = [message for message in issues[1] if unreliable not in message]
-                raise _ReviewUnavailable({1: supported} if supported else {})
-            return issues
+            return checked_adaptation(issues)
         if correction_attempts and item.get("planning", {}).get("continuity"):
             try:
                 planning_for(sequences, phase=phase, semantic_defects=defects)
@@ -587,15 +647,13 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             except _REVIEW_ERRORS as exc:
                 review_warning(exc, sequence_id, "continuity_evidence", phase=phase)
             else:
-                if not any(m.startswith(marker) or "could not be interpreted reliably" in m
-                           for m in issues.get(1, [])):
-                    return issues
+                if not any(m.startswith(marker) for m in issues.get(1, [])):
+                    return checked_adaptation(issues)
         warning = review_warning(ValueError(), sequence_id, "continuity_evidence", phase=phase)
         warning.update(reason="unsupported_continuity_evidence", issues=defects)
         if item.get("planning"):
             item["planning"].pop("continuity", None)
-        other_issues = [m for m in issues.get(1, []) if not m.startswith(marker)]
-        raise _ReviewUnavailable({1: other_issues} if other_issues else {})
+        raise _ReviewUnavailable(checked_adaptation(issues))
 
     def review_current(sequences):
         lmstudio_pipeline.comfy_interrupt_check()
@@ -638,11 +696,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
     def commit_scene(sequences, *, incomplete=None):
         nonlocal cursor, previous_state, source_evidence
         item = sequences.pop(0)
-        events = "\n".join(f"{i}. {event}" for i, event in enumerate(item["events"], start=1))
-        results.append({"sequence": len(results) + 1, "source": item["source"], "adaptation": {
-            "initialState": item["initial_state"], "event": item.get("chosen_event", events),
-            "endingState": item["final_state"],
-        }})
+        results.append({"sequence": len(results) + 1, "source": item["source"],
+                        "adaptation": exported_adaptation(item)})
         plan = item.get("planning")
         scene_plans.append({"plan": deepcopy(plan), "events": deepcopy(item["events"]),
                             "event_text": results[-1]["adaptation"]["event"]} if plan else None)
@@ -673,6 +728,12 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             else:
                 commit_scene(sequences)
 
+    def fields_to_correct(messages, findings):
+        fields = {finding.get("field") for finding in findings}
+        if fields <= set(narrative_choices.PHASES) and set(messages) <= {f["message"] for f in findings}:
+            return sorted(fields)
+        return []
+
     def prepare_scene(sequences, repair_rounds):
         if "chosen_event" in sequences[0]:
             record = next((issue for issue in narrative_issues if issue["sequence"] == len(results) + 1), None)
@@ -680,12 +741,26 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 raise ValueError("Selected cinematic proposal has no review record.")
             resolve_current(sequences, {1: [record["description"]]})
             return
+        previous_candidate = None
         for attempt in range(repair_rounds + 1):
             incomplete = None
+            findings_start = len(cited_review_findings)
             try:
                 issues = review_current(sequences)
             except _ReviewUnavailable as exc:
                 incomplete, issues = exc, exc.issues
+            messages = issues.get(1, [])
+            findings = [finding for finding in cited_review_findings[findings_start:]
+                        if finding["message"] in messages and finding.get("disposition") != "uncertain"]
+            language_defects = {m for m in messages if m.startswith(narrative_validation.LANGUAGE_MISMATCH)}
+            if previous_candidate is not None and language_defects - previous_candidate[1]:
+                # Keep already verified narration when a repair translates it.
+                sequences[:previous_candidate[2]] = [previous_candidate[0]]
+                warning = review_warning(ValueError(), len(results) + 1, "scene_repair", phase="correction")
+                warning.update(reason="repair_language_regression", issues=sorted(language_defects))
+                issues, findings = {1: previous_candidate[3]}, previous_candidate[4]
+                incomplete = _ReviewUnavailable(issues)
+                previous_candidate = None
             checkpoint("reviewed", sequences, issues=issues)
             if not issues or attempt == repair_rounds:
                 if incomplete is not None:
@@ -695,6 +770,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                   f"{repair_rounds} (sequence {len(results) + 1}).", flush=True)
             item = sequences[0]
             split_required = bool(item.get("planning") and scene_planning.duration_issues(item["planning"], duration))
+            scoped_fields = fields_to_correct(issues[1], findings) if not split_required else []
             repair_payload = {
                 "current_passage": item["source"],
                 **previous_context(),
@@ -703,10 +779,14 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 "rejected_adaptation": _description(item), "defects_to_correct": issues[1],
                 "minimum_replacement_scenes": 2 if split_required else 1,
                 "rejected_scene_plan": scene_planning._describe_plan(item.get("planning"), item["events"]),
+                "following_source": following_source(item),
+                **({"cited_defects": findings} if findings else {}),
+                **({"fields_to_correct": scoped_fields} if scoped_fields else {}),
             }
             try:
                 replacement, _ = adapt_window(repair_payload, item["source"], repair=True,
-                                              min_sequences=2 if split_required else 1)
+                                              min_sequences=2 if split_required else 1,
+                                              single=bool(scoped_fields))
             except (_SourceCoverageError, _PassageValidationError, lmstudio_json.StructuredOutputLengthError) as exc:
                 # A failed repair must never replace source-validated work.
                 review_warning(exc, len(results) + 1, "scene_repair", phase="correction")
@@ -714,6 +794,11 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             except _REVIEW_ERRORS as exc:
                 review_warning(exc, len(results) + 1, "scene_repair", phase="correction")
                 raise _ReviewUnavailable(issues) from None
+            if scoped_fields:
+                for field, key in zip(narrative_choices.PHASES, ("initial_state", "events", "final_state")):
+                    if field not in scoped_fields:
+                        replacement[0][key] = item[key]
+            previous_candidate = (item, language_defects, len(replacement), issues[1], findings)
             sequences[:1] = replacement
             # Failures belong to the rejected description, not its replacements.
             # Each replacement must earn its own complete review and timing plan.
@@ -727,9 +812,13 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 warning = review_warning(ValueError(), len(results) + 1, "cinematic_timing", phase="correction")
                 warning["reason"] = "duration_exceeded"
                 raise _ReviewUnavailable(issues)
-            resolve_current(sequences, issues)
+            if any(m.startswith(narrative_validation.LANGUAGE_MISMATCH) for m in issues[1]):
+                warning = review_warning(ValueError(), len(results) + 1, "narration_language", phase="correction")
+                warning.update(reason="language_mismatch", issues=issues[1])
+                raise _ReviewUnavailable(issues)
+            resolve_current(sequences, issues, findings)
 
-    def resolve_current(sequences, issues):
+    def resolve_current(sequences, issues, findings=()):
         messages = issues[1]
         sequence_id = len(results) + 1
         item = sequences[0]
@@ -737,17 +826,26 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         record = next((issue for issue in narrative_issues if issue["sequence"] == sequence_id), None)
         if "chosen_event" not in item:
             lmstudio_pipeline.comfy_interrupt_check()
+            scoped_fields = fields_to_correct(messages, findings)
+            current = exported_adaptation(item)
             try:
                 proposals = narrative_choices.propose(
                     request, client, model,
                     {"current_passage": item["source"],
                      **previous_context(), "target_sequence": sequence_id,
                      "previous_final_state": previous_state,
-                     "defects_to_resolve": messages}, max_tokens,
+                     "defects_to_resolve": messages, "current_adaptation": current,
+                     "following_source": following_source(item),
+                     **({"cited_defects": findings} if findings else {}),
+                     **({"fields_to_correct": scoped_fields} if scoped_fields else {})}, max_tokens,
                 )
             except _REVIEW_ERRORS as exc:
                 review_warning(exc, sequence_id, "narrative_proposals", phase="correction")
                 raise _ReviewUnavailable(issues) from None
+            if scoped_fields:
+                for proposal in proposals:
+                    proposal["adaptation"].update({field: value for field, value in current.items()
+                                                   if field not in scoped_fields})
             # A resumed pending scene may already have proposals. Replace their
             # record if a new review requires another choice, rather than duplicate it.
             narrative_issues[:] = [issue for issue in narrative_issues if issue["sequence"] != sequence_id]
@@ -758,6 +856,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
             }
             narrative_issues.append(record)
             chosen = proposals[0]["adaptation"]
+            item["before_choice"] = deepcopy(item)
             item.update(initial_state=chosen["initialState"], events=[chosen["event"]],
                         final_state=chosen["endingState"])
             # Keep the public event text intact rather than numbering it twice.
@@ -786,6 +885,7 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 raise _ReviewUnavailable(remaining)
         except _ReviewUnavailable as exc:
             record["proposals"][0]["review"] = {"status": "incomplete", "issues": exc.issues.get(1, [])}
+            restore_choice_on_language_defect(item, record, exc.issues)
             raise
         record["proposals"][0]["review"] = {
             "status": "unresolved" if remaining else "approved",
@@ -795,9 +895,24 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
         if remaining:
             warning = review_warning(ValueError(), sequence_id, "proposal_semantics", phase="proposal_review")
             warning["reason"] = "unresolved_proposal"
+            restore_choice_on_language_defect(item, record, remaining)
             raise _ReviewUnavailable(remaining)
 
-    def adapt_window(payload, chunk, *, partial=False, repair=False, min_sequences=1):
+    def restore_choice_on_language_defect(item, record, issues):
+        before = item.get("before_choice")
+        if before is None or not any(
+            m.startswith(narrative_validation.LANGUAGE_MISMATCH) for m in issues.get(1, [])
+        ):
+            return
+        # Keeping the rejected default in the editable choices would cause
+        # downstream resolution to reapply it over the restored adaptation.
+        item.clear()
+        item.update(before)
+        narrative_issues.remove(record)
+        warning = review_warning(ValueError(), len(results) + 1, "proposal_language", phase="proposal_review")
+        warning.update(reason="repair_language_regression", issues=issues[1])
+
+    def adapt_window(payload, chunk, *, partial=False, repair=False, min_sequences=1, single=False):
         segments = _source_segments(chunk)
         data = {**payload, "source_segments": [{"id": i, "text": part} for i, part in enumerate(segments, 1)]}
         system = SYSTEM + (_REPAIR_SYSTEM if repair else "") + (_WINDOW_RULES if partial else "")
@@ -810,6 +925,8 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int,
                 sequences, consumed = _restore_source_spans(result, segments, partial=partial)
                 if len(sequences) < min_sequences:
                     raise ValueError("Timing repair requires multiple scenes. Split between actions and preserve each action.")
+                if single and len(sequences) != 1:
+                    raise ValueError("Field-scoped repair must preserve the original sequence boundary.")
                 return sequences, consumed
             except ValueError as exc:
                 if (isinstance(exc, _SourceCoverageError) and not repair and attempt >= 1

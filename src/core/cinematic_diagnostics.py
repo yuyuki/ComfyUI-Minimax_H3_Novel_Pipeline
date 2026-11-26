@@ -34,6 +34,12 @@ _EXPLANATIONS = {
     "blank_fact_field": ("A continuity field is blank.", "Provide the fact and its source quotation."),
     "output_limit": ("The response reached the output limit.", "Check the budget shared by reasoning and JSON."),
     "unresolved_proposal": ("The selected alternative still has source-supported defects.", "Inspect the cited review findings."),
+    "unresolved_source_evidence": ("The source leaves an identity, presence or language check unresolved.",
+                                   "Inspect the cited passages before resolving the ambiguity."),
+    "repair_language_regression": ("A replacement used a different narration language and was rejected.",
+                                   "Inspect the cited fields and keep narration in the source language."),
+    "language_mismatch": ("The retained adaptation still contains narration in another language.",
+                          "Correct the cited fields and review them against the source before extraction."),
     "request_failed": ("The review request failed; the precise cause is unavailable.", "Check the server and its logs; this code does not prove a token limit was reached."),
     "duration_exceeded": ("The timing estimate exceeds the allowed maximum, including any allowance.", "Split between actions without rushing or removing them."),
 }

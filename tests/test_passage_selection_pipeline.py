@@ -11,6 +11,7 @@ from minimax_h3_novel_pipeline.core import (
     cinematic_references, cinematic_scene_planning as planning, lmstudio_json, path_access, source_text,
 )
 from minimax_h3_novel_pipeline.nodes.load_chapter_catalogs import LoadChapterCatalogsNode
+from tests.passages_helpers import adapt_fixture_reply
 
 
 def request_payload(prompt):
@@ -21,6 +22,10 @@ def validate_reply(schema, reply):
     assert schema["strict"] is True
     Draft202012Validator(schema["schema"]).validate(reply)
     return reply
+
+
+def review_reply(data, schema, reply):
+    return validate_reply(schema, adapt_fixture_reply(reply, data, schema))
 
 
 def test_exact_repeated_and_disjoint_passages_are_addressed_by_occurrence():
@@ -158,7 +163,7 @@ def test_prologue_8_fidelity_groups_respect_budget_and_require_every_event(monke
             return {"issues": [], "covered_events": []}
         if assigned == [2] and failure == "cancelled":
             raise InterruptProcessingException("Cancelled")
-        return validate_reply(schema, {"issues": [], "covered_events": assigned})
+        return review_reply(data, schema, {"issues": [], "covered_events": assigned})
 
     monkeypatch.setattr(lmstudio_json, "chat_json", chat)
     if failure == "cancelled":
@@ -192,7 +197,7 @@ def test_exact_but_unsupported_continuity_preserves_timing_and_does_not_enter_hi
             if "timing" in sections:
                 plan["timing"] = timing([whole(1), whole(2)])
             return validate_reply(schema, plan)
-        return validate_reply(schema, {"issues": [{
+        return review_reply(data, schema, {"issues": [{
             "target": 1, "check": "planning_continuity", "message": "Opening the door does not establish sitting.",
             "passage_ids": [data["review_passages"][0]["id"]],
         }]})
@@ -215,7 +220,7 @@ def test_resume_rejects_changed_source_and_obsolete_planning_policy(monkeypatch)
             return adaptation_reply(data, schema)
         if "requested_sections" in data:
             return validate_reply(schema, {"timing": timing([whole(1), whole(2)]), "continuity": continuity()})
-        return validate_reply(schema, {"issues": []})
+        return review_reply(data, schema, {"issues": []})
 
     monkeypatch.setattr(lmstudio_json, "chat_json", chat)
     original = adapt(source, checkpoints=saved)
@@ -385,7 +390,7 @@ def test_interrupted_correction_resumes_only_the_invalid_section(monkeypatch):
             if "timing" in sections:
                 return {"timing": timing([whole(1), whole(2)]), "continuity": continuity(["unoffered"])}
             return validate_reply(schema, {"continuity": continuity()})
-        return validate_reply(schema, {"issues": []})
+        return review_reply(data, schema, {"issues": []})
 
     def stop_on_failure(state):
         if state["stage"] == "planning_attempt":

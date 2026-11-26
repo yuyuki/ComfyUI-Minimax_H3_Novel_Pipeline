@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import re
 
 from . import lmstudio_pipeline
 from .source_text import PASSAGE_IDS, PassageIndex, offered_passages, passage_catalog, select_passages
@@ -96,7 +97,8 @@ as issues with target=1, or an empty issues list. Select current-source passage_
 identify the affected adaptation field. Reviews and generated states are fallible:
 the original book outranks them. Recheck relevant defects_to_recheck without assuming
 they are true. Do not invent facts, demand stylistic preferences or review other scenes.
-Check ONLY the assigned aspect; the other aspects are checked separately.
+Check ONLY the assigned aspect; the other aspects are checked separately. Write
+diagnoses in English and preserve any quoted text in its original language.
 """
 ADAPTATION_REVIEW_FOCUSES = {
     "source_fidelity": """Compare the full current source with initial_state, all events and final_state.
@@ -150,6 +152,30 @@ event that was not checked.
 """
 
 
+REFERENCE_RULES = """Check the exact exported initialState, event and endingState in
+exported_adaptation when supplied. For extraction, inspect initialState and event
+alone: can a reader identify the relevant visible entities and identifiable speakers?
+Use current source and verified immediate continuity to check those fields. Name a
+still-visible filming space consistently even when only one of its features is framed.
+Give coexisting physical instances distinct, stable names using evidenced functions
+or attachments. Do not infer presence from an earlier name or from a mere mention.
+Attribute parts, marks and damage to the entity bearing them. Separate durable
+appearance from changes during the action. If a necessary visible fact appears only
+in endingState, identify the missing transition in event or the supported opening
+state of the next sequence. Never move a later result into an earlier phase.
+Check who is visible and who actually speaks, including identified offscreen speech.
+An addressee, a mention or a silent offscreen action is not speech. Keep anonymous
+cries as ambience. Reassess presence and audibility after a cut, exit or concealment.
+Keep observable action and dialogue verbatim where applicable. If identity remains
+ambiguous after checking the source, report uncertainty without guessing a resolution.
+Following source, if supplied, is boundary context only. Use it to check the current
+ending; do not import its events or target the following scene.
+"""
+
+LANGUAGE_FIELDS = ("initialState", "event", "endingState")
+LANGUAGE_MISMATCH = "Narration language mismatch in "
+_LANGUAGE_CODE = r"^[a-z]{2,3}$"
+UNCERTAIN_ISSUE = "[source_uncertainty] "
 CONTINUITY_ISSUE = "[scene_plan.continuity] "
 
 
@@ -162,6 +188,9 @@ def review(chat, client, model, payload, count, max_tokens, *, system=SYSTEM, ev
     previous = payload.get("previous_sequence")
     if previous and previous.get("source"):
         contexts.append(({"context": "previous_sequence"}, previous["source"]))
+    following = payload.get("following_source")
+    if following:
+        contexts.append(({"context": "following_sequence"}, following))
     for fact in payload.get("source_evidence", []):
         for passage in fact.get("source_passages", []):
             contexts.append(({"context": "continuity_history", "sequence": fact["sequence"],
@@ -175,11 +204,43 @@ def review(chat, client, model, payload, count, max_tokens, *, system=SYSTEM, ev
     contract = deepcopy(SCHEMA)
     item_fields = contract["schema"]["properties"]["issues"]["items"]
     adaptation = payload.get("stage") == "adaptation"
+    language_check = adaptation and bool(indices) and payload.get("review_focus") in (
+        None, "source_fidelity", "source_fidelity_event_group"
+    )
     if adaptation:
-        item_fields["required"].append("check")
+        item_fields["required"].extend(("check", "field", "disposition"))
         item_fields["properties"]["check"] = {"type": "string", "enum": ["adaptation", "planning_continuity"]}
+        item_fields["properties"]["field"] = {"type": "string", "enum": [*LANGUAGE_FIELDS, "sequence"]}
+        item_fields["properties"]["disposition"] = {"type": "string", "enum": ["repair", "uncertain"]}
+        offered_ids = [identifier for index in indices for identifier in index.ranges] + list(known_context)
+        if offered_ids:
+            item_fields["properties"]["passage_ids"] = {
+                **PASSAGE_IDS, "items": {**PASSAGE_IDS["items"], "enum": offered_ids},
+            }
         system += ("\nUse check=planning_continuity for unsupported physical updates or context resets "
-                   "in scene_plan.continuity. Use check=adaptation for other defects.")
+                   "in scene_plan.continuity. Use check=adaptation for other defects. "
+                   "Choose the exact affected field. Use sequence only for planning or a necessary scene split. "
+                   "Use disposition=uncertain for evidence that leaves identity or presence unresolved. "
+                   "Use disposition=repair for a concrete defect the source allows correcting.")
+        if payload.get("review_focus") not in ("cinematic_pacing", "source_fidelity_event_group"):
+            system += "\n" + REFERENCE_RULES
+    if language_check:
+        contract["schema"]["required"].append("narration_language")
+        code = {"type": "string", "pattern": _LANGUAGE_CODE}
+        contract["schema"]["properties"]["narration_language"] = {
+            "type": "object", "additionalProperties": False, "required": ["source", *LANGUAGE_FIELDS],
+            "properties": {"source": code, **{
+                field: {"type": "array", "uniqueItems": True, "items": code} for field in LANGUAGE_FIELDS
+            }},
+        }
+        system += ("\nIn narration_language, label the language of the original book narration in source. "
+                   "Then independently list the actual languages the exported narration uses in each field, "
+                   "even when all four use the same language. Use lowercase ISO 639 primary codes, with "
+                   "two letters when available. Check every event (only assigned events in an indexed group). "
+                   "Exclude proper names and preserved verbatim foreign-language dialogue. Use an empty "
+                   "field list only for dialogue-only or language-neutral text. Use und for narration whose "
+                   "language is unclear. Use immediate source context to identify the language of short "
+                   "source fragments. The application compares the codes, so keep language out of issues.")
     if event_coverage is not None:
         contract["schema"]["required"].append("covered_events")
         contract["schema"]["properties"]["covered_events"] = {
@@ -191,8 +252,8 @@ def review(chat, client, model, payload, count, max_tokens, *, system=SYSTEM, ev
                "Selected evidence must substantiate the defect, including the specific subject or event.")
     if known_context:
         system += ("\nFor continuity checks, review_context_passages may supplement current evidence. "
-                   "These context IDs refer to earlier source, never to an issue target. "
-                   "Do not cite previous source to justify a current source-fidelity defect.")
+                   "These context IDs never refer to an issue target. "
+                   "Include current-source evidence as well; a context citation alone is insufficient.")
     lmstudio_pipeline.comfy_interrupt_check()
     result = chat(client, model, system,
                   json.dumps(request, ensure_ascii=False),
@@ -218,10 +279,42 @@ def review(chat, client, model, payload, count, max_tokens, *, system=SYSTEM, ev
             or set(result) != set(contract["schema"]["required"])):
         uncertain("response_schema")
         return issues
+    if language_check:
+        language = result["narration_language"]
+        def valid_code(value):
+            return isinstance(value, str) and re.fullmatch(_LANGUAGE_CODE, value)
+
+        if (not isinstance(language, dict) or set(language) != {"source", *LANGUAGE_FIELDS}
+                or not valid_code(language["source"])
+                or any(not isinstance(language[field], list)
+                       or any(not valid_code(code) for code in language[field])
+                       or len(language[field]) != len(set(language[field])) for field in LANGUAGE_FIELDS)):
+            uncertain("language_coverage")
+        else:
+            source = indices[0]
+            passages = [{"start": source.offset, "end": source.offset + len(source.text), "text": source.text}]
+            expected = language["source"]
+            for field in LANGUAGE_FIELDS:
+                actual = set(language[field])
+                if not actual:
+                    continue
+                if expected != "und" and actual - {expected, "und"}:
+                    message = f"{LANGUAGE_MISMATCH}{field} (source {expected}, field {', '.join(sorted(actual))})."
+                    prefix = ""
+                elif expected == "und" or "und" in actual:
+                    message = f"Narration language could not be established for {field}."
+                    prefix = UNCERTAIN_ISSUE
+                else:
+                    continue
+                if on_evidence is not None:
+                    on_evidence({"target": 1, "message": message, "field": field, "source_passages": passages})
+                issues.setdefault(1, []).append(prefix + message)
     for number, item in enumerate(result["issues"], 1):
         target = item.get("target") if isinstance(item, dict) else None
         if (not isinstance(item, dict) or set(item) != set(item_fields["required"])
-                or (adaptation and item["check"] not in ("adaptation", "planning_continuity"))
+                or (adaptation and (item["check"] not in ("adaptation", "planning_continuity")
+                                    or item["field"] not in (*LANGUAGE_FIELDS, "sequence")
+                                    or item["disposition"] not in ("repair", "uncertain")))
                 or not isinstance(item["message"], str) or not item["message"].strip()):
             uncertain("issue_schema", target, number)
             continue
@@ -240,12 +333,17 @@ def review(chat, client, model, payload, count, max_tokens, *, system=SYSTEM, ev
             uncertain("unknown_passage_id", target, number,
                       passage_positions=[position for position, value in enumerate(ids, 1) if value not in offered])
             continue
+        if adaptation and not any(value in own for value in ids):
+            uncertain("missing_current_evidence", target, number)
+            continue
         if len(set(ids)) != len(ids):
             uncertain("duplicate_passage_id", target, number)
             continue
         passages = select_passages(offered, ids)
         if on_evidence is not None:
-            on_evidence({"target": target, "message": item["message"], "source_passages": passages})
-        prefix = CONTINUITY_ISSUE if item.get("check") == "planning_continuity" else ""
+            on_evidence({"target": target, "message": item["message"], "source_passages": passages,
+                         **({"field": item["field"], "disposition": item["disposition"]} if adaptation else {})})
+        prefix = (UNCERTAIN_ISSUE if item.get("disposition") == "uncertain"
+                  else CONTINUITY_ISSUE if item.get("check") == "planning_continuity" else "")
         issues.setdefault(target, []).append(prefix + item["message"])
     return issues

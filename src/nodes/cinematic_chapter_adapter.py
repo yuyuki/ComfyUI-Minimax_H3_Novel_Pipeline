@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from ..core import cinematic_adaptation, cinematic_diagnostics, configuration_snapshot, lmstudio_pipeline, progress, util
+from ..core import narrative_choices
 from .chapter_selection import chapter_path_list
 from ..core.run_output import stage_output
 
@@ -150,6 +151,11 @@ class CinematicChapterAdapterNode:
                         latest_state or chapter, chapter_name=path.stem, source_file=str(path),
                         maximum_seconds=float(duration), completed=True)
                     chapter = cinematic_diagnostics.downstream_chapter(chapter)
+                    # Extraction resolves selected choices again. Its default
+                    # input must be the same adaptation the adapter reviewed.
+                    resolved = narrative_choices.resolve_chapter(chapter)
+                    if resolved["sequences"] != chapter["sequences"]:
+                        raise ValueError("Selected cinematic choices differ from the reviewed chapter.")
                     util.save_json(saved, chapter)
                     pending = diagnostics_path.with_suffix(".json.tmp")
                     util.save_json(pending, diagnostics)

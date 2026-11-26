@@ -42,6 +42,13 @@ Preserve exact spatial relations and physical support; do not prolong transient 
 Identify the current filming space in initialState or event using the established
 name when the source supports continuity. Resolve contextual aliases and qualify
 coexisting objects by function or attachment without inventing visual traits.
+Each interpretation must keep support, damage and markings with the right entity
+and physical phase. Preserve the visible entities and identifiable speech in
+initialState and event. Distinguish visible characters, offscreen speakers,
+addressees and mentions. Preserve unidentified cries as ambience and never guess
+a speaker or resolve an identity the source leaves uncertain.
+If fields_to_correct is provided, only vary those fields, using cited_defects
+and keeping every other field of current_adaptation verbatim.
 Keep source excerpts in their designated JSON fields. Never insert a
 source_excerpt: metadata line into initialState, event or endingState.
 Explain the tradeoff in reason. Return only JSON matching the schema.

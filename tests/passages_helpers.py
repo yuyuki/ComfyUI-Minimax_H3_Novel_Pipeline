@@ -67,6 +67,10 @@ def adapt_fixture_reply(reply, payload, schema):
     if "review_passages" in payload and isinstance(result.get("issues"), list):
         offers = payload["review_passages"]
         issue_fields = fields["issues"]["items"]["properties"]
+        if "narration_language" in fields:
+            result.setdefault("narration_language", {
+                field: "fr" if field == "source" else ["fr"] for field in fields["narration_language"]["required"]
+            })
         for row in result["issues"]:
             if isinstance(row, dict) and set(row) == {"target", "message"} and offers:
                 target = row["target"]
@@ -74,6 +78,9 @@ def adapt_fixture_reply(reply, payload, schema):
                 row["passage_ids"] = eligible[:1] or ["unoffered-fixture-passage"]
                 if "check" in issue_fields:
                     row["check"] = "adaptation"
+            if isinstance(row, dict) and "check" in row and "field" in issue_fields:
+                row.setdefault("field", "sequence")
+                row.setdefault("disposition", "repair")
     if "evidence" in result and "passages" in payload and "source_passages" in payload:
         offers = payload["source_passages"]
         rows = []
