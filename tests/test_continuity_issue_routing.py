@@ -20,7 +20,7 @@ def scene():
 
 def row():
     return {"catalog": [{"global_id": "hero", "entity_type": "character", "available_picture_views": [{"view_type": "face_front"}]}],
-            "character_context": None, "sequence": {"sequence": 1, "source": "He shouts for help."}}
+            "sequence": {"sequence": 1, "source": "He shouts for help."}}
 
 
 def metadata():
@@ -103,8 +103,7 @@ def test_metadata_corrections_cannot_invent_ids_views_visibility_or_story(change
         answer["reference_view_requests"] = [{"global_id": "hero", "view_types": ["invented"],
                                                "prominence": "primary", "reason": "Wrong"}]
     elif change == "offscreen":
-        evidence["character_context"] = {"registry_ids": {"local": "hero"}, "sequence": {
-            "characters": [{"local_id": "local", "presence": "offscreen"}]}}
+        evidence["catalog"][0]["presence"] = "offscreen"
     elif change == "new_beat":
         answer["visual_event"] = "Fall now"
     else:
@@ -112,6 +111,19 @@ def test_metadata_corrections_cannot_invent_ids_views_visibility_or_story(change
     with pytest.raises(ValueError):
         issues.repair_metadata(None, "gemma", step.scene_to_dict(scene()), evidence, [],
                                SimpleNamespace(max_tokens=8192), Mock(return_value=answer))
+
+
+@pytest.mark.parametrize("presence", ["offscreen", "mentioned"])
+def test_catalog_presence_controls_speaking_without_a_picture(presence):
+    evidence = row()
+    evidence["catalog"][0]["presence"] = presence
+    answer = {**metadata(), "visible_entity_ids": [], "reference_view_requests": []}
+    validator = issues.Draft202012Validator(issues.metadata_schema(evidence["catalog"])["schema"])
+    if presence == "offscreen":
+        assert issues.validate_metadata(answer, evidence, validator) == []
+    else:
+        with pytest.raises(ValueError, match="approved speech presence"):
+            issues.validate_metadata(answer, evidence, validator)
 
 
 def test_selected_visible_location_does_not_need_to_be_listed_twice():

@@ -48,7 +48,7 @@ def test_invalid_duration_fails_before_model(tmp_path, monkeypatch, cinematic_re
 def test_metadata_keeps_phases_source_and_offscreen_dialogue(monkeypatch):
     sequence = {"sequence": 7, "source": "Original exact source.", "adaptation": {
         "initialState": "Indy hangs.", "event": "Doriane calls offscreen: Jones !", "endingState": "Indy looks up."}}
-    row = {"sequence": sequence, "catalog": catalog(), "character_context": None}
+    row = {"sequence": sequence, "catalog": catalog()}
     original = deepcopy(row)
     calls = []
     def request(client, model, system, user, schema, temperature, max_tokens):

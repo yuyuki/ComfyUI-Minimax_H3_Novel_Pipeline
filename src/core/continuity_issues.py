@@ -226,6 +226,9 @@ def validate_metadata(result, row, validator):
     for gid in visible:
         if catalog[gid].get("presence", "visible") != "visible":
             raise ValueError(f"Scene metadata selects entity {gid!r} without approved visibility in this sequence.")
+    for gid in result["speaking_entity_ids"]:
+        if catalog[gid].get("presence", "visible") not in ("visible", "offscreen"):
+            raise ValueError("Scene metadata repair contradicts approved speech presence.")
     visible = list(dict.fromkeys([*visible, *(item["global_id"] for item in visible_locations(row))]))
     visible_ids = set(visible)
     seen = set()
@@ -243,13 +246,4 @@ def validate_metadata(result, row, validator):
                 f"{sorted(unavailable)!r}. Allowed views: {sorted(views)!r}."
             )
         seen.add(gid)
-    context = row.get("character_context")
-    if context and context.get("sequence"):
-        mapped = context["registry_ids"]
-        presence = dict.fromkeys(mapped.values(), "absent")
-        presence.update({mapped[r["local_id"]]: r["presence"] for r in context["sequence"]["characters"]})
-        if any(presence.get(gid, "visible") != "visible" for gid in visible):
-            raise ValueError("Scene metadata repair contradicts approved character visibility.")
-        if any(presence.get(gid, "offscreen") not in ("visible", "offscreen") for gid in result["speaking_entity_ids"]):
-            raise ValueError("Scene metadata repair contradicts approved speech presence.")
     return visible

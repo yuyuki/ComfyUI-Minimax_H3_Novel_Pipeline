@@ -71,8 +71,7 @@ def test_identity_and_exact_states_never_flatten(mocked_reconcile, kind):
     assert source_observations_at(entity, "missing", 1) == []
     assert entity["stable_visual_description"] == source[kind][0]["stable_visual_description"]
     assert entity["distinguishing_features"] == ["Permanent mark"]
-    assert any(row["text"] == "empty hands" for row in calls[0]["source_passages"])
-    assert all(word not in json.dumps(calls[0]["incoming"]) for word in ("torch", "eyes closed", "empty hands", "looks upward"))
+    assert not calls
     assert "chapter_variations" not in entity
     result = source_observations_at(entity, "chapter", 1)
     result.clear()
@@ -92,9 +91,10 @@ def test_aliases_across_chapters_and_stable_observations(mocked_reconcile):
     assert entity["first_chapter_id"] == "chapter-Z"
     assert source_observations_at(entity, "chapter-A", 1)[0]["evidence"] == ["wears a disguise"]
     assert source_observations_at(entity, "chapter-Z", 1)[0]["evidence"] == ["empty hands"]
-    assert "Low voice" in json.dumps(calls[1]["incoming"])
+    assert len(calls) == 1
+    assert "Low voice" in json.dumps(calls[0]["incoming"])
     assert any(row["text"] == "wears a disguise" and row["chapter"] == "chapter-A"
-               for row in calls[1]["source_passages"])
+               for row in calls[0]["source_passages"])
     assert step.build_chapter_map(registry) == {"chapter-Z": {"LOCAL_1": "CHAR_001"}, "chapter-A": {"LOCAL_1": "CHAR_001"}}
 
 
@@ -212,9 +212,18 @@ def test_invalid_identity_resolutions_retry_without_losing_observations(monkeypa
         return {"resolutions": [resolution]}
     monkeypatch.setattr(step, "chat_json", chat)
     args = SimpleNamespace(candidate_count=12, include_all_below=35, temperature=0.1, max_tokens=8000)
-    entity, = step.reconcile_chapter(None, "mock", catalog(), [], args)
+    initial = step.reconcile_chapter(None, "mock", catalog("first"), [], args)
+    assert not calls
+    _, entity = step.reconcile_chapter(None, "mock", catalog(), initial, args)
     assert len(calls) == 2
     assert len(source_observations_at(entity, "chapter", 1)) == 3
+
+
+def test_registry_with_previous_character_enrichment_requires_reconsolidation():
+    registry = {"schema_version": util.REGISTRY_SCHEMA, "timeline_version": util.REFERENCE_TIMELINE_VERSION}
+    util.require_schema(registry, util.REGISTRY_SCHEMA)
+    with pytest.raises(ValueError, match="Reconsolidate references from the saved chapter catalogs"):
+        util.require_schema({**registry, "character_enrichment": {}}, util.REGISTRY_SCHEMA)
 
 
 def test_catalog_edits_invalidate_loader_cache(tmp_path, monkeypatch):

@@ -25,7 +25,6 @@ from .generation_requests import chat_json
 from .path_access import confined_path
 from .prompt_cache import fingerprint as cache_fingerprint
 from . import temporal_context
-from .character_visual_integration import sequence_context
 from .cinematic_references import parse_chapters
 from .reference_timeline import source_observations_at
 from . import reference_visuals
@@ -568,23 +567,6 @@ def sequence_catalog(refs: dict[str, Any], chapter_id: str, sequence: int) -> li
     return result
 
 
-def constrain_character_presence(refs: dict[str, Any], chapter_id: str, scene: Scene, *, contexts=None) -> None:
-    """Keep mapped mentions and offscreen voices out of visual reference bindings."""
-    context = sequence_context(refs, chapter_id, scene.sequence) if contexts is None else contexts[scene.sequence]
-    if context is None or context['sequence'] is None:
-        return
-    mapping = context['registry_ids']
-    presence = dict.fromkeys(mapping.values(), 'absent')
-    presence.update({mapping[row['local_id']]: row['presence']
-                     for row in context['sequence']['characters']})
-    scene.visible_entity_ids = [gid for gid in scene.visible_entity_ids
-                                if gid not in presence or presence[gid] == 'visible']
-    scene.speaking_entity_ids = [gid for gid in scene.speaking_entity_ids
-                                 if gid not in presence or presence[gid] in ('visible', 'offscreen')]
-    scene.reference_view_requests = [request for request in scene.reference_view_requests
-                                    if request.global_id not in presence or presence[request.global_id] == 'visible']
-
-
 def cinematic_scene(row, period):
     sequence = row["sequence"]
     locations = [item["global_id"] for item in continuity_issues.visible_locations(row)]
@@ -959,6 +941,8 @@ beat in adaptation_notes, with exact source words and the correct speaker. Keep
 off-screen replies audible without inventing a view of the speaker. Dialogue from
 neighboring beats included only for context does not belong in this clip. Preserve
 the planned starting state and event order; do not bring later events forward.
+Describe momentary visible details explicitly authored in the adaptation at the
+point where they occur, even when the bindings contain no reference for them.
 Do not vocalize internal thoughts. detailed_description normally targets
 350-500 English words; dialogue-heavy material prioritizes fitting the actual spoken
 timeline. Return only the six-section H3 prompt inside prompt_text, with no Markdown.
@@ -1663,12 +1647,11 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
 
     bundle, evidence_status = generation_evidence.prepare(
         refs, chapter_id, sequences, spatial_plan, period, cache_dirs,
-        catalog_for=sequence_catalog, context_for=sequence_context, force=args.force,
+        catalog_for=sequence_catalog, force=args.force,
         dependencies=generation_requests.contracts("evidence"),
     )
     print(f"  upstream evidence: {evidence_status['status']}")
     evidence_rows = {row["sequence"]["sequence"]: row for row in bundle["sequences"]}
-    contexts = {number: row["character_context"] for number, row in evidence_rows.items()}
     sequence_plans = {number: row["spatial_plan"] for number, row in evidence_rows.items()
                       if row["spatial_plan"] is not None}
     print(f"{chapter['chapter_name']}: {len(sequences)} cinematic scene(s); no replanning")
@@ -1691,13 +1674,14 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
                 scene = cinematic_scene(row, period)
         if scenes and getattr(args, "continue_from_last_frame", True):
             scene.previous_frame_sequence = scenes[-1].sequence
-        constrain_character_presence(refs, chapter_id, scene, contexts=contexts)
         scenes.append(scene)
     # Keep all future evidence even when only generating a prefix of the chapter.
     selected_count = min(args.max_scenes, len(scenes)) if args.max_scenes > 0 else len(scenes)
     print(f"  selected {selected_count} scene(s)")
 
     visual_designs = bundle["visual_designs"]
+    profiled_characters = {entity["global_id"]: entity.get("ignored_character_traits", [])
+                           for entity in bundle["references"]["entities"] if "character_id" in entity}
     excluded_images = {item["global_id"] for item in visual_designs.get("entities", [])
                        if item.get("exclude_image", False)}
     continuity_states: list[dict[str, Any]] = []
@@ -1716,10 +1700,12 @@ def _process_chapter(chapter, refs, client, model, args) -> dict[str, Any]:
         generation_requests.position(f"{chapter_id} scene {i}/{len(scenes)}")
         continuity = ({"visual_designs": visual_designs, **continuity_states[i - 1]}
                       if spatial_plan is not None else None)
-        character_context = contexts[scene.sequence]
-        if character_context is not None:
-            continuity = {**(continuity or {}), "visual_designs": visual_designs,
-                          "character_enrichment": character_context}
+        scene_profiles = {gid: profiled_characters[gid] for gid in scene.visible_entity_ids + scene.speaking_entity_ids
+                          if gid in profiled_characters}
+        if scene_profiles:
+            continuity = {**(continuity or {}), "ignored_character_traits": scene_profiles,
+                          "instruction_for_character_profiles": "Use physical profiles as appearance references. "
+                                                                "Do not recreate ignored traits."}
         review_required = continuity is not None or scene.previous_frame_sequence is not None
         row = evidence_rows[scene.sequence]
         print(f"  [{i}/{len(scenes)}] {scene.title}")

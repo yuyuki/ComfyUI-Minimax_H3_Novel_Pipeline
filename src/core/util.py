@@ -25,6 +25,9 @@ def require_schema(data: Any, expected: str) -> None:
         raise ValueError(f"Expected current schema {expected}; regenerate older outputs.")
     if expected == REGISTRY_SCHEMA and data.get("timeline_version") != REFERENCE_TIMELINE_VERSION:
         raise ValueError("Regenerate the chapter catalogs and reconsolidate references with the current appearance rules.")
+    if expected == REGISTRY_SCHEMA and "character_enrichment" in data:
+        raise ValueError("Reconsolidate references from the saved chapter catalogs and character visual profiles. "
+                         "The previous character enrichment can change catalog visibility.")
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf"}

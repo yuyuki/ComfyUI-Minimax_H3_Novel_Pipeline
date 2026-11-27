@@ -18,14 +18,13 @@ def inputs(tmp_path, monkeypatch, cinematic_registry):
                               picture_assets=[{"asset_id": "pic", "linked_global_id": "hero"}],
                               audio_assets=[], visual_designs={"entities": [{"global_id": "hero"}]})
     sequences = refs["chapter_timelines"]["chapter"]["sequences"]
-    catalog = Mock(return_value=[{"global_id": "hero", "source_observations": [{"state": "Hanging"}, {"state": "Calls for help"}]}])
-    context = Mock(return_value={"registry_ids": {"local": "hero"}, "sequence": {
-        "sequence": 1, "characters": [{"local_id": "local", "presence": "offscreen"}]}})
+    catalog = Mock(return_value=[{"global_id": "hero", "presence": "offscreen",
+                                  "source_observations": [{"state": "Calls for help"}]}])
     spatial = {"source_digest": "source-v1", "chapters": {"chapter": {"sequences": [
         {"sequence": 1, "initial_entities": [{"entity_id": "hero", "evidence": "inferred", "world_position": "unknown"}]}]}}}
     return dict(refs=refs, chapter_id="chapter", sequences=sequences, spatial_plan=spatial,
                 period="1922 is adaptation context", cache_dirs=[tmp_path / "first/h3/.cache/chapter"],
-                catalog_for=catalog, context_for=context, dependencies={"builder": "v1"})
+                catalog_for=catalog, dependencies={"builder": "v1"})
 
 
 def test_compile_preserves_provenance_and_never_mutates_inputs(inputs):
@@ -39,7 +38,7 @@ def test_compile_preserves_provenance_and_never_mutates_inputs(inputs):
     assert all(p["chapter_id"] == "chapter" and p["sequence"] == 1 for p in row["phases"])
     assert row["spatial_plan"]["initial_entities"][0]["evidence"] == "inferred"
     assert row["spatial_plan"]["initial_entities"][0]["world_position"] == "unknown"
-    assert row["character_context"]["sequence"]["characters"][0]["presence"] == "offscreen"
+    assert row["catalog"][0]["presence"] == "offscreen"
     bundle["references"]["entities"][0]["canonical_name"] = "mutated"
     row["catalog"].clear()
     assert before == {key: inputs[key] for key in before}
@@ -47,7 +46,7 @@ def test_compile_preserves_provenance_and_never_mutates_inputs(inputs):
     assert status["status"] == "cached"
     assert cached["references"]["entities"][0]["canonical_name"] == "Indy"
     assert cached["sequences"][0]["catalog"]
-    assert inputs["catalog_for"].call_count == inputs["context_for"].call_count == 1
+    assert inputs["catalog_for"].call_count == 1
 
 
 def test_resume_carries_bundle_forward_without_recomputing_or_writing_old_run(inputs, tmp_path):
@@ -63,7 +62,7 @@ def test_resume_carries_bundle_forward_without_recomputing_or_writing_old_run(in
     assert (current / "evidence_bundle.json").read_bytes() == before
     inputs["cache_dirs"] = [tmp_path / "third/h3/.cache/chapter", current]
     assert evidence.prepare(**inputs)[0] == expected
-    assert inputs["catalog_for"].call_count == inputs["context_for"].call_count == 1
+    assert inputs["catalog_for"].call_count == 1
 
 
 @pytest.mark.parametrize("change", ["phase", "source", "name", "asset", "design", "spatial", "implementation", "force", "version"])
@@ -139,7 +138,7 @@ def test_invalid_spatial_provenance_is_rejected_before_cache_reuse(inputs, chang
     assert inputs["catalog_for"].call_count == 1
 
 
-def test_chapter_reuses_compiled_context_for_all_scenes_and_resume(tmp_path, monkeypatch, cinematic_registry):
+def test_chapter_reuses_compiled_evidence_for_all_scenes_and_resume(tmp_path, monkeypatch, cinematic_registry):
     from types import SimpleNamespace
     from minimax_h3_novel_pipeline.core import pipeline_step3_generate as step
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
@@ -147,9 +146,8 @@ def test_chapter_reuses_compiled_context_for_all_scenes_and_resume(tmp_path, mon
     refs = cinematic_registry(chapter)
     args = SimpleNamespace(out_dir=tmp_path / "first/h3", force=False, max_scenes=0,
                            duration=8, max_tokens=8192, repair_attempts=0)
-    catalog, context = Mock(return_value=[]), Mock(return_value=None)
+    catalog = Mock(return_value=[])
     monkeypatch.setattr(step, "sequence_catalog", catalog)
-    monkeypatch.setattr(step, "sequence_context", context)
     monkeypatch.setattr(step, "prepare_cinematic_scene", metadata_scene)
     monkeypatch.setattr(step, "build_bindings", lambda *a: {"subjects": [{"global_id": "hero"}], "audio": []})
     monkeypatch.setattr(step, "generate_prompt", lambda *a: "draft")
@@ -163,4 +161,4 @@ def test_chapter_reuses_compiled_context_for_all_scenes_and_resume(tmp_path, mon
     assert len(second["outputs"]) == len(refs["chapter_timelines"]["chapter"]["sequences"])
     assert second["evidence_bundle"]["status"] == "cached"
     assert first["evidence_bundle"]["digest"] == second["evidence_bundle"]["digest"]
-    assert catalog.call_count == context.call_count == 1
+    assert catalog.call_count == 1

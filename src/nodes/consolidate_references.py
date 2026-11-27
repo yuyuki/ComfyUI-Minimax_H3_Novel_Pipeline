@@ -55,8 +55,6 @@ class ConsolidateReferencesNode:
             "character_visual_profiles": ("MINIMAX_CHARACTER_VISUAL_PROFILES",),
             "image_style": (list(IMAGE_STYLES), {"default": "cinematic photographic"}),
             "visual_designs_path": ("STRING", {"default": "", "tooltip": "Optional chapter or global visual_designs.json inside output/minimax_h3_novel; only matching chapter entities are imported. Leave empty on the first run; consolidation saves this file automatically."}),
-            "context_tokens": ("INT", {"default": 65536, "min": 16384, "max": 1048576,
-                "tooltip": "Context budget for character evidence enrichment, including response tokens. Set no higher than the context loaded in LM Studio. Oversized identity evidence is batched without dropping observations."}),
             "force": ("BOOLEAN", {"default": False}),
         }}
 
@@ -120,9 +118,6 @@ class ConsolidateReferencesNode:
             keys = ("candidate_count", "include_all_below", "audio_threshold", "max_character_base_views", "max_location_base_views", "max_object_base_views", "asset_batch_size", "no_audit", "audit_max_entities", "temperature", "max_tokens")
             args = argparse.Namespace(**{key: params[key] for key in keys}, audit_similarity=float(params["audit_similarity"]), audit_cluster_size=max(2, int(params["audit_cluster_size"])))
             args.max_attempts = int(params.get("max_attempts", 3))
-            args.context_tokens = int(params.get("context_tokens", 65536))
-            if not 16384 <= args.context_tokens <= 1048576:
-                raise ValueError("context_tokens must be between 16384 and 1048576.")
             if not 1 <= args.max_attempts <= 20:
                 raise ValueError("max_attempts must be between 1 and 20.")
             args.image_style = params.get("image_style", "cinematic photographic")
@@ -182,11 +177,7 @@ class ConsolidateReferencesNode:
             }
             imported_designs = character_visual_profiles['visual_designs'] if character_visual_profiles is not None else path_designs
             has_profiles = bool(imported_designs and 'character_profiles' in imported_designs)
-            design_start = 0.3 if has_profiles else 0.15
-            _log("Checking character evidence" if has_profiles else "No character evidence enrichment required")
-            with progress.scope(0.15, design_start):
-                character_enrichment, args.character_designs = character_visual_integration.apply(
-                    imported_designs, chapters, registry, output, client, resolved_model, args)
+            args.character_designs = character_visual_integration.apply(imported_designs, chapters, registry, visual_checks)
             if has_profiles:
                 for entity in registry:
                     if (entity["entity_type"] == "character" and entity["global_id"] not in args.character_designs
@@ -196,17 +187,8 @@ class ConsolidateReferencesNode:
                         visual_checks.append({"stage": "character_visual_profile", "entity_id": entity["global_id"],
                                               "status": "incomplete",
                                               "message": "No matching character visual profile was available."})
-            for chapter_id, local in character_enrichment.items():
-                by_id = {e["global_id"]: e for e in registry}
-                for row in local["sequences"]:
-                    for character in row["characters"]:
-                        gid = local["registry_ids"].get(character["local_id"])
-                        if gid and character["presence"] != "visible":
-                            state = by_id[gid]["visual_reference"]["scenes"].get(chapter_id, {}).get(str(row["sequence"]))
-                            if state is not None:
-                                state["presence"] = "offscreen" if character["presence"] == "offscreen" else "mentioned"
             _log(f"Preparing visual designs for {len(registry)} entities")
-            with progress.scope(design_start, 0.5):
+            with progress.scope(0.15, 0.5):
                 designs = prepare_designs(pipeline.chat_json, client, resolved_model, registry, args,
                                           designs_path)
             if imported_designs and 'character_profiles' in imported_designs:
@@ -237,8 +219,6 @@ class ConsolidateReferencesNode:
                 "references": {kind: c.get(kind, []) for kind in ("characters", "locations", "objects")},
             } for c in chapters}
             payload["visual_designs"] = designs
-            if character_enrichment:
-                payload["character_enrichment"] = character_enrichment
             payload["image_style"] = args.image_style
             util.save_json(output / "consolidated_references.json", payload)
             export_image_prompts(payload, output / "image_prompts")

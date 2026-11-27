@@ -144,7 +144,7 @@ Its paths start at `output/minimax_h3_novel` and must stay within that root.
    Connect **Spatial Continuity** or **Load Spatial Continuity** to the optional
    `spatial_continuity` input to use its staging plan and review final prompts.
    Without a connection, Generate does not infer spatial staging internally.
-   Character-enrichment checks remain independent of the spatial connection.
+   Reference bindings use the chapter catalogs with or without a spatial plan.
    Generate checks final prompts after camera refinement, corrects contradictions
    within `repair_attempts`, and records unresolved issues as validation warnings.
    Existing visual designs are carried by `consolidated_references`.
@@ -510,16 +510,13 @@ and identity evidence. Profile IDs and registry IDs are independent: consolidati
 checks contextual identity evidence and leaves ambiguous mappings unassigned with a
 warning. Matching names alone never establish a profile-backed identity.
 
-Consolidation computes presence and local appearance from the current chapter's
-cinematic sequences. Clothes, accessories, temporary injuries and chronological
-changes stay at their attested narrative moment. Mentions and offscreen characters
-never imply visibility. H3 planning and prompts receive these local states along with
-the stable physical facts. Local enrichment files are saved beneath
-`references/<chapter_id>/`; their cache is `references/.cache/<chapter_id>/`.
+Consolidation joins permanent physical traits by a unique canonical name or alias.
+Presence and reference-relevant appearance come from the chapter catalogs. H3
+uses the resolved cinematic adaptation to stage actions and momentary visual
+details at their authored point in the sequence.
 
-Each `character_chapter_enrichment.diagnostics.json` records chapter and sequence
-findings. Consolidation continues with usable results when identity, presence or
-local-state checks exhaust their retries. Unresolved mappings remain distinct.
+Ambiguous profile mappings remain unresolved and are reported in
+`consolidated_references.diagnostics.json`.
 Missing, changed or ambiguous source files stop source verification with an
 actionable error.
 

@@ -8,15 +8,15 @@ from .path_access import confined_path
 
 
 # Bump for evidence compiler changes; caller projection versions are dependencies.
-VERSION = 2
+VERSION = 3
 
 
 def prepare(refs, chapter_id, sequences, spatial_plan, period, cache_dirs, *,
-            catalog_for, context_for, dependencies, force=False):
+            catalog_for, dependencies, force=False):
     """Reuse only exact upstream inputs, carry forward and return detached data.
 
     Callers supply resolved/validated timeline and spatial inputs. Source text,
-    selected phases, character states and inferred staging remain separate.
+    selected phases, reference observations and inferred staging remain separate.
     Model settings deliberately do not participate in this deterministic key.
     """
     comfy_interrupt_check()
@@ -69,7 +69,6 @@ def prepare(refs, chapter_id, sequences, spatial_plan, period, cache_dirs, *,
         comfy_interrupt_check()
         number = sequence["sequence"]
         catalog = catalog_for(refs, chapter_id, number)
-        context = context_for(refs, chapter_id, number)
         # Each occurrence retains chapter/sequence/phase provenance, even when
         # two phases contain exactly the same text. No summary or inferred state.
         phases = [{"id": digest([chapter_id, number, phase]), "chapter_id": chapter_id,
@@ -77,7 +76,7 @@ def prepare(refs, chapter_id, sequences, spatial_plan, period, cache_dirs, *,
                    "origin": "resolved_cinematic_adaptation"}
                   for phase, text in sequence["adaptation"].items()]
         rows.append({"sequence": deepcopy(sequence), "catalog": deepcopy(catalog),
-                     "character_context": deepcopy(context), "phases": phases,
+                     "phases": phases,
                      "spatial_plan": deepcopy(spatial.get(number))})
     bundle = {
         "chapter_id": chapter_id, "source_digest": refs.get("source_digest", ""),
@@ -114,7 +113,6 @@ def _valid(bundle, chapter_id, sequence_ids):
     for row in rows:
         if (not isinstance(row["catalog"], list) or any(not isinstance(item, dict) for item in row["catalog"])
                 or not isinstance(row["phases"], list)
-                or not (row["character_context"] is None or isinstance(row["character_context"], dict))
                 or not (row["spatial_plan"] is None or isinstance(row["spatial_plan"], dict))):
             return False
         number = row["sequence"]["sequence"]

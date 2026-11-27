@@ -372,18 +372,7 @@ def _identity_diagnostic(args, stage, **details):
         checks.append({"stage": stage, **details})
 
 
-def reconcile_chapter(
-    client: OpenAI,
-    model: str,
-    chapter: dict[str, Any],
-    registry: list[dict[str, Any]],
-    args: argparse.Namespace,
-) -> list[dict[str, Any]]:
-    validate_catalogs([chapter])
-    incoming = incoming_entities(chapter)
-    sources = {e["local_id"]: e for kind in ("characters", "locations", "objects") for e in chapter[kind]}
-    if not incoming:
-        return registry
+def _request_resolutions(client, model, chapter, registry, args, incoming, sources):
     candidates = candidate_catalog(incoming, registry, args.candidate_count, args.include_all_below)
     selectable = {item["global_id"] for group in candidates.values() for item in group}
     catalog = passage_catalog([
@@ -439,7 +428,24 @@ def reconcile_chapter(
                 _identity_diagnostic(args, "cross_chapter_identity", chapter=chapter["chapter_id"], status="passed",
                                      local_id=row["local_id"], global_id=row["match_global_id"],
                                      source_passages=select_passages(catalog, row["passage_ids"]))
-    resolutions = {x["local_id"]: x for x in result.get("resolutions", [])}
+    return result["resolutions"]
+
+
+def reconcile_chapter(
+    client: OpenAI,
+    model: str,
+    chapter: dict[str, Any],
+    registry: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> list[dict[str, Any]]:
+    validate_catalogs([chapter])
+    incoming = incoming_entities(chapter)
+    if not incoming:
+        return registry
+    sources = {e["local_id"]: e for kind in ("characters", "locations", "objects") for e in chapter[kind]}
+    rows = (_request_resolutions(client, model, chapter, registry, args, incoming, sources)
+            if registry else [{**item, "match_global_id": "NEW"} for item in incoming])
+    resolutions = {row["local_id"]: row for row in rows}
 
     for item in incoming:
         r = resolutions[item["local_id"]]

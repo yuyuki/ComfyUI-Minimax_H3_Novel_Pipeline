@@ -128,6 +128,12 @@ Preserve existing node IDs and socket types for workflow compatibility.
 - Keep extraction and consolidation focused on source-grounded observations
   and reusable references. Avoid a second inferred timeline or automatic
   carry-forward of locations, characters, objects and local visual states.
+- When developing or fixing any node, preserve MiniMax H3's role in staging
+  the scene. Generate H3 Prompts carries the sequence's actions and momentary
+  visible details, such as sweat, into the prompt from the resolved cinematic
+  adaptation. Describe each detail at the point where it occurs in the
+  sequence. A detail already in the adaptation needs no duplicate character
+  state, reference trait, or image variant to reach H3.
 
 ### Neutral visual reference requirements
 
@@ -185,7 +191,11 @@ The reference contract and validation cases are documented in
 - Record depicted characters systematically, even without a local appearance trait.
   Record identifiable offscreen speakers for audio. At consolidation, when the whole-book
   character design document (`visual_designs.json`) is supplied, match registry characters
-  to its validated physical profiles. Keep local wardrobe and visibility sequence-specific.
+  to its validated physical profiles by a unique, evidence-supported match on
+  `canonical_name` or `aliases`. Reuse the chapter catalogs' `visual_reference`
+  for sequence-specific presence and reference-relevant traits. Resolve genuine
+  identity or binding ambiguities from the evidence. Do not add a second pass
+  to extract staging details already carried by the cinematic adaptation.
   A new object or filming location needs a visible useful appearance detail. Keep a known
   object or location with no new detail only when current evidence identifies that same
   entity as visible. Omit undescribed new instances and references merely mentioned.

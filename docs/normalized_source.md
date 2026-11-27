@@ -12,7 +12,7 @@ accepted quotations back into this normalized source.
 Character evidence format 3 stores the chapter file reference, normalized text
 SHA-256, location basis, exact quotations, and their character and line
 positions. The location basis is `normalized_utf8_text` or
-`normalized_pdf_extracted_text`. Consolidation and sequence enrichment reopen
+`normalized_pdf_extracted_text`. Consolidation reopens
 the original confined input file and verify its normalized fingerprint.
 A missing, changed, or ambiguous source requires attention before its locations
 can be used.
@@ -33,5 +33,5 @@ elsewhere when a unique confirmed name or alias identifies the profile there.
 An unavailable semantic audit leaves deterministically
 valid observations usable and records an incomplete audit in
 `character_evidence_diagnostics.json`. Invalid evidence and failed decisions
-are reported in the corresponding diagnostic files. Sequence-level findings
-are recorded in `character_chapter_enrichment.diagnostics.json`.
+are reported in the corresponding diagnostic files. Ambiguous registry
+mappings are recorded in `consolidated_references.diagnostics.json`.

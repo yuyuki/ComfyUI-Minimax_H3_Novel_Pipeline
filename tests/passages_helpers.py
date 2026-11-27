@@ -127,15 +127,6 @@ def adapt_fixture_reply(reply, payload, schema):
             if "temporal_quote" in row:
                 options = jobs.get(row["job_id"], {}).get("temporal_passages", {}).get(row["support_id"], [])
                 row["temporal_passage_ids"] = _select(options, row.pop("temporal_quote"))
-    if "source_passages" in payload and "sequence" in payload and "character" in schema["name"]:
-        offers = payload["source_passages"]
-        for field in ("characters", "unresolved", "states", "observations"):
-            for row in result.get(field, []):
-                if "source_quote" in row:
-                    row["passage_ids"] = _select(offers, row.pop("source_quote"))
-        if schema["name"] == "character_local_observation_review":
-            result["issues"] = [{"message": issue, "passage_ids": [offers[0]["id"]]}
-                                if isinstance(issue, str) else issue for issue in result.get("issues", [])]
     return result
 
 

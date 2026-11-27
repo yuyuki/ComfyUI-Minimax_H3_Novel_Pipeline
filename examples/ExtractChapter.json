@@ -2523,7 +2523,6 @@
         "",
         "cinematic photographic",
         "",
-        65536,
         false
       ],
       "widgets_values_named": {
@@ -2546,7 +2545,6 @@
         "resume_run": "",
         "image_style": "cinematic photographic",
         "visual_designs_path": "",
-        "context_tokens": 65536,
         "force": false
       }
     }

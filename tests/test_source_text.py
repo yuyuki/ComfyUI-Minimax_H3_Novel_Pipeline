@@ -1,4 +1,4 @@
-"""Shared typography policy across extraction, validation and scene enrichment."""
+"""Shared typography policy across extraction and validation."""
 from copy import deepcopy
 import hashlib
 import json
@@ -9,7 +9,6 @@ import pytest
 from tests.passages_helpers import with_passage_ids
 
 from minimax_h3_novel_pipeline.core import source_text as st
-from minimax_h3_novel_pipeline.core import character_chapter_enrichment as ce
 from minimax_h3_novel_pipeline.core import character_evidence as evidence
 from minimax_h3_novel_pipeline.core import character_profiles as profiles
 from minimax_h3_novel_pipeline.core import lmstudio_json, path_access, util
@@ -70,19 +69,6 @@ def test_evidence_and_profiles_share_typography_policy_and_keep_provenance():
     assert record["validation_confidence"] == "high"
     assert record["provenance"] == item["provenance"]
     assert data == snapshot
-
-
-def test_normalized_sequence_does_not_omit_temporary_evidence():
-    original = "L’homme porte un manteau."
-    record = {"quotation": original, "provenance": {
-        "file": "chapter.md", "locations": [{"start_char": 0, "end_char": len(original)}]}}
-    profile = {"supporting_evidence": [{"evidence_id": "e1", "observation": record}],
-               "unresolved_conflicts": [], "selected_traits": [], "ignored_traits": [],
-               "temporary_states": [{"trait": "clothing", "value": "manteau", "evidence_ids": ["e1"]}],
-               "chronological_changes": []}
-    sequence = {"source": original.replace("’", "'")}
-    chapter = {"_source_text": original, "source_file": "chapter.md"}
-    assert ce.state_candidates(profile, chapter, sequence, 0)[0]["evidence_ids"] == ["e1"]
 
 
 def test_both_readers_model_prompts_and_saved_locations_use_the_same_source(tmp_path, monkeypatch):

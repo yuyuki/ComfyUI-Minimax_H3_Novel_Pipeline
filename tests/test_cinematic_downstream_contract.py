@@ -123,7 +123,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
         assert rows == sequences
         for seq in rows:
             scene = generator.prepare_cinematic_scene(client, model, {
-                "sequence": seq, "catalog": [], "character_context": None}, "", args)
+                "sequence": seq, "catalog": []}, "", args)
             assert scene.source_excerpt == seq["source"]
             assert scene.visual_event == seq["adaptation"]["event"]
             assert json.loads(scene.adaptation_notes.split(": ", 1)[1]) == seq["adaptation"]

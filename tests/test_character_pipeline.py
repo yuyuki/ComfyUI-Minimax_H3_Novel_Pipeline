@@ -9,9 +9,9 @@ from openai import APIConnectionError
 import pytest
 
 from minimax_h3_novel_pipeline.core import (
-    character_chapter_enrichment as enrichment, character_evidence as evidence,
+    character_evidence as evidence,
     character_profile_batches as batches, character_profiles as profiles,
-    character_visual_integration, lmstudio_pipeline, path_access, util, visual_designs,
+    lmstudio_pipeline, path_access, util, visual_designs,
 )
 from minimax_h3_novel_pipeline.nodes import (
     CharacterEvidenceExtractorNode, CharacterVisualProfileGeneratorNode,
@@ -78,18 +78,8 @@ def test_saved_character_pipeline_reopens_source_and_keeps_usable_proof(tmp_path
                 decisions.append({"job_id": job["job_id"], "relation": relation,
                                   "left_support": [0], "right_support": [0]})
             reply = {"decisions": decisions}
-        elif contract == enrichment.PRESENCE:
-            reply = {"characters": [
-                {"local_id": row["local_id"], "presence": "visible", "label": "Indy",
-                 "source_quote": young} if "Indy" in row["aliases"] else
-                {"local_id": row["local_id"], "presence": "absent", "label": "", "passage_ids": []}
-                for row in payload["candidates"]], "unresolved": []}
         elif contract == visual_designs.DESIGN_SCHEMA:
             reply = {"added_details": []}
-        elif contract == enrichment.LOCAL_STATES:
-            reply = {"observations": []}
-        elif contract == enrichment.LOCAL_REVIEW:
-            reply = {"issues": []}
         else:
             reply = fake_model(None, None, None, prompt, contract)
         return Stream([json.dumps(adapt_fixture_reply(reply, payload, contract), ensure_ascii=False)])
@@ -164,10 +154,11 @@ def test_saved_character_pipeline_reopens_source_and_keeps_usable_proof(tmp_path
     with pytest.warns(UserWarning) as mapping_warnings:
         registry, _ = ConsolidateReferencesNode().run([catalog], config, **params)["result"]
     assert any("Ambiguous character registry mapping" in str(row.message) for row in mapping_warnings)
-    context = character_visual_integration.sequence_context(registry, "chapter", 1)
-    assert context["sequence"]["characters"][0]["source_quote"] == young
-    assert context["registry_ids"] == {aliases[0]["character_id"]: "CHAR_001"}
-    assert "validation" not in registry["character_enrichment"]["chapter"]
+    indy, camille = registry["entities"]
+    assert indy["character_id"] == aliases[0]["character_id"]
+    assert indy["stable_visual_description"] == "yeux noisette"
+    assert "character_id" not in camille
+    assert "character_enrichment" not in registry
 
     for loader, argument, saved, document in (
             (LoadCharacterEvidenceNode, "evidence_path", extracted_path, extracted),
