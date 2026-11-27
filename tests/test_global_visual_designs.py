@@ -247,15 +247,24 @@ def test_imported_profile_gets_period_outfit_and_retains_it_on_reimport(setup):
     chapter['default_temporal_context'] = '1922'
     chapter['sequences'][0]['adaptation']['initialState'] = 'En 1890, Élise paraît.'
     _, imported = integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None, 'mock', settings())
+    entity['visual_reference'] = {'scenes': {'chapter1': {
+        '1': {'presence': 'visible', 'traits': [], 'excluded_attributes': []},
+    }}}
     args = settings(image_style='cinematic photographic', character_designs=imported,
                     temporal_context_by_chapter={'chapter1': {'default_temporal_context': '1922',
                                                               'sequences': chapter['sequences']}},
                     reference_diagnostics=[])
     requests = []
     def chat(client, model, system, user, schema, *rest):
-        payload = json.loads(user)
+        payload, _ = json.JSONDecoder().raw_decode(user)
         requests.append((schema['name'], system, payload))
         if schema is visual_designs.DESIGN_SCHEMA:
+            assert schema['strict'] is True
+            assert payload['required_traits'] == ['default_outfit']
+            assert payload['scenes_without_wardrobe'] == {'chapter1': [1]}
+            if len(requests) == 1:
+                return {'added_details': []}
+            assert 'Previous response was invalid' in user and 'Return default_outfit' in user
             return {'added_details': [{'trait': 'default_outfit', 'description': 'Robe bleue en laine et veste grise.'}]}
         return {'checks': [{'trait': key, 'verdict': 'compatible_addition', 'reason': 'Compatible.'}
                            for key in payload['added_details']]}

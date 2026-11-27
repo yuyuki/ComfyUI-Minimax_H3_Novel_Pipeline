@@ -34,6 +34,15 @@ def entity(kind="character", gid="CHAR_001"):
             "timeline": {}, "source_entities": [], "speaks": False})
 
 
+
+def character_with_wardrobe():
+    item = entity()
+    for state in item["visual_reference"]["scenes"]["chapter"].values():
+        state["traits"] = [{"attribute": "wardrobe_coat", "description": "A gray wool coat.",
+                           "scope": "scene", "evidence": "A gray wool coat."}]
+    return item
+
+
 def options():
     return SimpleNamespace(max_character_base_views=4, max_location_base_views=3, max_object_base_views=2,
                            asset_batch_size=4,
@@ -571,7 +580,7 @@ def test_blank_design_import_generates_new_designs(output_root, path):
         calls.append(schema["name"])
         return {"added_details": []}
 
-    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options(), path)
+    designs = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], options(), path)
     assert calls == ["visual_design_additions"]
     assert designs["entities"][0]["added_details"] == {}
 
@@ -624,7 +633,7 @@ def test_edit_design_then_import_reuses_additions(output_root):
         if schema is visual_designs.CONFLICT_SCHEMA:
             return design_checks(user)
         return {"added_details": [{"trait": "hair", "description": "Copper hair."}]}
-    item = entity()
+    item = character_with_wardrobe()
     original = copy.deepcopy(item)
     payload = visual_designs.prepare_designs(chat, None, "model", [item], options())
     assert item == original
@@ -714,7 +723,8 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
     monkeypatch.setattr(step, "audit_registry", lambda client, model, registry, args: registry)
     def chat(client, model, system, user, schema, *args):
         if schema is visual_designs.DESIGN_SCHEMA:
-            return {"added_details": [{"trait": "hair", "description": "Copper hair."}]}
+            return {"added_details": [{"trait": "hair", "description": "Copper hair."},
+                                      {"trait": "default_outfit", "description": "A belted wool tunic."}]}
         if schema is visual_designs.CONFLICT_SCHEMA:
             return design_checks(user)
         if schema["name"] == "reference_appearance":
@@ -757,6 +767,7 @@ def test_consolidation_loader_and_generation_export_in_new_run(output_root, monk
     assert response["ui"] == {"text": [scene_text, image_text]}
     assert scene_text == ""
     assert "Copper hair." in image_text
+    assert "A belted wool tunic." in image_text
     assert prompts["image_prompts"][0]["global_id"] == "CHAR_001"
     assert (output_root / next_config["run_folder"] / "h3_prompts/image_prompts/image_prompts.json").is_file()
     assert saved.is_file()
@@ -783,7 +794,7 @@ def test_design_verdicts_distinguish_source_facts_from_additions(output_root):
                                       {"trait": "hair", "description": "Copper hair."}]}
         return {"checks": [{"trait": "skin", "verdict": "already_in_source", "reason": "Explicitly stated."},
                            {"trait": "hair", "verdict": "compatible_addition", "reason": "Source does not specify hair."}]}
-    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+    designs = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], options())
     assert designs["entities"][0]["added_details"] == {"hair": "Copper hair."}
 
 
@@ -808,7 +819,7 @@ def test_design_format_retry_receives_previous_details(output_root, monkeypatch,
             return {"added_details": [{"trait": "hair", "description": corrected}]}
         return design_checks(user)
 
-    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+    designs = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], options())
     assert len(requests) == 2
     assert designs["entities"][0]["added_details"] == {"hair": corrected}
 
@@ -828,7 +839,7 @@ def test_duplicate_design_traits_keep_first_without_retry(output_root, monkeypat
         assert json.loads(user)["added_details"] == {"hair": "Copper hair.", "accessories": "A brass ring."}
         return design_checks(user)
 
-    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+    designs = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], options())
     assert designs["entities"][0]["added_details"] == {"hair": "Copper hair.", "accessories": "A brass ring."}
     assert requests == ["visual_design_additions", "visual_design_conflicts"]
 
@@ -848,12 +859,12 @@ def test_design_description_length_schema_and_validator_agree(output_root, monke
         return response if schema is visual_designs.DESIGN_SCHEMA else design_checks(user)
 
     if length == 180:
-        designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+        designs = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], options())
         assert designs["entities"][0]["added_details"]["hair"] == "é" * length
     else:
         args = options()
         args.reference_diagnostics = []
-        result = visual_designs.prepare_designs(chat, None, "model", [entity()], args)
+        result = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], args)
         assert result['entities'][0]['added_details'] == {}
         assert args.reference_diagnostics[0]['status'] == 'incomplete'
         assert '181 characters' in args.reference_diagnostics[0]['message']
@@ -870,7 +881,7 @@ def test_new_design_conflict_regenerates_within_retry_budget(output_root, monkey
         if len(generations) == 1:
             return design_checks(user, "conflict", "Gold contradicts source silver.")
         return design_checks(user, "already_in_source", "Silver is source-supported.")
-    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+    designs = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], options())
     assert len(generations) == 2
     assert designs["entities"][0]["added_details"] == {}
 
@@ -897,7 +908,7 @@ def test_completed_extraction_invalidates_when_prompt_changes(output_root, monke
 
 
 def test_visual_designs_receive_only_relevant_chapter_periods(output_root):
-    item = entity()
+    item = character_with_wardrobe()
     item["chapters_seen"] = ["chapter"]
     args = options()
     args.temporal_context_by_chapter = {
@@ -938,7 +949,7 @@ def test_temporal_design_review_retries_anachronisms_and_preserves_source_priori
         incompatible = not explicit_period and data["added_details"]["accessories"] == "Digital watch."
         return design_checks(json.dumps(data), "conflict" if incompatible else "compatible_addition",
                              "Digital watch is anachronistic in 1880." if incompatible else "Fits explicit 2040 or default 1880.")
-    designs = visual_designs.prepare_designs(chat, None, "model", [entity()], args)
+    designs = visual_designs.prepare_designs(chat, None, "model", [character_with_wardrobe()], args)
     assert len(generations) == (1 if explicit_period else 2)
     assert len(reviews) == len(generations)
     expected = "Digital watch." if explicit_period else "Mechanical pocket watch."

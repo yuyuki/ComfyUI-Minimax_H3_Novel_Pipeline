@@ -248,6 +248,8 @@ def test_node_global_designs_only_import_selected_catalog_characters(mocked_reco
         calls.append(schema["name"])
         if schema is visual_designs.CONFLICT_SCHEMA:
             return design_checks(user)
+        if schema is visual_designs.DESIGN_SCHEMA:
+            return {"added_details": [{"trait": "default_outfit", "description": "A brown wool jacket."}]}
         return reconcile_chat(client, model, system, user, schema, *args)
 
     monkeypatch.setattr(step, "chat_json", chat)
@@ -274,9 +276,9 @@ def test_node_global_designs_only_import_selected_catalog_characters(mocked_reco
     assert character["canonical_name"] == "Indy"
     assert character["timeline"]["selected-chapter"] == current["characters"][0]["state_by_sequence"]
     imported, = result["visual_designs"]["entities"]
-    assert imported["added_details"] == {"eyes": "Edited brown eyes."}
+    assert imported["added_details"] == {"eyes": "Edited brown eyes.", "default_outfit": "A brown wool jacket."}
     assert imported["source_facts"]["stable_visual_description"] == ""
-    assert len(calls) == 2  # Existing reconciliation and conflict check only.
+    assert calls.count("visual_design_additions") == 1
     assert len(util.load_json(path)["entities"]) == 2
 
 
