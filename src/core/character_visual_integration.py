@@ -120,8 +120,9 @@ def apply(designs, chapters, registry, output, client, model, args):
             entity['ignored_character_traits'] = deepcopy(profile['ignored_traits'])
             occupied = {field_for(r['trait']) for r in profile['effective_traits']}
             approved = {k: v for k, v in item['added_details'].items()
-                        if k in visual.PHYSICAL and k not in set(profile['blocked_fields']) | occupied}
-            imported[gid] = {**deepcopy(item), 'source_facts': facts, 'added_details': approved}
+                        if k in visual_designs.DESIGN_TRAITS['character'] and k not in set(profile['blocked_fields']) | occupied}
+            imported[gid] = {**deepcopy(item), 'source_facts': facts, 'added_details': approved,
+                             'blocked_design_fields': sorted(set(profile['blocked_fields']) | occupied)}
         # Current cinematic data determines presence and local states at consolidation time.
         with progress.scope(chapter_index / len(chapters), (chapter_index + 1) / len(chapters)):
             local = enrichment.enrich(document, selected, chapter, requests, offsets)

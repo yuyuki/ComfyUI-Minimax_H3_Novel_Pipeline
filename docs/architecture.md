@@ -335,6 +335,7 @@ flowchart TD
     m_core_util --> m_core_source_text
     m_core_visual_designs --> m_core_character_visual_selection
     m_core_visual_designs --> m_core_editable_schemas
+    m_core_visual_designs --> m_core_lmstudio_json
     m_core_visual_designs --> m_core_lmstudio_pipeline
     m_core_visual_designs --> m_core_progress
     m_core_visual_designs --> m_core_reference_requests
@@ -517,7 +518,7 @@ flowchart TD
 | `src/core/source_text.py` | `core.path_access` | `PassageIndex`, `comparison_text`, `contains`, `contiguous_passage`, `normalize`, `normalize_data`, `offered_passages`, `paragraph_chunks`, `passage_catalog`, `read_source`, `select_passages`, `source_span`, `source_spans`, `source_units` |
 | `src/core/temporal_context.py` | — | `normalize`, `prompt` |
 | `src/core/util.py` | `core.path_access`, `core.source_text` | `catalog_summary`, `discover_inputs`, `load_json`, `natural_key`, `read_chapter`, `registry_summary`, `require_schema`, `save_json`, `split_chunks` |
-| `src/core/visual_designs.py` | `core.character_visual_selection`, `core.editable_schemas`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_requests`, `core.temporal_context`, `core.util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
+| `src/core/visual_designs.py` | `core.character_visual_selection`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_requests`, `core.temporal_context`, `core.util` | `load_designs`, `object_schema`, `prepare_designs`, `resolve_designs_path`, `source_facts` |
 | `src/nodes/__init__.py` | `nodes.chapter_selection`, `nodes.character_evidence_extractor`, `nodes.character_visual_profile_generator`, `nodes.cinematic_chapter_adapter`, `nodes.consolidate_character_profiles`, `nodes.consolidate_references`, `nodes.extract_chapter_references`, `nodes.generate_h3_prompts`, `nodes.lmstudio_config`, `nodes.load_chapter_catalogs`, `nodes.load_character_evidence`, `nodes.load_character_profiles`, `nodes.load_character_visual_profiles`, `nodes.load_cinematic_chapters`, `nodes.load_consolidated_references`, `nodes.load_spatial_continuity`, `nodes.spatial_continuity` | — |
 | `src/nodes/chapter_selection.py` | `core.progress`, `core.util` | `SelectChaptersNode`, `chapter_path_list`, `saved_chapter_choices` |
 | `src/nodes/character_evidence_extractor.py` | `core.character_evidence`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.run_output`, `core.util`, `nodes.chapter_selection` | `CharacterEvidenceExtractorNode` |
@@ -537,4 +538,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.configuration_snapshot`, `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.character_visual_integration`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **67**. Internal dependency edges: **304**.
+Modules: **67**. Internal dependency edges: **305**.

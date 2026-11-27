@@ -98,7 +98,7 @@ def generate(data, paths, output, previous=None):
         old = existing.get(profile['local_id'], {})
         occupied = {selection.field_for(r['trait']) for r in profile['effective_traits']}
         details = {k: v for k, v in old.get('added_details', {}).items()
-                   if k in PHYSICAL and k not in set(profile['blocked_fields']) | occupied}
+                   if k in visual_designs.DESIGN_TRAITS['character'] and k not in set(profile['blocked_fields']) | occupied}
         entities.append({'global_id': profile['local_id'], 'character_id': profile['local_id'], 'entity_type': 'character',
             'canonical_name': profile['canonical_name'], 'aliases': profile['aliases'],
             'identity_status': profile['identity_status'],

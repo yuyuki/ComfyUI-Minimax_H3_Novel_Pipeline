@@ -85,7 +85,7 @@ def test_consolidation_consumes_facts_via_socket_and_file(setup, monkeypatch, di
         util.save_json(root / 'visual/visual_designs.json', result['visual_designs'])
     pipeline = SimpleNamespace(reconcile_chapter=lambda *a: [deepcopy(entity)],
         audit_registry=lambda c, m, r, a: r, natural_key=lambda value: value,
-        chat_json=lambda *a: pytest.fail('No new design needed for imported character') if mapped else {'added_details': []},
+        chat_json=lambda *a: {'added_details': []},
         build_picture_specs=lambda *a: [], generate_picture_assets=lambda *a: [],
         build_audio_specs=lambda *a: [], generate_audio_assets=lambda *a: [],
         build_chapter_map=lambda *a: {}, build_entity_asset_index=lambda *a: {},
@@ -238,8 +238,42 @@ def test_manual_defaults_are_separate_and_ignored_fields_cannot_return(setup):
     previous['entities'][0]['added_details'] = {'eyes': 'black eyes', 'hair': 'cropped hair', 'default_outfit': 'red dress'}
     regenerated, _ = vp.generate(data, ['chapter1.txt'], root / 'next', previous)
     item = regenerated['visual_designs']['entities'][0]
-    assert item['added_details'] == {'hair': 'cropped hair'}
+    assert item['added_details'] == {'hair': 'cropped hair', 'default_outfit': 'red dress'}
     assert item['source_facts']['stable_visual_description'] == 'green eyes'
+
+
+def test_imported_profile_gets_period_outfit_and_retains_it_on_reimport(setup):
+    root, data, result, chapter, entity, _ = setup
+    chapter['default_temporal_context'] = '1922'
+    chapter['sequences'][0]['adaptation']['initialState'] = 'En 1890, Élise paraît.'
+    _, imported = integration.apply(result['visual_designs'], [chapter], [entity], root / 'refs', None, 'mock', settings())
+    args = settings(image_style='cinematic photographic', character_designs=imported,
+                    temporal_context_by_chapter={'chapter1': {'default_temporal_context': '1922',
+                                                              'sequences': chapter['sequences']}},
+                    reference_diagnostics=[])
+    requests = []
+    def chat(client, model, system, user, schema, *rest):
+        payload = json.loads(user)
+        requests.append((schema['name'], system, payload))
+        if schema is visual_designs.DESIGN_SCHEMA:
+            return {'added_details': [{'trait': 'default_outfit', 'description': 'Robe bleue en laine et veste grise.'}]}
+        return {'checks': [{'trait': key, 'verdict': 'compatible_addition', 'reason': 'Compatible.'}
+                           for key in payload['added_details']]}
+    designs = visual_designs.prepare_designs(chat, None, 'mock', [entity], args)
+    assert designs['entities'][0]['added_details']['default_outfit'] == 'Robe bleue en laine et veste grise.'
+    _, system, context = requests[0]
+    assert context['temporal_context_by_chapter']['chapter1']['default_temporal_context'] == '1922'
+    assert '1890' in json.dumps(context)
+    assert 'flashbacks' in system and 'override' in system
+    designs['character_profiles'] = data
+    util.save_json(root / 'designs.json', designs)
+    _, imported_again = integration.apply(util.load_json(root / 'designs.json'), [chapter], [entity],
+                                          root / 'refs2', None, 'mock', settings())
+    args.character_designs = imported_again
+    requests.clear()
+    again = visual_designs.prepare_designs(chat, None, 'mock', [entity], args, root / 'designs.json')
+    assert again['entities'][0]['added_details'] == designs['entities'][0]['added_details']
+    assert all(name != 'visual_design_additions' for name, _, _ in requests)
 
 
 

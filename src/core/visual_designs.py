@@ -6,7 +6,8 @@ import warnings
 from . import progress
 
 from . import temporal_context, util
-from .reference_requests import validated_request
+from .reference_requests import InvalidResponse, validated_request
+from .lmstudio_json import StructuredOutputError
 from .character_visual_selection import field_for
 from .lmstudio_pipeline import comfy_interrupt_check, load
 from .editable_schemas import DESIGN_SCHEMA as FILE_SCHEMA, TRAITS, validate_document
@@ -46,8 +47,11 @@ Fill unspecified identity/design details needed for consistent images;
 never repeat, replace or contradict a source-supported trait. Make one definite choice,
 not alternatives. Use each trait key at most once; combine its details in one value.
 Keep each value at most 180 characters and at most 8 traits.
-Do not invent plot, relationships, dialogue or voice traits. A reusable default outfit
-may be added when unspecified; chapter-specific states take precedence over defaults.
+Do not invent plot, relationships, dialogue or voice traits. Prioritize default_outfit
+when no reusable outfit is established: choose concrete garments, materials and colors
+useful for a reference image. Add footwear or accessories when useful to the silhouette.
+Existing added_details are authoritative choices: never repeat or replace them.
+Chapter-specific attested outfits take precedence over defaults.
 Designs must suit the source's setting, entity type and supplied image style.
 Use temporal_context_by_chapter to determine the applicable period: explicit dates,
 eras and flashbacks in sequences override default_temporal_context. When the source
@@ -178,7 +182,8 @@ def prepare_designs(chat, client, model, entities, args, path=""):
         if entity["entity_type"] != "character":
             designs.append({**base, "added_details": {}})
             continue
-        blocked = {field_for(t) for t in entity.get('ignored_character_traits', [])}
+        blocked = ({field_for(t) for t in entity.get('ignored_character_traits', [])} |
+                   set(imported.get(gid, {}).get('blocked_design_fields', [])))
         context = {**base, "image_style": args.image_style,
                    "ignored_traits": entity.get('ignored_character_traits', []),
                    "allowed_traits": [t for t in DESIGN_TRAITS[entity["entity_type"]] if t not in blocked]}
@@ -239,16 +244,32 @@ def prepare_designs(chat, client, model, entities, args, path=""):
             # Keep those facts in the authoritative source description, not the design.
             result["added_details"] = [item for item in details if verdicts[item["trait"]] != "already_in_source"]
 
+        added = {k: v for k, v in imported.get(gid, {}).get("added_details", {}).items() if k not in blocked}
         if gid in imported:
-            added = {k: v for k, v in imported[gid]["added_details"].items() if k not in blocked}
             try:
                 check_additions(added)
+            except (InvalidResponse, StructuredOutputError) as exc:
+                if hasattr(args, 'reference_diagnostics'):
+                    args.reference_diagnostics.append({'stage': 'visual_design_review', 'entity_id': gid,
+                        'status': 'incomplete', 'message': f'Imported design review failed: {exc}'})
             except ValueError as exc:
                 raise ValueError(f"{exc}. Correct added_details in visual_designs.json and retry.") from exc
-        else:
-            response = validated_request(chat, client, model, DESIGN_SYSTEM + "\n" + temporal_context.RULES, context,
-                                         DESIGN_SCHEMA, args, validate_new, include_previous=True)
-            added = {item["trait"]: item["description"] for item in response["added_details"]}
+        scenes = entity.get('visual_reference', {}).get('scenes')
+        visible = scenes is None or any(state.get('presence') == 'visible'
+                                        for chapter in scenes.values() for state in chapter.values())
+        needs_profile_outfit = (gid in getattr(args, 'character_designs', {}) and
+                                'default_outfit' not in added and 'default_outfit' not in blocked)
+        if not base['exclude_image'] and visible and (gid not in imported or needs_profile_outfit):
+            context['existing_added_details'] = added.copy()
+            context['allowed_traits'] = [trait for trait in context['allowed_traits'] if trait not in added]
+            try:
+                response = validated_request(chat, client, model, DESIGN_SYSTEM + "\n" + temporal_context.RULES, context,
+                                             DESIGN_SCHEMA, args, validate_new, include_previous=True)
+                added.update({item["trait"]: item["description"] for item in response["added_details"]})
+            except (InvalidResponse, StructuredOutputError) as exc:
+                if hasattr(args, 'reference_diagnostics'):
+                    args.reference_diagnostics.append({'stage': 'visual_design_enrichment', 'entity_id': gid,
+                        'status': 'incomplete', 'message': f'Visual design enrichment failed: {exc}'})
 
         if gid in imported and imported[gid].get('character_id'):
             base['character_id'] = imported[gid]['character_id']

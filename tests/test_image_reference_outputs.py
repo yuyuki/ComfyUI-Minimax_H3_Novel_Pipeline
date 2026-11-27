@@ -851,8 +851,12 @@ def test_design_description_length_schema_and_validator_agree(output_root, monke
         designs = visual_designs.prepare_designs(chat, None, "model", [entity()], options())
         assert designs["entities"][0]["added_details"]["hair"] == "é" * length
     else:
-        with pytest.raises(reference_requests.InvalidResponse, match="hair.*181 characters"):
-            visual_designs.prepare_designs(chat, None, "model", [entity()], options())
+        args = options()
+        args.reference_diagnostics = []
+        result = visual_designs.prepare_designs(chat, None, "model", [entity()], args)
+        assert result['entities'][0]['added_details'] == {}
+        assert args.reference_diagnostics[0]['status'] == 'incomplete'
+        assert '181 characters' in args.reference_diagnostics[0]['message']
         assert requests == ["visual_design_additions"]
 
 
