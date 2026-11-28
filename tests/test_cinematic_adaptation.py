@@ -19,8 +19,8 @@ def event(description, *changes):
     return {"description": description, "changes": list(changes)}
 
 
-def sequence(end, seconds, *events):
-    return {"source_end_id": end, "estimated_seconds": seconds, "events": list(events)}
+def beat(end, seconds, item):
+    return {"source_end_id": end, "estimated_seconds": seconds, **item}
 
 
 def approved(payload, findings=(), choices=()):
@@ -43,16 +43,17 @@ def run(source, checkpoints=None, **kwargs):
 def delphes_draft(payload, *, short=False, seconds=(3, 2)):
     segments = payload["source_segments"]
     first = next(row["id"] for row in segments if row["text"].endswith("aisselles."))
+    hearing = next(row["id"] for row in segments if row["text"].endswith("sens."))
     return {
         "opening_state": [
             state("period", "Delphes, Grèce, en 1922."),
             state("space", "Dans l'obscurité, une ouverture est loin au-dessus d'Indy et laisse passer très peu de lumière."),
             state("indy", "Indy se balance, suspendu à une corde qui comprime son torse et ses aisselles."),
         ],
-        "sequences": [
-            sequence(first, seconds[0], event("Indy continue de se balancer au bout de la corde.")),
-            sequence(len(segments), 9 if short else seconds[1],
-                     event("Des cris indistincts retentissent au-dessus d'Indy, hors champ."),
+        "beats": [
+            beat(first, seconds[0], event("Indy continue de se balancer au bout de la corde.")),
+            beat(hearing, 1, event("Des cris indistincts retentissent au-dessus d'Indy, hors champ.")),
+            beat(len(segments), 9 if short else round(seconds[1] - 1, 3),
                      event("Indy penche la tête en arrière vers l'ouverture.",
                            state("indy", "Indy se balance toujours au bout de la corde qui comprime son torse et ses aisselles. "
                                          "Sa tête est penchée en arrière."))),
@@ -63,8 +64,8 @@ def delphes_draft(payload, *, short=False, seconds=(3, 2)):
 @pytest.mark.parametrize(("seconds", "duration", "expected"), [
     ((3, 2), 8, [5]),
     ((3.1, 4.9), 8, [8]),
-    ((3, 6), 8, [3, 6]),
-    ((3, 2), 4, [3, 2]),
+    ((3, 6), 8, [4, 5]),
+    ((3, 2), 4, [4, 1]),
 ])
 def test_delphes_validates_story_context_and_keeps_source_verbatim(monkeypatch, seconds, duration, expected):
     source = DELPHES.read_bytes().decode("utf-8")
@@ -129,7 +130,7 @@ def test_semantic_repair_uses_exact_evidence_and_retains_editable_event_choice(m
                 assert correction["findings"][0]["source_quote"] == "Ana est près de l’ouverture."
             fact = "Ana est près de l'ouverture." if correction else "Ana est près d'un projecteur."
             return {"opening_state": [state("ana", fact)],
-                    "sequences": [sequence(len(payload["source_segments"]), 3, event("Ana entend un cri indistinct."))]}
+                    "beats": [beat(len(payload["source_segments"]), 3, event("Ana entend un cri indistinct."))]}
         row = payload["sequences"][0]
         evidence = row["source_passages"][0]["id"]
         if len(calls) == 2:
@@ -161,15 +162,15 @@ def test_invalid_generation_never_commits(monkeypatch, error):
         assert schema == ca.SCHEMA
         payload = json.loads(body)
         draft = delphes_draft(payload, short=error == "duration")
-        first, last = draft["sequences"]
+        first, _, last = draft["beats"]
         if error == "overlapping_end":
             last["source_end_id"] = first["source_end_id"]
         if error == "missing_tail":
             last["source_end_id"] -= 1
         if error == "unknown_removal":
-            last["events"][0]["changes"] = [state("absent", "")]
+            last["changes"] = [state("absent", "")]
         if error == "duplicate_change":
-            last["events"][0]["changes"] = [state("indy", "Indy se balance."), state("indy", "Indy attend.")]
+            last["changes"] = [state("indy", "Indy se balance."), state("indy", "Indy attend.")]
         return draft
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
@@ -218,9 +219,9 @@ def test_resume_carries_state_uses_only_unread_source_and_rejects_modified_check
         chunks.append("".join(row["text"] for row in segments))
         if not payload["previous_state"]:
             return {"opening_state": [state("door", "La porte se trouve face à Ana.")],
-                    "sequences": [sequence(len(segments), 2, event("Ana prend la clé.", state("key", "Ana tient la clé.")))]}
+                    "beats": [beat(len(segments), 2, event("Ana prend la clé.", state("key", "Ana tient la clé.")))]}
         assert state("key", "Ana tient la clé.") in payload["previous_state"]
-        return {"opening_state": [], "sequences": [sequence(len(segments), 3, event(chunks[-1].strip()))]}
+        return {"opening_state": [], "beats": [beat(len(segments), 3, event(chunks[-1].strip()))]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     full = run(source, checkpoints, chunk_chars=25)
@@ -253,11 +254,11 @@ def test_cited_timing_overrun_requires_real_split(monkeypatch):
             end = len(segments)
             if "correction" not in payload:
                 return {"opening_state": opening,
-                        "sequences": [sequence(end, 8, event("Ana ferme la porte puis descend les marches."))]}
+                        "beats": [beat(end, 8, event("Ana ferme la porte puis descend les marches."))]}
             first = next(row["id"] for row in segments if row["text"].endswith("porte."))
-            return {"opening_state": opening, "sequences": [
-                sequence(first, 3, event("Ana ferme la première porte.", state("door", "La porte est fermée."))),
-                sequence(end, 6, event("Ana descend les marches.")),
+            return {"opening_state": opening, "beats": [
+                beat(first, 3, event("Ana ferme la première porte.", state("door", "La porte est fermée."))),
+                beat(end, 6, event("Ana descend les marches.")),
             ]}
         assert ca.lmstudio_json.REQUEST_THINKING.get() is False
         if len(calls) == 2:
@@ -313,7 +314,42 @@ def test_language_verdict_alone_triggers_repair(monkeypatch):
         else:
             action = "Ana waits."
         return {"opening_state": [state("ana", "Ana se tient près de la porte.")],
-                "sequences": [sequence(len(payload["source_segments"]), 2, event(action))]}
+                "beats": [beat(len(payload["source_segments"]), 2, event(action))]}
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
     assert run(source)["sequences"][0]["adaptation"]["event"] == "1. Ana attend."
+
+
+def test_longer_source_uses_speech_time_and_successive_beats(monkeypatch):
+    source_lines = [
+        "Ana entend un appel.", "Ana tourne la tête.",
+        'Ana crie : "La clé est près de la porte au bout du vieux couloir !"',
+        "Ana regarde en bas.", "Ana essuie son visage.", "Ana ferme les yeux.",
+        "Ana se hisse.", 'Une voix répond : "Ana !"',
+    ]
+
+    def chat(client, model, system, body, schema, *args):
+        payload = json.loads(body)
+        if schema == ca.REVIEW_SCHEMA:
+            for row in payload["sequences"]:
+                assert sum(item["estimated_seconds"] for item in row["events"]) == pytest.approx(row["estimated_seconds"])
+            return approved(payload)
+        segments = payload["source_segments"]
+        # Mock a very optimistic model. Python still accounts for every beat and the words spoken.
+        return {
+            "opening_state": [state("ana", "Ana est suspendue.")],
+            "beats": [beat(row["id"], 0.25, event(line))
+                      for row, line in zip([part for part in segments if part["text"].endswith((".", '"'))],
+                                           source_lines, strict=False)],
+        }
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    for line_count, expected_scenes, expected_total in ((2, 1, 2), (7, 2, 10 + 1 / 3), (8, 2, 11 + 1 / 3)):
+        source = " ".join(source_lines[:line_count])
+        scenes = run(source, correction_attempts=0)["sequences"]
+        assert "".join(row["source"] for row in scenes) == source
+        assert len(scenes) == expected_scenes
+        assert sum(row["estimated_seconds"] for row in scenes) == pytest.approx(expected_total)
+        assert all(row["estimated_seconds"] <= 8 for row in scenes)
+        assert [line.split(". ", 1)[1] for scene in scenes
+                for line in scene["adaptation"]["event"].splitlines()] == source_lines[:line_count]

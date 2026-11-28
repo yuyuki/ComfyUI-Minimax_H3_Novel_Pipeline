@@ -72,9 +72,9 @@ def test_cinematic_window_schema_and_complete_source_survive_transport_retry(mon
     from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
 
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
-    scenes = [{"source_end_id": index, "estimated_seconds": 1,
-               "events": [{"description": f"Action {index}.", "changes": []}]} for index in range(1, 13)]
-    result = {"opening_state": [], "sequences": scenes}
+    beats = [{"source_end_id": index, "estimated_seconds": 1,
+              "description": f"Action {index}.", "changes": []} for index in range(1, 13)]
+    result = {"opening_state": [], "beats": beats}
     client, create = client_for(Stream(['{"sequences":']), Stream([json.dumps(result)]))
     source = "All twelve source actions."
     assert lmstudio_json.chat_json(client, "qwen3.5", "system", source, ca.SCHEMA, 0.1, 8192) == result

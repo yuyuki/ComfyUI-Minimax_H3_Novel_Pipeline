@@ -20,7 +20,7 @@ class _InvalidWindow(ValueError):
 
 MAX_DURATION = 8.0
 _MIN_WINDOW = 600
-CHECKPOINT_SCHEMA = "minimax-cinematic-checkpoint.v5"
+CHECKPOINT_SCHEMA = "minimax-cinematic-checkpoint.v6"
 _ERRORS = (ValueError, RuntimeError, OpenAIError, httpx.HTTPError, TimeoutError, ConnectionError)
 _TEXT = {"type": "string", "minLength": 1}
 _ID = {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
@@ -29,13 +29,12 @@ _INDEX = {"type": "integer", "minimum": 1}
 _DURATION = {"type": "number", "exclusiveMinimum": 0, "maximum": MAX_DURATION}
 _STATE = obj({"id": _ID, "description": _TEXT})
 _CHANGE = obj({"id": _ID, "description": {"type": "string"}})
-_EVENT = obj({"description": _TEXT, "changes": {"type": "array", "items": _CHANGE}})
-_SEQUENCE = obj({"source_end_id": _INDEX, "estimated_seconds": _DURATION,
-                 "events": {"type": "array", "minItems": 1, "items": _EVENT}})
+_BEAT = obj({"source_end_id": _INDEX, "estimated_seconds": _DURATION, "description": _TEXT,
+             "changes": {"type": "array", "items": _CHANGE}})
 SCHEMA = {
-    "name": "cinematic_narrative_sequences", "strict": True,
+    "name": "cinematic_narrative_beats", "strict": True,
     "schema": obj({"opening_state": {"type": "array", "items": _STATE},
-                   "sequences": {"type": "array", "minItems": 1, "items": _SEQUENCE}}),
+                   "beats": {"type": "array", "minItems": 1, "items": _BEAT}}),
 }
 _DESCRIPTIVE_FINDINGS = {"type": "array", "items": obj({"passage_id": _TEXT, "message": _TEXT})}
 REVIEW_SCHEMA = {
@@ -97,15 +96,22 @@ A newly reported sound belongs in an event at its narrative position, even
 when the source uses an imperfect or ongoing tense. Do not invent that it
 continues after other actions unless the source establishes that.
 
-Use source_segments to address positions in current_passage. Each source_end_id is inclusive. The first
-sequence starts at the first ID, and the next starts immediately after the prior
-end ID. In a final window the last sequence must end at last_source_id. In a partial window leave any
-incomplete trailing action unread. Combine compatible actions at a natural
-pace. Estimate seconds including speech, pauses and successive actions.
-Obey maximum_seconds. Split between actions when needed, even inside a sentence.
-Never rush, omit actions, pad time or split a coherent brief beat artificially.
-Keep a short continuous passage in one sequence when its ordered beats fit.
-If a split is needed, put all words of each action or sound in the same sequence.
+Return successive narrative beats. A beat is one independently timed action,
+utterance, sound, reaction or held moment. Separate consecutive movements and
+reactions even when the text places them in one sentence. Keep simultaneous
+details with the action they accompany. A line of speech, a reaction and a
+subsequent movement are separate beats. Attach a static description or internal
+thought to its associated beat without inventing an extra action or pause.
+Put each spoken utterance in double quotes and preserve the original words.
+
+Each beat has its own inclusive source_end_id. Beats cover consecutive segments
+from the beginning of the window. Start the next beat right after the previous
+one. Choose boundaries between actions or clauses. The final beat must end at
+last_source_id in a final window. In a partial window leave an incomplete tail
+unread. Estimate the natural time of each beat separately, including pauses
+or dialogue within it. Divide a long action or utterance at a natural pause
+when needed. Python sums the estimates and forms the output sequences. Budget
+each beat independently of the sequence ceiling and of neighboring estimates.
 Keep already-ongoing motion in the opening and ending unless the source changes it.
 
 Use opening_state only when previous_state is empty. Otherwise return [] for
@@ -113,8 +119,8 @@ opening_state; Python inherits previous_state. Each record has a stable ID and
 complete sentences naming relevant entities. Group tightly related facts.
 Give coexisting objects, spatial facts and period/location context separate IDs
 when they can change independently. Include only facts established at opening.
-Each event is plain unnumbered prose. List only state changes supported by that
-event. Reuse an existing ID when updating its fact and include any unchanged
+Each beat description is plain unnumbered prose. List only state changes supported by that
+beat. Reuse an existing ID when updating its fact and include any unchanged
 details of that fact in its replacement. For a change of pose or orientation,
 record the resulting pose or orientation, even if support and ongoing movement
 are unchanged. For example, a deliberate turn of the head requires a resulting
@@ -139,6 +145,10 @@ adaptation language from the source language. Report any translation as a defect
 """ + _DESCRIPTIVE_INTENT + """\
 Check descriptive fidelity, uncertainty, pronoun resolution, date, setting,
 ordered actions, verbatim dialogue, offscreen sound and natural duration.
+Read the timed events of each sequence. Flag a duration defect when a beat
+combines successive actions that need independent timing or when the sum
+underestimates natural performance. Use the source to identify the actions
+and cite the beat that needs to be separated or re-estimated.
 Check that each changed or removed fact is supported by its event and that
 unchanged objects, support, motion and spatial relationships persist. Check for
 inventions and omissions, including when a sentence is split across sequences.
@@ -222,35 +232,40 @@ def _compile(result, segments, previous, first_sequence, duration, *, partial):
     _apply(state, result["opening_state"], opening=True)
     groups, cursor = [], 0
     maximum = Decimal(str(duration))
-    for sequence, item in enumerate(result["sequences"], first_sequence):
+    for beat, item in enumerate(result["beats"], 1):
         end = int(item["source_end_id"])
         if not cursor < end <= len(segments):
             raise ValueError("Source end IDs must increase strictly within the supplied window.")
         source = "".join(segments[cursor:end])
         if not source.strip():
-            raise ValueError("A sequence must cover nonblank source.")
+            raise ValueError("A beat must cover nonblank source.")
         estimate = item["estimated_seconds"]
         if not 0 < estimate <= duration:
-            raise ValueError(f"Sequence {sequence} has an invalid duration. Respect the {duration:g}-second limit.")
-        seconds = Decimal(str(estimate))
+            raise ValueError(f"Beat {beat} must fit within {duration:g} seconds. Split it at a natural pause.")
+        description = _scene_text(re.sub(r"^\d+[.)]\s+", "", _scene_text(item["description"])))
+        # Count only speech marked by the model, with a fast delivery ceiling.
+        spoken = sum(len(source_text.source_units(quote)) for quote in re.findall(r'"([^"]+)"', description))
+        seconds = max(Decimal(str(estimate)), Decimal("1"), Decimal(spoken) / Decimal("3"))
+        if seconds > maximum:
+            raise ValueError(f"Speech in beat {beat} needs more than {duration:g} seconds. Split it at a natural pause.")
+        event = {"description": description, "changes": item["changes"], "estimated_seconds": float(seconds)}
         if groups and groups[-1]["seconds"] + seconds <= maximum:
             group = groups[-1]
             group["source"] += source
             group["seconds"] += seconds
-            group["events"].extend(item["events"])
+            group["events"].append(event)
         else:
-            groups.append({"source": source, "seconds": seconds, "events": list(item["events"])})
+            groups.append({"source": source, "seconds": seconds, "events": [event]})
         cursor = end
     if not partial and cursor != len(segments):
-        raise ValueError("The final sequence must cover the final source segment.")
+        raise ValueError("The final beat must cover the final source segment.")
 
     scenes, changes = [], []
     for sequence, group in enumerate(groups, first_sequence):
         initial = _describe(state)
         events = []
         for event in group["events"]:
-            description = _scene_text(event["description"])
-            events.append(_scene_text(re.sub(r"^\d+[.)]\s+", "", description)))
+            events.append(event["description"])
             _apply(state, event["changes"])
         scenes.append({
             "sequence": sequence, "source": group["source"], "estimated_seconds": float(group["seconds"]),

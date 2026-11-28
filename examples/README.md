@@ -12,10 +12,10 @@ chapter under the run's `cinematic_chapters/` directory, with top-level
 `chapter_name` (the source filename without its extension) and `sequences`.
 Each sequence contains its number, the exact source span, an estimated duration in seconds, and an
 adaptation with opening state, ordered events and ending state. The chapter's duration is the configured
-ceiling, which can be set from four to eight seconds. Each generation window estimates natural action and
-dialogue timing while keeping the source contiguous. Before review, Python groups consecutive sequences
-in the same reading window when their combined estimate is within the configured ceiling. It preserves
-the entire source span and the order of the events. Python applies event-driven state updates and copies
+ceiling, which can be set from four to eight seconds. The adapter estimates individual actions, sounds
+and utterances in each reading window. Python accumulates the estimated durations, allowing time for
+each action and for the words spoken, and starts a sequence when adding the next beat would exceed the
+ceiling. It preserves the exact source and event order, applies state changes and copies
 each ending to the following opening. Camera planning takes place downstream.
 
 The adapter sends one structured generation request and one source audit per window in the normal case.

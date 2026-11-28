@@ -47,12 +47,12 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
             boundary = next(row["id"] for row in segments if row["text"].endswith("silence."))
             return {
                 "opening_state": [{"id": "indy", "description": "Indy est près de la porte."}],
-                "sequences": [
+                "beats": [
                     {"source_end_id": boundary, "estimated_seconds": 3,
-                     "events": [{"description": "Indy regarde la sortie en silence.", "changes": []}]},
+                     "description": "Indy regarde la sortie en silence.", "changes": []},
                     {"source_end_id": len(segments), "estimated_seconds": 4,
-                     "events": [{"description": "Indy quitte la pièce sans se retourner.",
-                                 "changes": [{"id": "indy", "description": "Indy est sorti de la pièce."}]}]},
+                     "description": "Indy quitte la pièce sans se retourner.",
+                     "changes": [{"id": "indy", "description": "Indy est sorti de la pièce."}]},
                 ],
             }
         assert schema == adaptation.REVIEW_SCHEMA
