@@ -255,6 +255,10 @@ def test_cited_timing_overrun_requires_real_split(monkeypatch):
             if "correction" not in payload:
                 return {"opening_state": opening,
                         "beats": [beat(end, 8, event("Ana ferme la porte puis descend les marches."))]}
+            correction = payload["correction"]
+            assert correction["findings"][0]["source_quote"] in source
+            assert correction["previous_sequences"][0]["events"][0]["estimated_seconds"] == 8
+            assert "Split successive actions" in correction["duration_instruction"]
             first = next(row["id"] for row in segments if row["text"].endswith("porte."))
             return {"opening_state": opening, "beats": [
                 beat(first, 3, event("Ana ferme la première porte.", state("door", "La porte est fermée."))),
@@ -268,14 +272,65 @@ def test_cited_timing_overrun_requires_real_split(monkeypatch):
         return approved(payload)
 
     monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
-    with pytest.raises(ValueError, match="duration overrun"):
-        run(source, correction_attempts=0)
+    checkpoints = []
+    chapter = run(source, checkpoints, correction_attempts=0)
+    assert chapter["sequences"][0]["source"] == source
+    assert "review" not in chapter["sequences"][0]
+    review = checkpoints[-1]["reviews"][0]
+    assert review["status"] == "incomplete"
+    assert review["findings"][0]["check"] == "duration"
+    assert review["correction_reason"] == "duration_findings_persist"
     calls.clear()
     first, second = run(source)["sequences"]
     assert [first["estimated_seconds"], second["estimated_seconds"]] == [3, 6]
     assert first["adaptation"]["endingState"] == second["adaptation"]["initialState"] == "La porte est fermée."
     assert first["source"] + second["source"] == source
     assert ca.lmstudio_json.REQUEST_THINKING.get() is None
+
+
+@pytest.mark.parametrize("narrow_result", ["approved", "invalid", "unreviewed"])
+def test_persistent_duration_defect_retries_a_smaller_window(monkeypatch, narrow_result):
+    prefix = "Ana ferme la porte. " * 33 + "\n\n"
+    suffix = "Ana descend les marches. " * 27
+    source = prefix + suffix
+    generations, checkpoints = [], []
+    closing = state("door", "La porte est fermée.")
+
+    def chat(client, model, system, body, schema, *args):
+        payload = json.loads(body)
+        if schema == ca.SCHEMA:
+            passage = payload["current_passage"]
+            generations.append(passage)
+            if passage == prefix and narrow_result == "invalid":
+                return {}
+            if passage == suffix:
+                assert payload["previous_state"] == [closing]
+            return {"opening_state": [] if payload["previous_state"] else [state("door", "La porte est ouverte.")],
+                    "beats": [beat(len(payload["source_segments"]), 8, event("Ana avance.", closing))]}
+        assert schema == ca.REVIEW_SCHEMA
+        first = payload["sequences"][0]
+        if first["source"] == prefix and narrow_result == "unreviewed":
+            raise ConnectionError("Review unavailable")
+        if first["source"] == source:
+            return approved(payload, findings=[{"sequence": first["sequence"],
+                                                "passage_id": first["source_passages"][0]["id"],
+                                                "check": "duration", "message": "Split consecutive actions."}])
+        return approved(payload)
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    chapter = run(source, checkpoints)
+    assert generations[:3] == [source, source, prefix]
+    assert "".join(row["source"] for row in chapter["sequences"]) == source
+    reviews = checkpoints[-1]["reviews"]
+    if narrow_result == "approved":
+        assert generations == [source, source, prefix, suffix]
+        assert [review["status"] for review in reviews] == ["completed", "completed"]
+    else:
+        assert len(chapter["sequences"]) == 1
+        assert reviews[0]["status"] == "incomplete"
+        assert reviews[0]["findings"][0]["check"] == "duration"
+        assert reviews[0]["correction_reason"] == (
+            "duration_window_retry_failed" if narrow_result == "invalid" else "duration_window_retry_incomplete")
 
 
 def test_review_does_not_swallow_comfy_cancellation(monkeypatch):

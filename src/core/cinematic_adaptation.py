@@ -5,6 +5,7 @@ from copy import deepcopy
 from decimal import Decimal
 import hashlib
 import json
+import logging
 import re
 from time import perf_counter
 
@@ -13,6 +14,9 @@ from openai import OpenAIError
 
 from . import lmstudio_json, lmstudio_pipeline, narrative_choices, progress, source_text
 from .editable_schemas import obj, validate_document
+
+logger = logging.getLogger(__name__)
+
 
 class _InvalidWindow(ValueError):
     """A smaller window may yield a complete adaptation."""
@@ -464,11 +468,19 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int, temperatur
             failure = None
             if not findings:
                 break
-            payload["correction"] = {"previous_sequences": candidate, "findings": findings}
+            correction = {"previous_sequences": candidate, "findings": findings}
+            if any(item["check"] == "duration" for item in findings):
+                correction["previous_sequences"] = [
+                    {**scene, **change} for scene, change in zip(candidate, changes, strict=True)
+                ]
+                correction["duration_instruction"] = (
+                    "Split successive actions in the cited beats at supported source segment boundaries. "
+                    "Re-estimate their natural duration independently. Preserve every action and spoken word "
+                    "and let Python regroup the beats."
+                )
+            payload["correction"] = correction
         if retained is None:
             raise _InvalidWindow(f"Cinematic adaptation at source character {cursor + 1}: {failure}")
-        if any(item["check"] == "duration" for item in retained[2]):
-            raise ValueError("The source audit found an unresolved duration overrun. Split the affected actions.")
         return (*retained, failure)
 
     metrics_token = lmstudio_json.REQUEST_METRICS.set(metrics)
@@ -483,17 +495,39 @@ def adapt_chapter(client, model: str, text: str, *, chunk_chars: int, temperatur
             if not text[cursor + len(window):].strip():
                 window = text[cursor:]
             try:
-                candidate, state, findings, options, reason, failure = adapt_window(
-                    window, cursor + len(window) < len(text))
+                result = adapt_window(window, cursor + len(window) < len(text))
             except _InvalidWindow:
                 if len(window) <= _MIN_WINDOW:
                     raise
                 window_limit = max(_MIN_WINDOW, len(window) // 2)
                 continue
+            candidate, final_state, findings, options, reason, failure = result
+            if any(item["check"] == "duration" for item in findings):
+                failure = failure or "duration_findings_persist"
+                if correction_attempts and len(window) > _MIN_WINDOW:
+                    smaller = _window(window, max(_MIN_WINDOW, len(window) // 2))
+                    if window[len(smaller):].strip():
+                        try:
+                            retry = adapt_window(smaller, partial=True)
+                        except _ERRORS as exc:
+                            if lmstudio_json._is_comfy_interrupt(exc):
+                                raise
+                            failure = "duration_window_retry_failed"
+                        else:
+                            retry_findings, retry_reason = retry[2], retry[4]
+                            if retry_reason.startswith("review_") or any(
+                                    item["check"] == "duration" for item in retry_findings):
+                                failure = "duration_window_retry_incomplete"
+                            else:
+                                candidate, final_state, findings, options, reason, failure = retry
+            state = final_state
             for scene in candidate:
                 number = scene["sequence"]
                 defects = [item for item in findings if item["sequence"] == number]
                 incomplete = bool(reason.startswith("review_") or defects)
+                if any(item["check"] == "duration" for item in defects):
+                    logger.warning("Cinematic chapter %s, sequence %s: duration review incomplete (%s).",
+                                   chapter_name, number, failure)
                 reviews.append({"sequence": number, "status": "incomplete" if incomplete else "completed",
                                 **({"reason": reason, "findings": defects} if incomplete else {}),
                                 **({"correction_status": "incomplete", "correction_reason": failure}

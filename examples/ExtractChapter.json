@@ -1,7 +1,7 @@
 {
   "id": "912cd687-a627-4693-9e89-c27b05b083d5",
   "revision": 0,
-  "last_node_id": 260,
+  "last_node_id": 261,
   "last_link_id": 378,
   "nodes": [
     {
@@ -463,10 +463,10 @@
       "title": "Note for Chapter selection",
       "properties": {},
       "widgets_values": [
-        "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `duration` sets the eight-second maximum per sequence. Each opening inherits the previous ending. The adapter generates and reviews each source window with structured JSON. Gemma 4 uses the thinking control for generation. Cited corrections are bounded by `correction_attempts`. Review status and timings are saved beside the chapter."
+        "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (32768) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
       ],
       "widgets_values_named": {
-        "text": "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `duration` sets the eight-second maximum per sequence. Each opening inherits the previous ending. The adapter generates and reviews each source window with structured JSON. Gemma 4 uses the thinking control for generation. Cited corrections are bounded by `correction_attempts`. Review status and timings are saved beside the chapter."
+        "text": "### 1. Chapter selection and adaptation\n**Select Chapters** selects the source files; **Cinematic Chapter Adapter** uses LM Studio to adapt them into cinematic sequences (initial state, event, ending state), saved as `.cinematic.json` files.\n\n**Adaptation:** `chunk_chars` (4000) = passage size in characters; `thinking` = Qwen reasoning (ignored by Mistral); `temperature` (0.15) = output variability; `max_tokens` (32768) = response token budget; `correction_attempts` (2) = attempts to correct defects, followed by a final passage rebuild if needed. Remaining doubts become editable proposals, with the first proposal selected. `out_dir` = output subfolder within the timestamped run.\n\n**Observed runtime:** 1 h 40 min 35 s for one prologue (19 Nov 2026, completed)."
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -974,7 +974,7 @@
         true,
         32768,
         4000,
-        0.15,
+        0.2,
         8,
         2,
         "cinematic_chapters",
@@ -984,7 +984,7 @@
         "thinking": true,
         "max_tokens": 32768,
         "chunk_chars": 4000,
-        "temperature": 0.15,
+        "temperature": 0.2,
         "duration": 8,
         "correction_attempts": 2,
         "out_dir": "cinematic_chapters",
@@ -1264,24 +1264,24 @@
         "Node name for S&R": "CharacterEvidenceExtractorNode"
       },
       "widgets_values": [
-        false,
+        true,
         32768,
-        12000,
-        0.1,
+        5500,
+        0.15,
         2,
-        "all_characters",
+        "proper_names",
         false,
         "character_evidence",
         false,
         ""
       ],
       "widgets_values_named": {
-        "thinking": false,
+        "thinking": true,
         "max_tokens": 32768,
-        "chunk_chars": 12000,
-        "temperature": 0.1,
+        "chunk_chars": 5500,
+        "temperature": 0.15,
         "correction_attempts": 2,
-        "character_scope": "all_characters",
+        "character_scope": "proper_names",
         "force": false,
         "out_dir": "character_evidence",
         "audit_thinking": false,
@@ -2504,7 +2504,7 @@
         "Node name for S&R": "ConsolidateReferencesNode"
       },
       "widgets_values": [
-        true,
+        false,
         32768,
         0.12,
         12,
@@ -2523,10 +2523,10 @@
         "",
         "cinematic photographic",
         "",
-        false
+        65536
       ],
       "widgets_values_named": {
-        "thinking": true,
+        "thinking": false,
         "max_tokens": 32768,
         "temperature": 0.12,
         "candidate_count": 12,
@@ -2545,7 +2545,7 @@
         "resume_run": "",
         "image_style": "cinematic photographic",
         "visual_designs_path": "",
-        "force": false
+        "force": 65536
       }
     }
   ],
@@ -2871,6 +2871,14 @@
       "MINIMAX_CHARACTER_VISUAL_PROFILES"
     ],
     [
+      378,
+      259,
+      0,
+      233,
+      0,
+      "MINIMAX_REGISTRY"
+    ],
+    [
       375,
       67,
       0,
@@ -2893,14 +2901,6 @@
       259,
       2,
       "MINIMAX_CHARACTER_VISUAL_PROFILES"
-    ],
-    [
-      378,
-      259,
-      0,
-      233,
-      0,
-      "MINIMAX_REGISTRY"
     ]
   ],
   "groups": [
@@ -3016,10 +3016,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 1.032653057925083,
+      "scale": 0.9387755072046209,
       "offset": [
-        1552.9286863995796,
-        -2483.3826645801905
+        4384.428562094173,
+        -1593.590035856082
       ]
     },
     "frontendVersion": "1.58.5"
