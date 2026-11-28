@@ -121,10 +121,16 @@ H3 binding selects only images valid for the exact visible entity and sequence.
 Chapter membership or a base variant alone is insufficient. An absent entity cannot
 become visible because its shared description exists.
 Consolidation plans the fewest location views needed for the approved sequences,
-up to the configured view limit. The briefs describe camera placement relative
-to stable landmarks. If two views serve a scene, H3 can group them under one
-location subject. The opening image remains a separate MiniMax input. Missing
-location coverage is recorded in the scene diagnostic JSON.
+up to the configured view limit. A view can describe a separately catalogued fixed
+landmark using its approved visible traits when the adaptation establishes its
+position relative to the location. Shared views cite only traits applicable to
+every bound scene, and describe only the details visible from that angle.
+Consolidation reviews the scenery and framing before export. If the review cannot
+approve a view plan, the location keeps a general view and the diagnostic records
+the incomplete check. MiniMax H3 handles characters and staging. If two views
+serve a scene, H3 can group them under one location subject. The opening image
+remains a separate MiniMax input. Missing location coverage is recorded in the
+scene diagnostic JSON.
 
 ## Persistence and validation
 

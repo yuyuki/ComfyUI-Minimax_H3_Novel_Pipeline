@@ -422,6 +422,9 @@ def test_view_landmark_cites_approved_appearance_and_records_exact_evidence(monk
 
     def chat(client, model, system, prompt, schema, *unused):
         data = request_payload(prompt)
+        if schema == step.LOCATION_VIEW_REVIEW_SCHEMA:
+            assert data["views"][0]["landmark_passage_ids"] == [data["appearance_passages"][1]["id"]]
+            return validate_reply(schema, {"checks": [{"view_type": "wide_establishing", "issues": []}]})
         requests.append(data)
         offers = data["appearance_passages"]
         chosen = ["wrong-scope"] if len(requests) == 1 else [offers[1]["id"]]

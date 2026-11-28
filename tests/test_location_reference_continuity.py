@@ -134,6 +134,8 @@ def test_location_alias_views_and_coverage_across_nodes(tmp_path, monkeypatch):
                  "camera_axis": "Vers la paroi", "landmark_passage_ids": [p["id"] for p in payload["appearance_passages"] if "parois de granit" in p["text"]],
                  "scene_ids": [3, 4, 6] if len(planned) == 1 else [3, 4, 5, 6]},
             ]}
+        if schema == consolidate.LOCATION_VIEW_REVIEW_SCHEMA:
+            return {"checks": [{"view_type": view["view_type"], "issues": []} for view in payload["views"]]}
         if schema == consolidate.APPEARANCE_SCHEMA:
             return {"appearance": payload.get("appearance") or payload["stable_visual_description"]}
         assert schema == consolidate.PICTURE_BRIEF_SCHEMA

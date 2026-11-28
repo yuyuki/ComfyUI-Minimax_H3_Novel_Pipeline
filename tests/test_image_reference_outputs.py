@@ -49,6 +49,81 @@ def options():
                            temperature=0.12, max_tokens=2500, image_style="realistic photographic")
 
 
+@pytest.mark.parametrize("allow_correction", [True, False])
+def test_location_prompts_review_scene_staging_and_include_approved_landmarks(monkeypatch, allow_correction):
+    step = lmstudio_pipeline.load("consolidate")
+    scenery = "Des parois rocheuses verticales."
+    markings = "Des rangées parallèles de caractères."
+    framing = "Vue frontale de la paroi et de la dalle de pierre intégrée, gravée de rangées parallèles de caractères."
+    wall = neutral_entity({"global_id": "LOC_001", "canonical_name": "paroi", "entity_type": "location",
+                           "stable_visual_description": scenery}, sequences=(1, 2))
+    slab = neutral_entity({"global_id": "LOC_002", "canonical_name": "dalle", "entity_type": "location",
+                           "stable_visual_description": markings}, sequences=(1, 2))
+    slab_states = slab["visual_reference"]["scenes"]["chapter"]
+    slab_states["1"]["traits"] = [{"attribute": "condition", "description": "Un éclat récent.",
+                                  "scope": "scene", "evidence": "Un éclat récent."}]
+    character = entity()
+    args = options()
+    args.max_attempts = 3 if allow_correction else 1
+    args.reference_diagnostics = []
+    args.visual_designs = {"LOC_002": {"exclude_image": True}, "CHAR_001": {"exclude_image": True}}
+    args.temporal_context_by_chapter = {"chapter": {"sequences": [
+        {"sequence": i, "adaptation": {"initialState": "La dalle de pierre est intégrée à la paroi.",
+                                        "event": "Aster grimpe vers la dalle."}} for i in (1, 2)
+    ]}}
+    plans, reviews = [], []
+
+    def chat(client, model, system, user, schema, *unused):
+        assert schema["strict"] is True
+        data, end = json.JSONDecoder().raw_decode(user)
+        if schema == step.LOCATION_VIEW_SCHEMA:
+            first, second = [row["landmark_candidates"] for row in data["scenes"]]
+            assert [row["entity_id"] for row in first] == [slab["global_id"]]
+            assert first[0]["appearance_passages"][0] == second[0]["appearance_passages"][0]
+            if not plans:
+                # A local condition cannot be cited in a view shared with another scene.
+                cited = first[0]["appearance_passages"][1]["id"] if allow_correction else first[0]["appearance_passages"][0]["id"]
+                text = "Vue sur la dalle et Aster en train de grimper."
+            elif len(plans) == 1:
+                assert "available in all scenes" in user[end:]
+                cited = first[0]["appearance_passages"][0]["id"]
+                text = "Vue sur la dalle et Aster en train de grimper."
+            else:
+                assert "staging" in user[end:]
+                cited = first[0]["appearance_passages"][0]["id"]
+                text = framing
+            plans.append(text)
+            return {"views": [{"view_type": "wide_establishing", "camera_axis": "Face à la paroi",
+                    "framing": text, "landmark_passage_ids": [data["appearance_passages"][0]["id"], cited],
+                    "scene_ids": [1, 2]}]}
+        if schema == step.LOCATION_VIEW_REVIEW_SCHEMA:
+            text = data["views"][0]["framing"]
+            reviews.append(text)
+            return {"checks": [{"view_type": "wide_establishing", "issues": ["staging"] if "Aster" in text else []}]}
+        assert schema == step.APPEARANCE_SCHEMA
+        assert "Aster" not in user
+        return {"appearance": scenery}
+
+    monkeypatch.setattr(step, "chat_json", chat)
+    specs = step.build_picture_specs([wall, slab, character], args, model="mock")
+    asset, = step.generate_picture_assets(None, "mock", specs, args)
+    check, = args.reference_diagnostics
+    assert asset["scene_bindings"] == {"chapter": [1, 2]}
+    assert "Aster" not in asset["generation_prompt"]
+    assert "grimper" not in asset["generation_prompt"]
+    assert scenery in asset["generation_prompt"]
+    if allow_correction:
+        assert reviews == plans[1:]
+        assert "rangées parallèles de caractères" in asset["generation_prompt"]
+        assert check["status"] == "passed"
+        assert check["landmark_evidence"][1] == {"entity_id": "LOC_002", "text": markings}
+    else:
+        assert reviews == plans
+        assert "dalle" not in asset["generation_prompt"]
+        assert check["status"] == "incomplete"
+        assert check["view_issues"] == {"wide_establishing": ["staging"]}
+
+
 def node_defaults(cls):
     result = {}
     for section in ("required", "optional"):
@@ -422,6 +497,7 @@ def test_view_scope_filters_composition_and_final_prompt(monkeypatch, kind, view
             return {"appearance": cropped}
         if schema["name"] == "reference_appearance":
             return {"appearance": canonical}
+        assert kind != "location"
         assert {item["asset_id"]: item["appearance"] for item in data} == {"crop": cropped, "wide": canonical}
         return {"assets": [{"asset_id": item["asset_id"], "description": "Reference.",
                             "generation_prompt": "Soft even light."} for item in data]}
