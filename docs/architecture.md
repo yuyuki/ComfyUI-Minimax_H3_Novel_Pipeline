@@ -78,7 +78,7 @@ Consolidation plans reusable location angles from shared geometry and scene fram
 | Provider Configuration | Supplies model settings. |
 
 `source_text` creates request-scoped passage IDs with exact text and character offsets. Character evidence, casting and chronology, adaptation planning and review, and both levels of reference identity reconciliation resolve selected passages in Python. Character identity and trait decisions use evidence record IDs. Saved citations preserve exact quotations and provenance. Request caches bind selections to their inputs and passage contract.
-`cinematic_scene_planning` validates indexed event ranges and source-supported continuity separately. Corrections keep valid timing or continuity, and semantic continuity fixes retain validated timing. Source-bound v3 checkpoints store plans and review identities. Incomplete plans or reviews retain usable scene data with diagnostic checks; unverified physical facts do not enter the ledger.
+The adapter generates ordered events and state updates in a single structured response per source window. Python reconstructs exact source spans, applies state changes, enforces the eight-second ceiling and inherits each ending. A batch semantic audit cites original passages and triggers bounded corrections. Source-bound checkpoints resume committed windows, and the sidecar records incomplete checks and performance.
 `narrative_validation` reviews adaptation fidelity and transitions before targeted sequence repairs. When a full review and its focused fidelity check exhaust their output budget, indexed event groups must verify full coverage. Reference extraction reads `initialState` followed by `event` with their resolved names. Each request selects local evidence and can reuse an ID from the chapter dictionary. New objects and locations require a local visual detail. The dictionary grows from validated, independently cached extraction requests. `chapter_reference_identity` audits provisional identities and possible duplicates using bounded passage evidence. Recoverable failures leave unconfirmed identities separate with incomplete diagnostics. Cross-chapter reconciliation and optional whole-book character profile matching remain in consolidation.
 The adapter reviews the exact exported fields, including a separate narration-language verdict for each field and the evidence needed by reference extraction. Reviews compare the current sequence with the committed predecessor and use following source to check the boundary. Repairs preserve untouched fields for field-scoped findings and recheck the resulting scene before commit. Unresolved source ambiguity stays in a diagnostic sidecar. Editable defaults receive their own review. Node-local per-chapter checkpoints preserve drafts, accepted scenes, approvals and learned window sizes for resume_run into a new timestamped run.
 
@@ -103,7 +103,6 @@ flowchart TD
     m_core_cinematic_adaptation["core.cinematic_adaptation"]
     m_core_cinematic_diagnostics["core.cinematic_diagnostics"]
     m_core_cinematic_references["core.cinematic_references"]
-    m_core_cinematic_scene_planning["core.cinematic_scene_planning"]
     m_core_configuration_snapshot["core.configuration_snapshot"]
     m_core_continuity_context["core.continuity_context"]
     m_core_continuity_issues["core.continuity_issues"]
@@ -122,7 +121,6 @@ flowchart TD
     m_core_lmstudio_pipeline["core.lmstudio_pipeline"]
     m_core_lmstudio_settings["core.lmstudio_settings"]
     m_core_narrative_choices["core.narrative_choices"]
-    m_core_narrative_validation["core.narrative_validation"]
     m_core_path_access["core.path_access"]
     m_core_pipeline_step1_extract["core.pipeline_step1_extract"]
     m_core_pipeline_step2_consolidate["core.pipeline_step2_consolidate"]
@@ -210,14 +208,12 @@ flowchart TD
     m_core_character_visual_profiles --> m_core_util
     m_core_character_visual_profiles --> m_core_visual_designs
     m_core_character_visual_selection --> m_core_character_profile_document
-    m_core_cinematic_adaptation --> m_core_cinematic_scene_planning
+    m_core_cinematic_adaptation --> m_core_editable_schemas
     m_core_cinematic_adaptation --> m_core_lmstudio_json
     m_core_cinematic_adaptation --> m_core_lmstudio_pipeline
     m_core_cinematic_adaptation --> m_core_narrative_choices
-    m_core_cinematic_adaptation --> m_core_narrative_validation
     m_core_cinematic_adaptation --> m_core_progress
     m_core_cinematic_adaptation --> m_core_source_text
-    m_core_cinematic_diagnostics --> m_core_cinematic_scene_planning
     m_core_cinematic_references --> m_core_chapter_reference_identity
     m_core_cinematic_references --> m_core_cinematic_diagnostics
     m_core_cinematic_references --> m_core_continuity_context
@@ -233,9 +229,6 @@ flowchart TD
     m_core_cinematic_references --> m_core_source_text
     m_core_cinematic_references --> m_core_temporal_context
     m_core_cinematic_references --> m_core_util
-    m_core_cinematic_scene_planning --> m_core_lmstudio_json
-    m_core_cinematic_scene_planning --> m_core_lmstudio_pipeline
-    m_core_cinematic_scene_planning --> m_core_source_text
     m_core_configuration_snapshot --> m_core_lmstudio_json
     m_core_configuration_snapshot --> m_core_lmstudio_model_openai
     m_core_configuration_snapshot --> m_core_lmstudio_models
@@ -268,8 +261,6 @@ flowchart TD
     m_core_lmstudio_pipeline --> m_core_lmstudio_models
     m_core_lmstudio_pipeline --> m_core_lmstudio_settings
     m_core_lmstudio_settings --> m_core_lmstudio_models
-    m_core_narrative_validation --> m_core_lmstudio_pipeline
-    m_core_narrative_validation --> m_core_source_text
     m_core_pipeline_step1_extract --> m_core_lmstudio_json
     m_core_pipeline_step1_extract --> m_core_reference_visuals
     m_core_pipeline_step1_extract --> m_core_source_text
@@ -365,9 +356,9 @@ flowchart TD
     m_nodes_cinematic_chapter_adapter --> m_core_cinematic_diagnostics
     m_nodes_cinematic_chapter_adapter --> m_core_configuration_snapshot
     m_nodes_cinematic_chapter_adapter --> m_core_lmstudio_pipeline
-    m_nodes_cinematic_chapter_adapter --> m_core_narrative_choices
     m_nodes_cinematic_chapter_adapter --> m_core_progress
     m_nodes_cinematic_chapter_adapter --> m_core_run_output
+    m_nodes_cinematic_chapter_adapter --> m_core_source_text
     m_nodes_cinematic_chapter_adapter --> m_core_util
     m_nodes_cinematic_chapter_adapter --> m_nodes_chapter_selection
     m_nodes_consolidate_character_profiles --> m_core_character_profiles
@@ -465,10 +456,9 @@ flowchart TD
 | `src/core/character_visual_integration.py` | `core.character_evidence`, `core.character_profile_document`, `core.character_visual_profiles`, `core.character_visual_selection`, `core.editable_schemas`, `core.lmstudio_pipeline`, `core.util`, `core.visual_designs` | `apply`, `validate_input` |
 | `src/core/character_visual_profiles.py` | `core.character_evidence`, `core.character_profile_document`, `core.character_visual_selection`, `core.editable_schemas`, `core.lmstudio_pipeline`, `core.util`, `core.visual_designs` | `generate`, `prepare_profiles`, `select_profiles`, `source_facts` |
 | `src/core/character_visual_selection.py` | `core.character_profile_document` | `field_for`, `project` |
-| `src/core/cinematic_adaptation.py` | `core.cinematic_scene_planning`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.narrative_validation`, `core.progress`, `core.source_text` | `adapt_chapter`, `source_chunks` |
-| `src/core/cinematic_diagnostics.py` | `core.cinematic_scene_planning` | `downstream_chapter`, `explain`, `report` |
+| `src/core/cinematic_adaptation.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.source_text` | `adapt_chapter` |
+| `src/core/cinematic_diagnostics.py` | — | `downstream_chapter`, `report` |
 | `src/core/cinematic_references.py` | `core.chapter_reference_identity`, `core.cinematic_diagnostics`, `core.continuity_context`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.path_access`, `core.progress`, `core.prompt_cache`, `core.reference_requests`, `core.reference_visuals`, `core.source_text`, `core.temporal_context`, `core.util` | `chapter_digest`, `copy_catalog_schema`, `parse_chapters`, `process_chapter` |
-| `src/core/cinematic_scene_planning.py` | `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.source_text` | `advance`, `assess`, `cache_key`, `description`, `duration_issues`, `validate` |
 | `src/core/configuration_snapshot.py` | `core.lmstudio_json`, `core.lmstudio_model_openai`, `core.lmstudio_models`, `core.util`, `nodes.lmstudio_config` | `complete`, `content_digest`, `file_digest`, `start` |
 | `src/core/continuity_context.py` | — | `batches`, `budget_details`, `fits`, `pack` |
 | `src/core/continuity_issues.py` | `core.continuity_context`, `core.generation_requests` | `UnresolvedEvidenceError`, `location_coverage`, `metadata_schema`, `repair_metadata`, `resolve`, `review_schema`, `unique`, `validate`, `validate_metadata`, `visible_locations` |
@@ -486,8 +476,7 @@ flowchart TD
 | `src/core/lmstudio_models.py` | `core.lmstudio_model_gemma`, `core.lmstudio_model_gpt_oss`, `core.lmstudio_model_mistral`, `core.lmstudio_model_qwen` | `get_profile`, `profile_for_model`, `select_family_model` |
 | `src/core/lmstudio_pipeline.py` | `core.lmstudio_json`, `core.lmstudio_model_openai`, `core.lmstudio_models`, `core.lmstudio_settings` | `comfy_interrupt_check`, `configure_qwen`, `load`, `make_client_and_model` |
 | `src/core/lmstudio_settings.py` | `core.lmstudio_models` | `fetch_models`, `get_api_key`, `get_lmstudio_model`, `get_openai_api_key`, `get_openai_model`, `get_provider_configuration`, `get_provider_options`, `require_enabled`, `set_api_key`, `set_connection_settings`, `set_openai_settings`, `set_provider_settings`, `test_connection`, `validate_api_url`, `validate_connection` |
-| `src/core/narrative_choices.py` | — | `propose`, `resolve_chapter`, `validate_scene_text` |
-| `src/core/narrative_validation.py` | `core.lmstudio_pipeline`, `core.source_text` | `review` |
+| `src/core/narrative_choices.py` | — | `resolve_chapter`, `validate_scene_text` |
 | `src/core/path_access.py` | — | `confined_path`, `input_path`, `loader_path`, `output_path`, `storage_root` |
 | `src/core/pipeline_step1_extract.py` | `core.lmstudio_json`, `core.reference_visuals`, `core.source_text` | `clean_entity`, `compact_strings`, `entity_schema`, `make_client`, `natural_key`, `slug` |
 | `src/core/pipeline_step2_consolidate.py` | `core.chapter_reference_identity`, `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_requests`, `core.reference_timeline`, `core.reference_visuals`, `core.source_text`, `core.temporal_context` | `audit_registry`, `batched`, `build_audio_specs`, `build_chapter_map`, `build_entity_asset_index`, `build_picture_specs`, `candidate_catalog`, `compact_global`, `complete_image_prompt`, `dedupe`, `desired_base_views`, `generate_audio_assets`, `generate_picture_assets`, `incoming_entities`, `make_client`, `natural_key`, `next_global_id`, `norm_name`, `ordered_valid_views`, `picture_view_appearances`, `plan_location_views`, `prepare_picture_appearances`, `reconcile_chapter`, `reconciliation_item_schema`, `request_appearance`, `similarity`, `stronger`, `threshold`, `write_asset_prompts` |
@@ -507,7 +496,7 @@ flowchart TD
 | `src/nodes/chapter_selection.py` | `core.progress`, `core.util` | `SelectChaptersNode`, `chapter_path_list`, `saved_chapter_choices` |
 | `src/nodes/character_evidence_extractor.py` | `core.character_evidence`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.run_output`, `core.util`, `nodes.chapter_selection` | `CharacterEvidenceExtractorNode` |
 | `src/nodes/character_visual_profile_generator.py` | `core.character_visual_profiles`, `core.path_access`, `core.progress`, `core.run_output`, `core.util`, `core.visual_designs`, `nodes.chapter_selection` | `CharacterVisualProfileGeneratorNode` |
-| `src/nodes/cinematic_chapter_adapter.py` | `core.cinematic_adaptation`, `core.cinematic_diagnostics`, `core.configuration_snapshot`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util`, `nodes.chapter_selection` | `CinematicChapterAdapterNode` |
+| `src/nodes/cinematic_chapter_adapter.py` | `core.cinematic_adaptation`, `core.cinematic_diagnostics`, `core.configuration_snapshot`, `core.lmstudio_pipeline`, `core.progress`, `core.run_output`, `core.source_text`, `core.util`, `nodes.chapter_selection` | `CinematicChapterAdapterNode` |
 | `src/nodes/consolidate_character_profiles.py` | `core.character_profiles`, `core.configuration_snapshot`, `core.lmstudio_pipeline`, `core.progress`, `core.run_output` | `ConsolidateCharacterProfilesNode` |
 | `src/nodes/consolidate_references.py` | `core.character_evidence`, `core.character_visual_integration`, `core.cinematic_references`, `core.configuration_snapshot`, `core.editable_schemas`, `core.image_prompt_export`, `core.lmstudio_pipeline`, `core.progress`, `core.reference_timeline`, `core.reference_visuals`, `core.run_output`, `core.util`, `core.visual_designs` | `ConsolidateReferencesNode` |
 | `src/nodes/extract_chapter_references.py` | `core.cinematic_references`, `core.configuration_snapshot`, `core.lmstudio_pipeline`, `core.path_access`, `core.progress`, `core.run_output`, `core.temporal_context`, `core.util` | `ExtractChapterReferencesNode` |
@@ -522,4 +511,4 @@ flowchart TD
 | `src/nodes/load_spatial_continuity.py` | `core.configuration_snapshot`, `core.progress`, `core.util`, `nodes.spatial_continuity` | `LoadSpatialContinuityNode` |
 | `src/nodes/spatial_continuity.py` | `core.editable_schemas`, `core.lmstudio_json`, `core.lmstudio_pipeline`, `core.narrative_choices`, `core.progress`, `core.run_output`, `core.util` | `SpatialContinuityNode`, `validate_plan` |
 
-Modules: **66**. Internal dependency edges: **293**.
+Modules: **64**. Internal dependency edges: **286**.

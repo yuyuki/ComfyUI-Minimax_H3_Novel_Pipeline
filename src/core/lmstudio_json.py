@@ -25,6 +25,7 @@ REQUEST_THINKING = ContextVar("lmstudio_request_thinking", default=None)
 REQUEST_OUTPUT_LIMIT = ContextVar("lmstudio_request_output_limit", default=None)
 REQUEST_METRICS = ContextVar("lmstudio_request_metrics", default=None)
 REQUEST_USAGE = ContextVar("lmstudio_report_usage", default=False)
+REQUEST_DRAIN_USAGE = ContextVar("lmstudio_drain_usage", default=False)
 
 # Character counts, not token counts. Preserve visual identity on retries and
 # leave unrelated schema fields alone (this helper is shared by all stages).
@@ -264,12 +265,15 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
                         "chat template and runtime support disabling reasoning with this model's request controls, "
                         "or enable thinking on this node."
                     )
+                if local_stop == "json_complete":
+                    continue  # Drain usage and finish metadata when requested.
                 raw += content
                 complete = _complete_json_prefix(raw)
                 if complete is not None:
                     raw = complete
                     local_stop = "json_complete"
-                    break
+                    if not REQUEST_DRAIN_USAGE.get():
+                        break
         except BaseException as error:
             local_stop = "interrupted_or_error"
             if isinstance(error, TimeoutException):
@@ -286,6 +290,10 @@ def chat_json(client: OpenAI, model: str, system: str, user: str,
             metrics = REQUEST_METRICS.get()
             if metrics is not None:
                 metrics["estimated_output_tokens"] += (content_chars + reasoning_chars + 3) // 4
+                if reasoning_non_whitespace_chars:
+                    metrics["reasoning_requests"] = metrics.get("reasoning_requests", 0) + 1
+                    metrics["reasoning_non_whitespace_chars"] = (
+                        metrics.get("reasoning_non_whitespace_chars", 0) + reasoning_non_whitespace_chars)
             if metrics is not None and REQUEST_USAGE.get():
                 availability = "reported" if reported_usage else "missing"
                 counter = f"backend_usage_{availability}_requests"

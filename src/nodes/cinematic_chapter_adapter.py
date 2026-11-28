@@ -4,9 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from time import perf_counter
 
-from ..core import cinematic_adaptation, cinematic_diagnostics, configuration_snapshot, lmstudio_pipeline, progress, util
-from ..core import narrative_choices
+from ..core import cinematic_adaptation, cinematic_diagnostics, configuration_snapshot, lmstudio_pipeline, progress, source_text, util
 from .chapter_selection import chapter_path_list
 from ..core.run_output import stage_output
 
@@ -21,22 +21,18 @@ class CinematicChapterAdapterNode:
             "chapter_selection": ("MINIMAX_CHAPTER_SELECTION",),
             "thinking": ("BOOLEAN", {"default": True, "tooltip": "Request reasoning for Qwen, Gemma and Mistral through LM Studio. GPT-OSS always reasons; OpenAI has no thinking control."}),
             "max_tokens": ("INT", {"default": 32768, "min": 256, "max": 32768,
-                                   "tooltip": "Output budget per request for generation, timing/context planning, scene validation and focused checks. "
-                                   "Reasoning and JSON share this budget. Focused reviews and their event groups each use the selected budget."}),
+                                   "tooltip": "Reasoning and structured JSON share this budget on each request."}),
             "chunk_chars": ("INT", {"default": 4000, "min": 1000, "max": 30000,
                                     "tooltip": "Maximum source characters per reading window. Incomplete trailing scenes "
                                     "are read again with new source text. Instructions and review text add to request size."}),
             "temperature": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01, "round": 0.01}),
-            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": 15.0, "tooltip": "Maximum duration per cinematic scene, not a target to fill. Use the same duration in Generate H3 Prompts."}),
+            "duration": ("FLOAT", {"default": 8.0, "min": 4.0, "max": cinematic_adaptation.MAX_DURATION, "tooltip": "Maximum narrative duration per sequence in seconds."}),
             "correction_attempts": ("INT", {"default": 2, "min": 0, "max": 10,
-                                          "tooltip": "Retries for invalid fields, source coverage or semantic defects. "
-                                          "When nonzero, persistent semantic defects trigger one final targeted repair round. "
-                                          "Remaining narrative doubts become editable proposals; the first is selected automatically. "
-                                          "Persistent timing overruns retain the scene with incomplete-review diagnostics."}),
+                                          "tooltip": "Correction attempts per source window for invalid output or cited review findings."}),
             "out_dir": ("STRING", {"default": "cinematic_chapters"}),
         }, "optional": {
             "resume_run": ("STRING", {"default": "", "tooltip":
-                "Previous timestamped run folder, e.g. 20261112124902. Resume matching scenes and drafts "
+                "Previous timestamped run folder, e.g. 20261112124902. Resume committed sequences "
                 "using the same out_dir, chapters, model and settings. Leave empty for a fresh run."}),
         }}
 
@@ -60,8 +56,8 @@ class CinematicChapterAdapterNode:
             raise TypeError("lmstudio_config must come from LM Studio Configuration.")
         if chunk_chars < 1 or correction_attempts < 0 or max_tokens < 1:
             raise ValueError("Invalid adaptation size, token budget or correction attempts.")
-        if type(duration) not in (int, float) or not 4 <= duration <= 15:
-            raise ValueError("duration must be between 4 and 15 seconds.")
+        if type(duration) not in (int, float) or not 4 <= duration <= cinematic_adaptation.MAX_DURATION:
+            raise ValueError("duration must be between 4 and 8 seconds.")
         paths = util.discover_inputs([Path(path) for path in chapter_path_list(chapter_selection)])
         if not paths:
             raise ValueError("No supported chapter files found.")
@@ -86,7 +82,7 @@ class CinematicChapterAdapterNode:
             snapshot = configuration_snapshot.start(
                 output, "cinematic_adapter", lmstudio_config, model, argparse.Namespace(**settings, thinking=bool(thinking)), out_dir=out_dir,
                 inputs={"chapters": [{"file": str(p), "sha256": configuration_snapshot.file_digest(p)} for p in paths]},
-                extra={"schema_version": "minimax-cinematic-chapters.v2", "resume_run": resume_run},
+                extra={"schema_version": "minimax-cinematic-chapters.v3", "resume_run": resume_run},
             )
             if resume_cache is not None:
                 previous = util.load_json(resume_cache.parent / "cinematic_adapter_configuration.json")
@@ -98,7 +94,7 @@ class CinematicChapterAdapterNode:
             for index, path in enumerate(paths):
                 lmstudio_pipeline.comfy_interrupt_check()
                 cache_dir = output / ".cache" / f"{index + 1:03d}_{path.stem}"
-                persisted_scenes = 0
+                chapter_started = perf_counter()
                 latest_state = None
                 diagnostics_path = output / f"{index + 1:03d}_{path.stem}.cinematic.diagnostics.json"
                 resume_state = None
@@ -113,7 +109,7 @@ class CinematicChapterAdapterNode:
                             raise ValueError(f"Invalid or mismatched cinematic checkpoint for {path.name}. Clear resume_run to regenerate.")
 
                 def checkpoint(state):
-                    nonlocal persisted_scenes, latest_state
+                    nonlocal latest_state
                     # Replace atomically so interruption leaves the last complete
                     # checkpoint readable. Drafts never masquerade as final output.
                     data = {"schema_version": cinematic_adaptation.CHECKPOINT_SCHEMA,
@@ -122,24 +118,15 @@ class CinematicChapterAdapterNode:
                     pending = cache_dir / "progress.json.tmp"
                     util.save_json(pending, data)
                     pending.replace(cache_dir / "progress.json")
-                    for scene in state["sequences"][persisted_scenes:]:
-                        target = cache_dir / f"scene_{scene['sequence']:03d}.json"
-                        pending = target.with_suffix(".json.tmp")
-                        util.save_json(pending, scene)
-                        pending.replace(target)
-                        persisted_scenes += 1
                     latest_state = state
                     diagnostics = cinematic_diagnostics.report(
                         state, chapter_name=path.stem, source_file=str(path), maximum_seconds=float(duration))
                     pending = diagnostics_path.with_suffix(".json.tmp")
                     util.save_json(pending, diagnostics)
                     pending.replace(diagnostics_path)
-                    print(f"    Cinematic checkpoint: {state['stage']}; "
-                          f"saved_scenes={persisted_scenes}, pending_scenes={len(state['pending_sequences'])}.", flush=True)
-
                 with progress.scope(index / len(paths), (index + 1) / len(paths)):
                     chapter = cinematic_adaptation.adapt_chapter(
-                        client, model, util.read_chapter(path), chapter_name=path.stem, **settings,
+                        client, model, source_text.read_source(path, normalize_text=False)[0], chapter_name=path.stem, **settings,
                         on_checkpoint=checkpoint,
                         resume_state=resume_state,
                     )
@@ -150,13 +137,10 @@ class CinematicChapterAdapterNode:
                     diagnostics = cinematic_diagnostics.report(
                         latest_state or chapter, chapter_name=path.stem, source_file=str(path),
                         maximum_seconds=float(duration), completed=True)
-                    chapter = cinematic_diagnostics.downstream_chapter(chapter)
-                    # Extraction resolves selected choices again. Its default
-                    # input must be the same adaptation the adapter reviewed.
-                    resolved = narrative_choices.resolve_chapter(chapter)
-                    if resolved["sequences"] != chapter["sequences"]:
-                        raise ValueError("Selected cinematic choices differ from the reviewed chapter.")
-                    util.save_json(saved, chapter)
+                    pending = saved.with_suffix(".json.tmp")
+                    util.save_json(pending, chapter)
+                    pending.replace(saved)
+                    diagnostics["performance"]["chapter_wall_seconds"] = perf_counter() - chapter_started
                     pending = diagnostics_path.with_suffix(".json.tmp")
                     util.save_json(pending, diagnostics)
                     pending.replace(diagnostics_path)

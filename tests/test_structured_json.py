@@ -68,45 +68,20 @@ def test_stream_read_timeout_uses_the_sdk_error_type_and_closes_stream():
     assert stream.closed
 
 
-@pytest.mark.parametrize("model", ["gemma", "qwen3.5"])
-def test_cinematic_fragment_schema_and_all_actions_survive_compact_transport_retry(monkeypatch, model):
-    from minimax_h3_novel_pipeline.core import cinematic_scene_planning as planning
-
-    monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
-    fragments = [{"event_index": 1, "text": f"Action {i}. "} for i in range(12)]
-    item = {"source": "Source intacte.", "initial_state": "Avant.",
-            "events": ["".join(ref["text"] for ref in fragments), "la corde se resserre sous ses bras"], "final_state": "Après."}
-    fragments.append({"event_index": 2, "text": None})
-    result = {"timing": {"beats": [{"events": [ref], "seconds": 1, "reason": "Action successive."}
-                                   for ref in fragments],
-                         "pause_seconds": 0, "estimated_seconds": 13, "reason": "Thirteen actions."},
-              "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
-    client, create = client_for(Stream(['{"timing":']), Stream([json.dumps(result)]), passage_fixtures=True)
-    validated = planning.assess(lmstudio_json.chat_json, client, model, item, [], 8, 16384, 0)
-    assert len(validated["timing"]["beats"]) == 13 and create.call_count == 2
-    assert validated["timing"]["beats"][-1]["events"] == [{"event_index": 2, "text": None}]
-    for call in create.call_args_list:
-        request = call.kwargs
-        assert request["response_format"] == {"type": "json_schema", "json_schema": planning.SCHEMA}
-        assert request["max_tokens"] == 16384
-        user = next(message["content"] for message in request["messages"] if message["role"] == "user")
-        payload, _ = json.JSONDecoder().raw_decode(user)
-        assert payload["current_scene"]["events"] == item["events"]
-
-
 def test_cinematic_window_schema_and_complete_source_survive_transport_retry(monkeypatch):
     from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
 
     monkeypatch.setattr(lmstudio_json, "QWEN35_LENGTH_RETRIES", 1)
-    scenes = [{"source": f"Action {index}.", "initial_state": "Avant.",
-               "events": [f"Action {index}."], "final_state": "Après."} for index in range(12)]
-    result = {"sequences": scenes, "unprocessed_source": "La suite incomplète"}
+    scenes = [{"source_end_id": index, "estimated_seconds": 1,
+               "events": [{"description": f"Action {index}.", "changes": []}]} for index in range(1, 13)]
+    result = {"opening_state": [], "sequences": scenes}
     client, create = client_for(Stream(['{"sequences":']), Stream([json.dumps(result)]))
-    assert lmstudio_json.chat_json(client, "qwen3.5", "system", "source", ca.WINDOW_SCHEMA, 0.1, 8192) == result
+    source = "All twelve source actions."
+    assert lmstudio_json.chat_json(client, "qwen3.5", "system", source, ca.SCHEMA, 0.1, 8192) == result
     assert create.call_count == 2
     for call in create.call_args_list:
-        assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": ca.WINDOW_SCHEMA}
-        assert "maxItems" not in call.kwargs["response_format"]["json_schema"]["schema"]["properties"]["sequences"]
+        assert call.kwargs["response_format"] == {"type": "json_schema", "json_schema": ca.SCHEMA}
+        assert source in next(row["content"] for row in call.kwargs["messages"] if row["role"] == "user")
 
 
 @pytest.mark.parametrize("schema_name", ["CHUNK_SCHEMA"])

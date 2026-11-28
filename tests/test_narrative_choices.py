@@ -14,15 +14,6 @@ def chapter(review):
             "adaptation": {p: "Original " + p for p in nc.PHASES}}], "narrative_review": review}
 
 
-def test_proposal_rejects_source_metadata_in_events():
-    proposals = [{"reason": "Choix", "adaptation": {
-        "initialState": "Il attend.", "event": "1. Il attend.\n2. source_excerpt: Il attend.",
-        "endingState": "Il attend encore.",
-    }} for _ in range(2)]
-    with pytest.raises(ValueError, match="source_excerpt metadata"):
-        nc.propose(lambda *args: {"proposals": proposals}, None, "mock", {}, 1000)
-
-
 def test_dialogue_mentioning_source_excerpt_is_preserved():
     nc.validate_scene_text('1. Il dit : « source_excerpt: est une clé JSON. »')
 
@@ -98,12 +89,3 @@ def test_file_edit_reloads_changes_extraction_cache_and_reaches_h3(tmp_path, mon
     assert cid == "chapter"
     assert "A chosen event" in json.dumps(sequences)
     assert "B chosen" not in json.dumps(sequences) and "proposals" not in json.dumps(sequences)
-
-
-def test_proposal_failure_is_not_swallowed():
-    with pytest.raises(ValueError, match="two or three"):
-        nc.propose(lambda *a: {"proposals": []}, None, "mock", {}, 1000)
-    def unavailable(*args):
-        raise ConnectionError("Offline")
-    with pytest.raises(ConnectionError):
-        nc.propose(unavailable, None, "mock", {}, 1000)

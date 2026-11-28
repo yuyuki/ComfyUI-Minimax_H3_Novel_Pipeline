@@ -10,125 +10,24 @@ to its `chapter_selection` input and **Provider Configuration** to its
 no downstream connection. It saves one `NNN_<chapter>.cinematic.json` object per
 chapter under the run's `cinematic_chapters/` directory, with top-level
 `chapter_name` (the source filename without its extension) and `sequences`.
-Each sequence has `sequence`, `source`,
-and an `adaptation` object containing `initialState`,
-`event`, and `endingState` strings. `event` preserves all ordered events, numbered
-and separated by newlines. Its `saved_files` output lists the files;
-`cinematic_chapters` exposes the chapter records and sequence arrays in memory.
-Execution diagnostics are saved separately in `NNN_<chapter>.cinematic.diagnostics.json`,
-beside the chapter. This sidecar is updated atomically at each checkpoint, so failed
-attempts remain inspectable after interruption. It is not included in `saved_files`
-or passed to downstream nodes. The main chapter retains the source, adaptation,
-chapter metadata and editable narrative proposals; review execution metadata lives
-only in the diagnostics sidecar and internal resume cache.
-Review the generated adaptations, then connect `cinematic_chapters` to
-**Extract Chapter References** (replacing its former `chapter_selection` input).
+Each sequence contains its number, the exact source span, an estimated duration in seconds, and an
+adaptation with opening state, ordered events and ending state. The chapter's duration is the configured
+ceiling, which can be set from four to eight seconds. Each generation window estimates natural action and
+dialogue timing while keeping the source contiguous. Before review, Python groups consecutive sequences
+in the same reading window when their combined estimate is within the configured ceiling. It preserves
+the entire source span and the order of the events. Python applies event-driven state updates and copies
+each ending to the following opening. Camera planning takes place downstream.
 
-Adapter defaults are `duration=8.0` (maximum seconds per scene), `chunk_chars=4000`,
-`temperature=0.15`, `max_tokens=32768`, `correction_attempts=2` and `thinking=True`.
-Each generation, repair or review request has its own token budget. Reasoning
-and JSON share it, so even 32768 tokens can be exhausted. Consecutive gestures
-may share a scene when they fit naturally. Existing workflows retain their saved
-widget values; update `max_tokens` explicitly when using an older node instance.
+The adapter sends one structured generation request and one source audit per window in the normal case.
+Cited defects can trigger corrections within the configured retry limit. An unavailable audit retains valid
+scenes and marks their checks incomplete. The JSON sidecar records per-sequence duration and review status,
+request counts, backend token usage when available, observed reasoning and validation times.
+Gemma 4 uses the node's thinking setting for generation and a direct structured response for its audit.
 
-Before reviewing each scene, the adapter estimates natural action/dialogue timing,
-including sequential or simultaneous beats and pauses. A compound event can be
-partitioned into verbatim action fragments, each referencing its original 1-based
-`event_index`. Distinct successive operations within one event can use separate
-beats with the same event index. Concatenated fragments must restore
-every original event in order; only boundary whitespace is restored automatically.
-Missing, duplicated, reordered or rewritten fragments are rejected. The planning
-schema uses `{event_index, text}` references. For a whole event, the model sets
-`text: null` and refers only to its identifier: it does not copy the event text.
-Python resolves that identifier to the original adaptation text for semantic reviews,
-repairs and readable diagnostics. Cached plans retain the identifier and null marker;
-resolution does not rewrite the source or adaptation. A whole-event reference cannot
-coexist with any other reference to the same event. Non-null text is reserved for
-verbatim portions when a compound event needs separate action beats. Integer-only
-references are not accepted.
-Planning instructions are independent of the book and contain no fixed story excerpts.
-They keep a simple physical action whole, including its tool, destination and spatial
-qualifiers; these complements do not by themselves introduce another operation.
-For a text mismatch or incomplete event,
-the bounded correction request first offers a single whole-event identifier without
-recopying text, or identifies the affected field and original event index for a split,
-and supplies the original event, validated prefix and exact remaining text. This
-correction context comes only from the supplied events; rejected model text is not
-echoed into it. Citation retries identify the source and matching source anchor;
-duplicate entity/aspect retries identify both conflicting update indices and require
-one final source-supported fact for that pair. Earlier correction constraints remain
-in subsequent retries. When the same defect persists, the next retry explicitly
-rebuilds the affected section from original data. Retry requests therefore change
-instead of repeating an identical deterministic request. The retry budget is unchanged;
-exhaustion retains valid scene data without approval.
-This validates textual coverage, not the model's semantic choice of action boundaries
-or simultaneity, which independent review still checks. Oversized scenes trigger
-bounded repairs that can split a single source sentence into multiple scenes.
-For two or more successive beats, a 25% uncertainty allowance is applied to the
-total estimate: at an 8-second maximum, such a scene must be estimated at 6.4 seconds
-or less. This editorial allowance does not apply to a single ongoing/simultaneous
-beat. Timing repairs must produce at least two replacement scenes, each planned and
-reviewed separately; shortening the wording alone is rejected.
-These are estimates, not measured video durations. Persistent overruns or unavailable
-planning/reviews retain valid scene data with explicit incomplete-review diagnostics.
-An unavailable plan does not skip semantic checks: source fidelity, pacing and local
-continuity are still reviewed against the source. Partial reviews retain findings,
-never enter the approval cache, and do not prevent independent successor scenes.
-Known timing overruns can still trigger splitting when semantic review is unavailable;
-each replacement must undergo its own planning and review.
-Planning validation diagnostics include the scene, stage, check, a bounded reason code
-(for example `event_coverage`, `event_reference`, `event_order`, `event_text_mismatch`,
-`event_text_incomplete`, `timing_total_mismatch`, `source_quote_mismatch` or
-`schema_type`) and a safe JSON field path. Arbitrary exception messages and rejected
-backend values are not saved. `output_limit` is reserved for an explicit output-limit
-failure; `request_failed` alone does not identify a token limit or a validation cause.
-Each logical planning attempt is checkpointed at `planning_attempt` and retained in
-`narrative_review.planning_diagnostics` in internal `progress.json` and as
-`planning_attempts` in the diagnostics sidecar, never in the completed chapter.
-Records include the scene (`sequence`), stage, `assessment_id`, 1-based
-`attempt`, and `status` (`failed` or `completed`). A later completed attempt in the
-same assessment resolves the request failure; a failed attempt remains in the history
-even when the final scene is reviewed successfully. These statuses describe planning
-requests, not narrative review approval. Failed requests also carry a safe reason;
-validation failures include a field path. Sidecar records include English explanations
-and suggested actions. They identify repeated failures and identical rejected responses
-using fingerprints, record the retry strategy, and link recovered failures to their
-successful attempt with `resolved_by_attempt`. A changed first validation error alone
-does not prove that all earlier defects were fixed.
-For text mismatches, `event_index` is 1-based; `beat_index` and `reference_index` are
-0-based. `validated_prefix_length` counts original-event characters before the failing
-fragment (including restored boundary whitespace). `matched_chars` counts matching
-characters within that fragment; `mismatch_offset` is the 0-based position of the first
-difference in the original event. `expected_remaining_length` and `received_length`
-describe the remaining original text and stripped received fragment. Incomplete tails
-have a zero received length. Counts use Unicode characters, not bytes. The first
-mismatching expected/received characters are recorded as Unicode code points (null
-means end of text), with a readable difference in the sidecar. Raw rejected model
-responses and arbitrary exception messages are never saved. The sidecar also contains
-the source and events of committed scenes, available timing beats/pauses, the estimate
-with any sequential allowance, and incomplete checks. Generation completion and
-review completion are reported separately; unavailable timing is null, never zero.
-Where an event reference cannot be validated, an original event index is not guessed.
-Each record includes SHA-256 fingerprints of the effective system prompt (including
-the configured duration), strict schema and complete logical request prompt. These
-identify planning inputs before model-specific shared-transport transformations;
-internal transport retries are not counted as separate planning attempts. Resume
-preserves existing records and assigns a new assessment ID to new requests. Cache hits
-do not fabricate attempt history or fingerprints for requests from earlier runs.
-Source-cited physical facts help track earlier objects and support changes even when
-recent state descriptions omit them; generated paraphrases never outrank the book.
-Identity matching ignores case, whitespace and one definite article only; qualifiers,
-numbers and distinct prop names remain distinct. A new source-cited observation
-conservatively replaces that entity's whole earlier context snapshot, across aspects,
-to prevent stale contradictions when generated categories are wrong. Other entities
-persist, within the 24-fact bound. This can forget an unchanged older facet; it does
-not assert that the facet ceased to exist. Full source quotations and historical plans
-remain in checkpoints. Category instructions guide the model; structural validation
-cannot certify the meaning of a physical claim or its category.
-Internal timing plans and the bounded physical context are saved in
-`cinematic_chapters/.cache/<chapter_id>/progress.json`, alongside resumable drafts.
-Only v2 checkpoints with review policy `timed-source-context-v10` can be resumed; start a fresh adaptation for older
-checkpoints. Completed `.cinematic.json` chapters remain loadable and are not rewritten.
+Use the same model, settings, chapters and output folder to resume committed windows from the run's
+chapter cache. Start a fresh adaptation for older checkpoints. Review the output, then connect it to
+**Extract Chapter References** and **Generate H3 Prompts**. A real Gemma run is included as a
+[chapter JSON](delphes/delphes.cinematic.json) and [diagnostic report](delphes/delphes.cinematic.diagnostics.json).
 
 To resume from those saved adaptations, replace the adapter with **Load Cinematic
 Chapters**. Set `cinematic_path=20260911153042/cinematic_chapters` (using your
@@ -355,23 +254,11 @@ recorded in `<chapter_id>_references.diagnostics.json`, outside the catalog.
 Technical diagnostics are English. `force` bypasses caches. Changes to the resolved
 adaptation invalidate dependent extraction results and identity decisions.
 
-Adapter reviews also check source detail
-coverage and transitions; `correction_attempts` bounds targeted sequence repairs.
-After bounded repairs/reconstruction, persistent doubts produce two or three full
-scene alternatives in `narrative_review.issues[].proposals`, with the first
-`selected: true`. No narrative disagreement blocks execution and there is no
-`accepted` flag. Each proposal includes a reason and complete `adaptation` with
-`initialState`, `event`, and `endingState`; the selected one governs the scene.
-Set another proposal's `selected` to true and the others to false in the original
-`.cinematic.json`, then reload with **Load Cinematic Chapters** and rerun extraction,
-consolidation, spatial continuity (if used), and generation. This refreshes reference
-observations, assets and prompts together. Missing selections default to the first;
-multiple selections use the first selected proposal, with a console notice. File
-changes are detected on the next run. Alternatives remain in saved review metadata
-but only the resolved adaptation is sent to downstream narrative model calls.
-Malformed data or technical failures still stop the workflow.
-Reviews use additional LM Studio requests and remain model judgments, not a proof
-of narrative fidelity. Regenerate adaptations and catalogs from previous runs.
+When the source supports two interpretations that preserve the same opening and ending, the chapter
+can contain editable alternatives in the narrative review. Set the desired proposal's selected flag,
+clear the others, reload the chapter, and rerun extraction, consolidation, optional spatial continuity,
+and generation. These stages consume the selected adaptation.
+
 Generate still receives the matching cinematic adaptation. Neutral reference
 appearance does not replace its narrative actions or continuity input.
 See [the neutral reference contract](../docs/neutral_visual_references.md) for

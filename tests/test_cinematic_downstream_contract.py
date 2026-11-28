@@ -9,7 +9,6 @@ from tests.passages_helpers import with_passage_ids
 
 from minimax_h3_novel_pipeline.core import (
     cinematic_adaptation as adaptation,
-    cinematic_scene_planning as planning,
     lmstudio_pipeline,
     path_access,
     run_output,
@@ -30,47 +29,54 @@ def defaults(cls):
 
 
 @pytest.mark.parametrize("reload_file", [False, True], ids=["socket", "saved-file"])
-@pytest.mark.parametrize("planning_unavailable", [False, True], ids=["reviewed", "incomplete-review"])
-def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_file, planning_unavailable):
+@pytest.mark.parametrize("review_unavailable", [False, True], ids=["reviewed", "incomplete-review"])
+def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_file, review_unavailable):
     monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(run_output, "storage_root", lambda kind: tmp_path)
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
     source = tmp_path / "chapter.md"
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261114120000"}
-    drafts = [
-        {"source": "Il attend près de la porte et regarde la sortie en silence. ", "initial_state": "Il est ici.",
-         "events": ["Il attend.", "Il regarde la sortie."], "final_state": "Il est prêt à partir."},
-        {"source": "Puis il part sans se retourner et quitte la pièce.", "initial_state": "Il est prêt à partir.",
-         "events": ["Il part."], "final_state": "Il est parti."},
-    ]
-    source.write_text("".join(scene["source"] for scene in drafts), encoding="utf-8")
+    passage = ("Indy attend près de la porte et regarde la sortie en silence. "
+               "Puis Indy part sans se retourner et quitte la pièce.")
+    source.write_text(passage, encoding="utf-8")
 
     def adapt_chat(client, model, system, user, schema, *args):
+        payload = json.loads(user)
         if schema == adaptation.SCHEMA:
-            return {"sequences": deepcopy(drafts)}
-        assert schema["name"] == planning.SCHEMA["name"]
-        if planning_unavailable:
-            raise ConnectionError("Offline planning")
-        events = json.loads(user)["current_scene"]["events"]
-        return {"timing": {"beats": [{"events": [{"event_index": i, "text": None}],
-                                      "seconds": 0.5, "reason": "Short action."}
-                                     for i in range(1, len(events) + 1)],
-                           "pause_seconds": 0, "estimated_seconds": 0.5 * len(events),
-                           "reason": "Short scene."},
-                "continuity": {"reset": False, "reset_evidence": "", "updates": []}}
+            segments = payload["source_segments"]
+            boundary = next(row["id"] for row in segments if row["text"].endswith("silence."))
+            return {
+                "opening_state": [{"id": "indy", "description": "Indy est près de la porte."}],
+                "sequences": [
+                    {"source_end_id": boundary, "estimated_seconds": 3,
+                     "events": [{"description": "Indy regarde la sortie en silence.", "changes": []}]},
+                    {"source_end_id": len(segments), "estimated_seconds": 4,
+                     "events": [{"description": "Indy quitte la pièce sans se retourner.",
+                                 "changes": [{"id": "indy", "description": "Indy est sorti de la pièce."}]}]},
+                ],
+            }
+        assert schema == adaptation.REVIEW_SCHEMA
+        if review_unavailable:
+            raise ConnectionError("Offline review")
+        merged, = payload["sequences"]
+        assert merged["estimated_seconds"] == 7 and len(merged["events"]) == 2
+        return {"source_language": "fr",
+                "language_checks": [{"sequence": 1, "initialState": "fr", "event": "fr", "endingState": "fr"}],
+                "descriptive_checks": [{"sequence": 1, "unsupported_transfers": [],
+                                        "lost_visual_or_spatial_meaning": []}],
+                "findings": [], "choices": []}
 
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(adapt_chat))
-    monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *a, **kw: {})
+    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", adapt_chat)
     direct, saved_files = CinematicChapterAdapterNode().run(
-        config, {"chapter_paths": [str(source)]}, duration=12)["result"]
+        config, {"chapter_paths": [str(source)]})["result"]
     before = deepcopy(direct)
     saved = util.output_path(saved_files)
     diagnostics = saved.with_name(saved.name.replace(".cinematic.json", ".cinematic.diagnostics.json"))
     report = util.load_json(diagnostics)
-    assert report["status"] == ("incomplete" if planning_unavailable else "completed")
-    assert report["summary"]["incomplete_scenes"] == (2 if planning_unavailable else 0)
+    assert report["status"] == ("incomplete" if review_unavailable else "completed")
+    assert report["summary"]["incomplete_scenes"] == (1 if review_unavailable else 0)
     assert all("review" not in seq for seq in direct[0]["sequences"])
-    assert direct[0]["narrative_review"] == {"issues": []}
+    assert "narrative_review" not in direct[0]
 
     # Neither loading nor any downstream stage should read the diagnostic sidecar.
     original_load = util.load_json
@@ -118,7 +124,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
 
     def generate_chapter(chapter, refs, client, model, args):
         # Execute the actual H3 input matching and metadata preparation; stop before prompt drafting.
-        assert args.duration == 12 and args.spatial_plan == spatial_plan
+        assert args.duration == 8 and args.spatial_plan == spatial_plan
         cid, rows = generator.selected_timeline(refs, chapter)
         assert rows == sequences
         for seq in rows:
@@ -134,6 +140,6 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
     monkeypatch.setattr(generator, "process_chapter", generate_chapter)
     GenerateH3PromptsNode().run(registry, config, chapters, spatial_continuity=spatial_plan,
                               **defaults(GenerateH3PromptsNode))
-    assert prepared == [1, 2]
+    assert prepared == [1]
     assert direct == before
     assert original_load(diagnostics) == report

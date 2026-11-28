@@ -1,0 +1,66 @@
+{
+  "schema_version": "minimax-cinematic-diagnostics.v2",
+  "chapter_name": "delphes",
+  "source_file": "tests/fixtures/delphes.txt",
+  "maximum_seconds": 8,
+  "status": "incomplete",
+  "generation_status": "completed",
+  "summary": {
+    "committed_scenes": 2,
+    "incomplete_scenes": 2,
+    "consumed_chars": 343,
+    "source_chars": 343
+  },
+  "sequences": [
+    {
+      "sequence": 1,
+      "status": "incomplete",
+      "reason": "semantic_findings",
+      "findings": [
+        {
+          "sequence": 1,
+          "passage_id": "7440c46ffbf999c1:4",
+          "message": "The simile 'suspendu tel un croissant de lune' (suspended like a crescent moon) is omitted in the adaptation. While the instructions state not to flag the omission of decorative effects, this specific imagery describes Indy's physical orientation/shape while suspended, which is relevant to his pose.",
+          "check": "continuity",
+          "source_quote": "suspendu tel un croissant de lune à une corde qui lui meurtrissait le torse et les aisselles."
+        }
+      ],
+      "estimated_seconds": 3
+    },
+    {
+      "sequence": 2,
+      "status": "incomplete",
+      "reason": "semantic_findings",
+      "findings": [
+        {
+          "sequence": 2,
+          "passage_id": "fbc8a464f820003f:3",
+          "message": "The adaptation describes the light from the opening as 'très peu de lumière' (very little light), whereas the source uses a figurative simile 'ne fournissait pas plus de lumière qu'une étoile clignotante' (provided no more light than a twinkling star). The adaptation converts the simile into a concrete description of quantity, which is an acceptable paraphrase.",
+          "check": "continuity",
+          "source_quote": "l’ouverture ne fournissait pas plus de lumière qu’une étoile clignotante."
+        }
+      ],
+      "estimated_seconds": 2
+    }
+  ],
+  "performance": {
+    "llm_requests": 6,
+    "estimated_input_tokens": 12652,
+    "estimated_output_tokens": 12850,
+    "reasoning_requests": 3,
+    "reasoning_non_whitespace_chars": 34242,
+    "backend_usage_reported_requests": 6,
+    "backend_prompt_tokens": 11135,
+    "backend_prompt_tokens_requests": 6,
+    "backend_completion_tokens": 15267,
+    "backend_completion_tokens_requests": 6,
+    "backend_total_tokens": 26402,
+    "backend_total_tokens_requests": 6,
+    "generation_seconds": 147.65858330000083,
+    "review_seconds": 13.704131399998005,
+    "validation_seconds": 0.002966400001241709,
+    "total_seconds": 161.369997400001,
+    "chapter_wall_seconds": 161.38297989999955,
+    "node_wall_seconds": 161.64328879999994
+  }
+}

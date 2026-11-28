@@ -1,256 +1,319 @@
-"""Public cinematic JSON shape, source coverage and saved node output."""
-from contextlib import nullcontext
+"""Exercise source coverage, carried state and bounded semantic review."""
+from copy import deepcopy
 import json
+from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.usefixtures("mock_scene_planning")
+from minimax_h3_novel_pipeline.core import cinematic_adaptation as ca
+from minimax_h3_novel_pipeline.core import cinematic_diagnostics, narrative_choices
 
-from tests.passages_helpers import with_passage_ids
-
-from minimax_h3_novel_pipeline.core import cinematic_adaptation as adaptation
-from minimax_h3_novel_pipeline.nodes import cinematic_chapter_adapter as adapter
-from minimax_h3_novel_pipeline.core import path_access
+DELPHES = Path(__file__).with_name("fixtures") / "delphes.txt"
 
 
-@pytest.fixture(autouse=True)
-def accept_semantics(monkeypatch):
-    # These tests isolate structural recovery; semantic review has dedicated tests.
-    monkeypatch.setattr(adaptation.narrative_validation, "review", lambda *args, **kwargs: {})
+def state(id_, description):
+    return {"id": id_, "description": description}
 
 
-def _sequence(source, initial="Before.", final="After."):
-    return {"source": source, "initial_state": initial, "events": ["Action."], "final_state": final}
+def event(description, *changes):
+    return {"description": description, "changes": list(changes)}
 
 
-def _response(sequences, schema):
-    result = {"sequences": sequences}
-    if schema == adaptation.WINDOW_SCHEMA:
-        result["unprocessed_source"] = ""
-    return result
+def sequence(end, seconds, *events):
+    return {"source_end_id": end, "estimated_seconds": seconds, "events": list(events)}
 
 
-@pytest.mark.parametrize("metadata", [
-    "source_excerpt: Il attend.",
-    '3. source_excerpt: Il attend.',
-    'Il attend.\n3. "source_excerpt": "Il attend."',
-])
-def test_source_metadata_in_events_is_regenerated(monkeypatch, metadata):
-    source = "Il attend."
-    calls = []
-
-    def chat(client, model, system, prompt, schema, *args):
-        calls.append(prompt)
-        assert schema == adaptation.SCHEMA
-        assert schema["strict"] is True
-        item = _sequence(source)
-        item["events"] = ["Il attend.", metadata] if len(calls) == 1 else ["Il attend."]
-        return {"sequences": [item]}
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
-    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
-                                      temperature=0.15, max_tokens=8192, correction_attempts=1)
-    assert len(calls) == 2
-    assert "source_excerpt metadata must not appear" in calls[1]
-    assert result["sequences"][0]["source"] == source
-    assert result["sequences"][0]["adaptation"]["event"] == "1. Il attend."
+def approved(payload, findings=(), choices=()):
+    return {"source_language": "fr", "language_checks": [
+                {"sequence": row["sequence"], **dict.fromkeys(narrative_choices.PHASES, "fr")}
+                for row in payload["sequences"]],
+            "descriptive_checks": [
+                {"sequence": row["sequence"], "unsupported_transfers": [], "lost_visual_or_spatial_meaning": []}
+                for row in payload["sequences"]],
+            "findings": list(findings), "choices": list(choices)}
 
 
-def test_source_metadata_cannot_be_saved_when_corrections_exhausted(monkeypatch):
-    item = _sequence("Il attend.")
-    item["events"] = ["source_excerpt: Il attend."]
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(lambda *args: {"sequences": [item]}))
-    with pytest.raises(ValueError, match="source_excerpt metadata"):
-        adaptation.adapt_chapter(None, "mock", "Il attend.", chunk_chars=4000,
-                                 temperature=0.15, max_tokens=8192, correction_attempts=0)
+def run(source, checkpoints=None, **kwargs):
+    settings = dict(chunk_chars=4000, temperature=0.15, max_tokens=4096, correction_attempts=1)
+    settings.update(kwargs)
+    return ca.adapt_chapter(None, "gemma-4-26b-it", source, chapter_name="delphes",
+                            on_checkpoint=None if checkpoints is None else checkpoints.append, **settings)
 
 
-def test_long_passage_recovers_after_corrections_with_lossless_continuity(monkeypatch):
-    source = "Il attend. Il crie.\n\n" * 300
-    requests = []
-    accepted = []
-
-    def chat(client, model, system, prompt, schema, *args):
-        payload, _ = json.JSONDecoder().raw_decode(prompt)
-        requests.append((payload, prompt))
-        passage = payload["current_passage"]
-        if len(passage) > 2000:
-            return _response([_sequence(passage.replace("crie", "parle", 1))], schema)
-        final = f"State {len(accepted) + 1}."
-        accepted.append((payload, final))
-        return _response([_sequence(passage, payload["previous_final_state"] or "Before.", final)], schema)
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
-    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
-                                      temperature=0.15, max_tokens=8192, correction_attempts=1)
-    assert "".join(item["source"] for item in result["sequences"]) == source
-    assert [item["sequence"] for item in result["sequences"]] == list(range(1, len(result["sequences"]) + 1))
-    assert len(accepted) > 2
-    assert requests[0][0] == requests[1][0]
-    assert "Previous response rejected:" in requests[1][1]
-    assert accepted[0][0]["previous_final_state"] == ""
-    for (previous, final), (following, _) in zip(accepted, accepted[1:]):
-        assert following["previous_final_state"] == final
-
-
-def test_correction_success_does_not_split_passage(monkeypatch):
-    source = "Il attend. " * 200
-    prompts = []
-
-    def chat(*args):
-        prompts.append(args[3])
-        return {"sequences": [_sequence("Wrong." if len(prompts) == 1 else source)]}
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
-    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=4000,
-                                      temperature=0.15, max_tokens=8192, correction_attempts=1)
-    assert len(prompts) == 2
-    assert len(result["sequences"]) == 1
-    assert result["sequences"][0]["source"] == source
-
-
-@pytest.mark.parametrize("invalid_source", ["Il part."])
-def test_recovery_remains_bounded_and_rejects_invalid_fallback(monkeypatch, invalid_source):
-    requests = []
-
-    def chat(*args):
-        requests.append(args[3])
-        return _response([_sequence(invalid_source)], args[4])
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
-    with pytest.raises(ValueError, match="Cinematic adaptation at source character 1/3300: Source"):
-        adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
-                                 temperature=0.15, max_tokens=8192, correction_attempts=1)
-    # Two attempts for each window, bounded span repair and bounded rebuild.
-    assert len(requests) == 6
-
-
-@pytest.mark.parametrize("error", [RuntimeError("network failure"), ValueError("invalid client configuration"), KeyboardInterrupt()])
-def test_request_errors_do_not_trigger_subdivision(monkeypatch, error):
-    requests = []
-
-    def chat(*args):
-        requests.append(args[3])
-        raise error
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
-    with pytest.raises(type(error)):
-        adaptation.adapt_chapter(None, "mock", "Il attend. " * 300, chunk_chars=4000,
-                                 temperature=0.15, max_tokens=8192, correction_attempts=1)
-    assert len(requests) == 1
-
-
-def test_structured_adaptation_preserves_events_source_and_chunk_continuity(monkeypatch):
-    source = "Il attend. Il crie. Il part."
-    requests = []
-
-    def chat(client, model, system, prompt, schema, *args):
-        payload = json.loads(prompt)
-        requests.append(payload)
-        if len(requests) == 1:
-            return _response([
-                {"source": "Il attend.", "initial_state": "Il est debout.",
-                 "events": ["Il attend."], "final_state": "Il reste debout."},
-                {"source": "Il crie.", "initial_state": "Il reste debout.",
-                 "events": ["Il inspire.", "Il crie : « À l’aide ! »"], "final_state": "Il a crié."},
-            ], schema)
-        return {"sequences": [{"source": "Il part.", "initial_state": "Il a crié.",
-                               "events": ["Il part."], "final_state": "Il est parti."}]}
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
-    result = adaptation.adapt_chapter(None, "mock", source, chunk_chars=20,
-                                      temperature=0.15, max_tokens=8192, correction_attempts=0,
-                                      chapter_name="Chapitre 1 — Le départ")
-    assert [item["sequence"] for item in result["sequences"]] == [1, 2, 3]
-    assert "".join(item["source"] for item in result["sequences"]) == source
-    assert set(result) == {"chapter_name", "sequences", "narrative_review", "duration"}
-    assert result["chapter_name"] == "Chapitre 1 — Le départ"
-    assert all(set(item) == {"sequence", "source", "adaptation"} for item in result["sequences"])
-    assert result["sequences"][1]["adaptation"] == {
-        "initialState": "Il reste debout.",
-        "event": "1. Il inspire.\n2. Il crie : \" À l'aide ! \"",
-        "endingState": "Il a crié.",
+def delphes_draft(payload, *, short=False, seconds=(3, 2)):
+    segments = payload["source_segments"]
+    first = next(row["id"] for row in segments if row["text"].endswith("aisselles."))
+    return {
+        "opening_state": [
+            state("period", "Delphes, Grèce, en 1922."),
+            state("space", "Dans l'obscurité, une ouverture est loin au-dessus d'Indy et laisse passer très peu de lumière."),
+            state("indy", "Indy se balance, suspendu à une corde qui comprime son torse et ses aisselles."),
+        ],
+        "sequences": [
+            sequence(first, seconds[0], event("Indy continue de se balancer au bout de la corde.")),
+            sequence(len(segments), 9 if short else seconds[1],
+                     event("Des cris indistincts retentissent au-dessus d'Indy, hors champ."),
+                     event("Indy penche la tête en arrière vers l'ouverture.",
+                           state("indy", "Indy se balance toujours au bout de la corde qui comprime son torse et ses aisselles. "
+                                         "Sa tête est penchée en arrière."))),
+        ],
     }
-    assert requests[0]["previous_final_state"] == ""
-    assert requests[1]["previous_final_state"] == "Il a crié."
-    assert all(set(item["adaptation"]) == {"initialState", "event", "endingState"} for item in result["sequences"])
 
 
-@pytest.mark.parametrize("copy_failure", [False, True])
-def test_node_saves_structured_adaptation(tmp_path, monkeypatch, copy_failure):
-    chapter = tmp_path / "chapter.txt"
-    source = " ".join(["Il part."] * 15)
-    chapter.write_text(source, encoding="utf-8")
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
-    monkeypatch.setattr(adapter, "stage_output", lambda *args: tmp_path / "output")
-    monkeypatch.setattr(adapter.lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "mock"))
-    calls = []
-    def chat(*args):
-        calls.append(args)
-        fields = {"initial_state": "Il est ici.", "events": ["Il part."], "final_state": "Il est parti."}
-        return {"sequences": [{"source": "Incorrect." if copy_failure and len(calls) == 1 else source, **fields}]}
-
-    monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", with_passage_ids(chat))
-
-    response = adapter.CinematicChapterAdapterNode().run(
-        {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(chapter)]},
-    )
-    chapters, saved_files = response["result"]
-    assert adapter.CinematicChapterAdapterNode.INPUT_TYPES()["required"]["max_tokens"][1]["default"] == 32768
-    assert all(call[6] == 32768 for call in calls)
-    assert json.loads(response["ui"]["text"][0]) == chapters
-    assert "Il est parti." in response["ui"]["text"][0]
-    saved = json.loads((tmp_path / "output/001_chapter.cinematic.json").read_text(encoding="utf-8"))
-    assert saved == {"chapter_name": "chapter", "sequences": chapters[0]["sequences"],
-                     "narrative_review": {"issues": []}, "duration": 8.0,
-                     "source_file": str(chapter)}
-    assert chapters[0]["chapter_name"] == "chapter"
-    assert saved["sequences"] == [{
-        "sequence": 1, "source": source, "adaptation": {
-            "initialState": "Il est ici.", "event": "1. Il part.", "endingState": "Il est parti.",
-        },
-    }]
-    assert saved_files == chapters[0]["saved_file"]
-
-
-@pytest.mark.parametrize("cancel_after_first", [False, True])
-def test_completed_chapter_saved_before_later_failure_or_cancellation(tmp_path, monkeypatch, cancel_after_first):
-    paths = [tmp_path / "chapter1.txt", tmp_path / "chapter2.txt"]
-    for path in paths:
-        path.write_text("Il part. " * 15, encoding="utf-8")
-    output = tmp_path / "output"
-    saved = output / "001_chapter1.cinematic.json"
-    sequences = [{"sequence": 1, "source": "Il part.", "adaptation": {
-        "initialState": "Before.", "event": "1. Action.", "endingState": "After.",
-    }}]
-    chapter = {"chapter_name": "chapter1", "sequences": sequences, "source_file": str(paths[0])}
-    completed = False
+@pytest.mark.parametrize(("seconds", "duration", "expected"), [
+    ((3, 2), 8, [5]),
+    ((3.1, 4.9), 8, [8]),
+    ((3, 6), 8, [3, 6]),
+    ((3, 2), 4, [3, 2]),
+])
+def test_delphes_validates_story_context_and_keeps_source_verbatim(monkeypatch, seconds, duration, expected):
+    source = DELPHES.read_bytes().decode("utf-8")
     calls = []
 
-    def adapt(*args, **kwargs):
-        nonlocal completed
-        calls.append(args[2])
+    def chat(client, model, system, body, schema, temp, tokens):
+        payload = json.loads(body)
+        calls.append(schema["name"])
+        assert schema["strict"] and schema["schema"]["additionalProperties"] is False
+        assert tokens == ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() == 4096
+        if schema == ca.SCHEMA:
+            assert "".join(row["text"] for row in payload["source_segments"]) == source
+            assert payload["current_passage"] == source
+            assert ca._DESCRIPTIVE_INTENT in system
+            assert "Properties of the figurative image" in system
+            return delphes_draft(payload, seconds=seconds)
+        assert schema == ca.REVIEW_SCHEMA
+        assert "offscreen sound" in system and "spatial relationships" in system
+        assert ca._DESCRIPTIVE_INTENT in system
+        assert "Leave both arrays empty for faithful simplification" in system
+        assert [row["estimated_seconds"] for row in payload["sequences"]] == expected
+        return approved(payload)
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    checkpoints = []
+    chapter = run(source, checkpoints, duration=duration)
+    assert len(calls) == 2
+    assert json.loads(json.dumps(chapter)) == chapter
+    assert "".join(row["source"] for row in chapter["sequences"]) == source
+    scenes = chapter["sequences"]
+    assert [row["sequence"] for row in scenes] == list(range(1, len(scenes) + 1))
+    assert [row["estimated_seconds"] for row in scenes] == expected
+    initial = scenes[0]["adaptation"]["initialState"]
+    ending = scenes[-1]["adaptation"]["endingState"]
+    assert "Sa tête est penchée" not in initial
+    assert "Sa tête est penchée" in ending
+    assert "1922" in ending and "loin au-dessus d'Indy" in ending and "corde qui comprime" in ending
+    event_lines = [line for scene in scenes for line in scene["adaptation"]["event"].splitlines()]
+    assert "cris indistincts" in event_lines[1] and "hors champ" in event_lines[1]
+    assert "penche la tête" in event_lines[2]
+    if len(scenes) == 1:
+        assert [line.split(". ", 1)[0] for line in event_lines] == ["1", "2", "3"]
+    else:
+        assert scenes[0]["adaptation"]["endingState"] == scenes[1]["adaptation"]["initialState"]
+    assert all(word not in ending for word in ("étoile", "croissant", "clignote", "projecteur"))
+    assert "performance" not in chapter and "narrative_review" not in chapter
+    assert ca.lmstudio_json.REQUEST_OUTPUT_LIMIT.get() is None
+
+
+def test_semantic_repair_uses_exact_evidence_and_retains_editable_event_choice(monkeypatch):
+    source = "Ana est près de l’ouverture. Elle entend un cri indistinct."
+    calls = []
+
+    def chat(client, model, system, body, schema, *args):
+        payload = json.loads(body)
+        calls.append(schema["name"])
+        if schema == ca.SCHEMA:
+            correction = payload.get("correction")
+            if correction:
+                assert "verify each finding against the source" in system
+                assert "Preserve all valid facts and paraphrases" in system
+                assert correction["findings"][0]["source_quote"] == "Ana est près de l’ouverture."
+            fact = "Ana est près de l'ouverture." if correction else "Ana est près d'un projecteur."
+            return {"opening_state": [state("ana", fact)],
+                    "sequences": [sequence(len(payload["source_segments"]), 3, event("Ana entend un cri indistinct."))]}
+        row = payload["sequences"][0]
+        evidence = row["source_passages"][0]["id"]
         if len(calls) == 2:
-            assert json.loads(saved.read_text(encoding="utf-8")) == chapter
-            raise RuntimeError("second chapter failed")
-        completed = True
-        return chapter
+            review = approved(payload)
+            review["descriptive_checks"][0]["unsupported_transfers"].append(
+                {"passage_id": evidence, "message": "The opening was replaced with an invented lamp."})
+            return review
+        return approved(payload, choices=[{"sequence": 1, "passage_id": evidence,
+                                           "reason": "The direction of the cry remains unknown.",
+                                           "alternative_event": "Un cri indistinct retentit hors champ."}])
 
-    def interrupt_check():
-        if cancel_after_first and completed:
-            assert json.loads(saved.read_text(encoding="utf-8")) == chapter
-            raise KeyboardInterrupt()
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    result = run(source)
+    assert len(calls) == 4
+    issue = result["narrative_review"]["issues"][0]
+    assert issue["source_excerpt"] == "Ana est près de l’ouverture."
+    issue["proposals"][0]["selected"] = False
+    issue["proposals"][1]["selected"] = True
+    resolved = narrative_choices.resolve_chapter(result)["sequences"][0]
+    assert resolved["adaptation"]["event"] == "Un cri indistinct retentit hors champ."
+    assert resolved["adaptation"]["initialState"] == resolved["adaptation"]["endingState"]
 
-    monkeypatch.setattr(path_access, "storage_root", lambda kind: tmp_path)
-    monkeypatch.setattr(adapter, "stage_output", lambda *args: output)
-    monkeypatch.setattr(adapter.lmstudio_pipeline, "make_client_and_model", lambda *args: (nullcontext(), "mock"))
-    monkeypatch.setattr(adapter.lmstudio_pipeline, "comfy_interrupt_check", interrupt_check)
-    monkeypatch.setattr(adaptation, "adapt_chapter", adapt)
 
-    with pytest.raises(KeyboardInterrupt if cancel_after_first else RuntimeError):
-        adapter.CinematicChapterAdapterNode().run(
-            {"api_url": "unused", "run_folder": "test"}, {"chapter_paths": [str(path) for path in paths]},
-        )
-    assert json.loads(saved.read_text(encoding="utf-8")) == chapter
-    assert not (output / "002_chapter2.cinematic.json").exists()
-    assert len(calls) == (1 if cancel_after_first else 2)
+@pytest.mark.parametrize("error", ["duration", "overlapping_end", "missing_tail", "unknown_removal", "duplicate_change"])
+def test_invalid_generation_never_commits(monkeypatch, error):
+    source = DELPHES.read_bytes().decode("utf-8")
+
+    def chat(client, model, system, body, schema, *args):
+        assert schema == ca.SCHEMA
+        payload = json.loads(body)
+        draft = delphes_draft(payload, short=error == "duration")
+        first, last = draft["sequences"]
+        if error == "overlapping_end":
+            last["source_end_id"] = first["source_end_id"]
+        if error == "missing_tail":
+            last["source_end_id"] -= 1
+        if error == "unknown_removal":
+            last["events"][0]["changes"] = [state("absent", "")]
+        if error == "duplicate_change":
+            last["events"][0]["changes"] = [state("indy", "Indy se balance."), state("indy", "Indy attend.")]
+        return draft
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    checkpoints = []
+    with pytest.raises(ValueError, match="invalid_structured_generation"):
+        run(source, checkpoints)
+    assert not checkpoints
+
+
+@pytest.mark.parametrize("error", ["network", "missing_coverage", "foreign_evidence"])
+def test_failed_review_retains_valid_data_with_incomplete_diagnostics(monkeypatch, error):
+    def chat(client, model, system, body, schema, *args):
+        payload = json.loads(body)
+        if schema == ca.SCHEMA:
+            return delphes_draft(payload)
+        if error == "network":
+            raise ConnectionError("secret backend detail")
+        if error == "missing_coverage":
+            review = approved(payload)
+            review["language_checks"].pop()
+            return review
+        return approved(payload, findings=[{"sequence": 1, "passage_id": "wrong", "check": "continuity",
+                                            "message": "Unknown citation."}])
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    checkpoints = []
+    chapter = run(DELPHES.read_bytes().decode("utf-8"), checkpoints)
+    report = cinematic_diagnostics.report(
+        checkpoints[-1], chapter_name="delphes", source_file=str(DELPHES), maximum_seconds=8, completed=True)
+    assert len(chapter["sequences"]) == 1
+    assert report["status"] == "incomplete" and report["generation_status"] == "completed"
+    assert report["summary"]["incomplete_scenes"] == 1
+    assert "secret backend detail" not in json.dumps(report)
+
+
+def test_resume_carries_state_uses_only_unread_source_and_rejects_modified_checkpoint(monkeypatch):
+    source = "Ana prend la clé. Ana ouvre la porte. Ana appelle depuis la salle."
+    chunks = []
+    checkpoints = []
+
+    def chat(client, model, system, body, schema, *args):
+        payload = json.loads(body)
+        if schema == ca.REVIEW_SCHEMA:
+            return approved(payload)
+        segments = payload["source_segments"]
+        chunks.append("".join(row["text"] for row in segments))
+        if not payload["previous_state"]:
+            return {"opening_state": [state("door", "La porte se trouve face à Ana.")],
+                    "sequences": [sequence(len(segments), 2, event("Ana prend la clé.", state("key", "Ana tient la clé.")))]}
+        assert state("key", "Ana tient la clé.") in payload["previous_state"]
+        return {"opening_state": [], "sequences": [sequence(len(segments), 3, event(chunks[-1].strip()))]}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    full = run(source, checkpoints, chunk_chars=25)
+    first = checkpoints[0]
+    assert first["consumed_chars"] < len(source)
+    chunks.clear()
+    assert full == run(source, chunk_chars=25, resume_state=first)
+    assert "".join(chunks) == source[first["consumed_chars"]:]
+    assert all("Ana tient la clé." in row["adaptation"]["endingState"] for row in full["sequences"])
+    broken = deepcopy(first)
+    broken["sequences"][0]["source"] += "!"
+    chunks.clear()
+    with pytest.raises(ValueError, match="resume checkpoint"):
+        run(source, chunk_chars=25, resume_state=broken)
+    assert chunks == []
+
+
+
+def test_cited_timing_overrun_requires_real_split(monkeypatch):
+    source = "Ana ferme la première porte. Ana descend les marches."
+    opening = [state("door", "Ana est devant la première porte.")]
+    calls = []
+
+    def chat(client, model, system, body, schema, *args):
+        payload = json.loads(body)
+        calls.append(schema["name"])
+        if schema == ca.SCHEMA:
+            assert ca.lmstudio_json.REQUEST_THINKING.get() is None
+            segments = payload["source_segments"]
+            end = len(segments)
+            if "correction" not in payload:
+                return {"opening_state": opening,
+                        "sequences": [sequence(end, 8, event("Ana ferme la porte puis descend les marches."))]}
+            first = next(row["id"] for row in segments if row["text"].endswith("porte."))
+            return {"opening_state": opening, "sequences": [
+                sequence(first, 3, event("Ana ferme la première porte.", state("door", "La porte est fermée."))),
+                sequence(end, 6, event("Ana descend les marches.")),
+            ]}
+        assert ca.lmstudio_json.REQUEST_THINKING.get() is False
+        if len(calls) == 2:
+            first = payload["sequences"][0]
+            return approved(payload, findings=[{"sequence": 1, "passage_id": first["source_passages"][0]["id"],
+                                                "check": "duration", "message": "These actions take more than eight seconds."}])
+        return approved(payload)
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    with pytest.raises(ValueError, match="duration overrun"):
+        run(source, correction_attempts=0)
+    calls.clear()
+    first, second = run(source)["sequences"]
+    assert [first["estimated_seconds"], second["estimated_seconds"]] == [3, 6]
+    assert first["adaptation"]["endingState"] == second["adaptation"]["initialState"] == "La porte est fermée."
+    assert first["source"] + second["source"] == source
+    assert ca.lmstudio_json.REQUEST_THINKING.get() is None
+
+
+def test_review_does_not_swallow_comfy_cancellation(monkeypatch):
+    class InterruptProcessingException(RuntimeError):
+        pass
+
+    def chat(client, model, system, body, schema, *args):
+        if schema == ca.REVIEW_SCHEMA:
+            raise InterruptProcessingException()
+        return delphes_draft(json.loads(body))
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    checkpoints = []
+    with pytest.raises(InterruptProcessingException):
+        run(DELPHES.read_bytes().decode("utf-8"), checkpoints)
+    assert not checkpoints
+    assert ca.lmstudio_json.REQUEST_METRICS.get() is None
+    assert not ca.lmstudio_json.REQUEST_DRAIN_USAGE.get()
+
+
+def test_language_verdict_alone_triggers_repair(monkeypatch):
+    source = "Ana attend près de la porte."
+
+    def chat(client, model, system, body, schema, *args):
+        payload = json.loads(body)
+        if schema == ca.REVIEW_SCHEMA:
+            review = approved(payload)
+            if "waits" in payload["sequences"][0]["adaptation"]["event"]:
+                review["language_checks"][0]["event"] = "en"
+            return review
+        if "correction" in payload:
+            defect = payload["correction"]["findings"][0]
+            assert defect["check"] == "language"
+            assert defect["source_quote"] == source
+            action = "Ana attend."
+        else:
+            action = "Ana waits."
+        return {"opening_state": [state("ana", "Ana se tient près de la porte.")],
+                "sequences": [sequence(len(payload["source_segments"]), 2, event(action))]}
+
+    monkeypatch.setattr(ca.lmstudio_json, "chat_json", chat)
+    assert run(source)["sequences"][0]["adaptation"]["event"] == "1. Ana attend."

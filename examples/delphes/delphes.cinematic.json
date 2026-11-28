@@ -1,0 +1,27 @@
+{
+  "chapter_name": "delphes",
+  "duration": 8,
+  "sequences": [
+    {
+      "sequence": 1,
+      "source": "Delphes, Grèce – 1922\n\nIndy se balançait dans l’obscurité, suspendu tel un croissant de lune à une corde qui lui meurtrissait le torse et les aisselles. Des cris retentissaient au-dessus de lui mais il n’en comprenait pas le sens.",
+      "estimated_seconds": 3,
+      "adaptation": {
+        "initialState": "Delphes, Grèce, 1922. Indy est dans l'obscurité. Indy est suspendu par une corde qui lui meurtrit le torse et les aisselles. Indy se balance. Une ouverture située en haut laisse passer très peu de lumière.",
+        "event": "1. Des cris retentissent au-dessus d'Indy, mais il n'en comprend pas le sens.",
+        "endingState": "Delphes, Grèce, 1922. Indy est dans l'obscurité. Indy est suspendu par une corde qui lui meurtrit le torse et les aisselles. Indy se balance. Une ouverture située en haut laisse passer très peu de lumière."
+      }
+    },
+    {
+      "sequence": 2,
+      "source": " Il pencha la tête en arrière. Là-haut, l’ouverture ne fournissait pas plus de lumière qu’une étoile clignotante.",
+      "estimated_seconds": 2,
+      "adaptation": {
+        "initialState": "Delphes, Grèce, 1922. Indy est dans l'obscurité. Indy est suspendu par une corde qui lui meurtrit le torse et les aisselles. Indy se balance. Une ouverture située en haut laisse passer très peu de lumière.",
+        "event": "1. Indy penche la tête en arrière.",
+        "endingState": "Delphes, Grèce, 1922. Indy est dans l'obscurité. Indy est suspendu par une corde qui lui meurtrit le torse et les aisselles. Indy se balance. Une ouverture située en haut laisse passer très peu de lumière. La tête d'Indy est penchée en arrière."
+      }
+    }
+  ],
+  "source_file": "tests/fixtures/delphes.txt"
+}

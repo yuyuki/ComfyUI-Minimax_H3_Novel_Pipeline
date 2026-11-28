@@ -79,7 +79,8 @@ def parse_chapters(value):
                 raise ValueError(f"{label} sequence {previous}: adaptation must not be empty.")
     normalized = []
     for chapter in value:
-        chapter = {**chapter, "sequences": normalize_data(chapter["sequences"])}
+        sequences = [{**normalize_data(seq), "source": seq["source"]} for seq in chapter["sequences"]]
+        chapter = {**chapter, "sequences": sequences}
         if "narrative_review" in chapter:
             chapter["narrative_review"] = normalize_data(chapter["narrative_review"])
         normalized.append(narrative_choices.resolve_chapter(chapter))

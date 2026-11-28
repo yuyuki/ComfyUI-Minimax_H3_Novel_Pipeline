@@ -1,68 +1,5 @@
-"""Keep adapter diagnostics inspectable without sending them to downstream nodes."""
+"""Report adapter review and execution metrics separately from story data."""
 from copy import deepcopy
-
-from . import cinematic_scene_planning as planning
-
-
-_EXPLANATIONS = {
-    "duplicate_entity_aspect": (
-        "Two updates describe the same object/person and the same physical aspect.",
-        "Keep one source-supported final state for this pair without removing independent facts.",
-    ),
-    "source_quote_mismatch": (
-        "The supporting quotation is not an exact substring of this scene's source.",
-        "Select current-source passages that support the fact.",
-    ),
-    "event_fragment_range": (
-        "A fragment uses an invalid, overlapping or out-of-order word range.",
-        "Select consecutive word addresses with complete coverage for the same event.",
-    ),
-    "passage_reference": ("An evidence ID is outside the authorized passage set.",
-                          "Select supporting passage IDs supplied for the current scene."),
-    "successive_fragments_same_beat": ("Successive fragments share one timing beat.",
-                                      "Use separate beats for successive actions of the same event."),
-    "event_coverage": ("The plan does not cover all events.", "Reference every original event."),
-    "event_order": ("Fragments do not follow the event order.", "Preserve the original order without returning to earlier events."),
-    "event_reference": ("An event identifier is invalid.", "Use the original event identifiers, starting at 1."),
-    "whole_event_overlap": ("A whole-event reference overlaps another reference to the same event.",
-                            "Use one whole-event reference, or only ordered fragments if separate actions need splitting."),
-    "timing_total_mismatch": ("The reported total differs from the sum of beat durations and pauses.", "Recalculate the total without shortening actions."),
-    "timing_nonfinite": ("A duration is not a finite number.", "Return finite numeric durations."),
-    "reset_quote_mismatch": ("The context reset has no valid source quotation.", "Support the reset with the current source or retain the context."),
-    "unsupported_continuity_evidence": ("Selected passages did not support the physical claim.",
-                                        "Inspect the claim against the scene source."),
-    "blank_fact_field": ("A continuity field is blank.", "Provide the fact and its source quotation."),
-    "output_limit": ("The response reached the output limit.", "Check the budget shared by reasoning and JSON."),
-    "unresolved_proposal": ("The selected alternative still has source-supported defects.", "Inspect the cited review findings."),
-    "unresolved_source_evidence": ("The source leaves an identity, presence or language check unresolved.",
-                                   "Inspect the cited passages before resolving the ambiguity."),
-    "repair_language_regression": ("A replacement used a different narration language and was rejected.",
-                                   "Inspect the cited fields and keep narration in the source language."),
-    "language_mismatch": ("The retained adaptation still contains narration in another language.",
-                          "Correct the cited fields and review them against the source before extraction."),
-    "request_failed": ("The review request failed; the precise cause is unavailable.", "Check the server and its logs; this code does not prove a token limit was reached."),
-    "duration_exceeded": ("The timing estimate exceeds the allowed maximum, including any allowance.", "Split between actions without rushing or removing them."),
-}
-
-
-def explain(record):
-    """Translate local codes only; never interpolate arbitrary exception/backend text."""
-    result = deepcopy(record)
-    reason = record.get("reason", "")
-    if record.get("status") == "completed":
-        message, action = "The plan passed structural validation; this does not imply narrative approval.", ""
-    elif record.get("repair_outcome") == "timing_validated":
-        message, action = "The timing estimate passed validation. Continuity still requires assessment.", ""
-    elif reason.startswith("schema_"):
-        message, action = "The response does not match the requested JSON schema.", "Correct the indicated field according to the strict schema."
-    else:
-        message, action = _EXPLANATIONS.get(reason, (
-            "The check could not be completed.", "Inspect the indicated check and field before treating the scene as approved.",
-        ))
-    result["explanation"] = message
-    if action:
-        result["suggested_action"] = action
-    return result
 
 
 def downstream_chapter(chapter):
@@ -80,51 +17,17 @@ def downstream_chapter(chapter):
 
 
 def report(state, *, chapter_name, source_file, maximum_seconds, completed=False):
-    """Build a sidecar from a checkpoint, including progress before a run completes."""
-    review = state.get("narrative_review", {})
-    attempts = [explain(record) for record in review.get("planning_diagnostics", [])]
-    recoveries = {record["assessment_id"]: record["attempt"] for record in attempts if record["status"] == "completed"}
-    for record in attempts:
-        if record["status"] == "failed" and record["assessment_id"] in recoveries:
-            record["resolved_by_attempt"] = recoveries[record["assessment_id"]]
-    warnings = [explain(record) for record in review.get("warnings", [])]
-    scenes = []
-    committed = state.get("sequences", [])
-    plans = state.get("scene_plans", [])
-    for index, scene in enumerate(committed):
-        saved_plan = plans[index] if index < len(plans) else None
-        plan = saved_plan["plan"] if saved_plan else None
-        timing = plan.get("timing") if plan else None
-        incomplete = scene.get("review", {}).get("status") == "incomplete"
-        # A missing plan must never be presented as approval, even in a partial report.
-        status = "incomplete" if incomplete or not plan else "completed"
-        scenes.append({
-            "sequence": scene["sequence"], "status": status,
-            "source_excerpt": scene["source"],
-            "events": deepcopy(saved_plan["events"]) if saved_plan else scene["adaptation"]["event"],
-            "timing": {"status": ("exceeded" if planning.duration_issues(plan, maximum_seconds) else "available") if timing else "incomplete",
-                       "maximum_seconds": maximum_seconds,
-                       "estimated_seconds": plan["timing"]["estimated_seconds"] if timing else None,
-                       "seconds_with_allowance": (round(plan["timing"]["estimated_seconds"] * (
-                           planning.SEQUENTIAL_TIMING_FACTOR if len(plan["timing"]["beats"]) > 1 else 1), 3)
-                           if timing else None),
-                       "beats": planning._describe_plan(plan, saved_plan["events"])["timing"]["beats"] if timing else [],
-                       "pause_seconds": plan["timing"]["pause_seconds"] if timing else None},
-            "continuity": deepcopy(plan.get("continuity")) if plan else None,
-            "review": deepcopy(scene.get("review", {"status": status})),
-            "failed_checks": [w for w in warnings if w["sequence"] == scene["sequence"] and w["status"] == "incomplete"],
-        })
-    incomplete_count = sum(scene["status"] == "incomplete" for scene in scenes)
+    scenes = [
+        {**deepcopy(review), "estimated_seconds": scene["estimated_seconds"]}
+        for scene, review in zip(state["sequences"], state["reviews"], strict=True)
+    ]
+    incomplete = sum(scene["status"] == "incomplete" for scene in scenes)
     return {
-        "schema_version": "minimax-cinematic-diagnostics.v1",
-        "chapter_name": chapter_name, "source_file": source_file,
-        "stage": state.get("stage", "completed" if completed else "unknown"),
-        "status": "incomplete" if not completed or incomplete_count else "completed",
+        "schema_version": "minimax-cinematic-diagnostics.v2",
+        "chapter_name": chapter_name, "source_file": source_file, "maximum_seconds": maximum_seconds,
+        "status": "completed" if completed and not incomplete else "incomplete",
         "generation_status": "completed" if completed else "in_progress",
-        "summary": {"committed_scenes": len(scenes), "pending_scenes": len(state.get("pending_sequences", [])),
-                    "incomplete_scenes": incomplete_count, "planning_attempts": len(attempts),
-                    "failed_planning_attempts": sum(a["status"] == "failed" for a in attempts)},
-        "sequences": scenes, "planning_attempts": attempts, "warnings": warnings,
-        "cited_findings": deepcopy(review.get("cited_findings", [])),
-        "narrative_choices": deepcopy(review.get("issues", [])),
+        "summary": {"committed_scenes": len(scenes), "incomplete_scenes": incomplete,
+                    "consumed_chars": state["consumed_chars"], "source_chars": state["source_chars"]},
+        "sequences": scenes, "performance": deepcopy(state["performance"]),
     }

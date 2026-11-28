@@ -169,6 +169,7 @@ def test_mistral_records_node_thinking_and_ignores_qwen_sampling(setup, monkeypa
     monkeypatch.setattr(extract.cinematic_references, "process_chapter", process)
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mistral-test"))
     params = defaults(extract.ExtractChapterReferencesNode)
+    params["thinking"] = True
     extract.ExtractChapterReferencesNode().run(config, ADAPTED, **params)
     record = util.load_json(root / config["run_folder"] / "chapter_catalogs/extract_configuration.json")
     assert "thinking" not in record["lmstudio_config"]

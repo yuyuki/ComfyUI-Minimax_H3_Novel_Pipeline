@@ -236,10 +236,10 @@ def test_extraction_retries_with_structured_schema_and_full_evidence(monkeypatch
 
 def test_reference_prompts_are_generic_and_have_no_story_specific_examples():
     step = lmstudio_pipeline.load("consolidate")
-    from minimax_h3_novel_pipeline.core import chapter_reference_identity, narrative_validation
+    from minimax_h3_novel_pipeline.core import chapter_reference_identity, cinematic_adaptation
     prompts = [extraction.SOURCE_SYSTEM, lmstudio_pipeline.load("extract").EXTRACT_SYSTEM,
                step.APPEARANCE_SYSTEM, step.PICTURE_BRIEF_SYSTEM, visual.EQUIVALENCE_SYSTEM,
-               chapter_reference_identity.SYSTEM, narrative_validation.SYSTEM]
+               chapter_reference_identity.SYSTEM, cinematic_adaptation.REVIEW_SYSTEM]
     assert all(not any(word in p.casefold() for word in ("indy", "doriane", "torch", "linen", "tablet", "crevasse"))
                for p in prompts)
 
