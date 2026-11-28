@@ -43,9 +43,14 @@ End the final scene at the last token except in a window with an incomplete tail
 Preserve story meaning, dialogue verbatim, character identities, important props,
 locations, atmosphere, visual details and cause/effect. Remove only nonvisual
 metaphors and unfilmable abstractions, retaining their supported physical meaning.
-Keep the actual source of light or sound; do not transfer every property of a
-comparison to it or create a new object. Preserve physical constraints and audible
-qualities (such as unintelligible cries), without inventing injuries or words.
+Keep the actual source of light or sound. Do not transfer unsupported properties
+from a comparison or create a new object. When a comparison conveys light intensity,
+describe the supported origin, intensity and what is visible from the scene's
+viewpoint. Attribute light seen through an opening to the exterior when supported.
+Keep surrounding darkness when the light does not illuminate it. Describe a point
+source, beam, flicker or other lighting effect only if the prose establishes it for
+the actual light. Preserve physical constraints and audible qualities (such as
+unintelligible cries), without inventing injuries or words.
 Express source-supported physical relationships explicitly; leave unspecified
 staging details unspecified rather than completing them by invention.
 Omit inner thoughts unless a source-supported visible action conveys them.
