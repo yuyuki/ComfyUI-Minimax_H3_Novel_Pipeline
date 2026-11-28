@@ -335,7 +335,7 @@ def _restore(saved, fingerprint, text, duration):
     """Resume only a committed source prefix with matching states."""
     try:
         if saved["fingerprint"] != fingerprint:
-            raise ValueError("Source or adaptation contract changed.")
+            raise ValueError("Source or adaptation contract changed. Clear resume_run to regenerate.")
         scenes, state, choices, reviews = deepcopy(
             (saved["sequences"], saved["ending_state"], saved["choices"], saved["reviews"]))
         if not isinstance(state, dict) or any(not isinstance(v, list) for v in (scenes, choices, reviews)):

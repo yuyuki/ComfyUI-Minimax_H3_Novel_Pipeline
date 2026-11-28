@@ -2,7 +2,7 @@
 from collections import defaultdict
 from copy import deepcopy
 import warnings
-from . import character_evidence, util, visual_designs
+from . import character_evidence, source_text, util, visual_designs
 
 from . import character_visual_profiles as visual
 from .character_profile_document import validate_document as validate_profiles
@@ -48,10 +48,12 @@ def apply(designs, chapters, registry, diagnostics):
         text = texts[key]
         cursor = 0
         for sequence in chapter['sequences']:
-            excerpt = sequence['source']
+            # The adapter saves verbatim excerpts, while evidence uses normalized offsets.
+            excerpt = source_text.normalize(sequence['source'])
             start = text.find(excerpt, cursor)
             if not excerpt.strip() or start < 0 or (text[cursor:start].strip() and text.find(excerpt, start + 1) >= 0):
-                raise ValueError(f"Cinematic source does not match a unique ordered passage: sequence {sequence['sequence']}.")
+                raise ValueError(f"Cinematic source does not match a unique ordered passage in {key.name}: "
+                                 f"sequence {sequence['sequence']}.")
             cursor = start + len(excerpt)
 
     profiles = visual.prepare_profiles(document)

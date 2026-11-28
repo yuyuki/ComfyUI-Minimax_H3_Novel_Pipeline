@@ -247,6 +247,31 @@ def test_wrong_source_identity_fails_instead_of_ignoring_facts(setup):
         integration.apply(result['visual_designs'], [chapter], [entity], [])
 
 
+def test_source_matching_preserves_verbatim_passages_and_checks_order(tmp_path, monkeypatch):
+    monkeypatch.setattr(path_access, 'storage_root', lambda kind: tmp_path)
+    first = 'Élise’s eyes are green.\r\n'
+    second = 'She waits on the stairs.'
+    data = consolidated(observation(first + second, value='green eyes'))
+    (tmp_path / 'chapter1.txt').write_bytes((first + second).encode('utf-8'))
+    result, _ = vp.generate(data, ['chapter1.txt'], tmp_path / 'visual')
+    designs = result['visual_designs']
+    chapter = {'source_file': 'chapter1.txt', 'sequences': [
+        {'sequence': 1, 'source': first}, {'sequence': 2, 'source': second},
+    ]}
+    entity = {'global_id': 'CHAR_042', 'entity_type': 'character', 'canonical_name': 'Élise'}
+    original = deepcopy(chapter)
+
+    imported = integration.apply(designs, [chapter], [entity], [])
+    assert imported['CHAR_042']['source_facts']['stable_visual_description'] == 'green eyes'
+    assert chapter == original
+
+    for excerpts in [(first.replace('green', 'blue'), second), (second, first)]:
+        for sequence, excerpt in zip(chapter['sequences'], excerpts, strict=True):
+            sequence['source'] = excerpt
+        with pytest.raises(ValueError, match='unique ordered passage in chapter1.txt'):
+            integration.apply(designs, [chapter], [entity], [])
+
+
 def test_consolidated_designs_can_be_imported_with_independent_registry_ids(setup):
     from minimax_h3_novel_pipeline.core.editable_schemas import DESIGN_SCHEMA, validate_document
     root, data, result, chapter, entity = setup

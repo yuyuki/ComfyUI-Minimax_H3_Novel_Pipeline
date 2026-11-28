@@ -1,11 +1,14 @@
 # Normalized source text
 
-Chapter readers share `core.source_text.read_source`. Character evidence is
-normalized before passage selection, model requests, hashing and provenance
-calculation. The same normalization applies to generated descriptions. Cinematic
-Chapter Adapter preserves the decoded text and line endings for exact `source`
-spans and review quotations. For PDFs, its spans refer to the text extracted by
-pypdf.
+Chapter readers share `core.source_text.read_source`. Character Evidence Extractor
+and Cinematic Chapter Adapter use the same normalized chapter text for passage
+selection, model requests, fingerprints and provenance. The adapter's `source`
+spans and review quotations are exact slices of that normalized text. For PDFs,
+normalization runs after pypdf extracts the text. The same normalization applies
+to generated descriptions.
+
+If an earlier adapter checkpoint used text that changes under normalization,
+clear `resume_run` to regenerate it on the normalized source basis.
 
 Normalization uses Unicode NFC, straight apostrophes and quotation marks,
 ordinary spaces for nonbreaking spaces, and LF line endings. Paragraphs, case,

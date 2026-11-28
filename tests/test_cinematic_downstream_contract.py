@@ -36,14 +36,17 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
     monkeypatch.setattr(lmstudio_pipeline, "make_client_and_model", lambda *a: (nullcontext(), "mock"))
     source = tmp_path / "chapter.md"
     config = {"api_url": "http://127.0.0.1:1234/v1", "run_folder": "20261114120000"}
-    passage = ("Indy attend près de la porte et regarde la sortie en silence. "
+    passage = ("Indy attend près de l'entrée et regarde la sortie en silence.\n\n"
                "Puis Indy part sans se retourner et quitte la pièce.")
-    source.write_text(passage, encoding="utf-8")
+    raw = passage.replace("'", "’").replace("près", "pre\u0300s").replace("Indy attend", "Indy\u00a0attend")
+    source.write_bytes(raw.replace("\n", "\r\n").encode("utf-8"))
 
     def adapt_chat(client, model, system, user, schema, *args):
         payload = json.loads(user)
         if schema == adaptation.SCHEMA:
             segments = payload["source_segments"]
+            assert payload["current_passage"] == passage
+            assert "".join(row["text"] for row in segments) == passage
             boundary = next(row["id"] for row in segments if row["text"].endswith("silence."))
             return {
                 "opening_state": [{"id": "indy", "description": "Indy est près de la porte."}],
@@ -59,6 +62,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
         if review_unavailable:
             raise ConnectionError("Offline review")
         merged, = payload["sequences"]
+        assert merged["source"] == passage
         assert merged["estimated_seconds"] == 7 and len(merged["events"]) == 2
         return {"source_language": "fr",
                 "language_checks": [{"sequence": 1, "initialState": "fr", "event": "fr", "endingState": "fr"}],
@@ -69,6 +73,7 @@ def test_adapter_output_reaches_downstream_nodes(tmp_path, monkeypatch, reload_f
     monkeypatch.setattr(adaptation.lmstudio_json, "chat_json", adapt_chat)
     direct, saved_files = CinematicChapterAdapterNode().run(
         config, {"chapter_paths": [str(source)]})["result"]
+    assert "".join(seq["source"] for seq in direct[0]["sequences"]) == passage
     before = deepcopy(direct)
     saved = util.output_path(saved_files)
     diagnostics = saved.with_name(saved.name.replace(".cinematic.json", ".cinematic.diagnostics.json"))

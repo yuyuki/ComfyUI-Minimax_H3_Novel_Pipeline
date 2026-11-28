@@ -125,8 +125,9 @@ class CinematicChapterAdapterNode:
                     util.save_json(pending, diagnostics)
                     pending.replace(diagnostics_path)
                 with progress.scope(index / len(paths), (index + 1) / len(paths)):
+                    text, _ = source_text.read_source(path)
                     chapter = cinematic_adaptation.adapt_chapter(
-                        client, model, source_text.read_source(path, normalize_text=False)[0], chapter_name=path.stem, **settings,
+                        client, model, text, chapter_name=path.stem, **settings,
                         on_checkpoint=checkpoint,
                         resume_state=resume_state,
                     )

@@ -41,8 +41,8 @@ def normalize_data(value):
     return value
 
 
-def read_source(path, *, normalize_text=True):
-    """Decode a chapter on the requested text basis."""
+def read_source(path):
+    """Decode and normalize a chapter on the shared source basis."""
     path = input_path(path)
     if path.suffix.lower() == ".pdf":
         from pypdf import PdfReader
@@ -54,10 +54,7 @@ def read_source(path, *, normalize_text=True):
         basis = "normalized_utf8_text"
     else:
         raise ValueError(f"Unsupported file type: {path.suffix}")
-    if normalize_text:
-        text = normalize(text)
-    else:
-        basis = basis.removeprefix("normalized_")
+    text = normalize(text)
     if not text.strip():
         raise ValueError(f"Chapter {path.name} has no text; supply UTF-8 text or a searchable PDF.")
     return text, basis
